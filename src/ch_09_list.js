@@ -3,6 +3,8 @@
     var Context = Packages.android.content.Context;
     var Build = Packages.android.os.Build;
     var View = Packages.android.view.View;
+    var MotionEvent = Packages.android.view.MotionEvent;
+    var ViewConfiguration = Packages.android.view.ViewConfiguration;
     var Gravity = Packages.android.view.Gravity;
     var WindowManager = Packages.android.view.WindowManager;
     var PixelFormat = Packages.android.graphics.PixelFormat;
@@ -16,6 +18,8 @@
     var TextUtils = Packages.android.text.TextUtils;
     var DisplayMetrics = Packages.android.util.DisplayMetrics;
     var Thread = Packages.java.lang.Thread;
+    var JavaInteger = Packages.java.lang.Integer;
+    var JavaArray = Packages.java.lang.reflect.Array;
     var SimpleDateFormat = Packages.java.text.SimpleDateFormat;
     var Locale = Packages.java.util.Locale;
     var Date = Packages.java.util.Date;
@@ -24,16 +28,19 @@
     var LONG_TEXT_LINE_THRESHOLD = 4;
     var androidContext = null;
     var density = 1;
+    var touchSlop = 8;
     var ready = false;
     var visible = false;
     var limit = 20;
     var items = [];
     var itemViews = [];
+    var cardContainers = [];
     var deleteViews = [];
     var editViews = [];
     var pinViews = [];
     var tagViews = [];
     var detailViews = [];
+    var reorderViews = [];
     var undoView = null;
     var filterView = null;
     var addView = null;
@@ -46,6 +53,15 @@
     var detailCopyView = null;
     var detailEditView = null;
     var detailCloseView = null;
+    var reorderDrag = {
+        active: false,
+        sourceIndex: -1,
+        targetIndex: -1,
+        sourcePinned: false,
+        startRawY: 0,
+        moved: false,
+        syntheticTargetIndex: null
+    };
     var state = {
         renderedCount: 0,
         emptyVisible: false,
@@ -63,6 +79,12 @@
         detailCloseCount: 0,
         detailCopyCount: 0,
         detailEditCount: 0,
+        reorderCount: 0,
+        reorderRejectCount: 0,
+        reorderDragStartCount: 0,
+        reorderDragMoveCount: 0,
+        reorderDragCommitCount: 0,
+        reorderSyntheticCount: 0,
         longItemCount: 0,
         renderedTagLabelCount: 0,
         renderedSensitiveMaskCount: 0,
@@ -73,6 +95,11 @@
         lastPinnedValue: null,
         lastTagItemId: null,
         lastDetailItemId: null,
+        lastReorderItemId: null,
+        lastReorderTargetId: null,
+        lastReorderPinned: null,
+        lastReorderPlaceAfter: null,
+        lastReorderReason: null,
         lastCopyOk: false,
         clickThreadId: null,
         clickThreadName: null,
@@ -96,6 +123,8 @@
         detailAddThreadName: null,
         detailRemoveThreadId: null,
         detailRemoveThreadName: null,
+        reorderThreadId: null,
+        reorderThreadName: null,
         renderThreadId: null,
         renderThreadName: null,
         lastDetailAction: null,
@@ -149,15 +178,13 @@
     }
 
     function cardBackground(dark) {
-        return roundedBackground(
-            dark ? "#FF24272D" : "#FFF4F4F6",
+        return roundedBackground(dark ? "#FF24272D" : "#FFF4F4F6",
             dark ? "#24FFFFFF" : "#12000000", 13);
     }
 
     function actionBackground(dark, danger, selected) {
         if (selected) {
-            return roundedBackground(
-                dark ? "#FF364A61" : "#FFE4EEF9",
+            return roundedBackground(dark ? "#FF364A61" : "#FFE4EEF9",
                 dark ? "#667DB4E8" : "#55719BC6", 9);
         }
         return roundedBackground(
@@ -209,9 +236,8 @@
 
     function isLongText(row) {
         var content = String(row && row.content !== undefined ? row.content : "");
-        var lines = content.split("\n").length;
         return content.length > LONG_TEXT_THRESHOLD ||
-            lines >= LONG_TEXT_LINE_THRESHOLD;
+            content.split("\n").length >= LONG_TEXT_LINE_THRESHOLD;
     }
 
     function filterState() {
@@ -220,13 +246,9 @@
                 return ClipHub.Filter.getState();
             }
         } catch (ignored) {}
-        return {
-            active: false,
-            criteria: {
-                keyword: "", sourcePackages: [], contentTypes: [], tagIds: [],
-                pinnedOnly: false, sensitiveMode: "all"
-            }
-        };
+        return { active: false, criteria: { keyword: "", sourcePackages: [],
+            contentTypes: [], tagIds: [], pinnedOnly: false,
+            sensitiveMode: "all" } };
     }
 
     function filterSummary() {
@@ -253,6 +275,10 @@
             parts.push("隐藏敏感");
         }
         return parts.join("  ·  ");
+    }
+
+    function reorderEnabled() {
+        return ready && visible && filterState().active !== true && items.length > 1;
     }
 
     function emit(name, payload) {
@@ -309,12 +335,8 @@
             state.lastDeletedId = id;
             state.deleteThreadId = Number(thread.getId());
             state.deleteThreadName = String(thread.getName());
-            delivered = emit("clipboard_deleted", {
-                id: id,
-                deletedAt: deletedAt,
-                threadId: state.deleteThreadId,
-                threadName: state.deleteThreadName
-            });
+            delivered = emit("clipboard_deleted", { id: id, deletedAt: deletedAt,
+                threadId: state.deleteThreadId, threadName: state.deleteThreadName });
             if (delivered < 1 && visible) { refresh(false); }
             return true;
         } catch (error) {
@@ -345,11 +367,8 @@
             state.lastRestoredId = Number(target.id);
             state.restoreThreadId = Number(thread.getId());
             state.restoreThreadName = String(thread.getName());
-            delivered = emit("clipboard_restored", {
-                id: Number(target.id),
-                threadId: state.restoreThreadId,
-                threadName: state.restoreThreadName
-            });
+            delivered = emit("clipboard_restored", { id: Number(target.id),
+                threadId: state.restoreThreadId, threadName: state.restoreThreadName });
             if (delivered < 1 && visible) { refresh(false); }
             return true;
         } catch (error) {
@@ -365,21 +384,17 @@
         var changed;
         var delivered;
         try {
-            changed = ClipHub.Repository.updateItem(id, { is_pinned: next });
+            changed = ClipHub.Repository.updateItem(id,
+                { is_pinned: next, manual_order: 0 });
             if (Number(changed) < 1) { return false; }
             state.pinToggleCount += 1;
             state.lastPinnedId = id;
             state.lastPinnedValue = next;
             state.pinThreadId = Number(thread.getId());
             state.pinThreadName = String(thread.getName());
-            delivered = emit("clipboard_merged", {
-                id: id,
-                manual: true,
-                mutation: "pin_changed",
-                pinned: next === 1,
-                threadId: state.pinThreadId,
-                threadName: state.pinThreadName
-            });
+            delivered = emit("clipboard_merged", { id: id, manual: true,
+                mutation: "pin_changed", pinned: next === 1,
+                threadId: state.pinThreadId, threadName: state.pinThreadName });
             if (delivered < 1 && visible) { refresh(false); }
             return true;
         } catch (error) {
@@ -396,10 +411,7 @@
             state.addThreadName = String(thread.getName());
             ClipHub.Editor.openNew();
             return true;
-        } catch (error) {
-            state.lastError = String(error);
-            return false;
-        }
+        } catch (error) { state.lastError = String(error); return false; }
     }
 
     function openEditEditor(row) {
@@ -410,10 +422,7 @@
             state.editThreadName = String(thread.getName());
             ClipHub.Editor.openItem(Number(row.id));
             return true;
-        } catch (error) {
-            state.lastError = String(error);
-            return false;
-        }
+        } catch (error) { state.lastError = String(error); return false; }
     }
 
     function openTagEditor(row) {
@@ -428,10 +437,7 @@
             state.tagThreadName = String(thread.getName());
             ClipHub.Editor.openTags(Number(row.id));
             return true;
-        } catch (error) {
-            state.lastError = String(error);
-            return false;
-        }
+        } catch (error) { state.lastError = String(error); return false; }
     }
 
     function openFilterPanel() {
@@ -442,21 +448,15 @@
             state.filterThreadName = String(thread.getName());
             ClipHub.Filter.showPanel({ requestKeyboard: true });
             return true;
-        } catch (error) {
-            state.lastError = String(error);
-            return false;
-        }
+        } catch (error) { state.lastError = String(error); return false; }
     }
 
     function detailDimensions() {
         var metrics = new DisplayMetrics();
         var width;
         var height;
-        try {
-            detailWindowManager.getDefaultDisplay().getRealMetrics(metrics);
-        } catch (ignored) {
-            metrics = androidContext.getResources().getDisplayMetrics();
-        }
+        try { detailWindowManager.getDefaultDisplay().getRealMetrics(metrics); }
+        catch (ignored) { metrics = androidContext.getResources().getDisplayMetrics(); }
         width = Math.min(dp(400), Math.max(dp(280),
             Number(metrics.widthPixels) - dp(24)));
         height = Math.min(dp(560), Math.max(dp(360),
@@ -473,12 +473,8 @@
         return ClipHub.Window.runOnMain(function () {
             var thread = Thread.currentThread();
             try {
-                if (detailRoot !== null) {
-                    try { detailWindowManager.removeViewImmediate(detailRoot); }
-                    catch (error) {
-                        if (detailRoot.isAttachedToWindow()) { throw error; }
-                    }
-                }
+                try { detailWindowManager.removeViewImmediate(detailRoot); }
+                catch (error) { if (detailRoot.isAttachedToWindow()) { throw error; } }
                 state.detailCloseCount += 1;
                 state.detailRemoveThreadId = Number(thread.getId());
                 state.detailRemoveThreadName = String(thread.getName());
@@ -530,10 +526,7 @@
             closeDetail("edit");
             ClipHub.Editor.openItem(Number(row.id));
             return true;
-        } catch (error) {
-            state.lastError = String(error);
-            return false;
-        }
+        } catch (error) { state.lastError = String(error); return false; }
     }
 
     function buildDetailView(row) {
@@ -550,14 +543,13 @@
         var params;
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(16), dp(14), dp(16), dp(14));
-        root.setBackground(roundedBackground(
-            dark ? "#FA181A1F" : "#FCFFFFFF",
+        root.setBackground(roundedBackground(dark ? "#FA181A1F" : "#FCFFFFFF",
             dark ? "#38FFFFFF" : "#1C000000", 17));
         if (Build.VERSION.SDK_INT >= 21) { root.setElevation(dp(18)); }
         titleRow.setOrientation(LinearLayout.HORIZONTAL);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        titleRow.addView(title, new LinearLayout.LayoutParams(
-            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        titleRow.addView(title, new LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         detailCloseView = makeAction("关闭", dark, false, false, false);
         detailCloseView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
             onClick: function () { closeDetail("button"); }
@@ -584,8 +576,7 @@
         body.setGravity(Gravity.TOP | Gravity.START);
         body.setLineSpacing(0, 1.18);
         body.setPadding(dp(12), dp(10), dp(12), dp(10));
-        body.setBackground(roundedBackground(
-            dark ? "#FF202328" : "#FFF7F7F8",
+        body.setBackground(roundedBackground(dark ? "#FF202328" : "#FFF7F7F8",
             dark ? "#35FFFFFF" : "#1D000000", 11));
         scroll.setFillViewport(true);
         scroll.addView(body, new FrameLayout.LayoutParams(
@@ -677,6 +668,191 @@
         };
     }
 
+    function requestNoIntercept(view, value) {
+        var parent;
+        try {
+            parent = view.getParent();
+            if (parent !== null) { parent.requestDisallowInterceptTouchEvent(value); }
+        } catch (ignored) {}
+    }
+
+    function resetReorderVisuals() {
+        var index;
+        for (index = 0; index < cardContainers.length; index += 1) {
+            try { cardContainers[index].setAlpha(1); } catch (ignored) {}
+        }
+        for (index = 0; index < reorderViews.length; index += 1) {
+            if (reorderViews[index] !== null) {
+                try { reorderViews[index].setPressed(false); } catch (ignoredHandle) {}
+            }
+        }
+    }
+
+    function setReorderTargetVisual(index) {
+        var itemIndex;
+        for (itemIndex = 0; itemIndex < cardContainers.length; itemIndex += 1) {
+            try {
+                cardContainers[itemIndex].setAlpha(itemIndex === index ? 0.72 :
+                    (itemIndex === reorderDrag.sourceIndex ? 0.58 : 1));
+            } catch (ignored) {}
+        }
+    }
+
+    function nearestReorderIndex(rawY, pinned) {
+        var location;
+        var index;
+        var center;
+        var distance;
+        var bestDistance = Number.MAX_VALUE;
+        var best = reorderDrag.sourceIndex;
+        for (index = 0; index < cardContainers.length; index += 1) {
+            if (Number(items[index].is_pinned || 0) === (pinned ? 1 : 0)) {
+                try {
+                    location = JavaArray.newInstance(JavaInteger.TYPE, 2);
+                    cardContainers[index].getLocationOnScreen(location);
+                    center = Number(location[1]) +
+                        Number(cardContainers[index].getHeight()) / 2;
+                    distance = Math.abs(Number(rawY) - center);
+                    if (distance < bestDistance) {
+                        bestDistance = distance;
+                        best = index;
+                    }
+                } catch (ignored) {}
+            }
+        }
+        return best;
+    }
+
+    function commitReorder(fromIndex, toIndex, origin) {
+        var source;
+        var target;
+        var placeAfter;
+        var thread = Thread.currentThread();
+        var result;
+        var delivered;
+        if (!reorderEnabled()) {
+            state.reorderRejectCount += 1;
+            state.lastReorderReason = "filter_active_or_hidden";
+            return false;
+        }
+        fromIndex = Math.floor(Number(fromIndex));
+        toIndex = Math.floor(Number(toIndex));
+        if (fromIndex < 0 || toIndex < 0 || fromIndex >= items.length ||
+                toIndex >= items.length || fromIndex === toIndex) {
+            state.reorderRejectCount += 1;
+            state.lastReorderReason = "invalid_or_same_index";
+            return false;
+        }
+        source = items[fromIndex];
+        target = items[toIndex];
+        if (Number(source.is_pinned || 0) !== Number(target.is_pinned || 0)) {
+            state.reorderRejectCount += 1;
+            state.lastReorderReason = "cross_pinned_group";
+            return false;
+        }
+        placeAfter = fromIndex < toIndex;
+        try {
+            result = ClipHub.Repository.reorderItem(Number(source.id),
+                Number(target.id), placeAfter);
+            if (!result || result.ok !== true || result.changed !== true) {
+                state.reorderRejectCount += 1;
+                state.lastReorderReason = result && result.reason ?
+                    String(result.reason) : "repository_rejected";
+                return false;
+            }
+            state.reorderCount += 1;
+            state.reorderDragCommitCount += origin === "drag" ? 1 : 0;
+            state.lastReorderItemId = Number(source.id);
+            state.lastReorderTargetId = Number(target.id);
+            state.lastReorderPinned = Number(source.is_pinned || 0) === 1;
+            state.lastReorderPlaceAfter = placeAfter;
+            state.lastReorderReason = String(origin || "api");
+            state.reorderThreadId = Number(thread.getId());
+            state.reorderThreadName = String(thread.getName());
+            delivered = emit("clipboard_merged", {
+                id: Number(source.id),
+                targetId: Number(target.id),
+                manual: true,
+                mutation: "manual_order_changed",
+                pinned: state.lastReorderPinned,
+                placeAfter: placeAfter,
+                threadId: state.reorderThreadId,
+                threadName: state.reorderThreadName
+            });
+            if (delivered < 1 && visible) { refresh(false); }
+            return true;
+        } catch (error) {
+            state.lastError = String(error);
+            return false;
+        }
+    }
+
+    function handleReorderTouch(index, view, event) {
+        var action = Number(event.getActionMasked());
+        var rawY;
+        var targetIndex;
+        var commitFrom;
+        var commitTo;
+        if (action === Number(MotionEvent.ACTION_DOWN)) {
+            if (!reorderEnabled()) {
+                state.reorderRejectCount += 1;
+                state.lastReorderReason = "filter_active_or_hidden";
+                return false;
+            }
+            reorderDrag.active = true;
+            reorderDrag.sourceIndex = index;
+            reorderDrag.targetIndex = index;
+            reorderDrag.sourcePinned = Number(items[index].is_pinned || 0) === 1;
+            reorderDrag.startRawY = Number(event.getRawY());
+            reorderDrag.moved = false;
+            state.reorderDragStartCount += 1;
+            view.setPressed(true);
+            requestNoIntercept(view, true);
+            setReorderTargetVisual(index);
+            return true;
+        }
+        if (!reorderDrag.active || index !== reorderDrag.sourceIndex) { return false; }
+        if (action === Number(MotionEvent.ACTION_MOVE)) {
+            rawY = Number(event.getRawY());
+            if (Math.abs(rawY - reorderDrag.startRawY) >= touchSlop ||
+                    reorderDrag.syntheticTargetIndex !== null) {
+                reorderDrag.moved = true;
+            }
+            if (reorderDrag.moved) {
+                targetIndex = reorderDrag.syntheticTargetIndex !== null ?
+                    Number(reorderDrag.syntheticTargetIndex) :
+                    nearestReorderIndex(rawY, reorderDrag.sourcePinned);
+                if (targetIndex >= 0 && targetIndex < items.length &&
+                        Number(items[targetIndex].is_pinned || 0) ===
+                        (reorderDrag.sourcePinned ? 1 : 0)) {
+                    reorderDrag.targetIndex = targetIndex;
+                    state.reorderDragMoveCount += 1;
+                    setReorderTargetVisual(targetIndex);
+                }
+            }
+            return true;
+        }
+        if (action === Number(MotionEvent.ACTION_UP) ||
+                action === Number(MotionEvent.ACTION_CANCEL)) {
+            commitFrom = reorderDrag.sourceIndex;
+            commitTo = reorderDrag.targetIndex;
+            requestNoIntercept(view, false);
+            resetReorderVisuals();
+            reorderDrag.active = false;
+            reorderDrag.sourceIndex = -1;
+            reorderDrag.targetIndex = -1;
+            reorderDrag.syntheticTargetIndex = null;
+            if (action === Number(MotionEvent.ACTION_UP) && reorderDrag.moved &&
+                    commitFrom !== commitTo) {
+                reorderDrag.moved = false;
+                return commitReorder(commitFrom, commitTo, "drag");
+            }
+            reorderDrag.moved = false;
+            return true;
+        }
+        return true;
+    }
+
     function buildContent(rows) {
         var dark = isDarkMode();
         var primary = dark ? "#FFF4F4F5" : "#FF171717";
@@ -687,13 +863,16 @@
         var header;
         var summary;
         var active = filterState().active === true;
+        var allowReorder = !active && rows.length > 1;
         var undoBar;
         var undoText;
         var scroll;
         var list;
         var index;
         var row;
-        var card;
+        var wrapper;
+        var contentCard;
+        var reorderView;
         var preview;
         var tagsLabel;
         var actionRow;
@@ -724,8 +903,8 @@
         header = makeText(active ? "筛选结果  " + rows.length :
             (rows.length > 0 ? "最近记录  " + rows.length : "剪贴板历史"),
             13, secondary, false);
-        headerRow.addView(header, new LinearLayout.LayoutParams(
-            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        headerRow.addView(header, new LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         addView = makeAction("新增", dark, false, false, false);
         addView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
             onClick: function () { openNewEditor(); }
@@ -749,7 +928,8 @@
         params.bottomMargin = dp(8);
         outer.addView(headerRow, params);
         if (active) {
-            summary = makeText(filterSummary(), 11, secondary, false);
+            summary = makeText(filterSummary() + "  ·  排序已禁用", 11,
+                secondary, false);
             summary.setSingleLine(true);
             summary.setEllipsize(TextUtils.TruncateAt.END);
             summary.setPadding(dp(2), 0, dp(2), dp(8));
@@ -767,8 +947,8 @@
                 dark ? "#FF20242A" : "#FFF7F7F8",
                 dark ? "#24FFFFFF" : "#12000000", 11));
             undoText = makeText("已删除 1 条记录", 12, secondary, false);
-            undoBar.addView(undoText, new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+            undoBar.addView(undoText, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1));
             undoView = makeAction("撤销", dark, false, false, false);
             undoView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
                 onClick: function () { undoLastDelete(); }
@@ -793,11 +973,13 @@
         outer.addView(scroll, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
         itemViews = [];
+        cardContainers = [];
         deleteViews = [];
         editViews = [];
         pinViews = [];
         tagViews = [];
         detailViews = [];
+        reorderViews = [];
         if (rows.length === 0) {
             state.emptyVisible = true;
             preview = makeText(active ?
@@ -815,12 +997,35 @@
             for (index = 0; index < rows.length; index += 1) {
                 row = rows[index];
                 rowTags = tagMap[String(row.id)] || [];
-                card = new LinearLayout(androidContext);
-                card.setOrientation(LinearLayout.VERTICAL);
-                card.setPadding(dp(12), dp(10), dp(10), dp(9));
-                card.setBackground(cardBackground(dark));
-                card.setClickable(true);
-                card.setFocusable(true);
+                wrapper = new LinearLayout(androidContext);
+                wrapper.setOrientation(LinearLayout.HORIZONTAL);
+                wrapper.setGravity(Gravity.CENTER_VERTICAL);
+                wrapper.setBackground(cardBackground(dark));
+                if (allowReorder) {
+                    reorderView = makeText("↕", 18, secondary, true);
+                    reorderView.setGravity(Gravity.CENTER);
+                    reorderView.setClickable(true);
+                    reorderView.setFocusable(true);
+                    reorderView.setContentDescription("拖动排序第 " +
+                        (index + 1) + " 条记录");
+                    (function (targetIndex, targetView) {
+                        targetView.setOnTouchListener(new JavaAdapter(
+                            View.OnTouchListener, {
+                                onTouch: function (view, event) {
+                                    return handleReorderTouch(targetIndex, view, event);
+                                }
+                            }));
+                    }(index, reorderView));
+                    wrapper.addView(reorderView, new LinearLayout.LayoutParams(
+                        dp(34), LinearLayout.LayoutParams.MATCH_PARENT));
+                } else {
+                    reorderView = null;
+                }
+                contentCard = new LinearLayout(androidContext);
+                contentCard.setOrientation(LinearLayout.VERTICAL);
+                contentCard.setPadding(dp(10), dp(10), dp(10), dp(9));
+                contentCard.setClickable(true);
+                contentCard.setFocusable(true);
                 preview = makeText(Number(row.is_sensitive || 0) === 1 ?
                     "敏感内容" : String(row.content), 14, primary, false);
                 if (Number(row.is_sensitive || 0) === 1) {
@@ -829,7 +1034,7 @@
                 preview.setMaxLines(3);
                 preview.setEllipsize(TextUtils.TruncateAt.END);
                 preview.setLineSpacing(0, 1.12);
-                card.addView(preview, new LinearLayout.LayoutParams(
+                contentCard.addView(preview, new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT));
                 if (rowTags.length > 0) {
@@ -837,7 +1042,7 @@
                     tagsLabel.setSingleLine(true);
                     tagsLabel.setEllipsize(TextUtils.TruncateAt.END);
                     tagsLabel.setPadding(0, dp(6), 0, 0);
-                    card.addView(tagsLabel, new LinearLayout.LayoutParams(
+                    contentCard.addView(tagsLabel, new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT));
                     state.renderedTagLabelCount += 1;
@@ -849,8 +1054,8 @@
                 meta = makeText(sourceText(row), 11, secondary, false);
                 meta.setSingleLine(true);
                 meta.setEllipsize(TextUtils.TruncateAt.END);
-                metaParams = new LinearLayout.LayoutParams(
-                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+                metaParams = new LinearLayout.LayoutParams(0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT, 1);
                 metaParams.rightMargin = dp(4);
                 actionRow.addView(meta, metaParams);
                 detailView = null;
@@ -918,7 +1123,7 @@
                 actionRow.addView(deleteView, new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT));
-                card.addView(actionRow, new LinearLayout.LayoutParams(
+                contentCard.addView(actionRow, new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT));
                 (function (targetRow, targetCard) {
@@ -926,13 +1131,17 @@
                         View.OnClickListener, {
                             onClick: function () { copyRow(targetRow); }
                         }));
-                }(row, card));
+                }(row, contentCard));
+                wrapper.addView(contentCard, new LinearLayout.LayoutParams(0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT, 1));
                 params = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT);
                 params.bottomMargin = dp(8);
-                list.addView(card, params);
-                itemViews.push(card);
+                list.addView(wrapper, params);
+                cardContainers.push(wrapper);
+                itemViews.push(contentCard);
+                reorderViews.push(reorderView);
                 detailViews.push(detailView);
                 tagViews.push(tagView);
                 pinViews.push(pinView);
@@ -956,8 +1165,7 @@
 
     function renderRows(rows) {
         return ClipHub.Window.runOnMain(function () {
-            var view = buildContent(rows);
-            ClipHub.Window.setContentView(view);
+            ClipHub.Window.setContentView(buildContent(rows));
             return true;
         }, 3000);
     }
@@ -1025,6 +1233,26 @@
         return { ok: true, visible: true, open: openResult, state: getState() };
     }
 
+    function currentManualOrders() {
+        var output = [];
+        var index;
+        for (index = 0; index < items.length; index += 1) {
+            output.push({ id: Number(items[index].id),
+                pinned: Number(items[index].is_pinned || 0) === 1,
+                manualOrder: Number(items[index].manual_order || 0) });
+        }
+        return output;
+    }
+
+    function countPresent(values) {
+        var count = 0;
+        var index;
+        for (index = 0; index < values.length; index += 1) {
+            if (values[index] !== null && values[index] !== undefined) { count += 1; }
+        }
+        return count;
+    }
+
     function getState() {
         var ids = [];
         var index;
@@ -1037,6 +1265,7 @@
             visible: visible,
             itemCount: items.length,
             itemIds: ids,
+            manualOrders: currentManualOrders(),
             renderedCount: Number(state.renderedCount),
             emptyVisible: state.emptyVisible,
             refreshCount: Number(state.refreshCount),
@@ -1053,6 +1282,15 @@
             detailCloseCount: Number(state.detailCloseCount),
             detailCopyCount: Number(state.detailCopyCount),
             detailEditCount: Number(state.detailEditCount),
+            reorderCount: Number(state.reorderCount),
+            reorderRejectCount: Number(state.reorderRejectCount),
+            reorderDragStartCount: Number(state.reorderDragStartCount),
+            reorderDragMoveCount: Number(state.reorderDragMoveCount),
+            reorderDragCommitCount: Number(state.reorderDragCommitCount),
+            reorderSyntheticCount: Number(state.reorderSyntheticCount),
+            reorderEnabled: reorderEnabled(),
+            reorderHandleCount: countPresent(reorderViews),
+            reorderDragActive: reorderDrag.active,
             longItemCount: Number(state.longItemCount),
             lastCopiedId: state.lastCopiedId,
             lastDeletedId: state.lastDeletedId,
@@ -1061,6 +1299,11 @@
             lastPinnedValue: state.lastPinnedValue,
             lastTagItemId: state.lastTagItemId,
             lastDetailItemId: state.lastDetailItemId,
+            lastReorderItemId: state.lastReorderItemId,
+            lastReorderTargetId: state.lastReorderTargetId,
+            lastReorderPinned: state.lastReorderPinned,
+            lastReorderPlaceAfter: state.lastReorderPlaceAfter,
+            lastReorderReason: state.lastReorderReason,
             lastCopyOk: state.lastCopyOk,
             undoAvailable: lastDeleted !== null,
             addButtonPresent: addView !== null,
@@ -1082,6 +1325,7 @@
             tagThreadName: state.tagThreadName,
             filterThreadName: state.filterThreadName,
             detailActionThreadName: state.detailActionThreadName,
+            reorderThreadName: state.reorderThreadName,
             renderThreadName: state.renderThreadName,
             detail: getDetailState(),
             lastError: state.lastError,
@@ -1114,6 +1358,12 @@
         state.detailCloseCount = 0;
         state.detailCopyCount = 0;
         state.detailEditCount = 0;
+        state.reorderCount = 0;
+        state.reorderRejectCount = 0;
+        state.reorderDragStartCount = 0;
+        state.reorderDragMoveCount = 0;
+        state.reorderDragCommitCount = 0;
+        state.reorderSyntheticCount = 0;
         state.longItemCount = 0;
         state.renderedTagLabelCount = 0;
         state.renderedSensitiveMaskCount = 0;
@@ -1130,9 +1380,47 @@
         }, 2500);
     }
 
+    function performHandleDrag(fromIndex, toIndex) {
+        return ClipHub.Window.runOnMain(function () {
+            var view;
+            var downTime;
+            var event;
+            var x;
+            var y;
+            var okDown;
+            var okMove;
+            var okUp;
+            fromIndex = Math.floor(Number(fromIndex));
+            toIndex = Math.floor(Number(toIndex));
+            if (fromIndex < 0 || fromIndex >= reorderViews.length ||
+                    reorderViews[fromIndex] === null || toIndex < 0 ||
+                    toIndex >= items.length) { return false; }
+            view = reorderViews[fromIndex];
+            reorderDrag.syntheticTargetIndex = toIndex;
+            state.reorderSyntheticCount += 1;
+            downTime = ClipHub.Base.now();
+            x = Math.max(1, Number(view.getWidth()) / 2);
+            y = Math.max(1, Number(view.getHeight()) / 2);
+            event = MotionEvent.obtain(downTime, downTime,
+                MotionEvent.ACTION_DOWN, x, y, 0);
+            okDown = view.dispatchTouchEvent(event);
+            event.recycle();
+            event = MotionEvent.obtain(downTime, downTime + 20,
+                MotionEvent.ACTION_MOVE, x, y + touchSlop + dp(8), 0);
+            okMove = view.dispatchTouchEvent(event);
+            event.recycle();
+            event = MotionEvent.obtain(downTime, downTime + 40,
+                MotionEvent.ACTION_UP, x, y + touchSlop + dp(8), 0);
+            okUp = view.dispatchTouchEvent(event);
+            event.recycle();
+            reorderDrag.syntheticTargetIndex = null;
+            return okDown && okMove && okUp;
+        }, 3500);
+    }
+
     ClipHub.List = {
         MODULE_NAME: "ch_09_list",
-        MODULE_VERSION: 7,
+        MODULE_VERSION: 8,
         LONG_TEXT_THRESHOLD: LONG_TEXT_THRESHOLD,
         init: function (context) {
             androidContext = context && context.androidContext ?
@@ -1145,15 +1433,20 @@
             if (detailWindowManager === null) {
                 throw new Error("WindowManager unavailable for detail");
             }
-            density = Number(androidContext.getResources()
-                .getDisplayMetrics().density || 1);
+            density = Number(androidContext.getResources().getDisplayMetrics().density || 1);
+            try {
+                touchSlop = Number(ViewConfiguration.get(androidContext)
+                    .getScaledTouchSlop());
+            } catch (ignoredSlop) { touchSlop = dp(8); }
             items = [];
             itemViews = [];
+            cardContainers = [];
             deleteViews = [];
             editViews = [];
             pinViews = [];
             tagViews = [];
             detailViews = [];
+            reorderViews = [];
             undoView = null;
             filterView = null;
             addView = null;
@@ -1163,6 +1456,10 @@
             detailRoot = null;
             detailParams = null;
             detailRow = null;
+            reorderDrag.active = false;
+            reorderDrag.sourceIndex = -1;
+            reorderDrag.targetIndex = -1;
+            reorderDrag.syntheticTargetIndex = null;
             resetState();
             bindEvent("clipboard_added");
             bindEvent("clipboard_merged");
@@ -1200,6 +1497,12 @@
         performPinClick: function (index) { return performViewClick(pinViews, index); },
         performTagClick: function (index) { return performViewClick(tagViews, index); },
         performDetailClick: function (index) { return performViewClick(detailViews, index); },
+        performReorder: function (fromIndex, toIndex) {
+            return ClipHub.Window.runOnMain(function () {
+                return commitReorder(fromIndex, toIndex, "api");
+            }, 3000);
+        },
+        performReorderHandleDrag: performHandleDrag,
         performDetailCopyClick: function () {
             return ClipHub.Window.runOnMain(function () {
                 return detailCopyView !== null ? detailCopyView.performClick() : false;
@@ -1248,14 +1551,17 @@
         getState: getState,
         shutdown: function () {
             try { closeDetail("shutdown"); } catch (ignoredDetail) {}
+            resetReorderVisuals();
             unbindEvents();
             items = [];
             itemViews = [];
+            cardContainers = [];
             deleteViews = [];
             editViews = [];
             pinViews = [];
             tagViews = [];
             detailViews = [];
+            reorderViews = [];
             undoView = null;
             filterView = null;
             addView = null;
