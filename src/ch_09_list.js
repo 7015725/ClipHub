@@ -24,6 +24,7 @@
     var itemViews = [];
     var deleteViews = [];
     var undoView = null;
+    var filterView = null;
     var lastDeleted = null;
     var addedListener = null;
     var mergedListener = null;
@@ -37,6 +38,7 @@
         copyCount: 0,
         deleteCount: 0,
         restoreCount: 0,
+        filterOpenCount: 0,
         lastCopiedId: null,
         lastDeletedId: null,
         lastRestoredId: null,
@@ -47,6 +49,8 @@
         deleteThreadName: null,
         restoreThreadId: null,
         restoreThreadName: null,
+        filterThreadId: null,
+        filterThreadName: null,
         renderThreadId: null,
         renderThreadName: null,
         lastError: null
@@ -106,26 +110,31 @@
         );
     }
 
-    function actionBackground(dark, danger) {
+    function actionBackground(dark, danger, selected) {
+        if (selected) {
+            return roundedBackground(
+                dark ? "#FF364A61" : "#FFE4EEF9",
+                dark ? "#667DB4E8" : "#55719BC6",
+                9
+            );
+        }
         return roundedBackground(
-            danger
-                ? (dark ? "#2EF87171" : "#18DC2626")
-                : (dark ? "#22FFFFFF" : "#10000000"),
-            danger
-                ? (dark ? "#55F87171" : "#35DC2626")
-                : (dark ? "#25FFFFFF" : "#16000000"),
+            danger ? (dark ? "#2EF87171" : "#18DC2626") :
+                (dark ? "#22FFFFFF" : "#10000000"),
+            danger ? (dark ? "#55F87171" : "#35DC2626") :
+                (dark ? "#25FFFFFF" : "#16000000"),
             9
         );
     }
 
-    function makeAction(text, dark, danger) {
-        var color = danger
-            ? (dark ? "#FFFFA3A3" : "#FFB91C1C")
-            : (dark ? "#FFE4E4E7" : "#FF3F3F46");
+    function makeAction(text, dark, danger, selected) {
+        var color = danger ? (dark ? "#FFFFA3A3" : "#FFB91C1C") :
+            (selected ? (dark ? "#FFDCEEFF" : "#FF275A8A") :
+                (dark ? "#FFE4E4E7" : "#FF3F3F46"));
         var view = makeText(text, 12, color, true);
         view.setGravity(Gravity.CENTER);
         view.setPadding(dp(11), dp(6), dp(11), dp(6));
-        view.setBackground(actionBackground(dark, danger));
+        view.setBackground(actionBackground(dark, danger, selected));
         view.setClickable(true);
         view.setFocusable(true);
         return view;
@@ -144,6 +153,40 @@
         var time = formatTime(row.last_copied_at);
         return String(source) + (copied > 1 ? "  ·  " + copied + " 次" : "") +
             (time ? "  ·  " + time : "");
+    }
+
+    function filterState() {
+        try {
+            if (ClipHub.Filter && typeof ClipHub.Filter.getState === "function") {
+                return ClipHub.Filter.getState();
+            }
+        } catch (ignored) {}
+        return {
+            active: false,
+            criteria: {
+                keyword: "", sourcePackages: [], contentTypes: [],
+                pinnedOnly: false, sensitiveMode: "all"
+            }
+        };
+    }
+
+    function filterSummary() {
+        var current = filterState();
+        var criteria = current.criteria || {};
+        var parts = [];
+        if (String(criteria.keyword || "").length > 0) {
+            parts.push("关键词：" + String(criteria.keyword));
+        }
+        if (criteria.sourcePackages && criteria.sourcePackages.length > 0) {
+            parts.push("来源 " + criteria.sourcePackages.length);
+        }
+        if (criteria.contentTypes && criteria.contentTypes.length > 0) {
+            parts.push("类型 " + criteria.contentTypes.length);
+        }
+        if (criteria.pinnedOnly === true) { parts.push("仅置顶"); }
+        if (String(criteria.sensitiveMode || "all") === "only") { parts.push("仅敏感"); }
+        if (String(criteria.sensitiveMode || "all") === "exclude") { parts.push("隐藏敏感"); }
+        return parts.join("  ·  ");
     }
 
     function emit(name, payload) {
@@ -248,6 +291,23 @@
         }
     }
 
+    function openFilterPanel() {
+        var thread = Thread.currentThread();
+        try {
+            if (!ClipHub.Filter || typeof ClipHub.Filter.showPanel !== "function") {
+                throw new Error("ClipHub filter panel is unavailable");
+            }
+            state.filterOpenCount += 1;
+            state.filterThreadId = Number(thread.getId());
+            state.filterThreadName = String(thread.getName());
+            ClipHub.Filter.showPanel({ requestKeyboard: true });
+            return true;
+        } catch (error) {
+            state.lastError = String(error);
+            return false;
+        }
+    }
+
     function clickListener(row) {
         return new JavaAdapter(View.OnClickListener, {
             onClick: function () { copyRow(row); }
@@ -271,7 +331,10 @@
         var primary = dark ? "#FFF4F4F5" : "#FF171717";
         var secondary = dark ? "#FFB4B4BC" : "#FF66666F";
         var outer = new LinearLayout(androidContext);
+        var headerRow;
         var header;
+        var summary;
+        var active = filterState().active === true;
         var undoBar;
         var undoText;
         var scroll;
@@ -288,12 +351,37 @@
         var thread = Thread.currentThread();
 
         outer.setOrientation(LinearLayout.VERTICAL);
-        header = makeText(rows.length > 0 ? "最近记录  " + rows.length : "剪贴板历史", 13,
-            secondary, false);
-        header.setPadding(dp(2), 0, dp(2), dp(8));
-        outer.addView(header, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
+        headerRow = new LinearLayout(androidContext);
+        headerRow.setOrientation(LinearLayout.HORIZONTAL);
+        headerRow.setGravity(Gravity.CENTER_VERTICAL);
+        header = makeText(active ? "筛选结果  " + rows.length :
+            (rows.length > 0 ? "最近记录  " + rows.length : "剪贴板历史"),
+            13, secondary, false);
+        headerRow.addView(header, new LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        filterView = makeAction(active ? "筛选中" : "筛选", dark, false, active);
+        filterView.setContentDescription("打开搜索与筛选");
+        filterView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
+            onClick: function () { openFilterPanel(); }
+        }));
+        headerRow.addView(filterView, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
             LinearLayout.LayoutParams.WRAP_CONTENT));
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.bottomMargin = dp(8);
+        outer.addView(headerRow, params);
+
+        if (active) {
+            summary = makeText(filterSummary(), 11, secondary, false);
+            summary.setSingleLine(true);
+            summary.setEllipsize(TextUtils.TruncateAt.END);
+            summary.setPadding(dp(2), 0, dp(2), dp(8));
+            outer.addView(summary, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        }
 
         undoView = null;
         if (lastDeleted !== null) {
@@ -303,13 +391,11 @@
             undoBar.setPadding(dp(10), dp(8), dp(8), dp(8));
             undoBar.setBackground(roundedBackground(
                 dark ? "#FF20242A" : "#FFF7F7F8",
-                dark ? "#24FFFFFF" : "#12000000",
-                11
-            ));
+                dark ? "#24FFFFFF" : "#12000000", 11));
             undoText = makeText("已删除 1 条记录", 12, secondary, false);
             undoBar.addView(undoText, new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-            undoView = makeAction("撤销", dark, false);
+            undoView = makeAction("撤销", dark, false, false);
             undoView.setContentDescription("撤销最近一次删除");
             undoView.setOnClickListener(undoListener());
             undoBar.addView(undoView, new LinearLayout.LayoutParams(
@@ -337,8 +423,10 @@
         deleteViews = [];
         if (rows.length === 0) {
             state.emptyVisible = true;
-            preview = makeText("暂无剪贴板记录\n复制文本后会显示在这里", 14,
-                secondary, false);
+            preview = makeText(active ?
+                "没有匹配的记录\n调整筛选条件后重试" :
+                "暂无剪贴板记录\n复制文本后会显示在这里",
+                14, secondary, false);
             preview.setGravity(Gravity.CENTER);
             preview.setLineSpacing(0, 1.18);
             preview.setPadding(dp(12), dp(40), dp(12), dp(40));
@@ -357,8 +445,8 @@
                 card.setFocusable(true);
                 card.setContentDescription("复制第 " + (index + 1) + " 条剪贴板记录");
 
-                preview = makeText(Number(row.is_sensitive || 0) === 1
-                    ? "敏感内容" : String(row.content), 14, primary, false);
+                preview = makeText(Number(row.is_sensitive || 0) === 1 ?
+                    "敏感内容" : String(row.content), 14, primary, false);
                 preview.setMaxLines(3);
                 preview.setEllipsize(TextUtils.TruncateAt.END);
                 preview.setLineSpacing(0, 1.12);
@@ -378,8 +466,9 @@
                 metaParams.rightMargin = dp(8);
                 actionRow.addView(meta, metaParams);
 
-                deleteView = makeAction("删除", dark, true);
-                deleteView.setContentDescription("删除第 " + (index + 1) + " 条剪贴板记录");
+                deleteView = makeAction("删除", dark, true, false);
+                deleteView.setContentDescription(
+                    "删除第 " + (index + 1) + " 条剪贴板记录");
                 deleteView.setOnClickListener(deleteListener(row));
                 actionRow.addView(deleteView, new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -408,7 +497,9 @@
         var output = [];
         var index;
         rows = rows || [];
-        for (index = 0; index < rows.length; index += 1) { output.push(rows[index]); }
+        for (index = 0; index < rows.length; index += 1) {
+            output.push(rows[index]);
+        }
         return output;
     }
 
@@ -420,9 +511,18 @@
         }, 3000);
     }
 
+    function queryCurrentRows() {
+        if (ClipHub.Filter && typeof ClipHub.Filter.isActive === "function" &&
+                ClipHub.Filter.isActive() &&
+                typeof ClipHub.Filter.query === "function") {
+            return ClipHub.Filter.query({ limit: limit, offset: 0 });
+        }
+        return ClipHub.Repository.listItems({ limit: limit, offset: 0 });
+    }
+
     function refresh(fromEvent) {
         if (!ready) { throw new Error("ClipHub list is not ready"); }
-        items = ClipHub.Repository.listItems({ limit: limit, offset: 0 });
+        items = queryCurrentRows();
         state.refreshCount += 1;
         if (fromEvent === true) { state.eventRefreshCount += 1; }
         if (visible && ClipHub.Window && ClipHub.Window.isAttached()) {
@@ -431,10 +531,24 @@
         return items.length;
     }
 
+    function onRepositoryEvent() {
+        if (!visible) { return; }
+        try {
+            if (ClipHub.Filter && typeof ClipHub.Filter.isActive === "function" &&
+                    ClipHub.Filter.isActive()) {
+                return;
+            }
+            refresh(true);
+        } catch (error) {
+            state.lastError = String(error);
+        }
+    }
+
     function show(options) {
         var openResult;
         options = options || {};
-        limit = Math.max(1, Math.min(100, Math.floor(Number(options.limit || limit))));
+        limit = Math.max(1, Math.min(100,
+            Math.floor(Number(options.limit || limit))));
         if (!ClipHub.Window || typeof ClipHub.Window.open !== "function") {
             throw new Error("ClipHub window is unavailable");
         }
@@ -456,6 +570,7 @@
     function getState() {
         var ids = [];
         var index;
+        var currentFilter = filterState();
         for (index = 0; index < items.length; index += 1) {
             ids.push(Number(items[index].id));
         }
@@ -471,17 +586,23 @@
             copyCount: Number(state.copyCount),
             deleteCount: Number(state.deleteCount),
             restoreCount: Number(state.restoreCount),
+            filterOpenCount: Number(state.filterOpenCount),
             lastCopiedId: state.lastCopiedId,
             lastDeletedId: state.lastDeletedId,
             lastRestoredId: state.lastRestoredId,
             lastCopyOk: state.lastCopyOk,
             undoAvailable: lastDeleted !== null,
+            filterButtonPresent: filterView !== null,
+            filterActive: currentFilter.active === true,
+            filterSummary: filterSummary(),
             clickThreadId: state.clickThreadId,
             clickThreadName: state.clickThreadName,
             deleteThreadId: state.deleteThreadId,
             deleteThreadName: state.deleteThreadName,
             restoreThreadId: state.restoreThreadId,
             restoreThreadName: state.restoreThreadName,
+            filterThreadId: state.filterThreadId,
+            filterThreadName: state.filterThreadName,
             renderThreadId: state.renderThreadId,
             renderThreadName: state.renderThreadName,
             lastError: state.lastError,
@@ -497,6 +618,7 @@
         state.copyCount = 0;
         state.deleteCount = 0;
         state.restoreCount = 0;
+        state.filterOpenCount = 0;
         state.lastCopiedId = null;
         state.lastDeletedId = null;
         state.lastRestoredId = null;
@@ -507,6 +629,8 @@
         state.deleteThreadName = null;
         state.restoreThreadId = null;
         state.restoreThreadName = null;
+        state.filterThreadId = null;
+        state.filterThreadName = null;
         state.renderThreadId = null;
         state.renderThreadName = null;
         state.lastError = null;
@@ -514,30 +638,28 @@
 
     ClipHub.List = {
         MODULE_NAME: "ch_09_list",
-        MODULE_VERSION: 3,
+        MODULE_VERSION: 4,
         init: function (context) {
-            androidContext = context && context.androidContext
-                ? context.androidContext : global.context;
+            androidContext = context && context.androidContext ?
+                context.androidContext : global.context;
             if (androidContext === null || androidContext === undefined) {
                 throw new Error("Android context unavailable for list");
             }
             androidContext = androidContext.getApplicationContext() || androidContext;
-            density = Number(androidContext.getResources().getDisplayMetrics().density || 1);
+            density = Number(androidContext.getResources()
+                .getDisplayMetrics().density || 1);
             items = [];
             itemViews = [];
             deleteViews = [];
             undoView = null;
+            filterView = null;
             lastDeleted = null;
             visible = false;
             resetState();
-            addedListener = function () {
-                if (visible) {
-                    try { refresh(true); } catch (error) { state.lastError = String(error); }
-                }
-            };
-            mergedListener = addedListener;
-            deletedListener = addedListener;
-            restoredListener = addedListener;
+            addedListener = onRepositoryEvent;
+            mergedListener = onRepositoryEvent;
+            deletedListener = onRepositoryEvent;
+            restoredListener = onRepositoryEvent;
             if (ClipHub.EventBus) {
                 ClipHub.EventBus.on("clipboard_added", addedListener);
                 ClipHub.EventBus.on("clipboard_merged", mergedListener);
@@ -551,7 +673,9 @@
         refresh: function () { return refresh(false); },
         hide: function (closeWindow) {
             visible = false;
-            if (closeWindow !== false && ClipHub.Window) { ClipHub.Window.close(); }
+            if (closeWindow !== false && ClipHub.Window) {
+                ClipHub.Window.close();
+            }
             return true;
         },
         setItems: function (value) {
@@ -587,6 +711,11 @@
                 return undoView !== null ? undoView.performClick() : false;
             }, 2500);
         },
+        performFilterClick: function () {
+            return ClipHub.Window.runOnMain(function () {
+                return filterView !== null ? filterView.performClick() : false;
+            }, 2500);
+        },
         deleteItem: function (id) {
             var row = ClipHub.Repository.getItem(Number(id), false);
             return row === null || row === undefined ? false : deleteRow(row);
@@ -616,6 +745,7 @@
             itemViews = [];
             deleteViews = [];
             undoView = null;
+            filterView = null;
             lastDeleted = null;
             visible = false;
             ready = false;
