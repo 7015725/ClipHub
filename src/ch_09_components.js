@@ -52,7 +52,6 @@
         var imageLp = new android.widget.FrameLayout.LayoutParams(base.dp(iconSizeDp), base.dp(iconSizeDp));
         imageLp.gravity = android.view.Gravity.CENTER;
         root.addView(image, imageLp);
-        root._cliphubIconView = image;
         root.setOnClickListener(base.makeClickListener(onClick));
         return root;
     };
