@@ -292,8 +292,8 @@
             boot = loadAndStart(root, modules, isolated);
             result.firstStart = boot;
             settings = global.ClipHub.Settings.getAll();
-            result.defaultsLoaded = settings.historyLimit === 500 &&
-                settings.autoCleanupDays === 30 &&
+            result.defaultsLoaded = settings.historyLimit === 0 &&
+                settings.autoCleanupDays === 0 &&
                 settings.sensitivePolicy === "skip" &&
                 settings.sourceEnabled === true &&
                 settings.ignorePackages.length === 0;
