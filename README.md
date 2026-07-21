@@ -6,11 +6,11 @@
 
 ## 项目状态
 
-当前处于**需求整理与架构设计阶段**，尚无可用发行版本。
+当前处于**项目骨架与数据基础层验证阶段**，尚无可用发行版本。
 
 - 项目名称：`ClipHub`
 - 中文名称：全局剪贴板
-- 计划仓库：`7015725/ClipHub`
+- 仓库：`7015725/ClipHub`
 - 默认分支：`main`
 - 主要运行环境：Android 14 / ShortX / Rhino ES5
 - 数据策略：本地优先
@@ -127,6 +127,29 @@ SQLite
 - 不假设 WebView 可用；
 - UI、数据库和监听器必须显式管理生命周期。
 
+## 当前进度
+
+已完成：
+
+- 单入口与 15 个本地 JavaScript 子模块骨架；
+- 统一命名空间和模块生命周期；
+- 文件锁单实例保护；
+- 运行目录、eval 作用域和双任务文件锁真机探测；
+- SQLite schema v1、迁移框架、参数绑定和显式事务封装；
+- Repository 基础 CRUD、软删除、恢复和标签关联接口。
+
+正在验证：
+
+- Android 原生 SQLite 提交、回滚、foreign key 和重开行为；
+- 真实模块加载和 Repository 真机 CRUD。
+
+尚未实现：
+
+- ClipboardManager 实际监听；
+- 来源应用探测；
+- 悬浮窗 UI；
+- 完整搜索、过滤和翻译链路。
+
 ## 初步交互结构
 
 ```text
@@ -145,7 +168,7 @@ SQLite
 └────────────────────────────────────┘
 ```
 
-## 计划目录
+## 项目目录
 
 ```text
 ClipHub/
@@ -157,8 +180,15 @@ ClipHub/
 │   ├── 交互规范.md
 │   ├── 开发计划.md
 │   ├── 模块规范.md
+│   ├── 真机探测说明.md
+│   ├── SQLite探测说明.md
+│   ├── probe-results/
 │   └── images/
 │       └── cliphub-ui-concept.png
+├── probes/
+│   ├── cliphub_runtime_probe_001.js
+│   ├── cliphub_lock_probe_002.js
+│   └── cliphub_database_probe_003.js
 ├── src/
 │   ├── ch_01_base.js
 │   ├── ch_02_log.js
@@ -183,7 +213,7 @@ ClipHub/
 
 ## 数据模型概览
 
-核心数据表计划包括：
+核心数据表包括：
 
 - `clipboard_items`：剪贴板记录；
 - `tags`：自定义标签；
@@ -223,6 +253,8 @@ ClipHub/
 - [交互规范](docs/交互规范.md)
 - [开发计划](docs/开发计划.md)
 - [模块规范](docs/模块规范.md)
+- [真机探测说明](docs/真机探测说明.md)
+- [SQLite 探测说明](docs/SQLite探测说明.md)
 
 ## 分支建议
 
