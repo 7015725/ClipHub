@@ -186,9 +186,10 @@
         var alphaValue = 255;
         var colorFilterValue = null;
 
-        return new JavaAdapter(android.graphics.drawable.Drawable, {
+        var drawableRef = null;
+        drawableRef = new JavaAdapter(android.graphics.drawable.Drawable, {
             draw: function (canvas) {
-                var bounds = this.getBounds();
+                var bounds = drawableRef.getBounds();
                 var width = bounds.width();
                 var height = bounds.height();
                 if (width <= 0 || height <= 0) return;
@@ -221,11 +222,11 @@
             },
             setAlpha: function (alpha) {
                 alphaValue = Number(alpha);
-                this.invalidateSelf();
+                drawableRef.invalidateSelf();
             },
             setColorFilter: function (colorFilter) {
                 colorFilterValue = colorFilter;
-                this.invalidateSelf();
+                drawableRef.invalidateSelf();
             },
             getOpacity: function () {
                 return android.graphics.PixelFormat.TRANSLUCENT;
@@ -237,6 +238,7 @@
                 return intrinsicSize;
             }
         });
+        return drawableRef;
     };
 
     CH.icons = icons;
