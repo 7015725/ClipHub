@@ -2,6 +2,17 @@
     var ClipHub = global.ClipHub || (global.ClipHub = {});
     var RAF = Packages.java.io.RandomAccessFile;
     var File = Packages.java.io.File;
+    var FOS = Packages.java.io.FileOutputStream;
+    var JavaString = Packages.java.lang.String;
+    var Thread = Packages.java.lang.Thread;
+    var CountDownLatch = Packages.java.util.concurrent.CountDownLatch;
+    var TimeUnit = Packages.java.util.concurrent.TimeUnit;
+    var Build = Packages.android.os.Build;
+    var Looper = Packages.android.os.Looper;
+    var Handler = Packages.android.os.Handler;
+    var AndroidContext = Packages.android.content.Context;
+    var IntentFilter = Packages.android.content.IntentFilter;
+    var CONTROL_ACTION = "com.cliphub.runtime.CONTROL";
     var order = [
         "Log", "Database", "Classifier", "Repository",
         "EventBus", "Theme", "Clipboard", "Window", "List",
@@ -13,8 +24,88 @@
         initialized: [],
         lockFile: null,
         lockChannel: null,
-        lockHandle: null
+        lockHandle: null,
+        controlContext: null,
+        controlReceiver: null
     };
+
+    function closeQuietly(value) {
+        if (value !== null && value !== undefined) {
+            try { value.close(); } catch (ignored) {}
+        }
+    }
+
+    function errorText(error) {
+        try {
+            if (error && error.javaException) {
+                return String(error.javaException.getClass().getName()) +
+                    ": " + String(error);
+            }
+        } catch (ignored) {}
+        return String(error);
+    }
+
+    function runOnMainSync(fn, timeoutMs) {
+        var mainLooper = Looper.getMainLooper();
+        var currentLooper = Looper.myLooper();
+        var box;
+        var latch;
+        var handler;
+        var task;
+        var posted;
+        var done;
+        if (mainLooper !== null && currentLooper !== null &&
+                currentLooper === mainLooper) {
+            return { ok: true, value: fn(), direct: true };
+        }
+        box = { ok: false, value: null, error: null };
+        latch = new CountDownLatch(1);
+        handler = new Handler(mainLooper);
+        task = new Packages.java.lang.Runnable({
+            run: function () {
+                try {
+                    box.value = fn();
+                    box.ok = true;
+                } catch (error) {
+                    box.error = error;
+                } finally {
+                    latch.countDown();
+                }
+            }
+        });
+        posted = handler.post(task);
+        if (!posted) {
+            return { ok: false, error: new Error("Main handler post failed") };
+        }
+        done = latch.await(Number(timeoutMs || 2000), TimeUnit.MILLISECONDS);
+        if (!done) {
+            try { handler.removeCallbacks(task); } catch (ignored) {}
+            return { ok: false, error: new Error("Main handler timeout") };
+        }
+        return box;
+    }
+
+    function writeControlAck(runtimeDir, requestId, payload) {
+        var safeId = String(requestId || "").replace(/[^A-Za-z0-9._-]/g, "_");
+        var cacheDir;
+        var file;
+        var stream = null;
+        if (!safeId) { return false; }
+        cacheDir = ClipHub.Base.ensureDir(
+            ClipHub.Base.joinPath(runtimeDir, "cache")
+        );
+        file = new File(cacheDir, "control_ack_" + safeId + ".json");
+        try {
+            stream = new FOS(file, false);
+            stream.write(new JavaString(
+                JSON.stringify(payload, null, 2) + "\n"
+            ).getBytes("UTF-8"));
+            stream.flush();
+            return true;
+        } finally {
+            closeQuietly(stream);
+        }
+    }
 
     function releaseLock() {
         if (state.lockHandle !== null) {
@@ -50,7 +141,6 @@
             ClipHub.Base.joinPath(context.runtimeDir, "data")
         );
         var errorName;
-
         try {
             state.lockFile = new RAF(new File(dir, "cliphub.lock"), "rw");
             state.lockChannel = state.lockFile.getChannel();
@@ -64,46 +154,129 @@
             }
             throw error;
         }
-
         if (state.lockHandle === null) {
             releaseLock();
             throw new Error("ClipHub is already running");
         }
     }
 
+    function unregisterControlReceiver() {
+        var appContext = state.controlContext;
+        var receiver = state.controlReceiver;
+        var result;
+        state.controlContext = null;
+        state.controlReceiver = null;
+        if (appContext === null || receiver === null) { return true; }
+        result = runOnMainSync(function () {
+            try { appContext.unregisterReceiver(receiver); }
+            catch (ignored) {}
+            return true;
+        }, 2000);
+        return result.ok === true;
+    }
+
+    function registerControlReceiver(context) {
+        var androidContext = context && context.androidContext
+            ? context.androidContext : global.context;
+        var appContext;
+        var receiver;
+        var filter;
+        var result;
+        if (androidContext === null || androidContext === undefined) {
+            throw new Error("Android context unavailable for control receiver");
+        }
+        appContext = androidContext.getApplicationContext();
+        if (appContext === null) { appContext = androidContext; }
+        receiver = new JavaAdapter(Packages.android.content.BroadcastReceiver, {
+            onReceive: function (receiverContext, intent) {
+                var target;
+                var command;
+                var requestId;
+                var runtimeDir;
+                var response;
+                try {
+                    target = intent === null ? null :
+                        intent.getStringExtra("runtimeDir");
+                    command = intent === null ? null :
+                        intent.getStringExtra("command");
+                    requestId = intent === null ? null :
+                        intent.getStringExtra("requestId");
+                    runtimeDir = state.context === null ? "" :
+                        String(state.context.runtimeDir);
+                    if (String(target || "") !== runtimeDir ||
+                            String(command || "") !== "stop") {
+                        return;
+                    }
+                    response = ClipHub.App.stop("broadcast");
+                    writeControlAck(runtimeDir, requestId, {
+                        ok: true,
+                        stopped: response.stopped === true,
+                        runtimeDir: runtimeDir,
+                        threadId: Number(Thread.currentThread().getId()),
+                        threadName: String(Thread.currentThread().getName())
+                    });
+                } catch (error) {
+                    try {
+                        writeControlAck(
+                            state.context === null ? "" :
+                                String(state.context.runtimeDir),
+                            requestId,
+                            {
+                                ok: false,
+                                stopped: false,
+                                error: errorText(error)
+                            }
+                        );
+                    } catch (ignored) {}
+                }
+            }
+        });
+        filter = new IntentFilter(CONTROL_ACTION);
+        result = runOnMainSync(function () {
+            if (Build.VERSION.SDK_INT >= 33) {
+                appContext.registerReceiver(
+                    receiver,
+                    filter,
+                    AndroidContext.RECEIVER_NOT_EXPORTED
+                );
+            } else {
+                appContext.registerReceiver(receiver, filter);
+            }
+            return true;
+        }, 2000);
+        if (!result.ok) {
+            throw result.error || new Error("Control receiver registration failed");
+        }
+        state.controlContext = appContext;
+        state.controlReceiver = receiver;
+        return true;
+    }
+
     ClipHub.App = {
         MODULE_NAME: "ch_15_app",
-        MODULE_VERSION: 2,
+        MODULE_VERSION: 3,
+        CONTROL_ACTION: CONTROL_ACTION,
         start: function (context) {
             var index;
             var item;
-            var initializedModuleCount;
-            var moduleFileCount;
             if (state.started) {
-                return {
-                    ok: true,
-                    started: true,
-                    reused: true,
-                    initializedModuleCount: state.initialized.length,
-                    moduleFileCount: order.length + 2
-                };
+                return { ok: true, started: true, reused: true };
             }
             state.context = context;
             try {
                 ClipHub.Base.init(context);
                 state.initialized.push(ClipHub.Base);
                 acquireLock(context);
-
+                registerControlReceiver(context);
                 for (index = 0; index < order.length; index += 1) {
                     item = ClipHub[order[index]];
-                    if (!item) { throw new Error("Missing module: " + order[index]); }
+                    if (!item) {
+                        throw new Error("Missing module: " + order[index]);
+                    }
                     if (typeof item.init === "function") { item.init(context); }
                     state.initialized.push(item);
                 }
-
                 state.started = true;
-                initializedModuleCount = state.initialized.length;
-                moduleFileCount = order.length + 2;
                 ClipHub.Log.info("application skeleton started");
                 return {
                     ok: true,
@@ -112,25 +285,35 @@
                     status: "skeleton_ready",
                     runtimeDir: context.runtimeDir,
                     databasePath: ClipHub.Database.getPath(),
-                    initializedModuleCount: initializedModuleCount,
-                    moduleFileCount: moduleFileCount,
-                    moduleCount: initializedModuleCount
+                    initializedModuleCount: order.length + 1,
+                    moduleFileCount: order.length + 2,
+                    moduleCount: order.length + 1,
+                    controlAction: CONTROL_ACTION
                 };
             } catch (error) {
                 shutdownModules();
+                unregisterControlReceiver();
                 releaseLock();
                 state.context = null;
                 state.started = false;
                 throw error;
             }
         },
-        stop: function () {
+        stop: function (reason) {
+            var wasStarted = state.started;
+            unregisterControlReceiver();
             shutdownModules();
             releaseLock();
             state.context = null;
             state.started = false;
-            return { ok: true, stopped: true };
+            return {
+                ok: true,
+                stopped: true,
+                wasStarted: wasStarted,
+                reason: String(reason || "direct")
+            };
         },
-        isStarted: function () { return state.started; }
+        isStarted: function () { return state.started; },
+        getControlAction: function () { return CONTROL_ACTION; }
     };
 }((function () { return this; }())));
