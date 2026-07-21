@@ -45,6 +45,10 @@
         return text;
     }
 
+    function isExpectedLockConflict(text) {
+        return String(text).indexOf("OverlappingFileLockException") >= 0;
+    }
+
     function ensureDir(dir) {
         if (!dir.exists() && !dir.mkdirs() && !dir.isDirectory()) {
             throw new Error("Cannot create directory: " + dir.getAbsolutePath());
@@ -99,10 +103,11 @@
         var raf = null;
         var channel = null;
         var lock = null;
+        var lockErrorText;
         var result = {
             ok: false,
             probe: "cliphub_lock_probe_002",
-            probeVersion: 1,
+            probeVersion: 2,
             startedAt: startedAt,
             finishedAt: null,
             durationMs: null,
@@ -113,6 +118,8 @@
             role: null,
             acquired: false,
             blocked: false,
+            blockMode: null,
+            lockDetail: null,
             holdMs: HOLD_MS,
             lockFilePath: null,
             outputPath: null,
@@ -141,18 +148,26 @@
             try {
                 lock = channel.tryLock();
             } catch (lockError) {
+                lockErrorText = errorText(lockError);
+                if (!isExpectedLockConflict(lockErrorText)) {
+                    throw lockError;
+                }
                 result.blocked = true;
                 result.role = "contender";
-                result.error = errorText(lockError);
+                result.blockMode = "overlapping_exception";
+                result.lockDetail = lockErrorText;
+                result.ok = true;
             }
 
-            if (lock === null) {
+            if (lock === null && result.role === null) {
                 result.blocked = true;
                 result.role = "contender";
+                result.blockMode = "try_lock_null";
                 result.ok = true;
-            } else {
+            } else if (lock !== null) {
                 result.acquired = true;
                 result.role = "holder";
+                result.blockMode = "acquired";
                 Thread.sleep(HOLD_MS);
                 result.ok = true;
             }
@@ -181,6 +196,7 @@
         global.ClipHubLockProbe002Result = {
             ok: false,
             probe: "cliphub_lock_probe_002",
+            probeVersion: 2,
             fatal: true,
             error: errorText(error)
         };
