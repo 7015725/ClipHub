@@ -2,8 +2,8 @@
 // Android 14 / Rhino ES5 / WindowManager
 // beta 阶段 1：运行骨架、统一视觉组件、首页列表视觉基线
 
-var CLIPHUB_ENTRY_VERSION = 202607220100;
-var CLIPHUB_MODULE_SET_VERSION = "20260722.1";
+var CLIPHUB_ENTRY_VERSION = 202607220110;
+var CLIPHUB_MODULE_SET_VERSION = "20260722.2";
 var CLIPHUB_UPDATE_BRANCH = "beta";
 var CLIPHUB_BOOT_COMMAND = "toggle"; // show | close | toggle | status
 
