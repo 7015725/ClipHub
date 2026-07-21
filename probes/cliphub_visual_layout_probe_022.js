@@ -380,7 +380,7 @@
         var result = {
             ok: false,
             probe: "cliphub_visual_layout_probe_022",
-            probeVersion: 1,
+            probeVersion: 2,
             startedAt: startedAt,
             moduleSetVersion: local.moduleSetVersion || null,
             sourceRef: local.sourceRef || null,
@@ -413,10 +413,10 @@
                 "Tagged Layout Source", baseTime + 4000);
             pinnedId = add("置顶记录布局样例", false, true,
                 "Pinned Layout", baseTime + 5000);
-            tagOne = global.ClipHub.Repository.createTag("工作事项");
-            tagTwo = global.ClipHub.Repository.createTag("较长的自定义标签名称");
-            global.ClipHub.Repository.attachTag(taggedId, Number(tagOne.id));
-            global.ClipHub.Repository.attachTag(taggedId, Number(tagTwo.id));
+            tagOne = Number(global.ClipHub.Repository.ensureTag("工作事项"));
+            tagTwo = Number(global.ClipHub.Repository.ensureTag("较长的自定义标签名称"));
+            global.ClipHub.Repository.attachTag(taggedId, tagOne);
+            global.ClipHub.Repository.attachTag(taggedId, tagTwo);
             result.seededCount = global.ClipHub.Repository.countItems(false);
             result.tagCount = global.ClipHub.Repository.listTags().length;
             result.light = runTheme("light", 280, 360, longId, taggedId);
@@ -480,7 +480,7 @@
         global.ClipHubVisualLayoutProbe022Result = {
             ok: false,
             probe: "cliphub_visual_layout_probe_022",
-            probeVersion: 1,
+            probeVersion: 2,
             fatal: true,
             error: errorText(error)
         };
