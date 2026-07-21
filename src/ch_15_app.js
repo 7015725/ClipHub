@@ -3,7 +3,7 @@
     var RAF = Packages.java.io.RandomAccessFile;
     var File = Packages.java.io.File;
     var order = [
-        "Base", "Log", "Database", "Classifier", "Repository",
+        "Log", "Database", "Classifier", "Repository",
         "EventBus", "Theme", "Clipboard", "Window", "List",
         "Editor", "Filter", "Translation", "Settings"
     ];
@@ -49,10 +49,24 @@
         var dir = ClipHub.Base.ensureDir(
             ClipHub.Base.joinPath(context.runtimeDir, "data")
         );
-        state.lockFile = new RAF(new File(dir, "cliphub.lock"), "rw");
-        state.lockChannel = state.lockFile.getChannel();
-        state.lockHandle = state.lockChannel.tryLock();
+        var errorName;
+
+        try {
+            state.lockFile = new RAF(new File(dir, "cliphub.lock"), "rw");
+            state.lockChannel = state.lockFile.getChannel();
+            state.lockHandle = state.lockChannel.tryLock();
+        } catch (error) {
+            errorName = error && error.getClass
+                ? String(error.getClass().getName()) : String(error);
+            releaseLock();
+            if (errorName.indexOf("OverlappingFileLockException") >= 0) {
+                throw new Error("ClipHub is already running");
+            }
+            throw error;
+        }
+
         if (state.lockHandle === null) {
+            releaseLock();
             throw new Error("ClipHub is already running");
         }
     }
@@ -68,13 +82,17 @@
             }
             state.context = context;
             try {
+                ClipHub.Base.init(context);
+                state.initialized.push(ClipHub.Base);
+                acquireLock(context);
+
                 for (index = 0; index < order.length; index += 1) {
                     item = ClipHub[order[index]];
                     if (!item) { throw new Error("Missing module: " + order[index]); }
                     if (typeof item.init === "function") { item.init(context); }
                     state.initialized.push(item);
                 }
-                acquireLock(context);
+
                 state.started = true;
                 ClipHub.Log.info("application skeleton started");
                 return {
@@ -84,7 +102,7 @@
                     status: "skeleton_ready",
                     runtimeDir: context.runtimeDir,
                     databasePath: ClipHub.Database.getPath(),
-                    moduleCount: order.length
+                    moduleCount: order.length + 1
                 };
             } catch (error) {
                 shutdownModules();
