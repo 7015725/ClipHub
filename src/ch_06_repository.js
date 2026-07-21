@@ -47,6 +47,45 @@
         return number;
     }
 
+    function stringList(value) {
+        var source = value instanceof Array ? value : [];
+        var seen = {};
+        var output = [];
+        var index;
+        var text;
+        for (index = 0; index < source.length; index += 1) {
+            text = String(source[index] === null || source[index] === undefined
+                ? "" : source[index]).replace(/^\s+|\s+$/g, "");
+            if (text.length > 0 && !seen[text]) {
+                seen[text] = true;
+                output.push(text);
+            }
+        }
+        return output;
+    }
+
+    function placeholders(count) {
+        var output = [];
+        var index;
+        for (index = 0; index < count; index += 1) { output.push("?"); }
+        return output.join(", ");
+    }
+
+    function appendIn(where, args, column, values) {
+        var index;
+        if (values.length < 1) { return; }
+        where.push(column + " IN (" + placeholders(values.length) + ")");
+        for (index = 0; index < values.length; index += 1) {
+            args.push(values[index]);
+        }
+    }
+
+    function escapeLike(value) {
+        return String(value).replace(/\\/g, "\\\\")
+            .replace(/%/g, "\\%")
+            .replace(/_/g, "\\_");
+    }
+
     function insertItem(item) {
         var content;
         var normalized;
@@ -96,10 +135,8 @@
     }
 
     function getItem(id, includeDeleted) {
-        var sql =
-            "SELECT * FROM clipboard_items WHERE id = ?" +
-            (includeDeleted ? "" : " AND deleted_at IS NULL") +
-            " LIMIT 1";
+        var sql = "SELECT * FROM clipboard_items WHERE id = ?" +
+            (includeDeleted ? "" : " AND deleted_at IS NULL") + " LIMIT 1";
         requireReady();
         return ClipHub.Database.queryOne(sql, [intValue(id, -1)]);
     }
@@ -110,17 +147,34 @@
         var sql;
         var limit;
         var offset;
+        var keyword;
+        var pattern;
+        var sources;
+        var types;
         requireReady();
         options = options || {};
         if (!options.includeDeleted) { where.push("deleted_at IS NULL"); }
-        if (options.contentType) {
-            where.push("content_type = ?");
-            args.push(String(options.contentType));
+        keyword = String(options.keyword === null || options.keyword === undefined
+            ? "" : options.keyword).replace(/^\s+|\s+$/g, "");
+        if (keyword.length > 0) {
+            pattern = "%" + escapeLike(keyword) + "%";
+            where.push("(content LIKE ? ESCAPE '\\' OR " +
+                "source_label LIKE ? ESCAPE '\\' OR " +
+                "source_package LIKE ? ESCAPE '\\')");
+            args.push(pattern);
+            args.push(pattern);
+            args.push(pattern);
         }
-        if (options.sourcePackage) {
-            where.push("source_package = ?");
-            args.push(String(options.sourcePackage));
+        sources = stringList(options.sourcePackages);
+        if (sources.length < 1 && options.sourcePackage) {
+            sources = [String(options.sourcePackage)];
         }
+        appendIn(where, args, "source_package", sources);
+        types = stringList(options.contentTypes);
+        if (types.length < 1 && options.contentType) {
+            types = [String(options.contentType)];
+        }
+        appendIn(where, args, "content_type", types);
         if (options.sensitiveOnly) { where.push("is_sensitive = 1"); }
         if (options.excludeSensitive) { where.push("is_sensitive = 0"); }
         if (options.pinnedOnly) { where.push("is_pinned = 1"); }
@@ -134,6 +188,29 @@
         args.push(limit);
         args.push(offset);
         return ClipHub.Database.queryAll(sql, args);
+    }
+
+    function listSourceOptions() {
+        requireReady();
+        return ClipHub.Database.queryAll(
+            "SELECT source_package, MAX(source_label) AS source_label, " +
+            "COUNT(*) AS item_count FROM clipboard_items " +
+            "WHERE deleted_at IS NULL AND source_package IS NOT NULL " +
+            "AND source_package <> '' GROUP BY source_package " +
+            "ORDER BY COALESCE(MAX(source_label), source_package) COLLATE NOCASE ASC",
+            []
+        );
+    }
+
+    function listContentTypeOptions() {
+        requireReady();
+        return ClipHub.Database.queryAll(
+            "SELECT content_type, COUNT(*) AS item_count FROM clipboard_items " +
+            "WHERE deleted_at IS NULL AND content_type IS NOT NULL " +
+            "AND content_type <> '' GROUP BY content_type " +
+            "ORDER BY content_type COLLATE NOCASE ASC",
+            []
+        );
     }
 
     function updateItem(id, patch) {
@@ -179,8 +256,7 @@
         args.push(ClipHub.Base.now());
         args.push(intValue(id, -1));
         return ClipHub.Database.executeUpdateDelete(
-            "UPDATE clipboard_items SET " + columns.join(", ") +
-            " WHERE id = ?",
+            "UPDATE clipboard_items SET " + columns.join(", ") + " WHERE id = ?",
             args
         );
     }
@@ -226,8 +302,7 @@
         return ClipHub.Database.executeUpdateDelete(
             "DELETE FROM clipboard_items WHERE is_pinned = 0 AND id IN (" +
             "SELECT id FROM clipboard_items WHERE is_pinned = 0 " +
-            "ORDER BY last_copied_at DESC, id DESC LIMIT -1 OFFSET ?" +
-            ")",
+            "ORDER BY last_copied_at DESC, id DESC LIMIT -1 OFFSET ?)",
             [safeLimit]
         );
     }
@@ -308,7 +383,7 @@
 
     ClipHub.Repository = {
         MODULE_NAME: "ch_06_repository",
-        MODULE_VERSION: 4,
+        MODULE_VERSION: 5,
         init: function () {
             ready = !!(ClipHub.Database && ClipHub.Database.isOpen());
             if (!ready) { throw new Error("Database is unavailable"); }
@@ -322,6 +397,8 @@
         insertItem: insertItem,
         getItem: getItem,
         listItems: listItems,
+        listSourceOptions: listSourceOptions,
+        listContentTypeOptions: listContentTypeOptions,
         updateItem: updateItem,
         softDeleteItem: softDeleteItem,
         restoreItem: restoreItem,
