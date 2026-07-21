@@ -14,7 +14,7 @@
     {"name":"ch_08_window.js","path":"src/ch_08_window.js","sha":"94a0c5dbe82c75f38f8a7d1b8c06fabf848e5e30"},
     {"name":"ch_09_list.js","path":"src/ch_09_list.js","sha":"7834ece568ade3a8c018de99a72e09739fc94af0"},
     {"name":"ch_10_editor.js","path":"src/ch_10_editor.js","sha":"d27903c9b2b55579cb67cc351dac5f2eb4a6bc08"},
-    {"name":"ch_11_filter.js","path":"src/ch_11_filter.js","sha":"6fe573ed0cae8d3f23c9f8e251082012d1d105fb"},
+    {"name":"ch_11_filter.js","path":"src/ch_11_filter.js","sha":"68c7c1c17a6269b22f1b6a039631dcfd24ad6433"},
     {"name":"ch_12_translation.js","path":"src/ch_12_translation.js","sha":"bdaf530c60620b6ae857ee5359f39fb4634ddd2a"},
     {"name":"ch_13_settings.js","path":"src/ch_13_settings.js","sha":"9d9432105b3ceac7247d1b0e3b5177f91e3d6b54"},
     {"name":"ch_14_event_bus.js","path":"src/ch_14_event_bus.js","sha":"ac4288d3a94d23d16a351989f0bdf3aa5e5a35e5"},
