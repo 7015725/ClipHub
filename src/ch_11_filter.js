@@ -104,7 +104,13 @@
         var thread = Thread.currentThread();
         var payload = {
             active: isActive(value),
-            criteria: copyValue(value),
+            criteria: {
+                keyword: String(value.keyword || ""),
+                sourcePackages: copyList(value.sourcePackages),
+                types: copyList(value.contentTypes),
+                pinnedOnly: value.pinnedOnly === true,
+                sensitiveMode: String(value.sensitiveMode || "all")
+            },
             resultCount: rows.length,
             origin: String(origin || "manual"),
             threadId: Number(thread.getId()),
