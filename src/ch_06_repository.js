@@ -64,6 +64,22 @@
         return output;
     }
 
+    function intList(value) {
+        var source = value instanceof Array ? value : [];
+        var seen = {};
+        var output = [];
+        var index;
+        var number;
+        for (index = 0; index < source.length; index += 1) {
+            number = intValue(source[index], -1);
+            if (number > 0 && !seen[number]) {
+                seen[number] = true;
+                output.push(number);
+            }
+        }
+        return output;
+    }
+
     function placeholders(count) {
         var output = [];
         var index;
@@ -84,6 +100,12 @@
         return String(value).replace(/\\/g, "\\\\")
             .replace(/%/g, "\\%")
             .replace(/_/g, "\\_");
+    }
+
+    function normalizeTagName(value) {
+        return String(value === null || value === undefined ? "" : value)
+            .replace(/^\s+|\s+$/g, "")
+            .replace(/\s+/g, " ");
     }
 
     function insertItem(item) {
@@ -151,16 +173,18 @@
         var pattern;
         var sources;
         var types;
+        var tagIds;
+        var index;
         requireReady();
         options = options || {};
-        if (!options.includeDeleted) { where.push("deleted_at IS NULL"); }
+        if (!options.includeDeleted) { where.push("clipboard_items.deleted_at IS NULL"); }
         keyword = String(options.keyword === null || options.keyword === undefined
             ? "" : options.keyword).replace(/^\s+|\s+$/g, "");
         if (keyword.length > 0) {
             pattern = "%" + escapeLike(keyword) + "%";
-            where.push("(content LIKE ? ESCAPE '\\' OR " +
-                "source_label LIKE ? ESCAPE '\\' OR " +
-                "source_package LIKE ? ESCAPE '\\')");
+            where.push("(clipboard_items.content LIKE ? ESCAPE '\\' OR " +
+                "clipboard_items.source_label LIKE ? ESCAPE '\\' OR " +
+                "clipboard_items.source_package LIKE ? ESCAPE '\\')");
             args.push(pattern);
             args.push(pattern);
             args.push(pattern);
@@ -169,22 +193,33 @@
         if (sources.length < 1 && options.sourcePackage) {
             sources = [String(options.sourcePackage)];
         }
-        appendIn(where, args, "source_package", sources);
+        appendIn(where, args, "clipboard_items.source_package", sources);
         types = stringList(options.contentTypes);
         if (types.length < 1 && options.contentType) {
             types = [String(options.contentType)];
         }
-        appendIn(where, args, "content_type", types);
-        if (options.sensitiveOnly) { where.push("is_sensitive = 1"); }
-        if (options.excludeSensitive) { where.push("is_sensitive = 0"); }
-        if (options.pinnedOnly) { where.push("is_pinned = 1"); }
+        appendIn(where, args, "clipboard_items.content_type", types);
+        tagIds = intList(options.tagIds);
+        if (tagIds.length > 0) {
+            where.push("EXISTS (SELECT 1 FROM clipboard_item_tags filter_tags " +
+                "WHERE filter_tags.item_id = clipboard_items.id AND " +
+                "filter_tags.tag_id IN (" + placeholders(tagIds.length) + "))");
+            for (index = 0; index < tagIds.length; index += 1) {
+                args.push(tagIds[index]);
+            }
+        }
+        if (options.sensitiveOnly) { where.push("clipboard_items.is_sensitive = 1"); }
+        if (options.excludeSensitive) { where.push("clipboard_items.is_sensitive = 0"); }
+        if (options.pinnedOnly) { where.push("clipboard_items.is_pinned = 1"); }
         limit = positiveLimit(options.limit, 50, 500);
         offset = intValue(options.offset, 0);
         if (offset < 0) { offset = 0; }
-        sql = "SELECT * FROM clipboard_items";
+        sql = "SELECT clipboard_items.* FROM clipboard_items";
         if (where.length > 0) { sql += " WHERE " + where.join(" AND "); }
-        sql += " ORDER BY is_pinned DESC, manual_order ASC, " +
-            "last_copied_at DESC, id DESC LIMIT ? OFFSET ?";
+        sql += " ORDER BY clipboard_items.is_pinned DESC, " +
+            "clipboard_items.manual_order ASC, " +
+            "clipboard_items.last_copied_at DESC, clipboard_items.id DESC " +
+            "LIMIT ? OFFSET ?";
         args.push(limit);
         args.push(offset);
         return ClipHub.Database.queryAll(sql, args);
@@ -330,15 +365,36 @@
         return result;
     }
 
+    function getTag(id) {
+        requireReady();
+        return ClipHub.Database.queryOne(
+            "SELECT t.*, (SELECT COUNT(*) FROM clipboard_item_tags cit " +
+            "JOIN clipboard_items ci ON ci.id = cit.item_id " +
+            "WHERE cit.tag_id = t.id AND ci.deleted_at IS NULL) AS item_count " +
+            "FROM tags t WHERE t.id = ? LIMIT 1",
+            [intValue(id, -1)]
+        );
+    }
+
+    function getTagByName(name) {
+        var normalized = normalizeTagName(name).toLowerCase();
+        requireReady();
+        if (normalized.length === 0) { return null; }
+        return ClipHub.Database.queryOne(
+            "SELECT * FROM tags WHERE normalized_name = ? LIMIT 1",
+            [normalized]
+        );
+    }
+
     function insertTag(tag) {
         var name;
         var normalized;
         var now;
         requireReady();
         tag = tag || {};
-        name = String(tag.name === null || tag.name === undefined
-            ? "" : tag.name).replace(/^\s+|\s+$/g, "");
+        name = normalizeTagName(tag.name);
         if (name.length === 0) { throw new Error("Tag name must not be empty"); }
+        if (name.length > 40) { throw new Error("Tag name is too long"); }
         normalized = name.toLowerCase();
         now = ClipHub.Base.now();
         return ClipHub.Database.executeInsert(
@@ -356,12 +412,119 @@
         );
     }
 
+    function ensureTag(name, colorValue) {
+        var existing = getTagByName(name);
+        var id;
+        if (existing !== null) { return Number(existing.id); }
+        id = insertTag({ name: name, colorValue: colorValue });
+        return Number(id);
+    }
+
+    function updateTag(id, patch) {
+        var columns = [];
+        var args = [];
+        var name;
+        requireReady();
+        patch = patch || {};
+        if (patch.hasOwnProperty("name")) {
+            name = normalizeTagName(patch.name);
+            if (name.length === 0) { throw new Error("Tag name must not be empty"); }
+            if (name.length > 40) { throw new Error("Tag name is too long"); }
+            columns.push("name = ?");
+            args.push(name);
+            columns.push("normalized_name = ?");
+            args.push(name.toLowerCase());
+        }
+        if (patch.hasOwnProperty("color_value")) {
+            columns.push("color_value = ?");
+            args.push(patch.color_value === null || patch.color_value === undefined
+                ? null : intValue(patch.color_value, 0));
+        }
+        if (patch.hasOwnProperty("colorValue")) {
+            columns.push("color_value = ?");
+            args.push(patch.colorValue === null || patch.colorValue === undefined
+                ? null : intValue(patch.colorValue, 0));
+        }
+        if (patch.hasOwnProperty("manual_order")) {
+            columns.push("manual_order = ?");
+            args.push(intValue(patch.manual_order, 0));
+        }
+        if (patch.hasOwnProperty("manualOrder")) {
+            columns.push("manual_order = ?");
+            args.push(intValue(patch.manualOrder, 0));
+        }
+        if (columns.length === 0) { return 0; }
+        columns.push("updated_at = ?");
+        args.push(ClipHub.Base.now());
+        args.push(intValue(id, -1));
+        return ClipHub.Database.executeUpdateDelete(
+            "UPDATE tags SET " + columns.join(", ") + " WHERE id = ?",
+            args
+        );
+    }
+
+    function deleteTag(id) {
+        var changed = 0;
+        requireReady();
+        ClipHub.Database.transaction(function () {
+            ClipHub.Database.executeUpdateDelete(
+                "DELETE FROM clipboard_item_tags WHERE tag_id = ?",
+                [intValue(id, -1)]
+            );
+            changed = ClipHub.Database.executeUpdateDelete(
+                "DELETE FROM tags WHERE id = ?",
+                [intValue(id, -1)]
+            );
+        });
+        return changed;
+    }
+
     function listTags() {
         requireReady();
         return ClipHub.Database.queryAll(
-            "SELECT * FROM tags ORDER BY manual_order ASC, name COLLATE NOCASE ASC",
+            "SELECT t.*, COUNT(ci.id) AS item_count FROM tags t " +
+            "LEFT JOIN clipboard_item_tags cit ON cit.tag_id = t.id " +
+            "LEFT JOIN clipboard_items ci ON ci.id = cit.item_id " +
+            "AND ci.deleted_at IS NULL GROUP BY t.id " +
+            "ORDER BY t.manual_order ASC, t.name COLLATE NOCASE ASC",
             []
         );
+    }
+
+    function listItemTags(itemId) {
+        requireReady();
+        return ClipHub.Database.queryAll(
+            "SELECT t.* FROM tags t JOIN clipboard_item_tags cit " +
+            "ON cit.tag_id = t.id WHERE cit.item_id = ? " +
+            "ORDER BY t.manual_order ASC, t.name COLLATE NOCASE ASC",
+            [intValue(itemId, -1)]
+        );
+    }
+
+    function listItemTagMap(itemIds) {
+        var ids = intList(itemIds);
+        var rows;
+        var result = {};
+        var args = [];
+        var index;
+        var key;
+        requireReady();
+        if (ids.length < 1) { return result; }
+        for (index = 0; index < ids.length; index += 1) { args.push(ids[index]); }
+        rows = ClipHub.Database.queryAll(
+            "SELECT cit.item_id, t.id, t.name, t.normalized_name, " +
+            "t.color_value, t.manual_order FROM clipboard_item_tags cit " +
+            "JOIN tags t ON t.id = cit.tag_id WHERE cit.item_id IN (" +
+            placeholders(ids.length) + ") ORDER BY cit.item_id ASC, " +
+            "t.manual_order ASC, t.name COLLATE NOCASE ASC",
+            args
+        );
+        for (index = 0; index < rows.length; index += 1) {
+            key = String(rows[index].item_id);
+            if (!result[key]) { result[key] = []; }
+            result[key].push(rows[index]);
+        }
+        return result;
     }
 
     function attachTag(itemId, tagId) {
@@ -381,9 +544,26 @@
         );
     }
 
+    function setItemTags(itemId, tagIds) {
+        var ids = intList(tagIds);
+        var index;
+        var attached = 0;
+        requireReady();
+        ClipHub.Database.transaction(function () {
+            ClipHub.Database.executeUpdateDelete(
+                "DELETE FROM clipboard_item_tags WHERE item_id = ?",
+                [intValue(itemId, -1)]
+            );
+            for (index = 0; index < ids.length; index += 1) {
+                if (attachTag(itemId, ids[index]) >= 0) { attached += 1; }
+            }
+        });
+        return attached;
+    }
+
     ClipHub.Repository = {
         MODULE_NAME: "ch_06_repository",
-        MODULE_VERSION: 5,
+        MODULE_VERSION: 6,
         init: function () {
             ready = !!(ClipHub.Database && ClipHub.Database.isOpen());
             if (!ready) { throw new Error("Database is unavailable"); }
@@ -406,10 +586,19 @@
         purgeExpired: purgeExpired,
         trimHistory: trimHistory,
         cleanupHistory: cleanupHistory,
+        normalizeTagName: normalizeTagName,
+        getTag: getTag,
+        getTagByName: getTagByName,
         insertTag: insertTag,
+        ensureTag: ensureTag,
+        updateTag: updateTag,
+        deleteTag: deleteTag,
         listTags: listTags,
+        listItemTags: listItemTags,
+        listItemTagMap: listItemTagMap,
         attachTag: attachTag,
         detachTag: detachTag,
+        setItemTags: setItemTags,
         insert: insertItem,
         update: updateItem,
         remove: softDeleteItem,
