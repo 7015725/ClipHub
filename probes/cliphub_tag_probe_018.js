@@ -114,7 +114,7 @@
         var boot; var list; var editor; var panel; var filter; var firstId; var secondId;
         var thirdId; var workId; var referenceId; var tempId; var index; var rows;
         var tags; var stop; var events = []; var baseTime = startedAt - 10000;
-        var result = { ok: false, probe: "cliphub_tag_probe_018", probeVersion: 1,
+        var result = { ok: false, probe: "cliphub_tag_probe_018", probeVersion: 2,
             startedAt: startedAt, moduleSetVersion: local.moduleSetVersion || null,
             sourceRef: local.sourceRef || null, outputPath: String(output.getAbsolutePath()),
             error: null };
@@ -127,7 +127,7 @@
                 throw new Error(result.formalControl.error || "Formal stop failed"); }
             removeTree(isolated); boot = start(root, modules, isolated);
             result.firstStart = boot; result.schemaVersion =
-                global.ClipHub.Database.getSchemaVersion();
+                global.ClipHub.Database.getVersion();
             global.ClipHub.EventBus.on("tags_changed", function (payload) {
                 events.push(payload || {}); });
             firstId = add("alpha first", baseTime + 1000);
@@ -295,7 +295,7 @@
     }
     try { global.ClipHubTagProbe018Result = main(); }
     catch (error) { global.ClipHubTagProbe018Result = { ok: false,
-        probe: "cliphub_tag_probe_018", probeVersion: 1, fatal: true,
+        probe: "cliphub_tag_probe_018", probeVersion: 2, fatal: true,
         error: errorText(error) }; }
 }((function () { return this; }())));
 JSON.stringify(ClipHubTagProbe018Result);
