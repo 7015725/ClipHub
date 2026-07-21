@@ -9,6 +9,9 @@
     var System = Packages.java.lang.System;
     var RAF = Packages.java.io.RandomAccessFile;
     var Intent = Packages.android.content.Intent;
+    var TASK_VERSION = 2;
+    var REQUIRED_ENDPOINT_SCHEMA = 2;
+    var REQUIRED_MODULE_SET = "20260722.22";
 
     function now() { return Number(System.currentTimeMillis()); }
     function close(value) {
@@ -65,6 +68,27 @@
         }
         return predicate();
     }
+    function containsCommand(commands, command) {
+        var index;
+        if (!commands || typeof commands.length !== "number") { return false; }
+        for (index = 0; index < commands.length; index += 1) {
+            if (String(commands[index]) === String(command)) { return true; }
+        }
+        return false;
+    }
+    function oldRuntimeResult(endpoint) {
+        return {
+            ok: false,
+            command: "show",
+            taskVersion: TASK_VERSION,
+            running: true,
+            updateRequired: true,
+            endpointSchemaVersion: Number(endpoint && endpoint.schemaVersion || 0),
+            requiredEndpointSchemaVersion: REQUIRED_ENDPOINT_SCHEMA,
+            requiredModuleSetVersion: REQUIRED_MODULE_SET,
+            error: "ClipHub 后台版本过旧，请先停止正式实例，再运行完整 ClipHub.js 更新到 " + REQUIRED_MODULE_SET
+        };
+    }
     function main() {
         var root = String(shortx.getShortXDir());
         var runtimeDir = new File(root, "ClipHub");
@@ -79,6 +103,7 @@
             return {
                 ok: false,
                 command: "show",
+                taskVersion: TASK_VERSION,
                 running: false,
                 error: "ClipHub 后台未运行，请先执行完整 ClipHub.js"
             };
@@ -92,6 +117,10 @@
                 String(endpoint.runtimeDir || "") !==
                     String(runtimeDir.getAbsolutePath())) {
             throw new Error("Invalid ClipHub control endpoint");
+        }
+        if (Number(endpoint.schemaVersion || 0) < REQUIRED_ENDPOINT_SCHEMA ||
+                !containsCommand(endpoint.commands, "show")) {
+            return oldRuntimeResult(endpoint);
         }
         requestId = String(now()) + "-" + Number(Thread.currentThread().getId());
         ackFile = new File(cacheDir, "control_ack_" + requestId + ".json");
@@ -111,10 +140,13 @@
             return {
                 ok: false,
                 command: "show",
+                taskVersion: TASK_VERSION,
                 running: true,
-                error: "ClipHub 控制回执超时"
+                endpointSchemaVersion: Number(endpoint.schemaVersion || 0),
+                error: "ClipHub 控制回执超时；请确认正式实例已更新到 " + REQUIRED_MODULE_SET
             };
         }
+        ack.taskVersion = TASK_VERSION;
         return ack;
     }
 
@@ -124,6 +156,7 @@
         global.ClipHubShowResult = {
             ok: false,
             command: "show",
+            taskVersion: TASK_VERSION,
             error: String(error)
         };
     }
