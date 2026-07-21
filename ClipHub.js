@@ -9,9 +9,9 @@
     var JavaString = Packages.java.lang.String;
     var URL = Packages.java.net.URL;
     var URLEncoder = Packages.java.net.URLEncoder;
-    var Base64 = Packages.android.util.Base64;
     var MessageDigest = Packages.java.security.MessageDigest;
-    var ENTRY_VERSION = 3;
+    var System = Packages.java.lang.System;
+    var ENTRY_VERSION = 4;
     var OWNER = "7015725";
     var REPO = "ClipHub";
     var DEFAULT_REF = "agent/initialize-project-skeleton";
@@ -110,55 +110,55 @@
         return ok;
     }
 
+    function encodeSegment(value) {
+        return String(URLEncoder.encode(String(value), "UTF-8"))
+            .replace(/\+/g, "%20");
+    }
+
     function encodePath(path) {
         var parts = String(path).split("/");
         var result = [];
         var index;
         for (index = 0; index < parts.length; index += 1) {
-            result.push(String(URLEncoder.encode(parts[index], "UTF-8"))
-                .replace(/\+/g, "%20"));
+            result.push(encodeSegment(parts[index]));
         }
         return result.join("/");
     }
 
-    function apiUrl(path, ref) {
-        return "https://api.github.com/repos/" + OWNER + "/" + REPO +
-            "/contents/" + encodePath(path) + "?ref=" +
-            String(URLEncoder.encode(String(ref), "UTF-8"));
+    function rawUrl(path, ref) {
+        return "https://raw.githubusercontent.com/" + OWNER + "/" + REPO +
+            "/" + encodeSegment(ref) + "/" + encodePath(path) +
+            "?cliphub=" + ENTRY_VERSION + "-" + Number(System.currentTimeMillis());
     }
 
-    function fetchFile(path, ref) {
+    function fetchRawFile(path, ref) {
         var connection = null;
         var code;
         var bytes;
         var response;
         try {
-            connection = new URL(apiUrl(path, ref)).openConnection();
+            connection = new URL(rawUrl(path, ref)).openConnection();
             connection.setConnectTimeout(10000);
             connection.setReadTimeout(20000);
             connection.setUseCaches(false);
-            connection.setRequestProperty("Accept", "application/vnd.github+json");
+            connection.setRequestProperty("Accept", "text/plain, */*");
             connection.setRequestProperty("Accept-Encoding", "identity");
-            connection.setRequestProperty("User-Agent", "ClipHub-ShortX/" + ENTRY_VERSION);
+            connection.setRequestProperty("Cache-Control", "no-cache");
+            connection.setRequestProperty("Pragma", "no-cache");
+            connection.setRequestProperty(
+                "User-Agent", "ClipHub-ShortX/" + ENTRY_VERSION
+            );
             code = Number(connection.getResponseCode());
             bytes = readBytes(code >= 200 && code < 300
                 ? connection.getInputStream() : connection.getErrorStream());
             response = String(new JavaString(bytes, "UTF-8"));
             if (code < 200 || code >= 300) {
-                throw new Error("HTTP " + code + ": " + response.substring(0, 400));
+                throw new Error(
+                    "Raw GitHub HTTP " + code + " for " + path + ": " +
+                    response.substring(0, 400)
+                );
             }
-            response = JSON.parse(response);
-            if (!response || String(response.type) !== "file" ||
-                    String(response.encoding) !== "base64") {
-                throw new Error("Invalid GitHub file response: " + path);
-            }
-            return {
-                sha: String(response.sha),
-                text: String(new JavaString(
-                    Base64.decode(String(response.content), Base64.DEFAULT),
-                    "UTF-8"
-                ))
-            };
+            return { text: response, transport: "raw" };
         } finally {
             if (connection !== null) {
                 try { connection.disconnect(); } catch (ignored) {}
@@ -189,7 +189,7 @@
         return parts.join("");
     }
 
-    function parseManifest(text) {
+    function parseManifest(text, expectedRef) {
         var manifest = JSON.parse(String(text));
         var map = {};
         var index;
@@ -202,6 +202,13 @@
         if (manifest.entryMinVersion !== undefined &&
                 Number(manifest.entryMinVersion) > ENTRY_VERSION) {
             throw new Error("ClipHub entry must be updated");
+        }
+        if (manifest.sourceRef !== undefined && expectedRef !== undefined &&
+                String(manifest.sourceRef) !== String(expectedRef)) {
+            throw new Error(
+                "Manifest ref mismatch: " + manifest.sourceRef +
+                " != " + expectedRef
+            );
         }
         for (index = 0; index < manifest.modules.length; index += 1) {
             item = manifest.modules[index];
@@ -220,6 +227,12 @@
         }
         manifest.moduleMap = map;
         return manifest;
+    }
+
+    function manifestText(manifest) {
+        return JSON.stringify(manifest, function (key, value) {
+            return key === "moduleMap" ? undefined : value;
+        }, 2) + "\n";
     }
 
     function verifyModules(moduleDir, manifest) {
@@ -241,13 +254,13 @@
         return true;
     }
 
-    function readLocalManifest(file) {
+    function readLocalManifest(file, ref) {
         try {
-            return file.isFile() ? parseManifest(readUtf8(file)) : null;
+            return file.isFile() ? parseManifest(readUtf8(file), ref) : null;
         } catch (ignored) { return null; }
     }
 
-    function installModules(ref, runtimeDir, moduleDir, localManifestFile,
+    function installModules(ref, moduleDir, localManifestFile,
             remoteManifest, previousManifestText) {
         var parent = ensureDir(moduleDir.getParentFile());
         var stage = new File(parent, "modules.stage");
@@ -265,9 +278,8 @@
             for (index = 0; index < NAMES.length; index += 1) {
                 name = NAMES[index];
                 item = remoteManifest.moduleMap[name];
-                remote = fetchFile(String(item.path), ref);
-                if (remote.sha !== String(item.sha) ||
-                        gitBlobSha(remote.text) !== String(item.sha)) {
+                remote = fetchRawFile(String(item.path), ref);
+                if (gitBlobSha(remote.text) !== String(item.sha)) {
                     throw new Error("Module integrity mismatch: " + name);
                 }
                 writeUtf8(new File(stage, name), remote.text);
@@ -285,15 +297,13 @@
                 throw new Error("Cannot activate downloaded modules");
             }
             activated = true;
-            writeAtomic(localManifestFile,
-                JSON.stringify(remoteManifest, function (key, value) {
-                    return key === "moduleMap" ? undefined : value;
-                }, 2) + "\n");
+            writeAtomic(localManifestFile, manifestText(remoteManifest));
             return {
                 updated: true,
                 downloadedCount: NAMES.length,
                 backup: backup,
-                previousManifestText: previousManifestText
+                previousManifestText: previousManifestText,
+                transport: "raw"
             };
         } catch (error) {
             removeTree(stage);
@@ -309,16 +319,16 @@
         }
     }
 
-    function syncModules(ref, runtimeDir, moduleDir, localManifestFile) {
+    function syncModules(ref, moduleDir, localManifestFile) {
         var previousText = localManifestFile.isFile()
             ? readUtf8(localManifestFile) : null;
-        var localManifest = readLocalManifest(localManifestFile);
+        var localManifest = readLocalManifest(localManifestFile, ref);
         var remoteManifest;
         var remoteFile;
         var installed;
         try {
-            remoteFile = fetchFile(MANIFEST_PATH, ref);
-            remoteManifest = parseManifest(remoteFile.text);
+            remoteFile = fetchRawFile(MANIFEST_PATH, ref);
+            remoteManifest = parseManifest(remoteFile.text, ref);
         } catch (remoteError) {
             if (localManifest && verifyModules(moduleDir, localManifest)) {
                 return {
@@ -327,28 +337,27 @@
                     remoteAvailable: false,
                     fallback: true,
                     moduleSetVersion: String(localManifest.moduleSetVersion),
+                    transport: "offline-cache",
                     warning: errorText(remoteError)
                 };
             }
             throw remoteError;
         }
         if (verifyModules(moduleDir, remoteManifest)) {
-            writeAtomic(localManifestFile,
-                JSON.stringify(remoteManifest, function (key, value) {
-                    return key === "moduleMap" ? undefined : value;
-                }, 2) + "\n");
+            writeAtomic(localManifestFile, manifestText(remoteManifest));
             return {
                 updated: false,
                 downloadedCount: 0,
                 remoteAvailable: true,
                 fallback: false,
                 moduleSetVersion: String(remoteManifest.moduleSetVersion),
+                transport: "raw",
                 warning: null
             };
         }
         try {
-            installed = installModules(ref, runtimeDir, moduleDir,
-                localManifestFile, remoteManifest, previousText);
+            installed = installModules(ref, moduleDir, localManifestFile,
+                remoteManifest, previousText);
         } catch (installError) {
             if (localManifest && verifyModules(moduleDir, localManifest)) {
                 return {
@@ -357,6 +366,7 @@
                     remoteAvailable: true,
                     fallback: true,
                     moduleSetVersion: String(localManifest.moduleSetVersion),
+                    transport: "offline-cache",
                     warning: errorText(installError)
                 };
             }
@@ -389,6 +399,7 @@
     function loadModules(moduleDir) {
         var index;
         var file;
+        global.ClipHub = {};
         for (index = 0; index < NAMES.length; index += 1) {
             file = new File(moduleDir, NAMES[index]);
             if (!file.isFile()) {
@@ -409,6 +420,20 @@
         var ref;
         var sync = null;
         var app;
+        var interruptedBackup;
+
+        if (global.ClipHub && global.ClipHub.App &&
+                typeof global.ClipHub.App.isStarted === "function" &&
+                global.ClipHub.App.isStarted()) {
+            return {
+                ok: true,
+                started: true,
+                entryVersion: ENTRY_VERSION,
+                reused: true,
+                sync: null,
+                app: { ok: true, started: true, reused: true }
+            };
+        }
         if (typeof shortx === "undefined" ||
                 typeof shortx.getShortXDir !== "function") {
             throw new Error("ShortX runtime is unavailable");
@@ -430,7 +455,7 @@
         localManifestFile = new File(cacheDir, "module-manifest.local.json");
         ensureDir(moduleDir.getParentFile());
         if (!moduleDir.exists()) {
-            var interruptedBackup = new File(
+            interruptedBackup = new File(
                 moduleDir.getParentFile(), "modules.backup"
             );
             if (interruptedBackup.isDirectory()) {
@@ -438,8 +463,7 @@
             }
         }
         try {
-            sync = syncModules(ref, runtimeDir, moduleDir, localManifestFile);
-            global.ClipHub = global.ClipHub || {};
+            sync = syncModules(ref, moduleDir, localManifestFile);
             loadModules(moduleDir);
             app = global.ClipHub.App.start({
                 shortxRoot: root,
@@ -451,6 +475,7 @@
                 ok: !!app.ok,
                 started: !!app.started,
                 entryVersion: ENTRY_VERSION,
+                reused: false,
                 sync: {
                     updated: !!sync.updated,
                     downloadedCount: Number(sync.downloadedCount || 0),
@@ -458,6 +483,7 @@
                     fallback: !!sync.fallback,
                     moduleSetVersion: String(sync.moduleSetVersion || ""),
                     sourceRef: ref,
+                    transport: String(sync.transport || "raw"),
                     warning: sync.warning === undefined ? null : sync.warning
                 },
                 app: app
