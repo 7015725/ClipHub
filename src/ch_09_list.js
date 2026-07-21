@@ -22,18 +22,31 @@
     var limit = 20;
     var items = [];
     var itemViews = [];
+    var deleteViews = [];
+    var undoView = null;
+    var lastDeleted = null;
     var addedListener = null;
     var mergedListener = null;
+    var deletedListener = null;
+    var restoredListener = null;
     var state = {
         renderedCount: 0,
         emptyVisible: false,
         refreshCount: 0,
         eventRefreshCount: 0,
         copyCount: 0,
+        deleteCount: 0,
+        restoreCount: 0,
         lastCopiedId: null,
+        lastDeletedId: null,
+        lastRestoredId: null,
         lastCopyOk: false,
         clickThreadId: null,
         clickThreadName: null,
+        deleteThreadId: null,
+        deleteThreadName: null,
+        restoreThreadId: null,
+        restoreThreadName: null,
         renderThreadId: null,
         renderThreadName: null,
         lastError: null
@@ -74,13 +87,48 @@
         return view;
     }
 
-    function cardBackground(dark) {
+    function roundedBackground(fill, stroke, radiusDp) {
         var drawable = new GradientDrawable();
         drawable.setShape(GradientDrawable.RECTANGLE);
-        drawable.setColor(Color.parseColor(dark ? "#FF24272D" : "#FFF4F4F6"));
-        drawable.setCornerRadius(dp(13));
-        drawable.setStroke(dp(1), Color.parseColor(dark ? "#24FFFFFF" : "#12000000"));
+        drawable.setColor(Color.parseColor(String(fill)));
+        drawable.setCornerRadius(dp(radiusDp));
+        if (stroke !== null) {
+            drawable.setStroke(dp(1), Color.parseColor(String(stroke)));
+        }
         return drawable;
+    }
+
+    function cardBackground(dark) {
+        return roundedBackground(
+            dark ? "#FF24272D" : "#FFF4F4F6",
+            dark ? "#24FFFFFF" : "#12000000",
+            13
+        );
+    }
+
+    function actionBackground(dark, danger) {
+        return roundedBackground(
+            danger
+                ? (dark ? "#2EF87171" : "#18DC2626")
+                : (dark ? "#22FFFFFF" : "#10000000"),
+            danger
+                ? (dark ? "#55F87171" : "#35DC2626")
+                : (dark ? "#25FFFFFF" : "#16000000"),
+            9
+        );
+    }
+
+    function makeAction(text, dark, danger) {
+        var color = danger
+            ? (dark ? "#FFFFA3A3" : "#FFB91C1C")
+            : (dark ? "#FFE4E4E7" : "#FF3F3F46");
+        var view = makeText(text, 12, color, true);
+        view.setGravity(Gravity.CENTER);
+        view.setPadding(dp(11), dp(6), dp(11), dp(6));
+        view.setBackground(actionBackground(dark, danger));
+        view.setClickable(true);
+        view.setFocusable(true);
+        return view;
     }
 
     function formatTime(value) {
@@ -96,6 +144,15 @@
         var time = formatTime(row.last_copied_at);
         return String(source) + (copied > 1 ? "  ·  " + copied + " 次" : "") +
             (time ? "  ·  " + time : "");
+    }
+
+    function emit(name, payload) {
+        try {
+            if (ClipHub.EventBus && typeof ClipHub.EventBus.emit === "function") {
+                return ClipHub.EventBus.emit(String(name), payload || {});
+            }
+        } catch (ignored) {}
+        return 0;
     }
 
     function copyRow(row) {
@@ -128,9 +185,84 @@
         }
     }
 
+    function deleteRow(row) {
+        var thread = Thread.currentThread();
+        var id = Number(row.id);
+        var deletedAt = ClipHub.Base.now();
+        var changed;
+        var delivered;
+        try {
+            changed = ClipHub.Repository.softDeleteItem(id, deletedAt);
+            if (Number(changed) < 1) { return false; }
+            lastDeleted = { id: id, deletedAt: deletedAt };
+            state.deleteCount += 1;
+            state.lastDeletedId = id;
+            state.deleteThreadId = Number(thread.getId());
+            state.deleteThreadName = String(thread.getName());
+            delivered = emit("clipboard_deleted", {
+                id: id,
+                deletedAt: deletedAt,
+                threadId: state.deleteThreadId,
+                threadName: state.deleteThreadName
+            });
+            if (delivered < 1 && visible) { refresh(false); }
+            return true;
+        } catch (error) {
+            state.lastError = String(error);
+            return false;
+        }
+    }
+
+    function undoLastDelete() {
+        var thread = Thread.currentThread();
+        var target = lastDeleted;
+        var row;
+        var changed;
+        var delivered;
+        if (target === null) { return false; }
+        try {
+            row = ClipHub.Repository.getItem(Number(target.id), true);
+            if (row === null || row === undefined || row.deleted_at === null ||
+                    row.deleted_at === undefined) {
+                lastDeleted = null;
+                if (visible) { refresh(false); }
+                return false;
+            }
+            changed = ClipHub.Repository.restoreItem(Number(target.id));
+            if (Number(changed) < 1) { return false; }
+            lastDeleted = null;
+            state.restoreCount += 1;
+            state.lastRestoredId = Number(target.id);
+            state.restoreThreadId = Number(thread.getId());
+            state.restoreThreadName = String(thread.getName());
+            delivered = emit("clipboard_restored", {
+                id: Number(target.id),
+                threadId: state.restoreThreadId,
+                threadName: state.restoreThreadName
+            });
+            if (delivered < 1 && visible) { refresh(false); }
+            return true;
+        } catch (error) {
+            state.lastError = String(error);
+            return false;
+        }
+    }
+
     function clickListener(row) {
         return new JavaAdapter(View.OnClickListener, {
             onClick: function () { copyRow(row); }
+        });
+    }
+
+    function deleteListener(row) {
+        return new JavaAdapter(View.OnClickListener, {
+            onClick: function () { deleteRow(row); }
+        });
+    }
+
+    function undoListener() {
+        return new JavaAdapter(View.OnClickListener, {
+            onClick: function () { undoLastDelete(); }
         });
     }
 
@@ -140,14 +272,19 @@
         var secondary = dark ? "#FFB4B4BC" : "#FF66666F";
         var outer = new LinearLayout(androidContext);
         var header;
+        var undoBar;
+        var undoText;
         var scroll;
         var list;
         var index;
         var row;
         var card;
         var preview;
+        var actionRow;
         var meta;
+        var deleteView;
         var params;
+        var metaParams;
         var thread = Thread.currentThread();
 
         outer.setOrientation(LinearLayout.VERTICAL);
@@ -157,6 +294,33 @@
         outer.addView(header, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        undoView = null;
+        if (lastDeleted !== null) {
+            undoBar = new LinearLayout(androidContext);
+            undoBar.setOrientation(LinearLayout.HORIZONTAL);
+            undoBar.setGravity(Gravity.CENTER_VERTICAL);
+            undoBar.setPadding(dp(10), dp(8), dp(8), dp(8));
+            undoBar.setBackground(roundedBackground(
+                dark ? "#FF20242A" : "#FFF7F7F8",
+                dark ? "#24FFFFFF" : "#12000000",
+                11
+            ));
+            undoText = makeText("已删除 1 条记录", 12, secondary, false);
+            undoBar.addView(undoText, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+            undoView = makeAction("撤销", dark, false);
+            undoView.setContentDescription("撤销最近一次删除");
+            undoView.setOnClickListener(undoListener());
+            undoBar.addView(undoView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+            params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+            params.bottomMargin = dp(8);
+            outer.addView(undoBar, params);
+        }
 
         scroll = new ScrollView(androidContext);
         scroll.setFillViewport(true);
@@ -170,6 +334,7 @@
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
 
         itemViews = [];
+        deleteViews = [];
         if (rows.length === 0) {
             state.emptyVisible = true;
             preview = makeText("暂无剪贴板记录\n复制文本后会显示在这里", 14,
@@ -186,7 +351,7 @@
                 row = rows[index];
                 card = new LinearLayout(androidContext);
                 card.setOrientation(LinearLayout.VERTICAL);
-                card.setPadding(dp(12), dp(10), dp(12), dp(9));
+                card.setPadding(dp(12), dp(10), dp(10), dp(9));
                 card.setBackground(cardBackground(dark));
                 card.setClickable(true);
                 card.setFocusable(true);
@@ -201,11 +366,25 @@
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT));
 
+                actionRow = new LinearLayout(androidContext);
+                actionRow.setOrientation(LinearLayout.HORIZONTAL);
+                actionRow.setGravity(Gravity.CENTER_VERTICAL);
+                actionRow.setPadding(0, dp(7), 0, 0);
                 meta = makeText(sourceText(row), 11, secondary, false);
-                meta.setPadding(0, dp(7), 0, 0);
                 meta.setSingleLine(true);
                 meta.setEllipsize(TextUtils.TruncateAt.END);
-                card.addView(meta, new LinearLayout.LayoutParams(
+                metaParams = new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+                metaParams.rightMargin = dp(8);
+                actionRow.addView(meta, metaParams);
+
+                deleteView = makeAction("删除", dark, true);
+                deleteView.setContentDescription("删除第 " + (index + 1) + " 条剪贴板记录");
+                deleteView.setOnClickListener(deleteListener(row));
+                actionRow.addView(deleteView, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
+                card.addView(actionRow, new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT));
                 card.setOnClickListener(clickListener(row));
@@ -216,6 +395,7 @@
                 params.bottomMargin = dp(8);
                 list.addView(card, params);
                 itemViews.push(card);
+                deleteViews.push(deleteView);
             }
         }
         state.renderedCount = rows.length;
@@ -289,10 +469,19 @@
             refreshCount: Number(state.refreshCount),
             eventRefreshCount: Number(state.eventRefreshCount),
             copyCount: Number(state.copyCount),
+            deleteCount: Number(state.deleteCount),
+            restoreCount: Number(state.restoreCount),
             lastCopiedId: state.lastCopiedId,
+            lastDeletedId: state.lastDeletedId,
+            lastRestoredId: state.lastRestoredId,
             lastCopyOk: state.lastCopyOk,
+            undoAvailable: lastDeleted !== null,
             clickThreadId: state.clickThreadId,
             clickThreadName: state.clickThreadName,
+            deleteThreadId: state.deleteThreadId,
+            deleteThreadName: state.deleteThreadName,
+            restoreThreadId: state.restoreThreadId,
+            restoreThreadName: state.restoreThreadName,
             renderThreadId: state.renderThreadId,
             renderThreadName: state.renderThreadName,
             lastError: state.lastError,
@@ -300,9 +489,32 @@
         };
     }
 
+    function resetState() {
+        state.renderedCount = 0;
+        state.emptyVisible = false;
+        state.refreshCount = 0;
+        state.eventRefreshCount = 0;
+        state.copyCount = 0;
+        state.deleteCount = 0;
+        state.restoreCount = 0;
+        state.lastCopiedId = null;
+        state.lastDeletedId = null;
+        state.lastRestoredId = null;
+        state.lastCopyOk = false;
+        state.clickThreadId = null;
+        state.clickThreadName = null;
+        state.deleteThreadId = null;
+        state.deleteThreadName = null;
+        state.restoreThreadId = null;
+        state.restoreThreadName = null;
+        state.renderThreadId = null;
+        state.renderThreadName = null;
+        state.lastError = null;
+    }
+
     ClipHub.List = {
         MODULE_NAME: "ch_09_list",
-        MODULE_VERSION: 2,
+        MODULE_VERSION: 3,
         init: function (context) {
             androidContext = context && context.androidContext
                 ? context.androidContext : global.context;
@@ -313,28 +525,24 @@
             density = Number(androidContext.getResources().getDisplayMetrics().density || 1);
             items = [];
             itemViews = [];
+            deleteViews = [];
+            undoView = null;
+            lastDeleted = null;
             visible = false;
-            state.renderedCount = 0;
-            state.emptyVisible = false;
-            state.refreshCount = 0;
-            state.eventRefreshCount = 0;
-            state.copyCount = 0;
-            state.lastCopiedId = null;
-            state.lastCopyOk = false;
-            state.clickThreadId = null;
-            state.clickThreadName = null;
-            state.renderThreadId = null;
-            state.renderThreadName = null;
-            state.lastError = null;
+            resetState();
             addedListener = function () {
                 if (visible) {
                     try { refresh(true); } catch (error) { state.lastError = String(error); }
                 }
             };
             mergedListener = addedListener;
+            deletedListener = addedListener;
+            restoredListener = addedListener;
             if (ClipHub.EventBus) {
                 ClipHub.EventBus.on("clipboard_added", addedListener);
                 ClipHub.EventBus.on("clipboard_merged", mergedListener);
+                ClipHub.EventBus.on("clipboard_deleted", deletedListener);
+                ClipHub.EventBus.on("clipboard_restored", restoredListener);
             }
             ready = true;
             return true;
@@ -367,6 +575,23 @@
                 return itemViews[index].performClick();
             }, 2500);
         },
+        performDeleteClick: function (index) {
+            index = Math.floor(Number(index));
+            return ClipHub.Window.runOnMain(function () {
+                if (index < 0 || index >= deleteViews.length) { return false; }
+                return deleteViews[index].performClick();
+            }, 2500);
+        },
+        performUndoClick: function () {
+            return ClipHub.Window.runOnMain(function () {
+                return undoView !== null ? undoView.performClick() : false;
+            }, 2500);
+        },
+        deleteItem: function (id) {
+            var row = ClipHub.Repository.getItem(Number(id), false);
+            return row === null || row === undefined ? false : deleteRow(row);
+        },
+        undoLastDelete: undoLastDelete,
         getState: getState,
         shutdown: function () {
             if (ClipHub.EventBus) {
@@ -376,11 +601,22 @@
                 if (mergedListener !== null) {
                     ClipHub.EventBus.off("clipboard_merged", mergedListener);
                 }
+                if (deletedListener !== null) {
+                    ClipHub.EventBus.off("clipboard_deleted", deletedListener);
+                }
+                if (restoredListener !== null) {
+                    ClipHub.EventBus.off("clipboard_restored", restoredListener);
+                }
             }
             addedListener = null;
             mergedListener = null;
+            deletedListener = null;
+            restoredListener = null;
             items = [];
             itemViews = [];
+            deleteViews = [];
+            undoView = null;
+            lastDeleted = null;
             visible = false;
             ready = false;
             androidContext = null;
