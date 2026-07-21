@@ -10,7 +10,8 @@
         themeMode: "system",
         sourceEnabled: true,
         sensitivePolicy: "skip",
-        ignorePackages: []
+        ignorePackages: [],
+        windowPosition: null
     };
 
     function copyArray(input) {
@@ -23,10 +24,23 @@
         return output;
     }
 
+    function copyPosition(input) {
+        if (!input || typeof input !== "object") { return null; }
+        return {
+            xRatio: Number(input.xRatio),
+            yRatio: Number(input.yRatio)
+        };
+    }
+
     function copyValue(value) {
         if (value && typeof value === "object" &&
                 Object.prototype.toString.call(value) === "[object Array]") {
             return copyArray(value);
+        }
+        if (value && typeof value === "object" &&
+                Object.prototype.hasOwnProperty.call(value, "xRatio") &&
+                Object.prototype.hasOwnProperty.call(value, "yRatio")) {
+            return copyPosition(value);
         }
         return value;
     }
@@ -49,6 +63,25 @@
         if (number < minimum) { number = minimum; }
         if (number > maximum) { number = maximum; }
         return number;
+    }
+
+    function ratio(value, fallback) {
+        var number = Number(value);
+        if (!isFinite(number)) { return fallback; }
+        if (number < 0) { number = 0; }
+        if (number > 1) { number = 1; }
+        return number;
+    }
+
+    function normalizePosition(input) {
+        if (input === null || input === undefined) { return null; }
+        if (typeof input !== "object") {
+            throw new Error("windowPosition must be null or an object");
+        }
+        return {
+            xRatio: ratio(input.xRatio, 1),
+            yRatio: ratio(input.yRatio, 0)
+        };
     }
 
     function normalizePackages(input) {
@@ -95,6 +128,9 @@
         }
         if (key === "ignorePackages") {
             return normalizePackages(value);
+        }
+        if (key === "windowPosition") {
+            return normalizePosition(value);
         }
         throw new Error("Unknown setting: " + key);
     }
@@ -247,7 +283,7 @@
 
     ClipHub.Settings = {
         MODULE_NAME: "ch_13_settings",
-        MODULE_VERSION: 2,
+        MODULE_VERSION: 3,
         DEFAULTS: defaultsCopy(),
         init: function () {
             if (!ClipHub.Database || !ClipHub.Database.isOpen()) {
@@ -286,11 +322,11 @@
             var defaults = defaultsCopy();
             requireReady();
             ClipHub.Database.transaction(function () {
+                var key;
                 ClipHub.Database.executeUpdateDelete(
                     "DELETE FROM settings",
                     []
                 );
-                var key;
                 for (key in defaults) {
                     if (defaults.hasOwnProperty(key)) {
                         persist(key, defaults[key]);
