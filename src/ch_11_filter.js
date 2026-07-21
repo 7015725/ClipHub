@@ -353,8 +353,24 @@
         return applyIfRequested(options);
     }
 
-    function onClipboardChange() {
-        if (!ready || !isActive(value)) { return; }
+    function onClipboardChange(payload) {
+        var wasActive;
+        var nextIds;
+        var index;
+        var deletedId;
+        if (!ready) { return; }
+        wasActive = isActive(value);
+        if (payload && String(payload.action || "") === "tag_deleted") {
+            deletedId = Number(payload.tagId);
+            nextIds = [];
+            for (index = 0; index < value.tagIds.length; index += 1) {
+                if (Number(value.tagIds[index]) !== deletedId) {
+                    nextIds.push(value.tagIds[index]);
+                }
+            }
+            value.tagIds = nextIds;
+        }
+        if (!wasActive && !isActive(value)) { return; }
         try {
             apply({ fromEvent: true, origin: "clipboard_event" });
         } catch (error) {
