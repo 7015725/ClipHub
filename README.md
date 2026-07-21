@@ -156,6 +156,7 @@ ClipHub/
 │   ├── 技术架构.md
 │   ├── 交互规范.md
 │   ├── 开发计划.md
+│   ├── 模块规范.md
 │   └── images/
 │       └── cliphub-ui-concept.png
 ├── src/
@@ -171,12 +172,14 @@ ClipHub/
 │   ├── ch_10_editor.js
 │   ├── ch_11_filter.js
 │   ├── ch_12_translation.js
-│   └── ch_13_settings.js
+│   ├── ch_13_settings.js
+│   ├── ch_14_event_bus.js
+│   └── ch_15_app.js
 └── scripts/
     └── validate_es5.py
 ```
 
-目录仍属于初步方案。正式编码前需要先确定入口加载方式、模块同步方式和独立运行边界。
+项目采用单仓库、单入口和本地 JavaScript 子模块结构；这些子模块不是 Git Submodule。运行目录与源码仓库分离，具体约定参见 [模块规范](docs/模块规范.md)。
 
 ## 数据模型概览
 
@@ -219,6 +222,7 @@ ClipHub/
 - [技术架构](docs/技术架构.md)
 - [交互规范](docs/交互规范.md)
 - [开发计划](docs/开发计划.md)
+- [模块规范](docs/模块规范.md)
 
 ## 分支建议
 
