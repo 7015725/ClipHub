@@ -16,6 +16,7 @@
     var Intent = Packages.android.content.Intent;
     var REQUIRED_SET = "20260721.10";
     var RUNTIME_NAME = "ClipHubProbe010";
+    var ATTACH_TIMEOUT_MS = 1500;
     var MODULES = [
         "ch_01_base.js", "ch_02_log.js", "ch_03_database.js",
         "ch_04_clipboard.js", "ch_05_classifier.js", "ch_06_repository.js",
@@ -92,6 +93,18 @@
             Thread.sleep(25);
         }
         return callback();
+    }
+    function waitForAttached(timeoutMs) {
+        var started = now();
+        var attached = waitFor(function () {
+            var state = global.ClipHub.Window.getState();
+            return state.attached === true && state.attachedToWindow === true;
+        }, timeoutMs);
+        return {
+            attached: attached,
+            waitedMs: now() - started,
+            state: global.ClipHub.Window.getState()
+        };
     }
     function lockFree(runtimeDir) {
         var dataDir = ensureDir(new File(runtimeDir, "data"));
@@ -219,6 +232,7 @@
         var control;
         var boot;
         var openResult;
+        var firstAttach;
         var duplicateOpen;
         var topLeft;
         var bottomRight;
@@ -231,13 +245,14 @@
         var afterClose;
         var secondClose;
         var reopen;
+        var secondAttach;
         var reopenState;
         var finalClose;
         var appStop;
         var result = {
             ok: false,
             probe: "cliphub_window_probe_010",
-            probeVersion: 1,
+            probeVersion: 2,
             startedAt: startedAt,
             finishedAt: null,
             durationMs: null,
@@ -250,6 +265,7 @@
             formalControl: null,
             isolatedStart: null,
             windowOpen: null,
+            firstAttachWaitMs: null,
             attachedToWindow: false,
             addThreadName: null,
             windowType: null,
@@ -267,6 +283,7 @@
             removeThreadName: null,
             secondCloseIdempotent: false,
             reopenSucceeded: false,
+            reopenAttachWaitMs: null,
             reopenOpenCount: null,
             finalClose: null,
             appStopped: false,
@@ -303,12 +320,13 @@
                 statusText: "ClipHub 探测 010\nWindowManager 生命周期验证"
             });
             result.windowOpen = openResult;
-            result.attachedToWindow = openResult.state.attached === true &&
-                openResult.state.attachedToWindow === true;
-            result.addThreadName = openResult.state.addThreadName;
-            result.windowType = openResult.state.windowType;
+            firstAttach = waitForAttached(ATTACH_TIMEOUT_MS);
+            result.firstAttachWaitMs = firstAttach.waitedMs;
+            result.attachedToWindow = firstAttach.attached;
+            result.addThreadName = firstAttach.state.addThreadName;
+            result.windowType = firstAttach.state.windowType;
             result.dragListenerInstalled =
-                openResult.state.dragListenerInstalled === true;
+                firstAttach.state.dragListenerInstalled === true;
 
             duplicateOpen = global.ClipHub.Window.open();
             result.duplicateOpenReused = duplicateOpen.reused === true &&
@@ -350,6 +368,7 @@
                 "ClipHub 探测 010 已完成边界移动" &&
                 global.ClipHub.Window.getState().statusText === status;
 
+            Thread.sleep(100);
             firstClose = global.ClipHub.Window.close();
             result.firstClose = firstClose;
             afterClose = global.ClipHub.Window.getState();
@@ -365,10 +384,13 @@
                 heightDp: 140,
                 statusText: "ClipHub 探测 010 二次打开"
             });
-            reopenState = global.ClipHub.Window.getState();
+            secondAttach = waitForAttached(ATTACH_TIMEOUT_MS);
+            result.reopenAttachWaitMs = secondAttach.waitedMs;
+            reopenState = secondAttach.state;
             result.reopenSucceeded = reopen.attached === true &&
-                reopenState.attachedToWindow === true && insideBounds(reopenState);
+                secondAttach.attached && insideBounds(reopenState);
             result.reopenOpenCount = reopenState.openCount;
+            Thread.sleep(100);
             finalClose = global.ClipHub.Window.close();
             result.finalClose = finalClose;
 
@@ -430,7 +452,7 @@
         global.ClipHubWindowProbe010Result = {
             ok: false,
             probe: "cliphub_window_probe_010",
-            probeVersion: 1,
+            probeVersion: 2,
             fatal: true,
             error: errorText(error)
         };
