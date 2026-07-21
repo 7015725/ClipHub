@@ -4,7 +4,7 @@
     var SQLiteDatabase = Packages.android.database.sqlite.SQLiteDatabase;
     var ReflectArray = Packages.java.lang.reflect.Array;
     var JavaString = Packages.java.lang.String;
-    var SCHEMA_VERSION = 1;
+    var SCHEMA_VERSION = 2;
     var path = null;
     var database = null;
 
@@ -93,6 +93,20 @@
             db.execSQL(
                 "INSERT OR REPLACE INTO schema_meta(key, value) " +
                 "VALUES ('schema_version', '1')"
+            );
+        },
+        2: function (db) {
+            db.execSQL(
+                "ALTER TABLE clipboard_items ADD COLUMN " +
+                "is_sensitive INTEGER NOT NULL DEFAULT 0"
+            );
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS idx_clipboard_items_sensitive " +
+                "ON clipboard_items(is_sensitive, last_copied_at DESC)"
+            );
+            db.execSQL(
+                "INSERT OR REPLACE INTO schema_meta(key, value) " +
+                "VALUES ('schema_version', '2')"
             );
         }
     };
@@ -268,7 +282,7 @@
 
     ClipHub.Database = {
         MODULE_NAME: "ch_03_database",
-        MODULE_VERSION: 2,
+        MODULE_VERSION: 3,
         SCHEMA_VERSION: SCHEMA_VERSION,
         init: function (context) {
             var dir = ClipHub.Base.ensureDir(
