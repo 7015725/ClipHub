@@ -69,10 +69,10 @@
         return ClipHub.Database.executeInsert(
             "INSERT INTO clipboard_items(" +
             "content, normalized_hash, content_type, source_package, " +
-            "source_label, source_uid, source_confidence, is_pinned, " +
-            "manual_order, copy_count, created_at, last_copied_at, " +
-            "updated_at, deleted_at" +
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "source_label, source_uid, source_confidence, is_sensitive, " +
+            "is_pinned, manual_order, copy_count, created_at, " +
+            "last_copied_at, updated_at, deleted_at" +
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 content,
                 item.normalizedHash || sha256(normalized),
@@ -82,6 +82,7 @@
                 item.sourceUid === undefined || item.sourceUid === null
                     ? null : intValue(item.sourceUid, 0),
                 intValue(item.sourceConfidence, 0),
+                item.isSensitive ? 1 : 0,
                 item.isPinned ? 1 : 0,
                 intValue(item.manualOrder, 0),
                 positiveLimit(item.copyCount, 1, 2147483647),
@@ -120,6 +121,8 @@
             where.push("source_package = ?");
             args.push(String(options.sourcePackage));
         }
+        if (options.sensitiveOnly) { where.push("is_sensitive = 1"); }
+        if (options.excludeSensitive) { where.push("is_sensitive = 0"); }
         if (options.pinnedOnly) { where.push("is_pinned = 1"); }
         limit = positiveLimit(options.limit, 50, 500);
         offset = intValue(options.offset, 0);
@@ -141,6 +144,7 @@
             source_label: true,
             source_uid: true,
             source_confidence: true,
+            is_sensitive: true,
             is_pinned: true,
             manual_order: true,
             copy_count: true,
@@ -254,7 +258,7 @@
 
     ClipHub.Repository = {
         MODULE_NAME: "ch_06_repository",
-        MODULE_VERSION: 2,
+        MODULE_VERSION: 3,
         init: function () {
             ready = !!(ClipHub.Database && ClipHub.Database.isOpen());
             if (!ready) { throw new Error("Database is unavailable"); }
