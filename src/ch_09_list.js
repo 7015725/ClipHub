@@ -26,12 +26,14 @@
 
     var LONG_TEXT_THRESHOLD = 180;
     var LONG_TEXT_LINE_THRESHOLD = 4;
+    var DETAIL_DIM_AMOUNT = 0.72;
     var androidContext = null;
     var density = 1;
     var touchSlop = 8;
     var ready = false;
     var visible = false;
     var limit = 20;
+    var lastShowOptions = { widthDp: 340, heightDp: 420 };
     var items = [];
     var itemViews = [];
     var cardContainers = [];
@@ -53,6 +55,9 @@
     var detailCopyView = null;
     var detailEditView = null;
     var detailCloseView = null;
+    var detailRestoreList = false;
+    var detailWidthPx = 0;
+    var detailHeightPx = 0;
     var reorderDrag = {
         active: false,
         sourceIndex: -1,
@@ -79,6 +84,8 @@
         detailCloseCount: 0,
         detailCopyCount: 0,
         detailEditCount: 0,
+        detailListHideCount: 0,
+        detailListRestoreCount: 0,
         reorderCount: 0,
         reorderRejectCount: 0,
         reorderDragStartCount: 0,
@@ -88,6 +95,8 @@
         longItemCount: 0,
         renderedTagLabelCount: 0,
         renderedSensitiveMaskCount: 0,
+        metaRowCount: 0,
+        actionRowCount: 0,
         lastCopiedId: null,
         lastDeletedId: null,
         lastRestoredId: null,
@@ -179,29 +188,29 @@
 
     function cardBackground(dark) {
         return roundedBackground(dark ? "#FF24272D" : "#FFF4F4F6",
-            dark ? "#24FFFFFF" : "#12000000", 13);
+            dark ? "#20FFFFFF" : "#10000000", 12);
     }
 
     function actionBackground(dark, danger, selected) {
         if (selected) {
-            return roundedBackground(dark ? "#FF364A61" : "#FFE4EEF9",
-                dark ? "#667DB4E8" : "#55719BC6", 9);
+            return roundedBackground(dark ? "#FF303D4B" : "#FFE9F0F7",
+                dark ? "#4C6F93B5" : "#3D7193B3", 8);
         }
         return roundedBackground(
-            danger ? (dark ? "#2EF87171" : "#18DC2626") :
-                (dark ? "#22FFFFFF" : "#10000000"),
-            danger ? (dark ? "#55F87171" : "#35DC2626") :
-                (dark ? "#25FFFFFF" : "#16000000"), 9);
+            danger ? (dark ? "#26F87171" : "#12DC2626") :
+                (dark ? "#1AFFFFFF" : "#0C000000"),
+            danger ? (dark ? "#48F87171" : "#2DDC2626") :
+                (dark ? "#20FFFFFF" : "#12000000"), 8);
     }
 
     function makeAction(text, dark, danger, selected, compact) {
         var color = danger ? (dark ? "#FFFFA3A3" : "#FFB91C1C") :
-            (selected ? (dark ? "#FFDCEEFF" : "#FF275A8A") :
+            (selected ? (dark ? "#FFD8E8F7" : "#FF315D82") :
                 (dark ? "#FFE4E4E7" : "#FF3F3F46"));
-        var view = makeText(text, compact ? 11 : 12, color, true);
+        var view = makeText(text, compact ? 10 : 11, color, compact ? false : true);
         view.setGravity(Gravity.CENTER);
-        view.setPadding(dp(compact ? 7 : 11), dp(6),
-            dp(compact ? 7 : 11), dp(6));
+        view.setPadding(dp(compact ? 6 : 9), dp(compact ? 4 : 5),
+            dp(compact ? 6 : 9), dp(compact ? 4 : 5));
         view.setBackground(actionBackground(dark, danger, selected));
         view.setClickable(true);
         view.setFocusable(true);
@@ -459,27 +468,55 @@
         catch (ignored) { metrics = androidContext.getResources().getDisplayMetrics(); }
         width = Math.min(dp(400), Math.max(dp(280),
             Number(metrics.widthPixels) - dp(24)));
-        height = Math.min(dp(560), Math.max(dp(360),
-            Number(metrics.heightPixels) - dp(96)));
+        height = Math.min(dp(520), Math.max(dp(340),
+            Number(metrics.heightPixels) - dp(112)));
         return { width: width, height: height };
     }
 
+    function shouldRestoreList(reason) {
+        reason = String(reason || "close");
+        return detailRestoreList && visible &&
+            reason !== "list_hide" && reason !== "shutdown" &&
+            reason !== "copy_close" && reason !== "replace";
+    }
+
+    function restoreListAfterDetail(reason) {
+        if (!shouldRestoreList(reason)) { return false; }
+        try {
+            ClipHub.Window.open({
+                widthDp: Number(lastShowOptions.widthDp || 340),
+                heightDp: Number(lastShowOptions.heightDp || 420),
+                statusText: "正在加载剪贴板历史"
+            });
+            renderRows(items);
+            state.detailListRestoreCount += 1;
+            return true;
+        } catch (error) {
+            state.lastError = String(error);
+            return false;
+        }
+    }
+
     function closeDetail(reason) {
+        var restore;
         if (detailRoot === null) {
             detailRow = null;
+            detailRestoreList = false;
             return { ok: true, attached: false, alreadyClosed: true,
                 state: getDetailState() };
         }
+        restore = shouldRestoreList(reason);
         return ClipHub.Window.runOnMain(function () {
             var thread = Thread.currentThread();
             try {
                 try { detailWindowManager.removeViewImmediate(detailRoot); }
-                catch (error) { if (detailRoot.isAttachedToWindow()) { throw error; } }
+                catch (error) {
+                    if (detailRoot.isAttachedToWindow()) { throw error; }
+                }
                 state.detailCloseCount += 1;
                 state.detailRemoveThreadId = Number(thread.getId());
                 state.detailRemoveThreadName = String(thread.getName());
                 state.lastDetailAction = String(reason || "close");
-                return { ok: true, attached: false, alreadyClosed: false };
             } finally {
                 detailRoot = null;
                 detailParams = null;
@@ -487,7 +524,12 @@
                 detailCopyView = null;
                 detailEditView = null;
                 detailCloseView = null;
+                detailWidthPx = 0;
+                detailHeightPx = 0;
             }
+            if (restore) { restoreListAfterDetail(reason); }
+            detailRestoreList = false;
+            return { ok: true, attached: false, alreadyClosed: false };
         }, 3000);
     }
 
@@ -532,25 +574,27 @@
     function buildDetailView(row) {
         var dark = isDarkMode();
         var primary = dark ? "#FFF4F4F5" : "#FF171717";
-        var secondary = dark ? "#FFB4B4BC" : "#FF66666F";
+        var secondary = dark ? "#FFA7A7B0" : "#FF686870";
         var root = new LinearLayout(androidContext);
         var titleRow = new LinearLayout(androidContext);
-        var title = makeText("内容详情", 16, primary, true);
+        var title = makeText("内容详情", 15, primary, true);
         var meta;
         var scroll = new ScrollView(androidContext);
-        var body = makeText(String(row.content), 15, primary, false);
+        var body = makeText(String(row.content), 13, primary, false);
         var footer = new LinearLayout(androidContext);
         var params;
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(16), dp(14), dp(16), dp(14));
-        root.setBackground(roundedBackground(dark ? "#FA181A1F" : "#FCFFFFFF",
-            dark ? "#38FFFFFF" : "#1C000000", 17));
+        root.setPadding(dp(14), dp(12), dp(14), dp(12));
+        root.setBackground(roundedBackground(dark ? "#FF181A1F" : "#FFFFFFFF",
+            dark ? "#30FFFFFF" : "#18000000", 16));
         if (Build.VERSION.SDK_INT >= 21) { root.setElevation(dp(18)); }
         titleRow.setOrientation(LinearLayout.HORIZONTAL);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
         titleRow.addView(title, new LinearLayout.LayoutParams(0,
             LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-        detailCloseView = makeAction("关闭", dark, false, false, false);
+        detailCloseView = makeAction("×", dark, false, false, false);
+        detailCloseView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        detailCloseView.setContentDescription("关闭内容详情");
         detailCloseView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
             onClick: function () { closeDetail("button"); }
         }));
@@ -560,25 +604,26 @@
         params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dp(8);
+        params.bottomMargin = dp(5);
         root.addView(titleRow, params);
         meta = makeText((Number(row.is_sensitive || 0) === 1 ?
             "敏感内容  ·  " : "") + String(row.content).length + " 字符  ·  " +
-            sourceText(row), 11, secondary, false);
+            sourceText(row), 10, secondary, false);
         meta.setSingleLine(true);
         meta.setEllipsize(TextUtils.TruncateAt.END);
         params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dp(10);
+        params.bottomMargin = dp(7);
         root.addView(meta, params);
         body.setTextIsSelectable(true);
         body.setGravity(Gravity.TOP | Gravity.START);
-        body.setLineSpacing(0, 1.18);
-        body.setPadding(dp(12), dp(10), dp(12), dp(10));
-        body.setBackground(roundedBackground(dark ? "#FF202328" : "#FFF7F7F8",
-            dark ? "#35FFFFFF" : "#1D000000", 11));
+        body.setLineSpacing(0, 1.10);
+        body.setPadding(dp(10), dp(8), dp(10), dp(8));
+        body.setBackground(roundedBackground(dark ? "#FF1E2025" : "#FFF8F8F9",
+            dark ? "#20FFFFFF" : "#10000000", 10));
         scroll.setFillViewport(true);
+        scroll.setVerticalScrollBarEnabled(false);
         scroll.addView(body, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.WRAP_CONTENT));
@@ -586,17 +631,17 @@
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
         footer.setOrientation(LinearLayout.HORIZONTAL);
         footer.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        footer.setPadding(0, dp(12), 0, 0);
-        detailEditView = makeAction("编辑", dark, false, false, false);
+        footer.setPadding(0, dp(8), 0, 0);
+        detailEditView = makeAction("编辑", dark, false, false, true);
         detailEditView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
             onClick: function () { editFromDetail(); }
         }));
         params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
             LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.rightMargin = dp(8);
+        params.rightMargin = dp(6);
         footer.addView(detailEditView, params);
-        detailCopyView = makeAction("复制", dark, false, true, false);
+        detailCopyView = makeAction("复制", dark, false, true, true);
         detailCopyView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
             onClick: function () { copyDetail(); }
         }));
@@ -610,23 +655,34 @@
     }
 
     function openDetail(row) {
+        var restoreFromPrevious = detailRestoreList;
         if (!isLongText(row)) { return false; }
         if (detailRoot !== null) { closeDetail("replace"); }
+        detailRestoreList = restoreFromPrevious ||
+            (visible && ClipHub.Window && ClipHub.Window.isAttached());
+        if (detailRestoreList) {
+            try {
+                ClipHub.Window.close();
+                state.detailListHideCount += 1;
+            } catch (ignoredClose) {}
+        }
         return ClipHub.Window.runOnMain(function () {
             var size = detailDimensions();
             var type = Build.VERSION.SDK_INT >= 26 ?
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY :
                 WindowManager.LayoutParams.TYPE_SYSTEM_ALERT;
+            var flags = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
+                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED |
+                WindowManager.LayoutParams.FLAG_DIM_BEHIND;
             var thread = Thread.currentThread();
             detailRow = row;
             detailRoot = buildDetailView(row);
+            detailWidthPx = Number(size.width);
+            detailHeightPx = Number(size.height);
             detailParams = new WindowManager.LayoutParams(
-                size.width, size.height, type,
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL |
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
-                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
-                PixelFormat.TRANSLUCENT);
+                size.width, size.height, type, flags, PixelFormat.TRANSLUCENT);
             detailParams.gravity = Gravity.CENTER;
+            detailParams.dimAmount = DETAIL_DIM_AMOUNT;
             try { detailParams.setTitle("ClipHub Content Detail"); }
             catch (ignoredTitle) {}
             detailWindowManager.addView(detailRoot, detailParams);
@@ -642,6 +698,7 @@
 
     function getDetailState() {
         var attached = false;
+        var flags = detailParams === null ? 0 : Number(detailParams.flags);
         try { attached = detailRoot !== null && detailRoot.isAttachedToWindow(); }
         catch (ignored) {}
         return {
@@ -656,11 +713,26 @@
             copyButtonPresent: detailCopyView !== null,
             editButtonPresent: detailEditView !== null,
             closeButtonPresent: detailCloseView !== null,
+            modal: detailParams !== null &&
+                (flags & Number(WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL)) === 0,
+            opaque: detailRoot !== null,
+            dimFlagPresent: detailParams !== null &&
+                (flags & Number(WindowManager.LayoutParams.FLAG_DIM_BEHIND)) !== 0,
+            dimAmount: detailParams === null ? 0 : Number(detailParams.dimAmount || 0),
+            notTouchModalAbsent: detailParams !== null &&
+                (flags & Number(WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL)) === 0,
+            mainWindowHidden: detailRoot !== null && detailRestoreList &&
+                !(ClipHub.Window && ClipHub.Window.isAttached()),
             windowType: detailParams === null ? null : Number(detailParams.type),
+            windowFlags: flags,
+            windowWidthDp: detailWidthPx > 0 ? Math.round(detailWidthPx / density) : 0,
+            windowHeightDp: detailHeightPx > 0 ? Math.round(detailHeightPx / density) : 0,
             openCount: Number(state.detailOpenCount),
             closeCount: Number(state.detailCloseCount),
             copyCount: Number(state.detailCopyCount),
             editCount: Number(state.detailEditCount),
+            listHideCount: Number(state.detailListHideCount),
+            listRestoreCount: Number(state.detailListRestoreCount),
             addThreadName: state.detailAddThreadName,
             removeThreadName: state.detailRemoveThreadName,
             actionThreadName: state.detailActionThreadName,
@@ -668,57 +740,59 @@
         };
     }
 
-    function requestNoIntercept(view, value) {
-        var parent;
-        try {
-            parent = view.getParent();
-            if (parent !== null) { parent.requestDisallowInterceptTouchEvent(value); }
-        } catch (ignored) {}
+    function requestNoIntercept(view, disallow) {
+        var parent = view === null ? null : view.getParent();
+        while (parent !== null) {
+            try { parent.requestDisallowInterceptTouchEvent(disallow === true); }
+            catch (ignored) {}
+            try { parent = parent.getParent(); }
+            catch (ignoredParent) { parent = null; }
+        }
+    }
+
+    function setReorderTargetVisual(targetIndex) {
+        var index;
+        for (index = 0; index < cardContainers.length; index += 1) {
+            try {
+                cardContainers[index].setAlpha(index === targetIndex ? 0.72 : 1.0);
+            } catch (ignored) {}
+        }
     }
 
     function resetReorderVisuals() {
         var index;
         for (index = 0; index < cardContainers.length; index += 1) {
-            try { cardContainers[index].setAlpha(1); } catch (ignored) {}
+            try { cardContainers[index].setAlpha(1.0); }
+            catch (ignored) {}
         }
         for (index = 0; index < reorderViews.length; index += 1) {
             if (reorderViews[index] !== null) {
-                try { reorderViews[index].setPressed(false); } catch (ignoredHandle) {}
+                try { reorderViews[index].setPressed(false); }
+                catch (ignoredPressed) {}
             }
-        }
-    }
-
-    function setReorderTargetVisual(index) {
-        var itemIndex;
-        for (itemIndex = 0; itemIndex < cardContainers.length; itemIndex += 1) {
-            try {
-                cardContainers[itemIndex].setAlpha(itemIndex === index ? 0.72 :
-                    (itemIndex === reorderDrag.sourceIndex ? 0.58 : 1));
-            } catch (ignored) {}
         }
     }
 
     function nearestReorderIndex(rawY, pinned) {
-        var location;
+        var best = -1;
+        var bestDistance = JavaInteger.MAX_VALUE;
+        var location = JavaArray.newInstance(JavaInteger.TYPE, 2);
         var index;
         var center;
         var distance;
-        var bestDistance = Number.MAX_VALUE;
-        var best = reorderDrag.sourceIndex;
         for (index = 0; index < cardContainers.length; index += 1) {
-            if (Number(items[index].is_pinned || 0) === (pinned ? 1 : 0)) {
-                try {
-                    location = JavaArray.newInstance(JavaInteger.TYPE, 2);
-                    cardContainers[index].getLocationOnScreen(location);
-                    center = Number(location[1]) +
-                        Number(cardContainers[index].getHeight()) / 2;
-                    distance = Math.abs(Number(rawY) - center);
-                    if (distance < bestDistance) {
-                        bestDistance = distance;
-                        best = index;
-                    }
-                } catch (ignored) {}
+            if (Number(items[index].is_pinned || 0) !== (pinned ? 1 : 0)) {
+                continue;
             }
+            try {
+                cardContainers[index].getLocationOnScreen(location);
+                center = Number(location[1]) + Number(cardContainers[index].getHeight()) / 2;
+                distance = Math.abs(Number(rawY) - center);
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    best = index;
+                }
+            } catch (ignored) {}
         }
         return best;
     }
@@ -856,8 +930,8 @@
     function buildContent(rows) {
         var dark = isDarkMode();
         var primary = dark ? "#FFF4F4F5" : "#FF171717";
-        var secondary = dark ? "#FFB4B4BC" : "#FF66666F";
-        var tagColor = dark ? "#FF9FC6EA" : "#FF426B91";
+        var secondary = dark ? "#FFA7A7B0" : "#FF686870";
+        var tagColor = dark ? "#FFA9C8E4" : "#FF486C8C";
         var outer = new LinearLayout(androidContext);
         var headerRow;
         var header;
@@ -883,7 +957,6 @@
         var editView;
         var deleteView;
         var params;
-        var metaParams;
         var buttonParams;
         var thread = Thread.currentThread();
         var ids = [];
@@ -892,6 +965,8 @@
         state.renderedTagLabelCount = 0;
         state.renderedSensitiveMaskCount = 0;
         state.longItemCount = 0;
+        state.metaRowCount = 0;
+        state.actionRowCount = 0;
         for (index = 0; index < rows.length; index += 1) {
             ids.push(Number(rows[index].id));
         }
@@ -902,7 +977,7 @@
         headerRow.setGravity(Gravity.CENTER_VERTICAL);
         header = makeText(active ? "筛选结果  " + rows.length :
             (rows.length > 0 ? "最近记录  " + rows.length : "剪贴板历史"),
-            13, secondary, false);
+            12, secondary, false);
         headerRow.addView(header, new LinearLayout.LayoutParams(0,
             LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         addView = makeAction("新增", dark, false, false, false);
@@ -912,7 +987,7 @@
         buttonParams = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
             LinearLayout.LayoutParams.WRAP_CONTENT);
-        buttonParams.rightMargin = dp(6);
+        buttonParams.rightMargin = dp(5);
         headerRow.addView(addView, buttonParams);
         filterView = makeAction(active ? "筛选中" : "筛选",
             dark, false, active, false);
@@ -925,14 +1000,14 @@
         params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dp(8);
+        params.bottomMargin = dp(6);
         outer.addView(headerRow, params);
         if (active) {
-            summary = makeText(filterSummary() + "  ·  排序已禁用", 11,
+            summary = makeText(filterSummary() + "  ·  排序已禁用", 10,
                 secondary, false);
             summary.setSingleLine(true);
             summary.setEllipsize(TextUtils.TruncateAt.END);
-            summary.setPadding(dp(2), 0, dp(2), dp(8));
+            summary.setPadding(dp(1), 0, dp(1), dp(6));
             outer.addView(summary, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -942,14 +1017,14 @@
             undoBar = new LinearLayout(androidContext);
             undoBar.setOrientation(LinearLayout.HORIZONTAL);
             undoBar.setGravity(Gravity.CENTER_VERTICAL);
-            undoBar.setPadding(dp(10), dp(8), dp(8), dp(8));
+            undoBar.setPadding(dp(9), dp(6), dp(7), dp(6));
             undoBar.setBackground(roundedBackground(
                 dark ? "#FF20242A" : "#FFF7F7F8",
-                dark ? "#24FFFFFF" : "#12000000", 11));
-            undoText = makeText("已删除 1 条记录", 12, secondary, false);
+                dark ? "#20FFFFFF" : "#10000000", 10));
+            undoText = makeText("已删除 1 条记录", 11, secondary, false);
             undoBar.addView(undoText, new LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-            undoView = makeAction("撤销", dark, false, false, false);
+            undoView = makeAction("撤销", dark, false, false, true);
             undoView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
                 onClick: function () { undoLastDelete(); }
             }));
@@ -959,7 +1034,7 @@
             params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-            params.bottomMargin = dp(8);
+            params.bottomMargin = dp(6);
             outer.addView(undoBar, params);
         }
         scroll = new ScrollView(androidContext);
@@ -985,10 +1060,10 @@
             preview = makeText(active ?
                 "没有匹配的记录\n调整筛选条件后重试" :
                 "暂无剪贴板记录\n复制文本或点击新增后会显示在这里",
-                14, secondary, false);
+                13, secondary, false);
             preview.setGravity(Gravity.CENTER);
-            preview.setLineSpacing(0, 1.18);
-            preview.setPadding(dp(12), dp(40), dp(12), dp(40));
+            preview.setLineSpacing(0, 1.14);
+            preview.setPadding(dp(12), dp(34), dp(12), dp(34));
             list.addView(preview, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -1002,7 +1077,7 @@
                 wrapper.setGravity(Gravity.CENTER_VERTICAL);
                 wrapper.setBackground(cardBackground(dark));
                 if (allowReorder) {
-                    reorderView = makeText("↕", 18, secondary, true);
+                    reorderView = makeText("↕", 16, secondary, true);
                     reorderView.setGravity(Gravity.CENTER);
                     reorderView.setClickable(true);
                     reorderView.setFocusable(true);
@@ -1017,47 +1092,48 @@
                             }));
                     }(index, reorderView));
                     wrapper.addView(reorderView, new LinearLayout.LayoutParams(
-                        dp(34), LinearLayout.LayoutParams.MATCH_PARENT));
+                        dp(30), LinearLayout.LayoutParams.MATCH_PARENT));
                 } else {
                     reorderView = null;
                 }
                 contentCard = new LinearLayout(androidContext);
                 contentCard.setOrientation(LinearLayout.VERTICAL);
-                contentCard.setPadding(dp(10), dp(10), dp(10), dp(9));
+                contentCard.setPadding(dp(9), dp(8), dp(9), dp(7));
                 contentCard.setClickable(true);
                 contentCard.setFocusable(true);
                 preview = makeText(Number(row.is_sensitive || 0) === 1 ?
-                    "敏感内容" : String(row.content), 14, primary, false);
+                    "敏感内容" : String(row.content), 13, primary, false);
                 if (Number(row.is_sensitive || 0) === 1) {
                     state.renderedSensitiveMaskCount += 1;
                 }
                 preview.setMaxLines(3);
                 preview.setEllipsize(TextUtils.TruncateAt.END);
-                preview.setLineSpacing(0, 1.12);
+                preview.setLineSpacing(0, 1.08);
                 contentCard.addView(preview, new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT));
                 if (rowTags.length > 0) {
-                    tagsLabel = makeText(tagText(rowTags), 11, tagColor, true);
+                    tagsLabel = makeText(tagText(rowTags), 10, tagColor, false);
                     tagsLabel.setSingleLine(true);
                     tagsLabel.setEllipsize(TextUtils.TruncateAt.END);
-                    tagsLabel.setPadding(0, dp(6), 0, 0);
+                    tagsLabel.setPadding(0, dp(5), 0, 0);
                     contentCard.addView(tagsLabel, new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT));
                     state.renderedTagLabelCount += 1;
                 }
-                actionRow = new LinearLayout(androidContext);
-                actionRow.setOrientation(LinearLayout.HORIZONTAL);
-                actionRow.setGravity(Gravity.CENTER_VERTICAL);
-                actionRow.setPadding(0, dp(7), 0, 0);
-                meta = makeText(sourceText(row), 11, secondary, false);
+                meta = makeText(sourceText(row), 10, secondary, false);
                 meta.setSingleLine(true);
                 meta.setEllipsize(TextUtils.TruncateAt.END);
-                metaParams = new LinearLayout.LayoutParams(0,
-                    LinearLayout.LayoutParams.WRAP_CONTENT, 1);
-                metaParams.rightMargin = dp(4);
-                actionRow.addView(meta, metaParams);
+                meta.setPadding(0, dp(5), 0, 0);
+                contentCard.addView(meta, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
+                state.metaRowCount += 1;
+                actionRow = new LinearLayout(androidContext);
+                actionRow.setOrientation(LinearLayout.HORIZONTAL);
+                actionRow.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+                actionRow.setPadding(0, dp(6), 0, 0);
                 detailView = null;
                 if (isLongText(row)) {
                     state.longItemCount += 1;
@@ -1126,6 +1202,7 @@
                 contentCard.addView(actionRow, new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT));
+                state.actionRowCount += 1;
                 (function (targetRow, targetCard) {
                     targetCard.setOnClickListener(new JavaAdapter(
                         View.OnClickListener, {
@@ -1137,7 +1214,7 @@
                 params = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT);
-                params.bottomMargin = dp(8);
+                params.bottomMargin = dp(6);
                 list.addView(wrapper, params);
                 cardContainers.push(wrapper);
                 itemViews.push(contentCard);
@@ -1159,7 +1236,9 @@
         var output = [];
         var index;
         rows = rows || [];
-        for (index = 0; index < rows.length; index += 1) { output.push(rows[index]); }
+        for (index = 0; index < rows.length; index += 1) {
+            output.push(rows[index]);
+        }
         return output;
     }
 
@@ -1223,9 +1302,11 @@
         options = options || {};
         limit = Math.max(1, Math.min(100,
             Math.floor(Number(options.limit || limit))));
+        lastShowOptions.widthDp = Number(options.widthDp || 340);
+        lastShowOptions.heightDp = Number(options.heightDp || 420);
         openResult = ClipHub.Window.open({
-            widthDp: Number(options.widthDp || 340),
-            heightDp: Number(options.heightDp || 420),
+            widthDp: lastShowOptions.widthDp,
+            heightDp: lastShowOptions.heightDp,
             statusText: "正在加载剪贴板历史"
         });
         visible = true;
@@ -1282,6 +1363,8 @@
             detailCloseCount: Number(state.detailCloseCount),
             detailCopyCount: Number(state.detailCopyCount),
             detailEditCount: Number(state.detailEditCount),
+            detailListHideCount: Number(state.detailListHideCount),
+            detailListRestoreCount: Number(state.detailListRestoreCount),
             reorderCount: Number(state.reorderCount),
             reorderRejectCount: Number(state.reorderRejectCount),
             reorderDragStartCount: Number(state.reorderDragStartCount),
@@ -1292,6 +1375,8 @@
             reorderHandleCount: countPresent(reorderViews),
             reorderDragActive: reorderDrag.active,
             longItemCount: Number(state.longItemCount),
+            metaRowCount: Number(state.metaRowCount),
+            actionRowCount: Number(state.actionRowCount),
             lastCopiedId: state.lastCopiedId,
             lastDeletedId: state.lastDeletedId,
             lastRestoredId: state.lastRestoredId,
@@ -1338,8 +1423,9 @@
         for (key in state) {
             if (state.hasOwnProperty(key)) {
                 if (/Count$/.test(key)) { state[key] = 0; }
-                else if (/Ok$/.test(key) || key === "emptyVisible") { state[key] = false; }
-                else { state[key] = null; }
+                else if (/Ok$/.test(key) || key === "emptyVisible") {
+                    state[key] = false;
+                } else { state[key] = null; }
             }
         }
         state.renderedCount = 0;
@@ -1358,6 +1444,8 @@
         state.detailCloseCount = 0;
         state.detailCopyCount = 0;
         state.detailEditCount = 0;
+        state.detailListHideCount = 0;
+        state.detailListRestoreCount = 0;
         state.reorderCount = 0;
         state.reorderRejectCount = 0;
         state.reorderDragStartCount = 0;
@@ -1367,6 +1455,8 @@
         state.longItemCount = 0;
         state.renderedTagLabelCount = 0;
         state.renderedSensitiveMaskCount = 0;
+        state.metaRowCount = 0;
+        state.actionRowCount = 0;
         state.lastCopyOk = false;
     }
 
@@ -1420,7 +1510,7 @@
 
     ClipHub.List = {
         MODULE_NAME: "ch_09_list",
-        MODULE_VERSION: 8,
+        MODULE_VERSION: 9,
         LONG_TEXT_THRESHOLD: LONG_TEXT_THRESHOLD,
         init: function (context) {
             androidContext = context && context.androidContext ?
@@ -1456,6 +1546,9 @@
             detailRoot = null;
             detailParams = null;
             detailRow = null;
+            detailRestoreList = false;
+            detailWidthPx = 0;
+            detailHeightPx = 0;
             reorderDrag.active = false;
             reorderDrag.sourceIndex = -1;
             reorderDrag.targetIndex = -1;
@@ -1491,12 +1584,24 @@
             }
             return true;
         },
-        performItemClick: function (index) { return performViewClick(itemViews, index); },
-        performDeleteClick: function (index) { return performViewClick(deleteViews, index); },
-        performEditClick: function (index) { return performViewClick(editViews, index); },
-        performPinClick: function (index) { return performViewClick(pinViews, index); },
-        performTagClick: function (index) { return performViewClick(tagViews, index); },
-        performDetailClick: function (index) { return performViewClick(detailViews, index); },
+        performItemClick: function (index) {
+            return performViewClick(itemViews, index);
+        },
+        performDeleteClick: function (index) {
+            return performViewClick(deleteViews, index);
+        },
+        performEditClick: function (index) {
+            return performViewClick(editViews, index);
+        },
+        performPinClick: function (index) {
+            return performViewClick(pinViews, index);
+        },
+        performTagClick: function (index) {
+            return performViewClick(tagViews, index);
+        },
+        performDetailClick: function (index) {
+            return performViewClick(detailViews, index);
+        },
         performReorder: function (fromIndex, toIndex) {
             return ClipHub.Window.runOnMain(function () {
                 return commitReorder(fromIndex, toIndex, "api");
