@@ -1,4 +1,4 @@
-/* ClipHub control and clipboard pressure probe 006. Rhino ES5 only. */
+/* ClipHub token control and clipboard pressure probe 006. Rhino ES5 only. */
 (function (global) {
     var File = Packages.java.io.File;
     var FIS = Packages.java.io.FileInputStream;
@@ -17,7 +17,6 @@
     var Intent = Packages.android.content.Intent;
     var ClipData = Packages.android.content.ClipData;
     var Uri = Packages.android.net.Uri;
-    var CONTROL_ACTION = "com.cliphub.runtime.CONTROL";
     var NAMES = [
         "ch_01_base.js", "ch_02_log.js", "ch_03_database.js",
         "ch_04_clipboard.js", "ch_05_classifier.js",
@@ -163,11 +162,31 @@
         }
     }
 
+    function readControlEndpoint(runtimeDir) {
+        var endpointFile = new File(
+            new File(runtimeDir, "cache"), "control_endpoint.json"
+        );
+        var endpoint;
+        if (!endpointFile.isFile()) { return null; }
+        endpoint = JSON.parse(readUtf8(endpointFile));
+        if (!endpoint || Number(endpoint.schemaVersion) !== 1 ||
+                String(endpoint.transport || "") !== "dynamic_broadcast_token" ||
+                String(endpoint.action || "").length < 32 ||
+                String(endpoint.token || "").length < 32 ||
+                String(endpoint.runtimeDir || "") !==
+                    String(runtimeDir.getAbsolutePath())) {
+            throw new Error("Invalid formal control endpoint");
+        }
+        return { file: endpointFile, data: endpoint };
+    }
+
     function stopRuntimeAcrossTasks(androidContext, runtimeDir) {
         var cacheDir = ensureDir(new File(runtimeDir, "cache"));
         var requestId = stamp(now()) + "-" +
             Number(Thread.currentThread().getId());
         var ackFile = new File(cacheDir, "control_ack_" + requestId + ".json");
+        var endpointInfo;
+        var endpoint;
         var intent;
         var ack = null;
         var initiallyAvailable = lockAvailable(runtimeDir);
@@ -180,15 +199,35 @@
                 initiallyRunning: false,
                 lockReleased: true,
                 ackReceived: false,
+                endpointPresent: false,
+                endpointRemoved: false,
+                transport: null,
                 ack: null,
                 error: "Formal ClipHub was not running before probe 006"
             };
         }
-        intent = new Intent(CONTROL_ACTION);
-        intent.setPackage(String(androidContext.getPackageName()));
+        endpointInfo = readControlEndpoint(runtimeDir);
+        if (endpointInfo === null) {
+            return {
+                ok: false,
+                stopped: false,
+                alreadyStopped: false,
+                initiallyRunning: true,
+                lockReleased: false,
+                ackReceived: false,
+                endpointPresent: false,
+                endpointRemoved: false,
+                transport: null,
+                ack: null,
+                error: "Formal control endpoint is missing"
+            };
+        }
+        endpoint = endpointInfo.data;
+        intent = new Intent(String(endpoint.action));
         intent.putExtra("runtimeDir", String(runtimeDir.getAbsolutePath()));
         intent.putExtra("command", "stop");
         intent.putExtra("requestId", requestId);
+        intent.putExtra("controlToken", String(endpoint.token));
         androidContext.sendBroadcast(intent);
         waitFor(function () {
             return ackFile.isFile() && lockAvailable(runtimeDir);
@@ -200,12 +239,16 @@
         }
         return {
             ok: lockAvailable(runtimeDir) && ack !== null &&
-                ack.ok === true && ack.stopped === true,
+                ack.ok === true && ack.stopped === true &&
+                String(ack.transport || "") === "dynamic_broadcast_token",
             stopped: lockAvailable(runtimeDir),
             alreadyStopped: false,
             initiallyRunning: true,
             lockReleased: lockAvailable(runtimeDir),
             ackReceived: ack !== null,
+            endpointPresent: true,
+            endpointRemoved: !endpointInfo.file.exists(),
+            transport: "dynamic_broadcast_token",
             ack: ack,
             error: ack === null ? "Control acknowledgement not received" : null
         };
@@ -240,7 +283,7 @@
         var result = {
             ok: false,
             probe: "cliphub_pressure_probe_006",
-            probeVersion: 1,
+            probeVersion: 2,
             startedAt: startedAt,
             finishedAt: null,
             durationMs: null,
@@ -250,6 +293,9 @@
             threadName: String(Thread.currentThread().getName()),
             formalControl: null,
             formalInitiallyRunning: false,
+            formalEndpointPresent: false,
+            formalEndpointRemoved: false,
+            formalControlTransport: null,
             formalAckReceived: false,
             formalAckThreadId: null,
             formalAckThreadName: null,
@@ -314,6 +360,9 @@
             control = stopRuntimeAcrossTasks(androidContext, installed);
             result.formalControl = control;
             result.formalInitiallyRunning = control.initiallyRunning === true;
+            result.formalEndpointPresent = control.endpointPresent === true;
+            result.formalEndpointRemoved = control.endpointRemoved === true;
+            result.formalControlTransport = control.transport;
             result.formalAckReceived = control.ackReceived === true;
             result.formalAckThreadId = control.ack === null ? null :
                 Number(control.ack.threadId);
@@ -322,10 +371,14 @@
             result.formalStopped = control.stopped === true;
             result.formalLockReleased = control.lockReleased === true;
             if (!control.ok || !result.formalInitiallyRunning ||
+                    !result.formalEndpointPresent ||
+                    !result.formalEndpointRemoved ||
+                    result.formalControlTransport !==
+                        "dynamic_broadcast_token" ||
                     !result.formalAckReceived ||
                     result.formalAckThreadName !== "main") {
                 throw new Error(control.error ||
-                    "Formal control stop path was not fully exercised");
+                    "Formal token control stop path was not fully exercised");
             }
 
             removeTree(isolated);
@@ -461,7 +514,11 @@
             result.finishedAt = now();
             result.durationMs = result.finishedAt - result.startedAt;
             result.ok = result.error === null &&
-                result.formalInitiallyRunning && result.formalAckReceived &&
+                result.formalInitiallyRunning &&
+                result.formalEndpointPresent &&
+                result.formalEndpointRemoved &&
+                result.formalControlTransport === "dynamic_broadcast_token" &&
+                result.formalAckReceived &&
                 result.formalAckThreadName === "main" &&
                 result.formalStopped && result.formalLockReleased &&
                 result.listenerRunning && result.uniqueInserted &&
@@ -487,7 +544,7 @@
         global.ClipHubPressureProbe006Result = {
             ok: false,
             probe: "cliphub_pressure_probe_006",
-            probeVersion: 1,
+            probeVersion: 2,
             fatal: true,
             error: errorText(error)
         };
