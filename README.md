@@ -135,13 +135,15 @@ SQLite
 - 统一命名空间和模块生命周期；
 - 文件锁单实例保护；
 - 运行目录、eval 作用域和双任务文件锁真机探测；
+- Android 原生 SQLite 提交、回滚、外键、重开和完整性真机探测；
 - SQLite schema v1、迁移框架、参数绑定和显式事务封装；
 - Repository 基础 CRUD、软删除、恢复和标签关联接口。
 
 正在验证：
 
-- Android 原生 SQLite 提交、回滚、foreign key 和重开行为；
-- 真实模块加载和 Repository 真机 CRUD。
+- 真实 `ClipHub.js` 和全部模块加载；
+- 正式 schema 与 Repository 真机 CRUD；
+- 停止后的数据库关闭、文件锁释放和二次启动。
 
 尚未实现：
 
@@ -182,13 +184,16 @@ ClipHub/
 │   ├── 模块规范.md
 │   ├── 真机探测说明.md
 │   ├── SQLite探测说明.md
+│   ├── SQLite阶段边界.md
+│   ├── 真实模块探测004说明.md
 │   ├── probe-results/
 │   └── images/
 │       └── cliphub-ui-concept.png
 ├── probes/
 │   ├── cliphub_runtime_probe_001.js
 │   ├── cliphub_lock_probe_002.js
-│   └── cliphub_database_probe_003.js
+│   ├── cliphub_database_probe_003.js
+│   └── cliphub_module_probe_004.js
 ├── src/
 │   ├── ch_01_base.js
 │   ├── ch_02_log.js
@@ -206,6 +211,7 @@ ClipHub/
 │   ├── ch_14_event_bus.js
 │   └── ch_15_app.js
 └── scripts/
+    ├── install_shortx_runtime.sh
     └── validate_es5.py
 ```
 
@@ -255,6 +261,7 @@ ClipHub/
 - [模块规范](docs/模块规范.md)
 - [真机探测说明](docs/真机探测说明.md)
 - [SQLite 探测说明](docs/SQLite探测说明.md)
+- [真实模块探测 004](docs/真实模块探测004说明.md)
 
 ## 分支建议
 
