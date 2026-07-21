@@ -1,7 +1,11 @@
 (function (global) {
     var ClipHub = global.ClipHub || (global.ClipHub = {});
+    var Context = Packages.android.content.Context;
+    var Build = Packages.android.os.Build;
     var View = Packages.android.view.View;
     var Gravity = Packages.android.view.Gravity;
+    var WindowManager = Packages.android.view.WindowManager;
+    var PixelFormat = Packages.android.graphics.PixelFormat;
     var Color = Packages.android.graphics.Color;
     var GradientDrawable = Packages.android.graphics.drawable.GradientDrawable;
     var LinearLayout = Packages.android.widget.LinearLayout;
@@ -10,11 +14,14 @@
     var TextView = Packages.android.widget.TextView;
     var TypedValue = Packages.android.util.TypedValue;
     var TextUtils = Packages.android.text.TextUtils;
+    var DisplayMetrics = Packages.android.util.DisplayMetrics;
     var Thread = Packages.java.lang.Thread;
     var SimpleDateFormat = Packages.java.text.SimpleDateFormat;
     var Locale = Packages.java.util.Locale;
     var Date = Packages.java.util.Date;
 
+    var LONG_TEXT_THRESHOLD = 180;
+    var LONG_TEXT_LINE_THRESHOLD = 4;
     var androidContext = null;
     var density = 1;
     var ready = false;
@@ -26,11 +33,19 @@
     var editViews = [];
     var pinViews = [];
     var tagViews = [];
+    var detailViews = [];
     var undoView = null;
     var filterView = null;
     var addView = null;
     var lastDeleted = null;
     var eventBindings = [];
+    var detailWindowManager = null;
+    var detailRoot = null;
+    var detailParams = null;
+    var detailRow = null;
+    var detailCopyView = null;
+    var detailEditView = null;
+    var detailCloseView = null;
     var state = {
         renderedCount: 0,
         emptyVisible: false,
@@ -44,12 +59,20 @@
         editOpenCount: 0,
         tagOpenCount: 0,
         filterOpenCount: 0,
+        detailOpenCount: 0,
+        detailCloseCount: 0,
+        detailCopyCount: 0,
+        detailEditCount: 0,
+        longItemCount: 0,
+        renderedTagLabelCount: 0,
+        renderedSensitiveMaskCount: 0,
         lastCopiedId: null,
         lastDeletedId: null,
         lastRestoredId: null,
         lastPinnedId: null,
         lastPinnedValue: null,
         lastTagItemId: null,
+        lastDetailItemId: null,
         lastCopyOk: false,
         clickThreadId: null,
         clickThreadName: null,
@@ -67,9 +90,15 @@
         tagThreadName: null,
         filterThreadId: null,
         filterThreadName: null,
+        detailActionThreadId: null,
+        detailActionThreadName: null,
+        detailAddThreadId: null,
+        detailAddThreadName: null,
+        detailRemoveThreadId: null,
+        detailRemoveThreadName: null,
         renderThreadId: null,
         renderThreadName: null,
-        renderedTagLabelCount: 0,
+        lastDetailAction: null,
         lastError: null
     };
 
@@ -178,6 +207,13 @@
         return parts.join("  ");
     }
 
+    function isLongText(row) {
+        var content = String(row && row.content !== undefined ? row.content : "");
+        var lines = content.split("\n").length;
+        return content.length > LONG_TEXT_THRESHOLD ||
+            lines >= LONG_TEXT_LINE_THRESHOLD;
+    }
+
     function filterState() {
         try {
             if (ClipHub.Filter && typeof ClipHub.Filter.getState === "function") {
@@ -248,6 +284,7 @@
             } catch (ignoredSetting) {}
             if (closeAfter) {
                 visible = false;
+                closeDetail("copy_close");
                 ClipHub.Window.close();
             }
             return state.lastCopyOk;
@@ -411,10 +448,233 @@
         }
     }
 
-    function clickListener(row) {
-        return new JavaAdapter(View.OnClickListener, {
-            onClick: function () { copyRow(row); }
-        });
+    function detailDimensions() {
+        var metrics = new DisplayMetrics();
+        var width;
+        var height;
+        try {
+            detailWindowManager.getDefaultDisplay().getRealMetrics(metrics);
+        } catch (ignored) {
+            metrics = androidContext.getResources().getDisplayMetrics();
+        }
+        width = Math.min(dp(400), Math.max(dp(280),
+            Number(metrics.widthPixels) - dp(24)));
+        height = Math.min(dp(560), Math.max(dp(360),
+            Number(metrics.heightPixels) - dp(96)));
+        return { width: width, height: height };
+    }
+
+    function closeDetail(reason) {
+        if (detailRoot === null) {
+            detailRow = null;
+            return { ok: true, attached: false, alreadyClosed: true,
+                state: getDetailState() };
+        }
+        return ClipHub.Window.runOnMain(function () {
+            var thread = Thread.currentThread();
+            try {
+                if (detailRoot !== null) {
+                    try { detailWindowManager.removeViewImmediate(detailRoot); }
+                    catch (error) {
+                        if (detailRoot.isAttachedToWindow()) { throw error; }
+                    }
+                }
+                state.detailCloseCount += 1;
+                state.detailRemoveThreadId = Number(thread.getId());
+                state.detailRemoveThreadName = String(thread.getName());
+                state.lastDetailAction = String(reason || "close");
+                return { ok: true, attached: false, alreadyClosed: false };
+            } finally {
+                detailRoot = null;
+                detailParams = null;
+                detailRow = null;
+                detailCopyView = null;
+                detailEditView = null;
+                detailCloseView = null;
+            }
+        }, 3000);
+    }
+
+    function copyDetail() {
+        var thread = Thread.currentThread();
+        var result;
+        if (detailRow === null) { return false; }
+        try {
+            result = ClipHub.Clipboard.writeText(String(detailRow.content), {
+                label: "ClipHub 详情",
+                sensitive: Number(detailRow.is_sensitive || 0) === 1
+            });
+            state.detailCopyCount += 1;
+            state.detailActionThreadId = Number(thread.getId());
+            state.detailActionThreadName = String(thread.getName());
+            state.lastDetailAction = "copy";
+            state.lastCopiedId = Number(detailRow.id);
+            state.lastCopyOk = result && result.ok === true;
+            return state.lastCopyOk;
+        } catch (error) {
+            state.lastError = String(error);
+            state.lastCopyOk = false;
+            return false;
+        }
+    }
+
+    function editFromDetail() {
+        var row = detailRow;
+        var thread = Thread.currentThread();
+        if (row === null) { return false; }
+        try {
+            state.detailEditCount += 1;
+            state.detailActionThreadId = Number(thread.getId());
+            state.detailActionThreadName = String(thread.getName());
+            state.lastDetailAction = "edit";
+            closeDetail("edit");
+            ClipHub.Editor.openItem(Number(row.id));
+            return true;
+        } catch (error) {
+            state.lastError = String(error);
+            return false;
+        }
+    }
+
+    function buildDetailView(row) {
+        var dark = isDarkMode();
+        var primary = dark ? "#FFF4F4F5" : "#FF171717";
+        var secondary = dark ? "#FFB4B4BC" : "#FF66666F";
+        var root = new LinearLayout(androidContext);
+        var titleRow = new LinearLayout(androidContext);
+        var title = makeText("内容详情", 16, primary, true);
+        var meta;
+        var scroll = new ScrollView(androidContext);
+        var body = makeText(String(row.content), 15, primary, false);
+        var footer = new LinearLayout(androidContext);
+        var params;
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(16), dp(14), dp(16), dp(14));
+        root.setBackground(roundedBackground(
+            dark ? "#FA181A1F" : "#FCFFFFFF",
+            dark ? "#38FFFFFF" : "#1C000000", 17));
+        if (Build.VERSION.SDK_INT >= 21) { root.setElevation(dp(18)); }
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        titleRow.addView(title, new LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        detailCloseView = makeAction("关闭", dark, false, false, false);
+        detailCloseView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
+            onClick: function () { closeDetail("button"); }
+        }));
+        titleRow.addView(detailCloseView, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT));
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.bottomMargin = dp(8);
+        root.addView(titleRow, params);
+        meta = makeText((Number(row.is_sensitive || 0) === 1 ?
+            "敏感内容  ·  " : "") + String(row.content).length + " 字符  ·  " +
+            sourceText(row), 11, secondary, false);
+        meta.setSingleLine(true);
+        meta.setEllipsize(TextUtils.TruncateAt.END);
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.bottomMargin = dp(10);
+        root.addView(meta, params);
+        body.setTextIsSelectable(true);
+        body.setGravity(Gravity.TOP | Gravity.START);
+        body.setLineSpacing(0, 1.18);
+        body.setPadding(dp(12), dp(10), dp(12), dp(10));
+        body.setBackground(roundedBackground(
+            dark ? "#FF202328" : "#FFF7F7F8",
+            dark ? "#35FFFFFF" : "#1D000000", 11));
+        scroll.setFillViewport(true);
+        scroll.addView(body, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT));
+        root.addView(scroll, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
+        footer.setOrientation(LinearLayout.HORIZONTAL);
+        footer.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        footer.setPadding(0, dp(12), 0, 0);
+        detailEditView = makeAction("编辑", dark, false, false, false);
+        detailEditView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
+            onClick: function () { editFromDetail(); }
+        }));
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.rightMargin = dp(8);
+        footer.addView(detailEditView, params);
+        detailCopyView = makeAction("复制", dark, false, true, false);
+        detailCopyView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
+            onClick: function () { copyDetail(); }
+        }));
+        footer.addView(detailCopyView, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT));
+        root.addView(footer, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT));
+        return root;
+    }
+
+    function openDetail(row) {
+        if (!isLongText(row)) { return false; }
+        if (detailRoot !== null) { closeDetail("replace"); }
+        return ClipHub.Window.runOnMain(function () {
+            var size = detailDimensions();
+            var type = Build.VERSION.SDK_INT >= 26 ?
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY :
+                WindowManager.LayoutParams.TYPE_SYSTEM_ALERT;
+            var thread = Thread.currentThread();
+            detailRow = row;
+            detailRoot = buildDetailView(row);
+            detailParams = new WindowManager.LayoutParams(
+                size.width, size.height, type,
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL |
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
+                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+                PixelFormat.TRANSLUCENT);
+            detailParams.gravity = Gravity.CENTER;
+            try { detailParams.setTitle("ClipHub Content Detail"); }
+            catch (ignoredTitle) {}
+            detailWindowManager.addView(detailRoot, detailParams);
+            state.detailOpenCount += 1;
+            state.lastDetailItemId = Number(row.id);
+            state.detailAddThreadId = Number(thread.getId());
+            state.detailAddThreadName = String(thread.getName());
+            state.lastDetailAction = "open";
+            state.lastError = null;
+            return true;
+        }, 3000);
+    }
+
+    function getDetailState() {
+        var attached = false;
+        try { attached = detailRoot !== null && detailRoot.isAttachedToWindow(); }
+        catch (ignored) {}
+        return {
+            attached: detailRoot !== null,
+            attachedToWindow: attached,
+            itemId: detailRow === null ? null : Number(detailRow.id),
+            sensitive: detailRow !== null && Number(detailRow.is_sensitive || 0) === 1,
+            contentLength: detailRow === null ? 0 : String(detailRow.content).length,
+            textVisible: detailRoot !== null && detailRow !== null,
+            textSelectable: detailRoot !== null,
+            scrollable: detailRoot !== null,
+            copyButtonPresent: detailCopyView !== null,
+            editButtonPresent: detailEditView !== null,
+            closeButtonPresent: detailCloseView !== null,
+            windowType: detailParams === null ? null : Number(detailParams.type),
+            openCount: Number(state.detailOpenCount),
+            closeCount: Number(state.detailCloseCount),
+            copyCount: Number(state.detailCopyCount),
+            editCount: Number(state.detailEditCount),
+            addThreadName: state.detailAddThreadName,
+            removeThreadName: state.detailRemoveThreadName,
+            actionThreadName: state.detailActionThreadName,
+            lastAction: state.lastDetailAction
+        };
     }
 
     function buildContent(rows) {
@@ -438,6 +698,7 @@
         var tagsLabel;
         var actionRow;
         var meta;
+        var detailView;
         var tagView;
         var pinView;
         var editView;
@@ -450,11 +711,12 @@
         var tagMap;
         var rowTags;
         state.renderedTagLabelCount = 0;
+        state.renderedSensitiveMaskCount = 0;
+        state.longItemCount = 0;
         for (index = 0; index < rows.length; index += 1) {
             ids.push(Number(rows[index].id));
         }
         tagMap = ClipHub.Repository.listItemTagMap(ids);
-
         outer.setOrientation(LinearLayout.VERTICAL);
         headerRow = new LinearLayout(androidContext);
         headerRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -465,7 +727,6 @@
         headerRow.addView(header, new LinearLayout.LayoutParams(
             0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         addView = makeAction("新增", dark, false, false, false);
-        addView.setContentDescription("新增剪贴板记录");
         addView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
             onClick: function () { openNewEditor(); }
         }));
@@ -476,7 +737,6 @@
         headerRow.addView(addView, buttonParams);
         filterView = makeAction(active ? "筛选中" : "筛选",
             dark, false, active, false);
-        filterView.setContentDescription("打开搜索与筛选");
         filterView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
             onClick: function () { openFilterPanel(); }
         }));
@@ -488,7 +748,6 @@
             LinearLayout.LayoutParams.WRAP_CONTENT);
         params.bottomMargin = dp(8);
         outer.addView(headerRow, params);
-
         if (active) {
             summary = makeText(filterSummary(), 11, secondary, false);
             summary.setSingleLine(true);
@@ -498,7 +757,6 @@
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
         }
-
         undoView = null;
         if (lastDeleted !== null) {
             undoBar = new LinearLayout(androidContext);
@@ -524,7 +782,6 @@
             params.bottomMargin = dp(8);
             outer.addView(undoBar, params);
         }
-
         scroll = new ScrollView(androidContext);
         scroll.setFillViewport(true);
         scroll.setVerticalScrollBarEnabled(false);
@@ -535,12 +792,12 @@
             FrameLayout.LayoutParams.WRAP_CONTENT));
         outer.addView(scroll, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
-
         itemViews = [];
         deleteViews = [];
         editViews = [];
         pinViews = [];
         tagViews = [];
+        detailViews = [];
         if (rows.length === 0) {
             state.emptyVisible = true;
             preview = makeText(active ?
@@ -564,10 +821,11 @@
                 card.setBackground(cardBackground(dark));
                 card.setClickable(true);
                 card.setFocusable(true);
-                card.setContentDescription(
-                    "复制第 " + (index + 1) + " 条剪贴板记录");
                 preview = makeText(Number(row.is_sensitive || 0) === 1 ?
                     "敏感内容" : String(row.content), 14, primary, false);
+                if (Number(row.is_sensitive || 0) === 1) {
+                    state.renderedSensitiveMaskCount += 1;
+                }
                 preview.setMaxLines(3);
                 preview.setEllipsize(TextUtils.TruncateAt.END);
                 preview.setLineSpacing(0, 1.12);
@@ -595,6 +853,22 @@
                     0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
                 metaParams.rightMargin = dp(4);
                 actionRow.addView(meta, metaParams);
+                detailView = null;
+                if (isLongText(row)) {
+                    state.longItemCount += 1;
+                    detailView = makeAction("详情", dark, false, false, true);
+                    (function (targetRow, targetView) {
+                        targetView.setOnClickListener(new JavaAdapter(
+                            View.OnClickListener, {
+                                onClick: function () { openDetail(targetRow); }
+                            }));
+                    }(row, detailView));
+                    buttonParams = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                    buttonParams.rightMargin = dp(3);
+                    actionRow.addView(detailView, buttonParams);
+                }
                 tagView = makeAction("标签", dark, false,
                     rowTags.length > 0, true);
                 (function (targetRow, targetView) {
@@ -647,13 +921,19 @@
                 card.addView(actionRow, new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT));
-                card.setOnClickListener(clickListener(row));
+                (function (targetRow, targetCard) {
+                    targetCard.setOnClickListener(new JavaAdapter(
+                        View.OnClickListener, {
+                            onClick: function () { copyRow(targetRow); }
+                        }));
+                }(row, card));
                 params = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT);
                 params.bottomMargin = dp(8);
                 list.addView(card, params);
                 itemViews.push(card);
+                detailViews.push(detailView);
                 tagViews.push(tagView);
                 pinViews.push(pinView);
                 editViews.push(editView);
@@ -670,9 +950,7 @@
         var output = [];
         var index;
         rows = rows || [];
-        for (index = 0; index < rows.length; index += 1) {
-            output.push(rows[index]);
-        }
+        for (index = 0; index < rows.length; index += 1) { output.push(rows[index]); }
         return output;
     }
 
@@ -708,13 +986,9 @@
         if (!visible) { return; }
         try {
             if (ClipHub.Filter && typeof ClipHub.Filter.isActive === "function" &&
-                    ClipHub.Filter.isActive()) {
-                return;
-            }
+                    ClipHub.Filter.isActive()) { return; }
             refresh(true);
-        } catch (error) {
-            state.lastError = String(error);
-        }
+        } catch (error) { state.lastError = String(error); }
     }
 
     function bindEvent(name) {
@@ -775,12 +1049,18 @@
             editOpenCount: Number(state.editOpenCount),
             tagOpenCount: Number(state.tagOpenCount),
             filterOpenCount: Number(state.filterOpenCount),
+            detailOpenCount: Number(state.detailOpenCount),
+            detailCloseCount: Number(state.detailCloseCount),
+            detailCopyCount: Number(state.detailCopyCount),
+            detailEditCount: Number(state.detailEditCount),
+            longItemCount: Number(state.longItemCount),
             lastCopiedId: state.lastCopiedId,
             lastDeletedId: state.lastDeletedId,
             lastRestoredId: state.lastRestoredId,
             lastPinnedId: state.lastPinnedId,
             lastPinnedValue: state.lastPinnedValue,
             lastTagItemId: state.lastTagItemId,
+            lastDetailItemId: state.lastDetailItemId,
             lastCopyOk: state.lastCopyOk,
             undoAvailable: lastDeleted !== null,
             addButtonPresent: addView !== null,
@@ -788,7 +1068,9 @@
             editButtonCount: editViews.length,
             pinButtonCount: pinViews.length,
             tagButtonCount: tagViews.length,
+            detailButtonCount: state.longItemCount,
             renderedTagLabelCount: Number(state.renderedTagLabelCount),
+            renderedSensitiveMaskCount: Number(state.renderedSensitiveMaskCount),
             filterActive: currentFilter.active === true,
             filterSummary: filterSummary(),
             clickThreadName: state.clickThreadName,
@@ -799,7 +1081,9 @@
             editThreadName: state.editThreadName,
             tagThreadName: state.tagThreadName,
             filterThreadName: state.filterThreadName,
+            detailActionThreadName: state.detailActionThreadName,
             renderThreadName: state.renderThreadName,
+            detail: getDetailState(),
             lastError: state.lastError,
             windowAttached: !!(ClipHub.Window && ClipHub.Window.isAttached())
         };
@@ -826,21 +1110,30 @@
         state.editOpenCount = 0;
         state.tagOpenCount = 0;
         state.filterOpenCount = 0;
+        state.detailOpenCount = 0;
+        state.detailCloseCount = 0;
+        state.detailCopyCount = 0;
+        state.detailEditCount = 0;
+        state.longItemCount = 0;
         state.renderedTagLabelCount = 0;
+        state.renderedSensitiveMaskCount = 0;
         state.lastCopyOk = false;
     }
 
     function performViewClick(collection, index) {
         index = Math.floor(Number(index));
         return ClipHub.Window.runOnMain(function () {
-            if (index < 0 || index >= collection.length) { return false; }
+            if (index < 0 || index >= collection.length || collection[index] === null) {
+                return false;
+            }
             return collection[index].performClick();
         }, 2500);
     }
 
     ClipHub.List = {
         MODULE_NAME: "ch_09_list",
-        MODULE_VERSION: 6,
+        MODULE_VERSION: 7,
+        LONG_TEXT_THRESHOLD: LONG_TEXT_THRESHOLD,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
@@ -848,6 +1141,10 @@
                 throw new Error("Android context unavailable for list");
             }
             androidContext = androidContext.getApplicationContext() || androidContext;
+            detailWindowManager = androidContext.getSystemService(Context.WINDOW_SERVICE);
+            if (detailWindowManager === null) {
+                throw new Error("WindowManager unavailable for detail");
+            }
             density = Number(androidContext.getResources()
                 .getDisplayMetrics().density || 1);
             items = [];
@@ -856,12 +1153,16 @@
             editViews = [];
             pinViews = [];
             tagViews = [];
+            detailViews = [];
             undoView = null;
             filterView = null;
             addView = null;
             lastDeleted = null;
             visible = false;
             eventBindings = [];
+            detailRoot = null;
+            detailParams = null;
+            detailRow = null;
             resetState();
             bindEvent("clipboard_added");
             bindEvent("clipboard_merged");
@@ -875,6 +1176,7 @@
         refresh: function () { return refresh(false); },
         hide: function (closeWindow) {
             visible = false;
+            closeDetail("list_hide");
             if (closeWindow !== false && ClipHub.Window) { ClipHub.Window.close(); }
             return true;
         },
@@ -897,6 +1199,28 @@
         performEditClick: function (index) { return performViewClick(editViews, index); },
         performPinClick: function (index) { return performViewClick(pinViews, index); },
         performTagClick: function (index) { return performViewClick(tagViews, index); },
+        performDetailClick: function (index) { return performViewClick(detailViews, index); },
+        performDetailCopyClick: function () {
+            return ClipHub.Window.runOnMain(function () {
+                return detailCopyView !== null ? detailCopyView.performClick() : false;
+            }, 2500);
+        },
+        performDetailEditClick: function () {
+            return ClipHub.Window.runOnMain(function () {
+                return detailEditView !== null ? detailEditView.performClick() : false;
+            }, 2500);
+        },
+        performDetailCloseClick: function () {
+            return ClipHub.Window.runOnMain(function () {
+                return detailCloseView !== null ? detailCloseView.performClick() : false;
+            }, 2500);
+        },
+        openDetail: function (id) {
+            var row = ClipHub.Repository.getItem(Number(id), false);
+            return row === null || row === undefined ? false : openDetail(row);
+        },
+        closeDetail: function () { return closeDetail("api"); },
+        getDetailState: getDetailState,
         performUndoClick: function () {
             return ClipHub.Window.runOnMain(function () {
                 return undoView !== null ? undoView.performClick() : false;
@@ -923,6 +1247,7 @@
         },
         getState: getState,
         shutdown: function () {
+            try { closeDetail("shutdown"); } catch (ignoredDetail) {}
             unbindEvents();
             items = [];
             itemViews = [];
@@ -930,12 +1255,14 @@
             editViews = [];
             pinViews = [];
             tagViews = [];
+            detailViews = [];
             undoView = null;
             filterView = null;
             addView = null;
             lastDeleted = null;
             visible = false;
             ready = false;
+            detailWindowManager = null;
             androidContext = null;
             return true;
         }
