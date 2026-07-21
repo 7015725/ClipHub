@@ -72,6 +72,8 @@
         boundsRefreshCount: 0,
         configurationChangeCount: 0,
         displayChangeCount: 0,
+        contentReplaceCount: 0,
+        contentMode: "status",
         dragListenerInstalled: false,
         componentCallbacksRegistered: false,
         displayListenerRegistered: false,
@@ -88,10 +90,7 @@
 
     function nowThread() {
         var thread = Thread.currentThread();
-        return {
-            id: Number(thread.getId()),
-            name: String(thread.getName())
-        };
+        return { id: Number(thread.getId()), name: String(thread.getName()) };
     }
 
     function runOnMainSync(callback, timeoutMs) {
@@ -102,8 +101,7 @@
         var runnable;
         var posted;
         var completed;
-        if (mainLooper !== null && currentLooper !== null &&
-                currentLooper === mainLooper) {
+        if (mainLooper !== null && currentLooper !== null && currentLooper === mainLooper) {
             return { ok: true, value: callback(), direct: true };
         }
         box = { ok: false, value: null, error: null };
@@ -152,9 +150,7 @@
             resources = androidContext.getResources();
             id = Number(resources.getIdentifier(String(name), "dimen", "android"));
             return id > 0 ? Number(resources.getDimensionPixelSize(id)) : 0;
-        } catch (ignored) {
-            return 0;
-        }
+        } catch (ignored) { return 0; }
     }
 
     function safeBounds() {
@@ -182,9 +178,8 @@
             } catch (ignoredMetrics) {}
         }
         displayMetrics = new DisplayMetrics();
-        try {
-            windowManager.getDefaultDisplay().getRealMetrics(displayMetrics);
-        } catch (ignoredDisplay) {
+        try { windowManager.getDefaultDisplay().getRealMetrics(displayMetrics); }
+        catch (ignoredDisplay) {
             displayMetrics = androidContext.getResources().getDisplayMetrics();
         }
         result.left = 0;
@@ -208,9 +203,7 @@
         return value;
     }
 
-    function clamp01(value) {
-        return clamp(Number(value), 0, 1);
-    }
+    function clamp01(value) { return clamp(Number(value), 0, 1); }
 
     function clampPosition(x, y, width, height, bounds) {
         return {
@@ -234,18 +227,13 @@
         return clampPosition(
             Number(bounds.left) + travelX * clamp01(ratios.xRatio),
             Number(bounds.top) + travelY * clamp01(ratios.yRatio),
-            width,
-            height,
-            bounds
+            width, height, bounds
         );
     }
 
     function copyPosition(value) {
         if (!value || typeof value !== "object") { return null; }
-        return {
-            xRatio: clamp01(value.xRatio),
-            yRatio: clamp01(value.yRatio)
-        };
+        return { xRatio: clamp01(value.xRatio), yRatio: clamp01(value.yRatio) };
     }
 
     function readSavedPosition() {
@@ -297,9 +285,7 @@
             return (Number(config.uiMode) &
                 Number(Packages.android.content.res.Configuration.UI_MODE_NIGHT_MASK)) ===
                 Number(Packages.android.content.res.Configuration.UI_MODE_NIGHT_YES);
-        } catch (ignoredConfig) {
-            return false;
-        }
+        } catch (ignoredConfig) { return false; }
     }
 
     function makeBackground(dark) {
@@ -325,9 +311,7 @@
         return view;
     }
 
-    function currentHeight() {
-        return state.collapsed ? collapsedHeightPx : normalHeightPx;
-    }
+    function currentHeight() { return state.collapsed ? collapsedHeightPx : normalHeightPx; }
 
     function fitDimensions(bounds) {
         var safeWidth = Math.max(1, bounds.right - bounds.left);
@@ -445,8 +429,7 @@
         if (action === MotionEvent.ACTION_MOVE) {
             deltaX = rawX - drag.downRawX;
             deltaY = rawY - drag.downRawY;
-            if (!drag.active &&
-                    Math.abs(deltaX) + Math.abs(deltaY) >= touchSlopPx) {
+            if (!drag.active && Math.abs(deltaX) + Math.abs(deltaY) >= touchSlopPx) {
                 drag.active = true;
             }
             if (drag.active) {
@@ -455,13 +438,45 @@
             }
             return true;
         }
-        if (action === MotionEvent.ACTION_UP ||
-                action === MotionEvent.ACTION_CANCEL) {
+        if (action === MotionEvent.ACTION_UP || action === MotionEvent.ACTION_CANCEL) {
             completedDrag = drag.active;
             drag.active = false;
             if (completedDrag) { persistCurrentPosition(); }
             return true;
         }
+        return true;
+    }
+
+    function showStatusOnMain(text) {
+        var spacer;
+        if (contentView === null) { return false; }
+        contentView.removeAllViews();
+        statusView = makeText(text, 14,
+            isDarkMode() ? "#FFB4B4BC" : "#FF5C5C66", false);
+        statusView.setGravity(Gravity.TOP | Gravity.START);
+        statusView.setLineSpacing(0, 1.12);
+        contentView.addView(statusView, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT));
+        spacer = new View(androidContext);
+        contentView.addView(spacer, new LinearLayout.LayoutParams(1, dp(6)));
+        state.statusText = String(text);
+        state.contentMode = "status";
+        state.contentReplaceCount += 1;
+        return true;
+    }
+
+    function replaceContentOnMain(view) {
+        if (contentView === null || view === null || view === undefined) {
+            throw new Error("Window content host is unavailable");
+        }
+        contentView.removeAllViews();
+        statusView = null;
+        contentView.addView(view, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.MATCH_PARENT));
+        state.contentMode = "custom";
+        state.contentReplaceCount += 1;
         return true;
     }
 
@@ -472,7 +487,6 @@
         var divider = dark ? "#24FFFFFF" : "#12000000";
         var row;
         var title;
-        var spacer;
         var line;
         var titleParams;
         var contentParams;
@@ -514,22 +528,13 @@
         contentView = new LinearLayout(androidContext);
         contentView.setOrientation(LinearLayout.VERTICAL);
         contentView.setPadding(dp(2), dp(12), dp(2), 0);
-        statusView = makeText(
-            options.statusText || "WindowManager 骨架已运行\n拖动标题栏可移动窗口",
-            14, textSecondary, false
-        );
-        statusView.setGravity(Gravity.TOP | Gravity.START);
-        statusView.setLineSpacing(0, 1.12);
-        contentView.addView(statusView, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT));
-        spacer = new View(androidContext);
-        contentView.addView(spacer, new LinearLayout.LayoutParams(1, dp(6)));
         contentParams = new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT);
         contentParams.topMargin = collapsedHeightPx - dp(2);
         rootView.addView(contentView, contentParams);
+        showStatusOnMain(options.statusText ||
+            "WindowManager 骨架已运行\n拖动标题栏可移动窗口");
 
         titleBar.setOnTouchListener(new JavaAdapter(View.OnTouchListener, {
             onTouch: handleTitleTouch
@@ -538,7 +543,6 @@
         closeView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
             onClick: function () { ClipHub.Window.close(); }
         }));
-        state.statusText = String(statusView.getText());
     }
 
     function createLayoutParams(options) {
@@ -559,19 +563,14 @@
             position = clampPosition(
                 options.x === undefined ? bounds.right - state.width - dp(18) : Number(options.x),
                 options.y === undefined ? bounds.top + dp(72) : Number(options.y),
-                state.width,
-                state.height,
-                bounds
+                state.width, state.height, bounds
             );
         } else if (saved !== null) {
             position = positionForRatios(saved, state.width, state.height, bounds);
         } else {
             position = clampPosition(
                 bounds.right - state.width - dp(18),
-                bounds.top + dp(72),
-                state.width,
-                state.height,
-                bounds
+                bounds.top + dp(72), state.width, state.height, bounds
             );
         }
         state.x = position.x;
@@ -669,6 +668,7 @@
                 closeView = null;
                 layoutParams = null;
                 drag.active = false;
+                state.contentMode = "status";
             }
         }, 3000);
         requireMainResult(result);
@@ -722,21 +722,30 @@
     function setStatusText(value) {
         var text = String(value === null || value === undefined ? "" : value);
         state.statusText = text;
-        if (state.attached && statusView !== null) {
+        if (state.attached && contentView !== null) {
             requireMainResult(runOnMainSync(function () {
-                statusView.setText(text);
-                return true;
+                if (state.contentMode === "status" && statusView !== null) {
+                    statusView.setText(text);
+                    return true;
+                }
+                return showStatusOnMain(text);
             }, 2500));
         }
         return text;
     }
 
+    function setContentView(view) {
+        if (!state.attached) { throw new Error("Window is not open"); }
+        return requireMainResult(runOnMainSync(function () {
+            return replaceContentOnMain(view);
+        }, 2500));
+    }
+
     function getState() {
         var bounds = state.safeBounds || {};
         var attachedToWindow = false;
-        try {
-            attachedToWindow = rootView !== null && rootView.isAttachedToWindow();
-        } catch (ignored) {}
+        try { attachedToWindow = rootView !== null && rootView.isAttachedToWindow(); }
+        catch (ignored) {}
         return {
             attached: state.attached,
             attachedToWindow: attachedToWindow,
@@ -767,6 +776,8 @@
             boundsRefreshCount: Number(state.boundsRefreshCount),
             configurationChangeCount: Number(state.configurationChangeCount),
             displayChangeCount: Number(state.displayChangeCount),
+            contentReplaceCount: Number(state.contentReplaceCount),
+            contentMode: state.contentMode,
             dragListenerInstalled: state.dragListenerInstalled,
             componentCallbacksRegistered: state.componentCallbacksRegistered,
             displayListenerRegistered: state.displayListenerRegistered,
@@ -843,7 +854,7 @@
 
     ClipHub.Window = {
         MODULE_NAME: "ch_08_window",
-        MODULE_VERSION: 3,
+        MODULE_VERSION: 4,
         init: function (context) {
             androidContext = context && context.androidContext
                 ? context.androidContext : global.context;
@@ -880,6 +891,14 @@
         refreshBounds: refreshBounds,
         persistPosition: persistCurrentPosition,
         setStatusText: setStatusText,
+        setContentView: setContentView,
+        runOnMain: function (callback, timeoutMs) {
+            if (typeof callback !== "function") {
+                throw new Error("Window main callback must be a function");
+            }
+            return requireMainResult(runOnMainSync(callback, timeoutMs || 2500));
+        },
+        getAndroidContext: function () { return appContext; },
         getState: getState,
         shutdown: function () {
             try { close(); } catch (ignoredClose) {}
