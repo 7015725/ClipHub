@@ -1,6 +1,6 @@
 /*
  * ClipHub ShortX entry. Rhino ES5 only.
- * Runtime: shortx.getShortXDir()/ClipHub/modules/
+ * Default runtime: shortx.getShortXDir()/ClipHub/
  */
 (function (global) {
     var NAMES = [
@@ -46,24 +46,54 @@
         }
     }
 
-    function start() {
+    function resolveOptions(root) {
         var File = Packages.java.io.File;
-        var root;
+        var options = global.ClipHubBootstrapOptions || {};
+        var runtimeName = options.runtimeName === null ||
+            options.runtimeName === undefined
+            ? "ClipHub" : String(options.runtimeName);
         var runtimeDir;
         var moduleDir;
+
+        if (!/^[A-Za-z0-9._-]+$/.test(runtimeName) ||
+                runtimeName === "." || runtimeName === "..") {
+            throw new Error("Invalid ClipHub runtime name: " + runtimeName);
+        }
+
+        runtimeDir = new File(root, runtimeName);
+        moduleDir = options.moduleDir === null ||
+            options.moduleDir === undefined
+            ? new File(runtimeDir, "modules")
+            : new File(String(options.moduleDir));
+
+        if (!moduleDir.isDirectory()) {
+            throw new Error(
+                "ClipHub module directory is unavailable: " +
+                moduleDir.getAbsolutePath()
+            );
+        }
+
+        return {
+            runtimeDir: runtimeDir,
+            moduleDir: moduleDir
+        };
+    }
+
+    function start() {
+        var root;
+        var resolved;
         if (typeof shortx === "undefined" ||
                 typeof shortx.getShortXDir !== "function") {
             throw new Error("ShortX runtime is unavailable");
         }
         root = String(shortx.getShortXDir());
-        runtimeDir = new File(root, "ClipHub");
-        moduleDir = new File(runtimeDir, "modules");
+        resolved = resolveOptions(root);
         global.ClipHub = global.ClipHub || {};
-        loadModules(moduleDir);
+        loadModules(resolved.moduleDir);
         return global.ClipHub.App.start({
             shortxRoot: root,
-            runtimeDir: String(runtimeDir.getAbsolutePath()),
-            moduleDir: String(moduleDir.getAbsolutePath())
+            runtimeDir: String(resolved.runtimeDir.getAbsolutePath()),
+            moduleDir: String(resolved.moduleDir.getAbsolutePath())
         });
     }
 
