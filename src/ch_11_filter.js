@@ -41,6 +41,7 @@
     var closeView = null;
     var sourceViews = {};
     var typeViews = {};
+    var tagViews = {};
     var state = {
         applyCount: 0,
         eventApplyCount: 0,
@@ -54,6 +55,7 @@
         searchActionCount: 0,
         sourceToggleCount: 0,
         typeToggleCount: 0,
+        tagToggleCount: 0,
         resetActionCount: 0,
         keyboardRequestCount: 0,
         panelWindowType: null,
@@ -67,6 +69,7 @@
         inputFocused: false,
         sourceOptionCount: 0,
         contentTypeOptionCount: 0,
+        tagOptionCount: 0,
         lastError: null
     };
 
@@ -95,6 +98,22 @@
         return output;
     }
 
+    function normalizeIdList(input) {
+        var source = input instanceof Array ? input : [];
+        var seen = {};
+        var output = [];
+        var index;
+        var number;
+        for (index = 0; index < source.length; index += 1) {
+            number = Math.floor(Number(source[index]));
+            if (isFinite(number) && number > 0 && !seen[number]) {
+                seen[number] = true;
+                output.push(number);
+            }
+        }
+        return output;
+    }
+
     function copyList(input) {
         var output = [];
         var index;
@@ -114,10 +133,11 @@
         return false;
     }
 
-    function toggle(input, target) {
+    function toggle(input, target, numeric) {
         var output = [];
         var found = false;
         var index;
+        var valueToAdd = numeric ? Number(target) : String(target);
         for (index = 0; index < input.length; index += 1) {
             if (String(input[index]) === String(target)) {
                 found = true;
@@ -125,7 +145,7 @@
                 output.push(input[index]);
             }
         }
-        if (!found) { output.push(String(target)); }
+        if (!found) { output.push(valueToAdd); }
         return output;
     }
 
@@ -157,6 +177,7 @@
         return normalizeText(input.keyword).length > 0 ||
             input.sourcePackages.length > 0 ||
             input.contentTypes.length > 0 ||
+            input.tagIds.length > 0 ||
             input.pinnedOnly === true ||
             String(input.sensitiveMode || "all") !== "all";
     }
@@ -179,6 +200,7 @@
         options.keyword = value.keyword;
         options.sourcePackages = copyList(value.sourcePackages);
         options.contentTypes = copyList(value.contentTypes);
+        options.tagIds = copyList(value.tagIds);
         options.pinnedOnly = value.pinnedOnly;
         if (value.sensitiveMode === "only") { options.sensitiveOnly = true; }
         if (value.sensitiveMode === "exclude") { options.excludeSensitive = true; }
@@ -244,6 +266,7 @@
                 keyword: String(value.keyword || ""),
                 sourcePackages: copyList(value.sourcePackages),
                 types: copyList(value.contentTypes),
+                tagIds: copyList(value.tagIds),
                 pinnedOnly: value.pinnedOnly === true,
                 sensitiveMode: String(value.sensitiveMode || "all")
             },
@@ -260,19 +283,17 @@
     }
 
     function apply(options) {
-        var queryOptions;
         var rows;
         var thread;
         options = options || {};
         if (!ready || value === null) {
             throw new Error("ClipHub filter is not ready");
         }
-        queryOptions = toQueryOptions({
-            limit: options.limit === undefined ? 100 : options.limit,
-            offset: options.offset === undefined ? 0 : options.offset
-        });
         try {
-            rows = ClipHub.Repository.listItems(queryOptions);
+            rows = ClipHub.Repository.listItems(toQueryOptions({
+                limit: options.limit === undefined ? 100 : options.limit,
+                offset: options.offset === undefined ? 0 : options.offset
+            }));
             if (ClipHub.List && typeof ClipHub.List.setItems === "function") {
                 ClipHub.List.setItems(rows);
             }
@@ -314,6 +335,9 @@
         }
         if (patch.hasOwnProperty("contentTypes")) {
             value.contentTypes = normalizeList(patch.contentTypes);
+        }
+        if (patch.hasOwnProperty("tagIds")) {
+            value.tagIds = normalizeIdList(patch.tagIds);
         }
         if (patch.hasOwnProperty("pinnedOnly")) {
             value.pinnedOnly = patch.pinnedOnly === true;
@@ -466,6 +490,11 @@
         state.lastUiThreadName = thread.name;
     }
 
+    function renderPanelOnMain(requestFocus) {
+        if (!state.panelAttached || panelRoot === null) { return false; }
+        return buildPanelContent(requestFocus === true);
+    }
+
     function performKeywordFromInput() {
         markUiThread();
         state.searchActionCount += 1;
@@ -479,7 +508,7 @@
     function toggleSource(packageName) {
         markUiThread();
         state.sourceToggleCount += 1;
-        setValue({ sourcePackages: toggle(value.sourcePackages, packageName) },
+        setValue({ sourcePackages: toggle(value.sourcePackages, packageName, false) },
             { origin: "ui_source" });
         renderPanelOnMain(false);
         return true;
@@ -488,8 +517,17 @@
     function toggleType(type) {
         markUiThread();
         state.typeToggleCount += 1;
-        setValue({ contentTypes: toggle(value.contentTypes, type) },
+        setValue({ contentTypes: toggle(value.contentTypes, type, false) },
             { origin: "ui_type" });
+        renderPanelOnMain(false);
+        return true;
+    }
+
+    function toggleTag(tagId) {
+        markUiThread();
+        state.tagToggleCount += 1;
+        setValue({ tagIds: toggle(value.tagIds, Number(tagId), true) },
+            { origin: "ui_tag" });
         renderPanelOnMain(false);
         return true;
     }
@@ -500,6 +538,37 @@
         reset({ origin: "ui_reset" });
         renderPanelOnMain(false);
         return true;
+    }
+
+    function optionKey(option, kind) {
+        if (kind === "source") { return String(option.source_package); }
+        if (kind === "type") { return String(option.content_type); }
+        return String(Number(option.id));
+    }
+
+    function optionLabel(option, kind) {
+        if (kind === "source") { return sourceLabel(option); }
+        if (kind === "type") { return typeLabel(option.content_type); }
+        return "#" + String(option.name);
+    }
+
+    function selectedList(kind) {
+        if (kind === "source") { return value.sourcePackages; }
+        if (kind === "type") { return value.contentTypes; }
+        return value.tagIds;
+    }
+
+    function clearKind(kind) {
+        if (kind === "source") {
+            state.sourceToggleCount += 1;
+            setValue({ sourcePackages: [] }, { origin: "ui_source_all" });
+        } else if (kind === "type") {
+            state.typeToggleCount += 1;
+            setValue({ contentTypes: [] }, { origin: "ui_type_all" });
+        } else {
+            state.tagToggleCount += 1;
+            setValue({ tagIds: [] }, { origin: "ui_tag_all" });
+        }
     }
 
     function makeChipRow(options, kind, dark) {
@@ -515,48 +584,43 @@
         horizontal.setHorizontalScrollBarEnabled(false);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        allView = makeButton("全部", dark,
-            kind === "source" ? value.sourcePackages.length === 0 :
-                value.contentTypes.length === 0);
+        allView = makeButton("全部", dark, selectedList(kind).length === 0);
         allView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
             onClick: function () {
                 markUiThread();
-                if (kind === "source") {
-                    state.sourceToggleCount += 1;
-                    setValue({ sourcePackages: [] }, { origin: "ui_source_all" });
-                } else {
-                    state.typeToggleCount += 1;
-                    setValue({ contentTypes: [] }, { origin: "ui_type_all" });
-                }
+                clearKind(kind);
                 renderPanelOnMain(false);
             }
         }));
         row.addView(allView, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
             LinearLayout.LayoutParams.WRAP_CONTENT));
-        for (index = 0; index < options.length && index < 20; index += 1) {
+        for (index = 0; index < options.length && index < 30; index += 1) {
             option = options[index];
-            key = kind === "source" ? String(option.source_package) :
-                String(option.content_type);
-            selected = kind === "source" ? contains(value.sourcePackages, key) :
-                contains(value.contentTypes, key);
-            chip = makeButton(kind === "source" ? sourceLabel(option) :
-                typeLabel(key), dark, selected);
-            chip.setContentDescription((kind === "source" ? "筛选来源 " :
-                "筛选类型 ") + key);
+            key = optionKey(option, kind);
+            selected = contains(selectedList(kind), key);
+            chip = makeButton(optionLabel(option, kind), dark, selected);
+            chip.setContentDescription("筛选" + kind + " " + key);
             if (kind === "source") {
-                (function (packageValue, chipView) {
-                    chipView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
-                        onClick: function () { toggleSource(packageValue); }
+                (function (target, view) {
+                    view.setOnClickListener(new JavaAdapter(View.OnClickListener, {
+                        onClick: function () { toggleSource(target); }
                     }));
-                    sourceViews[packageValue] = chipView;
+                    sourceViews[target] = view;
+                }(key, chip));
+            } else if (kind === "type") {
+                (function (target, view) {
+                    view.setOnClickListener(new JavaAdapter(View.OnClickListener, {
+                        onClick: function () { toggleType(target); }
+                    }));
+                    typeViews[target] = view;
                 }(key, chip));
             } else {
-                (function (typeValue, chipView) {
-                    chipView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
-                        onClick: function () { toggleType(typeValue); }
+                (function (target, view) {
+                    view.setOnClickListener(new JavaAdapter(View.OnClickListener, {
+                        onClick: function () { toggleTag(Number(target)); }
                     }));
-                    typeViews[typeValue] = chipView;
+                    tagViews[target] = view;
                 }(key, chip));
             }
             params = new LinearLayout.LayoutParams(
@@ -571,6 +635,20 @@
         return horizontal;
     }
 
+    function addSection(parent, title, options, kind, dark, secondary) {
+        var section = makeText(title, 12, secondary, true);
+        var params;
+        section.setPadding(0, 0, 0, dp(7));
+        parent.addView(section, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT));
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.bottomMargin = dp(12);
+        parent.addView(makeChipRow(options, kind, dark), params);
+    }
+
     function buildPanelContent(requestFocus) {
         var dark = isDarkMode();
         var primary = dark ? "#FFF4F4F5" : "#FF171717";
@@ -580,22 +658,24 @@
         var searchRow;
         var sourceOptions;
         var typeOptions;
-        var section;
+        var tagOptions;
         var summary;
         var footer;
         var params;
         var inputParams;
+        var contentScroll;
+        var content = new LinearLayout(appContext);
 
         panelRoot.removeAllViews();
         sourceViews = {};
         typeViews = {};
+        tagViews = {};
         titleRow.setOrientation(LinearLayout.HORIZONTAL);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
         title = makeText("搜索与筛选", 16, primary, true);
         titleRow.addView(title, new LinearLayout.LayoutParams(
             0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         closeView = makeButton("关闭", dark, false);
-        closeView.setContentDescription("关闭搜索与筛选");
         closeView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
             onClick: function () { closePanel(); }
         }));
@@ -605,7 +685,7 @@
         params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dp(12);
+        params.bottomMargin = dp(10);
         panelRoot.addView(titleRow, params);
 
         searchRow = new LinearLayout(appContext);
@@ -625,7 +705,6 @@
         keywordInput.setBackground(roundedBackground(
             dark ? "#FF202328" : "#FFF7F7F8",
             dark ? "#35FFFFFF" : "#1D000000", 10));
-        keywordInput.setSelectAllOnFocus(false);
         keywordInput.setOnEditorActionListener(new JavaAdapter(
             TextView.OnEditorActionListener, {
                 onEditorAction: function (view, actionId) {
@@ -641,7 +720,6 @@
         inputParams.rightMargin = dp(8);
         searchRow.addView(keywordInput, inputParams);
         searchView = makeButton("搜索", dark, true);
-        searchView.setContentDescription("应用关键词搜索");
         searchView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
             onClick: function () { performKeywordFromInput(); }
         }));
@@ -651,49 +729,37 @@
         params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dp(14);
+        params.bottomMargin = dp(10);
         panelRoot.addView(searchRow, params);
 
+        contentScroll = new ScrollView(appContext);
+        contentScroll.setFillViewport(false);
+        content.setOrientation(LinearLayout.VERTICAL);
+        contentScroll.addView(content, new Packages.android.widget.FrameLayout.LayoutParams(
+            Packages.android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+            Packages.android.widget.FrameLayout.LayoutParams.WRAP_CONTENT));
+        panelRoot.addView(contentScroll, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
         sourceOptions = ClipHub.Repository.listSourceOptions();
         typeOptions = ClipHub.Repository.listContentTypeOptions();
+        tagOptions = ClipHub.Repository.listTags();
         state.sourceOptionCount = sourceOptions.length;
         state.contentTypeOptionCount = typeOptions.length;
-
-        section = makeText("来源应用", 12, secondary, true);
-        section.setPadding(0, 0, 0, dp(7));
-        panelRoot.addView(section, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT));
-        params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dp(14);
-        panelRoot.addView(makeChipRow(sourceOptions, "source", dark), params);
-
-        section = makeText("内容类型", 12, secondary, true);
-        section.setPadding(0, 0, 0, dp(7));
-        panelRoot.addView(section, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT));
-        params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dp(14);
-        panelRoot.addView(makeChipRow(typeOptions, "type", dark), params);
-
+        state.tagOptionCount = tagOptions.length;
+        addSection(content, "来源应用", sourceOptions, "source", dark, secondary);
+        addSection(content, "内容类型", typeOptions, "type", dark, secondary);
+        addSection(content, "自定义标签", tagOptions, "tag", dark, secondary);
         summary = makeText((isActive(value) ? "已启用筛选" : "显示全部记录") +
             "  ·  结果 " + Number(state.lastResultCount) + " 条",
             12, secondary, false);
         summary.setPadding(0, dp(2), 0, dp(10));
-        panelRoot.addView(summary, new LinearLayout.LayoutParams(
+        content.addView(summary, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT));
-
         footer = new LinearLayout(appContext);
         footer.setOrientation(LinearLayout.HORIZONTAL);
         footer.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
         resetView = makeButton("重置筛选", dark, false);
-        resetView.setContentDescription("重置全部筛选条件");
         resetView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
             onClick: function () { resetFromUi(); }
         }));
@@ -708,11 +774,6 @@
         return true;
     }
 
-    function renderPanelOnMain(requestFocus) {
-        if (!state.panelAttached || panelRoot === null) { return false; }
-        return buildPanelContent(requestFocus === true);
-    }
-
     function panelDimensions() {
         var metrics = new DisplayMetrics();
         var width;
@@ -724,7 +785,7 @@
         }
         width = Math.min(dp(380), Math.max(dp(260),
             Number(metrics.widthPixels) - dp(24)));
-        height = Math.min(dp(500), Math.max(dp(320),
+        height = Math.min(dp(540), Math.max(dp(340),
             Number(metrics.heightPixels) - dp(96)));
         return { width: width, height: height };
     }
@@ -763,7 +824,8 @@
             panelParams.softInputMode =
                 WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE |
                 WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE;
-            try { panelParams.setTitle("ClipHub Filter Panel"); } catch (ignoredTitle) {}
+            try { panelParams.setTitle("ClipHub Filter Panel"); }
+            catch (ignoredTitle) {}
             windowManager.addView(panelRoot, panelParams);
             state.panelAttached = true;
             state.panelOpenCount += 1;
@@ -809,6 +871,7 @@
                 closeView = null;
                 sourceViews = {};
                 typeViews = {};
+                tagViews = {};
             }
         }, 3000));
         return { ok: true, attached: false, alreadyClosed: false,
@@ -837,8 +900,10 @@
             inputFocused: state.inputFocused,
             sourceOptionCount: Number(state.sourceOptionCount),
             contentTypeOptionCount: Number(state.contentTypeOptionCount),
+            tagOptionCount: Number(state.tagOptionCount),
             sourceChipCount: Object.keys(sourceViews).length,
             typeChipCount: Object.keys(typeViews).length,
+            tagChipCount: Object.keys(tagViews).length,
             panelWindowType: state.panelWindowType,
             panelFlags: state.panelFlags,
             panelOpenCount: Number(state.panelOpenCount),
@@ -847,6 +912,7 @@
             searchActionCount: Number(state.searchActionCount),
             sourceToggleCount: Number(state.sourceToggleCount),
             typeToggleCount: Number(state.typeToggleCount),
+            tagToggleCount: Number(state.tagToggleCount),
             resetActionCount: Number(state.resetActionCount),
             keyboardRequestCount: Number(state.keyboardRequestCount),
             panelAddThreadId: state.panelAddThreadId,
@@ -860,37 +926,35 @@
     }
 
     function resetState() {
+        var key;
+        for (key in state) {
+            if (state.hasOwnProperty(key)) {
+                if (/Count$/.test(key)) { state[key] = 0; }
+                else { state[key] = null; }
+            }
+        }
+        state.panelAttached = false;
         state.applyCount = 0;
         state.eventApplyCount = 0;
         state.lastResultCount = 0;
-        state.lastApplyThreadId = null;
-        state.lastApplyThreadName = null;
-        state.panelAttached = false;
         state.panelOpenCount = 0;
         state.panelCloseCount = 0;
         state.panelRenderCount = 0;
         state.searchActionCount = 0;
         state.sourceToggleCount = 0;
         state.typeToggleCount = 0;
+        state.tagToggleCount = 0;
         state.resetActionCount = 0;
         state.keyboardRequestCount = 0;
-        state.panelWindowType = null;
-        state.panelFlags = null;
-        state.panelAddThreadId = null;
-        state.panelAddThreadName = null;
-        state.panelRemoveThreadId = null;
-        state.panelRemoveThreadName = null;
-        state.lastUiThreadId = null;
-        state.lastUiThreadName = null;
-        state.inputFocused = false;
         state.sourceOptionCount = 0;
         state.contentTypeOptionCount = 0;
-        state.lastError = null;
+        state.tagOptionCount = 0;
+        state.inputFocused = false;
     }
 
     ClipHub.Filter = {
         MODULE_NAME: "ch_11_filter",
-        MODULE_VERSION: 3,
+        MODULE_VERSION: 4,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
@@ -917,6 +981,7 @@
             registerEvent("clipboard_merged");
             registerEvent("clipboard_deleted");
             registerEvent("clipboard_restored");
+            registerEvent("tags_changed");
             return true;
         },
         isReady: function () { return ready; },
@@ -952,6 +1017,9 @@
         setContentTypes: function (types, options) {
             return setValue({ contentTypes: types }, options);
         },
+        setTagIds: function (tagIds, options) {
+            return setValue({ tagIds: tagIds }, options);
+        },
         setPinnedOnly: function (enabled, options) {
             return setValue({ pinnedOnly: enabled }, options);
         },
@@ -964,6 +1032,7 @@
         getContentTypeOptions: function () {
             return ClipHub.Repository.listContentTypeOptions();
         },
+        getTagOptions: function () { return ClipHub.Repository.listTags(); },
         showPanel: showPanel,
         closePanel: closePanel,
         getPanelState: getPanelState,
@@ -988,6 +1057,12 @@
             type = String(type || "");
             return requireMain(runOnMainSync(function () {
                 return typeViews[type] ? typeViews[type].performClick() : false;
+            }, 2500));
+        },
+        performTagClick: function (tagId) {
+            tagId = String(Number(tagId));
+            return requireMain(runOnMainSync(function () {
+                return tagViews[tagId] ? tagViews[tagId].performClick() : false;
             }, 2500));
         },
         performResetClick: function () {
