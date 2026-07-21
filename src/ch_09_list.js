@@ -25,6 +25,7 @@
     var deleteViews = [];
     var editViews = [];
     var pinViews = [];
+    var tagViews = [];
     var undoView = null;
     var filterView = null;
     var addView = null;
@@ -41,12 +42,14 @@
         pinToggleCount: 0,
         addOpenCount: 0,
         editOpenCount: 0,
+        tagOpenCount: 0,
         filterOpenCount: 0,
         lastCopiedId: null,
         lastDeletedId: null,
         lastRestoredId: null,
         lastPinnedId: null,
         lastPinnedValue: null,
+        lastTagItemId: null,
         lastCopyOk: false,
         clickThreadId: null,
         clickThreadName: null,
@@ -60,10 +63,13 @@
         addThreadName: null,
         editThreadId: null,
         editThreadName: null,
+        tagThreadId: null,
+        tagThreadName: null,
         filterThreadId: null,
         filterThreadName: null,
         renderThreadId: null,
         renderThreadName: null,
+        renderedTagLabelCount: 0,
         lastError: null
     };
 
@@ -138,8 +144,8 @@
                 (dark ? "#FFE4E4E7" : "#FF3F3F46"));
         var view = makeText(text, compact ? 11 : 12, color, true);
         view.setGravity(Gravity.CENTER);
-        view.setPadding(dp(compact ? 8 : 11), dp(6),
-            dp(compact ? 8 : 11), dp(6));
+        view.setPadding(dp(compact ? 7 : 11), dp(6),
+            dp(compact ? 7 : 11), dp(6));
         view.setBackground(actionBackground(dark, danger, selected));
         view.setClickable(true);
         view.setFocusable(true);
@@ -161,6 +167,17 @@
             (time ? "  ·  " + time : "");
     }
 
+    function tagText(tags) {
+        var parts = [];
+        var index;
+        tags = tags || [];
+        for (index = 0; index < tags.length && index < 4; index += 1) {
+            parts.push("#" + String(tags[index].name));
+        }
+        if (tags.length > 4) { parts.push("+" + (tags.length - 4)); }
+        return parts.join("  ");
+    }
+
     function filterState() {
         try {
             if (ClipHub.Filter && typeof ClipHub.Filter.getState === "function") {
@@ -170,7 +187,7 @@
         return {
             active: false,
             criteria: {
-                keyword: "", sourcePackages: [], contentTypes: [],
+                keyword: "", sourcePackages: [], contentTypes: [], tagIds: [],
                 pinnedOnly: false, sensitiveMode: "all"
             }
         };
@@ -188,6 +205,9 @@
         }
         if (criteria.contentTypes && criteria.contentTypes.length > 0) {
             parts.push("类型 " + criteria.contentTypes.length);
+        }
+        if (criteria.tagIds && criteria.tagIds.length > 0) {
+            parts.push("标签 " + criteria.tagIds.length);
         }
         if (criteria.pinnedOnly === true) { parts.push("仅置顶"); }
         if (String(criteria.sensitiveMode || "all") === "only") {
@@ -334,9 +354,6 @@
     function openNewEditor() {
         var thread = Thread.currentThread();
         try {
-            if (!ClipHub.Editor || typeof ClipHub.Editor.openNew !== "function") {
-                throw new Error("ClipHub editor is unavailable");
-            }
             state.addOpenCount += 1;
             state.addThreadId = Number(thread.getId());
             state.addThreadName = String(thread.getName());
@@ -351,9 +368,6 @@
     function openEditEditor(row) {
         var thread = Thread.currentThread();
         try {
-            if (!ClipHub.Editor || typeof ClipHub.Editor.openItem !== "function") {
-                throw new Error("ClipHub editor is unavailable");
-            }
             state.editOpenCount += 1;
             state.editThreadId = Number(thread.getId());
             state.editThreadName = String(thread.getName());
@@ -365,12 +379,27 @@
         }
     }
 
+    function openTagEditor(row) {
+        var thread = Thread.currentThread();
+        try {
+            if (!ClipHub.Editor || typeof ClipHub.Editor.openTags !== "function") {
+                throw new Error("ClipHub tag editor is unavailable");
+            }
+            state.tagOpenCount += 1;
+            state.lastTagItemId = Number(row.id);
+            state.tagThreadId = Number(thread.getId());
+            state.tagThreadName = String(thread.getName());
+            ClipHub.Editor.openTags(Number(row.id));
+            return true;
+        } catch (error) {
+            state.lastError = String(error);
+            return false;
+        }
+    }
+
     function openFilterPanel() {
         var thread = Thread.currentThread();
         try {
-            if (!ClipHub.Filter || typeof ClipHub.Filter.showPanel !== "function") {
-                throw new Error("ClipHub filter panel is unavailable");
-            }
             state.filterOpenCount += 1;
             state.filterThreadId = Number(thread.getId());
             state.filterThreadName = String(thread.getName());
@@ -392,6 +421,7 @@
         var dark = isDarkMode();
         var primary = dark ? "#FFF4F4F5" : "#FF171717";
         var secondary = dark ? "#FFB4B4BC" : "#FF66666F";
+        var tagColor = dark ? "#FF9FC6EA" : "#FF426B91";
         var outer = new LinearLayout(androidContext);
         var headerRow;
         var header;
@@ -405,8 +435,10 @@
         var row;
         var card;
         var preview;
+        var tagsLabel;
         var actionRow;
         var meta;
+        var tagView;
         var pinView;
         var editView;
         var deleteView;
@@ -414,6 +446,14 @@
         var metaParams;
         var buttonParams;
         var thread = Thread.currentThread();
+        var ids = [];
+        var tagMap;
+        var rowTags;
+        state.renderedTagLabelCount = 0;
+        for (index = 0; index < rows.length; index += 1) {
+            ids.push(Number(rows[index].id));
+        }
+        tagMap = ClipHub.Repository.listItemTagMap(ids);
 
         outer.setOrientation(LinearLayout.VERTICAL);
         headerRow = new LinearLayout(androidContext);
@@ -472,7 +512,6 @@
             undoBar.addView(undoText, new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
             undoView = makeAction("撤销", dark, false, false, false);
-            undoView.setContentDescription("撤销最近一次删除");
             undoView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
                 onClick: function () { undoLastDelete(); }
             }));
@@ -501,6 +540,7 @@
         deleteViews = [];
         editViews = [];
         pinViews = [];
+        tagViews = [];
         if (rows.length === 0) {
             state.emptyVisible = true;
             preview = makeText(active ?
@@ -517,6 +557,7 @@
             state.emptyVisible = false;
             for (index = 0; index < rows.length; index += 1) {
                 row = rows[index];
+                rowTags = tagMap[String(row.id)] || [];
                 card = new LinearLayout(androidContext);
                 card.setOrientation(LinearLayout.VERTICAL);
                 card.setPadding(dp(12), dp(10), dp(10), dp(9));
@@ -525,7 +566,6 @@
                 card.setFocusable(true);
                 card.setContentDescription(
                     "复制第 " + (index + 1) + " 条剪贴板记录");
-
                 preview = makeText(Number(row.is_sensitive || 0) === 1 ?
                     "敏感内容" : String(row.content), 14, primary, false);
                 preview.setMaxLines(3);
@@ -534,7 +574,16 @@
                 card.addView(preview, new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT));
-
+                if (rowTags.length > 0) {
+                    tagsLabel = makeText(tagText(rowTags), 11, tagColor, true);
+                    tagsLabel.setSingleLine(true);
+                    tagsLabel.setEllipsize(TextUtils.TruncateAt.END);
+                    tagsLabel.setPadding(0, dp(6), 0, 0);
+                    card.addView(tagsLabel, new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT));
+                    state.renderedTagLabelCount += 1;
+                }
                 actionRow = new LinearLayout(androidContext);
                 actionRow.setOrientation(LinearLayout.HORIZONTAL);
                 actionRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -544,15 +593,24 @@
                 meta.setEllipsize(TextUtils.TruncateAt.END);
                 metaParams = new LinearLayout.LayoutParams(
                     0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
-                metaParams.rightMargin = dp(5);
+                metaParams.rightMargin = dp(4);
                 actionRow.addView(meta, metaParams);
-
+                tagView = makeAction("标签", dark, false,
+                    rowTags.length > 0, true);
+                (function (targetRow, targetView) {
+                    targetView.setOnClickListener(new JavaAdapter(
+                        View.OnClickListener, {
+                            onClick: function () { openTagEditor(targetRow); }
+                        }));
+                }(row, tagView));
+                buttonParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+                buttonParams.rightMargin = dp(3);
+                actionRow.addView(tagView, buttonParams);
                 pinView = makeAction(Number(row.is_pinned || 0) === 1 ?
                     "取消置顶" : "置顶", dark, false,
                     Number(row.is_pinned || 0) === 1, true);
-                pinView.setContentDescription(
-                    (Number(row.is_pinned || 0) === 1 ? "取消置顶" : "置顶") +
-                    "第 " + (index + 1) + " 条记录");
                 (function (targetRow, targetView) {
                     targetView.setOnClickListener(new JavaAdapter(
                         View.OnClickListener, {
@@ -562,12 +620,9 @@
                 buttonParams = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT);
-                buttonParams.rightMargin = dp(4);
+                buttonParams.rightMargin = dp(3);
                 actionRow.addView(pinView, buttonParams);
-
                 editView = makeAction("编辑", dark, false, false, true);
-                editView.setContentDescription(
-                    "编辑第 " + (index + 1) + " 条剪贴板记录");
                 (function (targetRow, targetView) {
                     targetView.setOnClickListener(new JavaAdapter(
                         View.OnClickListener, {
@@ -577,12 +632,9 @@
                 buttonParams = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT);
-                buttonParams.rightMargin = dp(4);
+                buttonParams.rightMargin = dp(3);
                 actionRow.addView(editView, buttonParams);
-
                 deleteView = makeAction("删除", dark, true, false, true);
-                deleteView.setContentDescription(
-                    "删除第 " + (index + 1) + " 条剪贴板记录");
                 (function (targetRow, targetView) {
                     targetView.setOnClickListener(new JavaAdapter(
                         View.OnClickListener, {
@@ -596,13 +648,13 @@
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT));
                 card.setOnClickListener(clickListener(row));
-
                 params = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT);
                 params.bottomMargin = dp(8);
                 list.addView(card, params);
                 itemViews.push(card);
+                tagViews.push(tagView);
                 pinViews.push(pinView);
                 editViews.push(editView);
                 deleteViews.push(deleteView);
@@ -689,9 +741,6 @@
         options = options || {};
         limit = Math.max(1, Math.min(100,
             Math.floor(Number(options.limit || limit))));
-        if (!ClipHub.Window || typeof ClipHub.Window.open !== "function") {
-            throw new Error("ClipHub window is unavailable");
-        }
         openResult = ClipHub.Window.open({
             widthDp: Number(options.widthDp || 340),
             heightDp: Number(options.heightDp || 420),
@@ -699,12 +748,7 @@
         });
         visible = true;
         refresh(false);
-        return {
-            ok: true,
-            visible: true,
-            open: openResult,
-            state: getState()
-        };
+        return { ok: true, visible: true, open: openResult, state: getState() };
     }
 
     function getState() {
@@ -729,35 +773,32 @@
             pinToggleCount: Number(state.pinToggleCount),
             addOpenCount: Number(state.addOpenCount),
             editOpenCount: Number(state.editOpenCount),
+            tagOpenCount: Number(state.tagOpenCount),
             filterOpenCount: Number(state.filterOpenCount),
             lastCopiedId: state.lastCopiedId,
             lastDeletedId: state.lastDeletedId,
             lastRestoredId: state.lastRestoredId,
             lastPinnedId: state.lastPinnedId,
             lastPinnedValue: state.lastPinnedValue,
+            lastTagItemId: state.lastTagItemId,
             lastCopyOk: state.lastCopyOk,
             undoAvailable: lastDeleted !== null,
             addButtonPresent: addView !== null,
             filterButtonPresent: filterView !== null,
             editButtonCount: editViews.length,
             pinButtonCount: pinViews.length,
+            tagButtonCount: tagViews.length,
+            renderedTagLabelCount: Number(state.renderedTagLabelCount),
             filterActive: currentFilter.active === true,
             filterSummary: filterSummary(),
-            clickThreadId: state.clickThreadId,
             clickThreadName: state.clickThreadName,
-            deleteThreadId: state.deleteThreadId,
             deleteThreadName: state.deleteThreadName,
-            restoreThreadId: state.restoreThreadId,
             restoreThreadName: state.restoreThreadName,
-            pinThreadId: state.pinThreadId,
             pinThreadName: state.pinThreadName,
-            addThreadId: state.addThreadId,
             addThreadName: state.addThreadName,
-            editThreadId: state.editThreadId,
             editThreadName: state.editThreadName,
-            filterThreadId: state.filterThreadId,
+            tagThreadName: state.tagThreadName,
             filterThreadName: state.filterThreadName,
-            renderThreadId: state.renderThreadId,
             renderThreadName: state.renderThreadName,
             lastError: state.lastError,
             windowAttached: !!(ClipHub.Window && ClipHub.Window.isAttached())
@@ -766,23 +807,27 @@
 
     function resetState() {
         var key;
-        var defaults = {
-            renderedCount: 0, emptyVisible: false, refreshCount: 0,
-            eventRefreshCount: 0, copyCount: 0, deleteCount: 0,
-            restoreCount: 0, pinToggleCount: 0, addOpenCount: 0,
-            editOpenCount: 0, filterOpenCount: 0, lastCopiedId: null,
-            lastDeletedId: null, lastRestoredId: null, lastPinnedId: null,
-            lastPinnedValue: null, lastCopyOk: false, clickThreadId: null,
-            clickThreadName: null, deleteThreadId: null, deleteThreadName: null,
-            restoreThreadId: null, restoreThreadName: null, pinThreadId: null,
-            pinThreadName: null, addThreadId: null, addThreadName: null,
-            editThreadId: null, editThreadName: null, filterThreadId: null,
-            filterThreadName: null, renderThreadId: null, renderThreadName: null,
-            lastError: null
-        };
-        for (key in defaults) {
-            if (defaults.hasOwnProperty(key)) { state[key] = defaults[key]; }
+        for (key in state) {
+            if (state.hasOwnProperty(key)) {
+                if (/Count$/.test(key)) { state[key] = 0; }
+                else if (/Ok$/.test(key) || key === "emptyVisible") { state[key] = false; }
+                else { state[key] = null; }
+            }
         }
+        state.renderedCount = 0;
+        state.emptyVisible = false;
+        state.refreshCount = 0;
+        state.eventRefreshCount = 0;
+        state.copyCount = 0;
+        state.deleteCount = 0;
+        state.restoreCount = 0;
+        state.pinToggleCount = 0;
+        state.addOpenCount = 0;
+        state.editOpenCount = 0;
+        state.tagOpenCount = 0;
+        state.filterOpenCount = 0;
+        state.renderedTagLabelCount = 0;
+        state.lastCopyOk = false;
     }
 
     function performViewClick(collection, index) {
@@ -795,7 +840,7 @@
 
     ClipHub.List = {
         MODULE_NAME: "ch_09_list",
-        MODULE_VERSION: 5,
+        MODULE_VERSION: 6,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
@@ -810,6 +855,7 @@
             deleteViews = [];
             editViews = [];
             pinViews = [];
+            tagViews = [];
             undoView = null;
             filterView = null;
             addView = null;
@@ -821,6 +867,7 @@
             bindEvent("clipboard_merged");
             bindEvent("clipboard_deleted");
             bindEvent("clipboard_restored");
+            bindEvent("tags_changed");
             ready = true;
             return true;
         },
@@ -828,9 +875,7 @@
         refresh: function () { return refresh(false); },
         hide: function (closeWindow) {
             visible = false;
-            if (closeWindow !== false && ClipHub.Window) {
-                ClipHub.Window.close();
-            }
+            if (closeWindow !== false && ClipHub.Window) { ClipHub.Window.close(); }
             return true;
         },
         setItems: function (value) {
@@ -847,18 +892,11 @@
             }
             return true;
         },
-        performItemClick: function (index) {
-            return performViewClick(itemViews, index);
-        },
-        performDeleteClick: function (index) {
-            return performViewClick(deleteViews, index);
-        },
-        performEditClick: function (index) {
-            return performViewClick(editViews, index);
-        },
-        performPinClick: function (index) {
-            return performViewClick(pinViews, index);
-        },
+        performItemClick: function (index) { return performViewClick(itemViews, index); },
+        performDeleteClick: function (index) { return performViewClick(deleteViews, index); },
+        performEditClick: function (index) { return performViewClick(editViews, index); },
+        performPinClick: function (index) { return performViewClick(pinViews, index); },
+        performTagClick: function (index) { return performViewClick(tagViews, index); },
         performUndoClick: function () {
             return ClipHub.Window.runOnMain(function () {
                 return undoView !== null ? undoView.performClick() : false;
@@ -891,6 +929,7 @@
             deleteViews = [];
             editViews = [];
             pinViews = [];
+            tagViews = [];
             undoView = null;
             filterView = null;
             addView = null;
