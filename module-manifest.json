@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260722.21",
+  "moduleSetVersion": "20260722.22",
   "entryMinVersion": 4,
   "sourceRef": "agent/initialize-project-skeleton",
   "modules": [
@@ -18,6 +18,6 @@
     {"name":"ch_12_translation.js","path":"src/ch_12_translation.js","sha":"bdaf530c60620b6ae857ee5359f39fb4634ddd2a"},
     {"name":"ch_13_settings.js","path":"src/ch_13_settings.js","sha":"9d9432105b3ceac7247d1b0e3b5177f91e3d6b54"},
     {"name":"ch_14_event_bus.js","path":"src/ch_14_event_bus.js","sha":"ac4288d3a94d23d16a351989f0bdf3aa5e5a35e5"},
-    {"name":"ch_15_app.js","path":"src/ch_15_app.js","sha":"bc19155cca19ba59418ec5add4b4e16a91edbc0d"}
+    {"name":"ch_15_app.js","path":"src/ch_15_app.js","sha":"470c3173ceeaed2ae293d640fd81d4be28ee5183"}
   ]
 }
