@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260721.2",
+  "moduleSetVersion": "20260721.3",
   "entryMinVersion": 4,
   "sourceRef": "agent/initialize-project-skeleton",
   "modules": [
-    {"name":"ch_01_base.js","path":"src/ch_01_base.js","sha":"563791ff518078bfd57b5ad02cdb4cdc6aba5a1d90647a7"},
+    {"name":"ch_01_base.js","path":"src/ch_01_base.js","sha":"563791ff518078bfd57d7b73fc51b9c7482a3ffb"},
     {"name":"ch_02_log.js","path":"src/ch_02_log.js","sha":"581d7a9a0e47bdee2be0341cbfbe6b0308c207bb"},
     {"name":"ch_03_database.js","path":"src/ch_03_database.js","sha":"ecff0d52502a426909730c1104e80596e80cc16a"},
     {"name":"ch_04_clipboard.js","path":"src/ch_04_clipboard.js","sha":"1ecfb7d1c3284fdb1bc68b4431c09163ad106aa4"},
