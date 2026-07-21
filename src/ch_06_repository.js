@@ -205,6 +205,56 @@
         );
     }
 
+    function purgeExpired(days, referenceAt) {
+        var safeDays = intValue(days, 0);
+        var now = intValue(referenceAt, ClipHub.Base.now());
+        var cutoff;
+        requireReady();
+        if (safeDays <= 0) { return 0; }
+        cutoff = now - safeDays * 86400000;
+        return ClipHub.Database.executeUpdateDelete(
+            "DELETE FROM clipboard_items WHERE is_pinned = 0 " +
+            "AND last_copied_at < ?",
+            [cutoff]
+        );
+    }
+
+    function trimHistory(limit) {
+        var safeLimit = intValue(limit, 0);
+        requireReady();
+        if (safeLimit <= 0) { return 0; }
+        return ClipHub.Database.executeUpdateDelete(
+            "DELETE FROM clipboard_items WHERE is_pinned = 0 AND id IN (" +
+            "SELECT id FROM clipboard_items WHERE is_pinned = 0 " +
+            "ORDER BY last_copied_at DESC, id DESC LIMIT -1 OFFSET ?" +
+            ")",
+            [safeLimit]
+        );
+    }
+
+    function cleanupHistory(options) {
+        var result = {
+            expiredDeleted: 0,
+            overflowDeleted: 0,
+            totalDeleted: 0,
+            remainingActive: 0,
+            remainingTotal: 0
+        };
+        options = options || {};
+        requireReady();
+        ClipHub.Database.transaction(function () {
+            result.expiredDeleted = purgeExpired(
+                options.autoCleanupDays,
+                options.referenceAt
+            );
+            result.overflowDeleted = trimHistory(options.historyLimit);
+        });
+        result.totalDeleted = result.expiredDeleted + result.overflowDeleted;
+        result.remainingActive = countItems(false);
+        result.remainingTotal = countItems(true);
+        return result;
+    }
+
     function insertTag(tag) {
         var name;
         var normalized;
@@ -258,7 +308,7 @@
 
     ClipHub.Repository = {
         MODULE_NAME: "ch_06_repository",
-        MODULE_VERSION: 3,
+        MODULE_VERSION: 4,
         init: function () {
             ready = !!(ClipHub.Database && ClipHub.Database.isOpen());
             if (!ready) { throw new Error("Database is unavailable"); }
@@ -276,6 +326,9 @@
         softDeleteItem: softDeleteItem,
         restoreItem: restoreItem,
         countItems: countItems,
+        purgeExpired: purgeExpired,
+        trimHistory: trimHistory,
+        cleanupHistory: cleanupHistory,
         insertTag: insertTag,
         listTags: listTags,
         attachTag: attachTag,
