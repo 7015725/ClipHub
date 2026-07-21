@@ -23,13 +23,13 @@
     var items = [];
     var itemViews = [];
     var deleteViews = [];
+    var editViews = [];
+    var pinViews = [];
     var undoView = null;
     var filterView = null;
+    var addView = null;
     var lastDeleted = null;
-    var addedListener = null;
-    var mergedListener = null;
-    var deletedListener = null;
-    var restoredListener = null;
+    var eventBindings = [];
     var state = {
         renderedCount: 0,
         emptyVisible: false,
@@ -38,10 +38,15 @@
         copyCount: 0,
         deleteCount: 0,
         restoreCount: 0,
+        pinToggleCount: 0,
+        addOpenCount: 0,
+        editOpenCount: 0,
         filterOpenCount: 0,
         lastCopiedId: null,
         lastDeletedId: null,
         lastRestoredId: null,
+        lastPinnedId: null,
+        lastPinnedValue: null,
         lastCopyOk: false,
         clickThreadId: null,
         clickThreadName: null,
@@ -49,6 +54,12 @@
         deleteThreadName: null,
         restoreThreadId: null,
         restoreThreadName: null,
+        pinThreadId: null,
+        pinThreadName: null,
+        addThreadId: null,
+        addThreadName: null,
+        editThreadId: null,
+        editThreadName: null,
         filterThreadId: null,
         filterThreadName: null,
         renderThreadId: null,
@@ -105,35 +116,30 @@
     function cardBackground(dark) {
         return roundedBackground(
             dark ? "#FF24272D" : "#FFF4F4F6",
-            dark ? "#24FFFFFF" : "#12000000",
-            13
-        );
+            dark ? "#24FFFFFF" : "#12000000", 13);
     }
 
     function actionBackground(dark, danger, selected) {
         if (selected) {
             return roundedBackground(
                 dark ? "#FF364A61" : "#FFE4EEF9",
-                dark ? "#667DB4E8" : "#55719BC6",
-                9
-            );
+                dark ? "#667DB4E8" : "#55719BC6", 9);
         }
         return roundedBackground(
             danger ? (dark ? "#2EF87171" : "#18DC2626") :
                 (dark ? "#22FFFFFF" : "#10000000"),
             danger ? (dark ? "#55F87171" : "#35DC2626") :
-                (dark ? "#25FFFFFF" : "#16000000"),
-            9
-        );
+                (dark ? "#25FFFFFF" : "#16000000"), 9);
     }
 
-    function makeAction(text, dark, danger, selected) {
+    function makeAction(text, dark, danger, selected, compact) {
         var color = danger ? (dark ? "#FFFFA3A3" : "#FFB91C1C") :
             (selected ? (dark ? "#FFDCEEFF" : "#FF275A8A") :
                 (dark ? "#FFE4E4E7" : "#FF3F3F46"));
-        var view = makeText(text, 12, color, true);
+        var view = makeText(text, compact ? 11 : 12, color, true);
         view.setGravity(Gravity.CENTER);
-        view.setPadding(dp(11), dp(6), dp(11), dp(6));
+        view.setPadding(dp(compact ? 8 : 11), dp(6),
+            dp(compact ? 8 : 11), dp(6));
         view.setBackground(actionBackground(dark, danger, selected));
         view.setClickable(true);
         view.setFocusable(true);
@@ -184,8 +190,12 @@
             parts.push("类型 " + criteria.contentTypes.length);
         }
         if (criteria.pinnedOnly === true) { parts.push("仅置顶"); }
-        if (String(criteria.sensitiveMode || "all") === "only") { parts.push("仅敏感"); }
-        if (String(criteria.sensitiveMode || "all") === "exclude") { parts.push("隐藏敏感"); }
+        if (String(criteria.sensitiveMode || "all") === "only") {
+            parts.push("仅敏感");
+        }
+        if (String(criteria.sensitiveMode || "all") === "exclude") {
+            parts.push("隐藏敏感");
+        }
         return parts.join("  ·  ");
     }
 
@@ -291,6 +301,70 @@
         }
     }
 
+    function togglePinned(row) {
+        var thread = Thread.currentThread();
+        var id = Number(row.id);
+        var next = Number(row.is_pinned || 0) === 1 ? 0 : 1;
+        var changed;
+        var delivered;
+        try {
+            changed = ClipHub.Repository.updateItem(id, { is_pinned: next });
+            if (Number(changed) < 1) { return false; }
+            state.pinToggleCount += 1;
+            state.lastPinnedId = id;
+            state.lastPinnedValue = next;
+            state.pinThreadId = Number(thread.getId());
+            state.pinThreadName = String(thread.getName());
+            delivered = emit("clipboard_merged", {
+                id: id,
+                manual: true,
+                mutation: "pin_changed",
+                pinned: next === 1,
+                threadId: state.pinThreadId,
+                threadName: state.pinThreadName
+            });
+            if (delivered < 1 && visible) { refresh(false); }
+            return true;
+        } catch (error) {
+            state.lastError = String(error);
+            return false;
+        }
+    }
+
+    function openNewEditor() {
+        var thread = Thread.currentThread();
+        try {
+            if (!ClipHub.Editor || typeof ClipHub.Editor.openNew !== "function") {
+                throw new Error("ClipHub editor is unavailable");
+            }
+            state.addOpenCount += 1;
+            state.addThreadId = Number(thread.getId());
+            state.addThreadName = String(thread.getName());
+            ClipHub.Editor.openNew();
+            return true;
+        } catch (error) {
+            state.lastError = String(error);
+            return false;
+        }
+    }
+
+    function openEditEditor(row) {
+        var thread = Thread.currentThread();
+        try {
+            if (!ClipHub.Editor || typeof ClipHub.Editor.openItem !== "function") {
+                throw new Error("ClipHub editor is unavailable");
+            }
+            state.editOpenCount += 1;
+            state.editThreadId = Number(thread.getId());
+            state.editThreadName = String(thread.getName());
+            ClipHub.Editor.openItem(Number(row.id));
+            return true;
+        } catch (error) {
+            state.lastError = String(error);
+            return false;
+        }
+    }
+
     function openFilterPanel() {
         var thread = Thread.currentThread();
         try {
@@ -314,18 +388,6 @@
         });
     }
 
-    function deleteListener(row) {
-        return new JavaAdapter(View.OnClickListener, {
-            onClick: function () { deleteRow(row); }
-        });
-    }
-
-    function undoListener() {
-        return new JavaAdapter(View.OnClickListener, {
-            onClick: function () { undoLastDelete(); }
-        });
-    }
-
     function buildContent(rows) {
         var dark = isDarkMode();
         var primary = dark ? "#FFF4F4F5" : "#FF171717";
@@ -345,9 +407,12 @@
         var preview;
         var actionRow;
         var meta;
+        var pinView;
+        var editView;
         var deleteView;
         var params;
         var metaParams;
+        var buttonParams;
         var thread = Thread.currentThread();
 
         outer.setOrientation(LinearLayout.VERTICAL);
@@ -359,7 +424,18 @@
             13, secondary, false);
         headerRow.addView(header, new LinearLayout.LayoutParams(
             0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-        filterView = makeAction(active ? "筛选中" : "筛选", dark, false, active);
+        addView = makeAction("新增", dark, false, false, false);
+        addView.setContentDescription("新增剪贴板记录");
+        addView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
+            onClick: function () { openNewEditor(); }
+        }));
+        buttonParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        buttonParams.rightMargin = dp(6);
+        headerRow.addView(addView, buttonParams);
+        filterView = makeAction(active ? "筛选中" : "筛选",
+            dark, false, active, false);
         filterView.setContentDescription("打开搜索与筛选");
         filterView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
             onClick: function () { openFilterPanel(); }
@@ -395,9 +471,11 @@
             undoText = makeText("已删除 1 条记录", 12, secondary, false);
             undoBar.addView(undoText, new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-            undoView = makeAction("撤销", dark, false, false);
+            undoView = makeAction("撤销", dark, false, false, false);
             undoView.setContentDescription("撤销最近一次删除");
-            undoView.setOnClickListener(undoListener());
+            undoView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
+                onClick: function () { undoLastDelete(); }
+            }));
             undoBar.addView(undoView, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -421,11 +499,13 @@
 
         itemViews = [];
         deleteViews = [];
+        editViews = [];
+        pinViews = [];
         if (rows.length === 0) {
             state.emptyVisible = true;
             preview = makeText(active ?
                 "没有匹配的记录\n调整筛选条件后重试" :
-                "暂无剪贴板记录\n复制文本后会显示在这里",
+                "暂无剪贴板记录\n复制文本或点击新增后会显示在这里",
                 14, secondary, false);
             preview.setGravity(Gravity.CENTER);
             preview.setLineSpacing(0, 1.18);
@@ -443,7 +523,8 @@
                 card.setBackground(cardBackground(dark));
                 card.setClickable(true);
                 card.setFocusable(true);
-                card.setContentDescription("复制第 " + (index + 1) + " 条剪贴板记录");
+                card.setContentDescription(
+                    "复制第 " + (index + 1) + " 条剪贴板记录");
 
                 preview = makeText(Number(row.is_sensitive || 0) === 1 ?
                     "敏感内容" : String(row.content), 14, primary, false);
@@ -463,13 +544,51 @@
                 meta.setEllipsize(TextUtils.TruncateAt.END);
                 metaParams = new LinearLayout.LayoutParams(
                     0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
-                metaParams.rightMargin = dp(8);
+                metaParams.rightMargin = dp(5);
                 actionRow.addView(meta, metaParams);
 
-                deleteView = makeAction("删除", dark, true, false);
+                pinView = makeAction(Number(row.is_pinned || 0) === 1 ?
+                    "取消置顶" : "置顶", dark, false,
+                    Number(row.is_pinned || 0) === 1, true);
+                pinView.setContentDescription(
+                    (Number(row.is_pinned || 0) === 1 ? "取消置顶" : "置顶") +
+                    "第 " + (index + 1) + " 条记录");
+                (function (targetRow, targetView) {
+                    targetView.setOnClickListener(new JavaAdapter(
+                        View.OnClickListener, {
+                            onClick: function () { togglePinned(targetRow); }
+                        }));
+                }(row, pinView));
+                buttonParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+                buttonParams.rightMargin = dp(4);
+                actionRow.addView(pinView, buttonParams);
+
+                editView = makeAction("编辑", dark, false, false, true);
+                editView.setContentDescription(
+                    "编辑第 " + (index + 1) + " 条剪贴板记录");
+                (function (targetRow, targetView) {
+                    targetView.setOnClickListener(new JavaAdapter(
+                        View.OnClickListener, {
+                            onClick: function () { openEditEditor(targetRow); }
+                        }));
+                }(row, editView));
+                buttonParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+                buttonParams.rightMargin = dp(4);
+                actionRow.addView(editView, buttonParams);
+
+                deleteView = makeAction("删除", dark, true, false, true);
                 deleteView.setContentDescription(
                     "删除第 " + (index + 1) + " 条剪贴板记录");
-                deleteView.setOnClickListener(deleteListener(row));
+                (function (targetRow, targetView) {
+                    targetView.setOnClickListener(new JavaAdapter(
+                        View.OnClickListener, {
+                            onClick: function () { deleteRow(targetRow); }
+                        }));
+                }(row, deleteView));
                 actionRow.addView(deleteView, new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -484,6 +603,8 @@
                 params.bottomMargin = dp(8);
                 list.addView(card, params);
                 itemViews.push(card);
+                pinViews.push(pinView);
+                editViews.push(editView);
                 deleteViews.push(deleteView);
             }
         }
@@ -544,6 +665,25 @@
         }
     }
 
+    function bindEvent(name) {
+        var listener = onRepositoryEvent;
+        if (ClipHub.EventBus && typeof ClipHub.EventBus.on === "function") {
+            ClipHub.EventBus.on(name, listener);
+            eventBindings.push({ name: name, listener: listener });
+        }
+    }
+
+    function unbindEvents() {
+        var index;
+        if (ClipHub.EventBus && typeof ClipHub.EventBus.off === "function") {
+            for (index = 0; index < eventBindings.length; index += 1) {
+                ClipHub.EventBus.off(eventBindings[index].name,
+                    eventBindings[index].listener);
+            }
+        }
+        eventBindings = [];
+    }
+
     function show(options) {
         var openResult;
         options = options || {};
@@ -586,13 +726,21 @@
             copyCount: Number(state.copyCount),
             deleteCount: Number(state.deleteCount),
             restoreCount: Number(state.restoreCount),
+            pinToggleCount: Number(state.pinToggleCount),
+            addOpenCount: Number(state.addOpenCount),
+            editOpenCount: Number(state.editOpenCount),
             filterOpenCount: Number(state.filterOpenCount),
             lastCopiedId: state.lastCopiedId,
             lastDeletedId: state.lastDeletedId,
             lastRestoredId: state.lastRestoredId,
+            lastPinnedId: state.lastPinnedId,
+            lastPinnedValue: state.lastPinnedValue,
             lastCopyOk: state.lastCopyOk,
             undoAvailable: lastDeleted !== null,
+            addButtonPresent: addView !== null,
             filterButtonPresent: filterView !== null,
+            editButtonCount: editViews.length,
+            pinButtonCount: pinViews.length,
             filterActive: currentFilter.active === true,
             filterSummary: filterSummary(),
             clickThreadId: state.clickThreadId,
@@ -601,6 +749,12 @@
             deleteThreadName: state.deleteThreadName,
             restoreThreadId: state.restoreThreadId,
             restoreThreadName: state.restoreThreadName,
+            pinThreadId: state.pinThreadId,
+            pinThreadName: state.pinThreadName,
+            addThreadId: state.addThreadId,
+            addThreadName: state.addThreadName,
+            editThreadId: state.editThreadId,
+            editThreadName: state.editThreadName,
             filterThreadId: state.filterThreadId,
             filterThreadName: state.filterThreadName,
             renderThreadId: state.renderThreadId,
@@ -611,34 +765,37 @@
     }
 
     function resetState() {
-        state.renderedCount = 0;
-        state.emptyVisible = false;
-        state.refreshCount = 0;
-        state.eventRefreshCount = 0;
-        state.copyCount = 0;
-        state.deleteCount = 0;
-        state.restoreCount = 0;
-        state.filterOpenCount = 0;
-        state.lastCopiedId = null;
-        state.lastDeletedId = null;
-        state.lastRestoredId = null;
-        state.lastCopyOk = false;
-        state.clickThreadId = null;
-        state.clickThreadName = null;
-        state.deleteThreadId = null;
-        state.deleteThreadName = null;
-        state.restoreThreadId = null;
-        state.restoreThreadName = null;
-        state.filterThreadId = null;
-        state.filterThreadName = null;
-        state.renderThreadId = null;
-        state.renderThreadName = null;
-        state.lastError = null;
+        var key;
+        var defaults = {
+            renderedCount: 0, emptyVisible: false, refreshCount: 0,
+            eventRefreshCount: 0, copyCount: 0, deleteCount: 0,
+            restoreCount: 0, pinToggleCount: 0, addOpenCount: 0,
+            editOpenCount: 0, filterOpenCount: 0, lastCopiedId: null,
+            lastDeletedId: null, lastRestoredId: null, lastPinnedId: null,
+            lastPinnedValue: null, lastCopyOk: false, clickThreadId: null,
+            clickThreadName: null, deleteThreadId: null, deleteThreadName: null,
+            restoreThreadId: null, restoreThreadName: null, pinThreadId: null,
+            pinThreadName: null, addThreadId: null, addThreadName: null,
+            editThreadId: null, editThreadName: null, filterThreadId: null,
+            filterThreadName: null, renderThreadId: null, renderThreadName: null,
+            lastError: null
+        };
+        for (key in defaults) {
+            if (defaults.hasOwnProperty(key)) { state[key] = defaults[key]; }
+        }
+    }
+
+    function performViewClick(collection, index) {
+        index = Math.floor(Number(index));
+        return ClipHub.Window.runOnMain(function () {
+            if (index < 0 || index >= collection.length) { return false; }
+            return collection[index].performClick();
+        }, 2500);
     }
 
     ClipHub.List = {
         MODULE_NAME: "ch_09_list",
-        MODULE_VERSION: 4,
+        MODULE_VERSION: 5,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
@@ -651,21 +808,19 @@
             items = [];
             itemViews = [];
             deleteViews = [];
+            editViews = [];
+            pinViews = [];
             undoView = null;
             filterView = null;
+            addView = null;
             lastDeleted = null;
             visible = false;
+            eventBindings = [];
             resetState();
-            addedListener = onRepositoryEvent;
-            mergedListener = onRepositoryEvent;
-            deletedListener = onRepositoryEvent;
-            restoredListener = onRepositoryEvent;
-            if (ClipHub.EventBus) {
-                ClipHub.EventBus.on("clipboard_added", addedListener);
-                ClipHub.EventBus.on("clipboard_merged", mergedListener);
-                ClipHub.EventBus.on("clipboard_deleted", deletedListener);
-                ClipHub.EventBus.on("clipboard_restored", restoredListener);
-            }
+            bindEvent("clipboard_added");
+            bindEvent("clipboard_merged");
+            bindEvent("clipboard_deleted");
+            bindEvent("clipboard_restored");
             ready = true;
             return true;
         },
@@ -693,18 +848,16 @@
             return true;
         },
         performItemClick: function (index) {
-            index = Math.floor(Number(index));
-            return ClipHub.Window.runOnMain(function () {
-                if (index < 0 || index >= itemViews.length) { return false; }
-                return itemViews[index].performClick();
-            }, 2500);
+            return performViewClick(itemViews, index);
         },
         performDeleteClick: function (index) {
-            index = Math.floor(Number(index));
-            return ClipHub.Window.runOnMain(function () {
-                if (index < 0 || index >= deleteViews.length) { return false; }
-                return deleteViews[index].performClick();
-            }, 2500);
+            return performViewClick(deleteViews, index);
+        },
+        performEditClick: function (index) {
+            return performViewClick(editViews, index);
+        },
+        performPinClick: function (index) {
+            return performViewClick(pinViews, index);
         },
         performUndoClick: function () {
             return ClipHub.Window.runOnMain(function () {
@@ -716,36 +869,31 @@
                 return filterView !== null ? filterView.performClick() : false;
             }, 2500);
         },
+        performAddClick: function () {
+            return ClipHub.Window.runOnMain(function () {
+                return addView !== null ? addView.performClick() : false;
+            }, 2500);
+        },
         deleteItem: function (id) {
             var row = ClipHub.Repository.getItem(Number(id), false);
             return row === null || row === undefined ? false : deleteRow(row);
         },
         undoLastDelete: undoLastDelete,
+        togglePinned: function (id) {
+            var row = ClipHub.Repository.getItem(Number(id), false);
+            return row === null || row === undefined ? false : togglePinned(row);
+        },
         getState: getState,
         shutdown: function () {
-            if (ClipHub.EventBus) {
-                if (addedListener !== null) {
-                    ClipHub.EventBus.off("clipboard_added", addedListener);
-                }
-                if (mergedListener !== null) {
-                    ClipHub.EventBus.off("clipboard_merged", mergedListener);
-                }
-                if (deletedListener !== null) {
-                    ClipHub.EventBus.off("clipboard_deleted", deletedListener);
-                }
-                if (restoredListener !== null) {
-                    ClipHub.EventBus.off("clipboard_restored", restoredListener);
-                }
-            }
-            addedListener = null;
-            mergedListener = null;
-            deletedListener = null;
-            restoredListener = null;
+            unbindEvents();
             items = [];
             itemViews = [];
             deleteViews = [];
+            editViews = [];
+            pinViews = [];
             undoView = null;
             filterView = null;
+            addView = null;
             lastDeleted = null;
             visible = false;
             ready = false;
