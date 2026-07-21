@@ -7,12 +7,13 @@
     var Thread = Packages.java.lang.Thread;
     var CountDownLatch = Packages.java.util.concurrent.CountDownLatch;
     var TimeUnit = Packages.java.util.concurrent.TimeUnit;
+    var SecureRandom = Packages.java.security.SecureRandom;
     var Build = Packages.android.os.Build;
     var Looper = Packages.android.os.Looper;
     var Handler = Packages.android.os.Handler;
     var AndroidContext = Packages.android.content.Context;
     var IntentFilter = Packages.android.content.IntentFilter;
-    var CONTROL_ACTION = "com.cliphub.runtime.CONTROL";
+    var CONTROL_ACTION_BASE = "com.cliphub.runtime.CONTROL";
     var order = [
         "Log", "Database", "Classifier", "Repository",
         "EventBus", "Theme", "Clipboard", "Window", "List",
@@ -26,7 +27,10 @@
         lockChannel: null,
         lockHandle: null,
         controlContext: null,
-        controlReceiver: null
+        controlReceiver: null,
+        controlAction: "",
+        controlToken: "",
+        controlEndpointFile: null
     };
 
     function closeQuietly(value) {
@@ -85,25 +89,71 @@
         return box;
     }
 
+    function randomToken() {
+        var bytes = Packages.java.lang.reflect.Array.newInstance(
+            Packages.java.lang.Byte.TYPE, 24
+        );
+        var random = new SecureRandom();
+        var parts = [];
+        var index;
+        var number;
+        var hex;
+        random.nextBytes(bytes);
+        for (index = 0; index < bytes.length; index += 1) {
+            number = Number(bytes[index]);
+            if (number < 0) { number += 256; }
+            hex = number.toString(16);
+            parts.push(hex.length === 1 ? "0" + hex : hex);
+        }
+        return parts.join("");
+    }
+
+    function writeUtf8(file, value) {
+        var stream = null;
+        try {
+            stream = new FOS(file, false);
+            stream.write(new JavaString(String(value)).getBytes("UTF-8"));
+            stream.flush();
+            return true;
+        } finally {
+            closeQuietly(stream);
+        }
+    }
+
     function writeControlAck(runtimeDir, requestId, payload) {
         var safeId = String(requestId || "").replace(/[^A-Za-z0-9._-]/g, "_");
         var cacheDir;
         var file;
-        var stream = null;
         if (!safeId) { return false; }
         cacheDir = ClipHub.Base.ensureDir(
             ClipHub.Base.joinPath(runtimeDir, "cache")
         );
         file = new File(cacheDir, "control_ack_" + safeId + ".json");
-        try {
-            stream = new FOS(file, false);
-            stream.write(new JavaString(
-                JSON.stringify(payload, null, 2) + "\n"
-            ).getBytes("UTF-8"));
-            stream.flush();
-            return true;
-        } finally {
-            closeQuietly(stream);
+        return writeUtf8(file, JSON.stringify(payload, null, 2) + "\n");
+    }
+
+    function writeControlEndpoint(context, action, token) {
+        var cacheDir = ClipHub.Base.ensureDir(
+            ClipHub.Base.joinPath(context.runtimeDir, "cache")
+        );
+        var file = new File(cacheDir, "control_endpoint.json");
+        writeUtf8(file, JSON.stringify({
+            schemaVersion: 1,
+            transport: "dynamic_broadcast_token",
+            action: String(action),
+            token: String(token),
+            runtimeDir: String(context.runtimeDir),
+            createdAt: ClipHub.Base.now()
+        }, null, 2) + "\n");
+        state.controlEndpointFile = file;
+        return file;
+    }
+
+    function removeControlEndpoint() {
+        var file = state.controlEndpointFile;
+        state.controlEndpointFile = null;
+        if (file !== null && file.exists()) {
+            try { file.delete(); } catch (ignored) {}
         }
     }
 
@@ -149,7 +199,8 @@
             errorName = error && error.getClass
                 ? String(error.getClass().getName()) : String(error);
             releaseLock();
-            if (errorName.indexOf("OverlappingFileLockException") >= 0) {
+            if (errorName.indexOf("OverlappingFileLockException") >= 0 ||
+                    String(error).indexOf("OverlappingFileLockException") >= 0) {
                 throw new Error("ClipHub is already running");
             }
             throw error;
@@ -166,6 +217,9 @@
         var result;
         state.controlContext = null;
         state.controlReceiver = null;
+        state.controlAction = "";
+        state.controlToken = "";
+        removeControlEndpoint();
         if (appContext === null || receiver === null) { return true; }
         result = runOnMainSync(function () {
             try { appContext.unregisterReceiver(receiver); }
@@ -182,18 +236,24 @@
         var receiver;
         var filter;
         var result;
+        var token;
+        var action;
         if (androidContext === null || androidContext === undefined) {
             throw new Error("Android context unavailable for control receiver");
         }
         appContext = androidContext.getApplicationContext();
         if (appContext === null) { appContext = androidContext; }
+        token = randomToken();
+        action = CONTROL_ACTION_BASE + "." + token;
         receiver = new JavaAdapter(Packages.android.content.BroadcastReceiver, {
             onReceive: function (receiverContext, intent) {
                 var target;
                 var command;
                 var requestId;
+                var suppliedToken;
                 var runtimeDir;
                 var response;
+                var callbackThread = Thread.currentThread();
                 try {
                     target = intent === null ? null :
                         intent.getStringExtra("runtimeDir");
@@ -201,29 +261,34 @@
                         intent.getStringExtra("command");
                     requestId = intent === null ? null :
                         intent.getStringExtra("requestId");
+                    suppliedToken = intent === null ? null :
+                        intent.getStringExtra("controlToken");
                     runtimeDir = state.context === null ? "" :
                         String(state.context.runtimeDir);
                     if (String(target || "") !== runtimeDir ||
-                            String(command || "") !== "stop") {
+                            String(command || "") !== "stop" ||
+                            String(suppliedToken || "") !== token) {
                         return;
                     }
-                    response = ClipHub.App.stop("broadcast");
+                    response = ClipHub.App.stop("broadcast_token");
                     writeControlAck(runtimeDir, requestId, {
                         ok: true,
                         stopped: response.stopped === true,
                         runtimeDir: runtimeDir,
-                        threadId: Number(Thread.currentThread().getId()),
-                        threadName: String(Thread.currentThread().getName())
+                        transport: "dynamic_broadcast_token",
+                        threadId: Number(callbackThread.getId()),
+                        threadName: String(callbackThread.getName())
                     });
                 } catch (error) {
                     try {
                         writeControlAck(
-                            state.context === null ? "" :
+                            state.context === null ? String(context.runtimeDir) :
                                 String(state.context.runtimeDir),
                             requestId,
                             {
                                 ok: false,
                                 stopped: false,
+                                transport: "dynamic_broadcast_token",
                                 error: errorText(error)
                             }
                         );
@@ -231,13 +296,13 @@
                 }
             }
         });
-        filter = new IntentFilter(CONTROL_ACTION);
+        filter = new IntentFilter(action);
         result = runOnMainSync(function () {
             if (Build.VERSION.SDK_INT >= 33) {
                 appContext.registerReceiver(
                     receiver,
                     filter,
-                    AndroidContext.RECEIVER_NOT_EXPORTED
+                    AndroidContext.RECEIVER_EXPORTED
                 );
             } else {
                 appContext.registerReceiver(receiver, filter);
@@ -249,13 +314,21 @@
         }
         state.controlContext = appContext;
         state.controlReceiver = receiver;
+        state.controlAction = action;
+        state.controlToken = token;
+        try {
+            writeControlEndpoint(context, action, token);
+        } catch (endpointError) {
+            unregisterControlReceiver();
+            throw endpointError;
+        }
         return true;
     }
 
     ClipHub.App = {
         MODULE_NAME: "ch_15_app",
-        MODULE_VERSION: 3,
-        CONTROL_ACTION: CONTROL_ACTION,
+        MODULE_VERSION: 4,
+        CONTROL_ACTION_BASE: CONTROL_ACTION_BASE,
         start: function (context) {
             var index;
             var item;
@@ -288,7 +361,10 @@
                     initializedModuleCount: order.length + 1,
                     moduleFileCount: order.length + 2,
                     moduleCount: order.length + 1,
-                    controlAction: CONTROL_ACTION
+                    controlTransport: "dynamic_broadcast_token",
+                    controlEndpointPath: String(
+                        state.controlEndpointFile.getAbsolutePath()
+                    )
                 };
             } catch (error) {
                 shutdownModules();
@@ -314,6 +390,12 @@
             };
         },
         isStarted: function () { return state.started; },
-        getControlAction: function () { return CONTROL_ACTION; }
+        getControlTransport: function () {
+            return "dynamic_broadcast_token";
+        },
+        getControlEndpointPath: function () {
+            return state.controlEndpointFile === null ? null :
+                String(state.controlEndpointFile.getAbsolutePath());
+        }
     };
 }((function () { return this; }())));
