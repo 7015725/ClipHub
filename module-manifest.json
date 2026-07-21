@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260721.13",
+  "moduleSetVersion": "20260721.14",
   "entryMinVersion": 4,
   "sourceRef": "agent/initialize-project-skeleton",
   "modules": [
@@ -9,12 +9,12 @@
     {"name":"ch_03_database.js","path":"src/ch_03_database.js","sha":"3c3ea319844cf9470aff385def30cac11bf95e3c"},
     {"name":"ch_04_clipboard.js","path":"src/ch_04_clipboard.js","sha":"70a1a10215c75012b47bd06eda9a2b271e63f248"},
     {"name":"ch_05_classifier.js","path":"src/ch_05_classifier.js","sha":"c78f3d652ecdf75a5c454312aa03e15ab55ab38f"},
-    {"name":"ch_06_repository.js","path":"src/ch_06_repository.js","sha":"d547f9bc3bb3b0cc18a9ee31168973fef3e33204"},
+    {"name":"ch_06_repository.js","path":"src/ch_06_repository.js","sha":"b0052957064c87d2f90799fea0cfd2decd518a09"},
     {"name":"ch_07_theme.js","path":"src/ch_07_theme.js","sha":"31d93f71bb7924aa5cab61f841775859649143fc"},
     {"name":"ch_08_window.js","path":"src/ch_08_window.js","sha":"94a0c5dbe82c75f38f8a7d1b8c06fabf848e5e30"},
     {"name":"ch_09_list.js","path":"src/ch_09_list.js","sha":"7834ece568ade3a8c018de99a72e09739fc94af0"},
     {"name":"ch_10_editor.js","path":"src/ch_10_editor.js","sha":"d27903c9b2b55579cb67cc351dac5f2eb4a6bc08"},
-    {"name":"ch_11_filter.js","path":"src/ch_11_filter.js","sha":"acc03b93328134fa221498730317e3a58e1fa362"},
+    {"name":"ch_11_filter.js","path":"src/ch_11_filter.js","sha":"6fe573ed0cae8d3f23c9f8e251082012d1d105fb"},
     {"name":"ch_12_translation.js","path":"src/ch_12_translation.js","sha":"bdaf530c60620b6ae857ee5359f39fb4634ddd2a"},
     {"name":"ch_13_settings.js","path":"src/ch_13_settings.js","sha":"9d9432105b3ceac7247d1b0e3b5177f91e3d6b54"},
     {"name":"ch_14_event_bus.js","path":"src/ch_14_event_bus.js","sha":"ac4288d3a94d23d16a351989f0bdf3aa5e5a35e5"},
