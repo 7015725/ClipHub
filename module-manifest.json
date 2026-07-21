@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260722.19",
+  "moduleSetVersion": "20260722.20",
   "entryMinVersion": 4,
   "sourceRef": "agent/initialize-project-skeleton",
   "modules": [
@@ -13,8 +13,8 @@
     {"name":"ch_07_theme.js","path":"src/ch_07_theme.js","sha":"31d93f71bb7924aa5cab61f841775859649143fc"},
     {"name":"ch_08_window.js","path":"src/ch_08_window.js","sha":"94a0c5dbe82c75f38f8a7d1b8c06fabf848e5e30"},
     {"name":"ch_09_list.js","path":"src/ch_09_list.js","sha":"85a88ed57f5164ffb9506446d9c46b0735aa2c4f"},
-    {"name":"ch_10_editor.js","path":"src/ch_10_editor.js","sha":"63d499524e3abd701159b8b8b0e34acc221d64e6"},
-    {"name":"ch_11_filter.js","path":"src/ch_11_filter.js","sha":"e6e718bbb44ece3882d4728a6dbd6126993a2625"},
+    {"name":"ch_10_editor.js","path":"src/ch_10_editor.js","sha":"e2afe5ff6f8d8802d8aca7669b5f8b2033064895"},
+    {"name":"ch_11_filter.js","path":"src/ch_11_filter.js","sha":"5070c06efef172b64e09233798d02204eb47ddf4"},
     {"name":"ch_12_translation.js","path":"src/ch_12_translation.js","sha":"bdaf530c60620b6ae857ee5359f39fb4634ddd2a"},
     {"name":"ch_13_settings.js","path":"src/ch_13_settings.js","sha":"9d9432105b3ceac7247d1b0e3b5177f91e3d6b54"},
     {"name":"ch_14_event_bus.js","path":"src/ch_14_event_bus.js","sha":"ac4288d3a94d23d16a351989f0bdf3aa5e5a35e5"},
