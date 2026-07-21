@@ -73,12 +73,20 @@
 
     ClipHub.App = {
         MODULE_NAME: "ch_15_app",
-        MODULE_VERSION: 1,
+        MODULE_VERSION: 2,
         start: function (context) {
             var index;
             var item;
+            var initializedModuleCount;
+            var moduleFileCount;
             if (state.started) {
-                return { ok: true, started: true, reused: true };
+                return {
+                    ok: true,
+                    started: true,
+                    reused: true,
+                    initializedModuleCount: state.initialized.length,
+                    moduleFileCount: order.length + 2
+                };
             }
             state.context = context;
             try {
@@ -94,6 +102,8 @@
                 }
 
                 state.started = true;
+                initializedModuleCount = state.initialized.length;
+                moduleFileCount = order.length + 2;
                 ClipHub.Log.info("application skeleton started");
                 return {
                     ok: true,
@@ -102,7 +112,9 @@
                     status: "skeleton_ready",
                     runtimeDir: context.runtimeDir,
                     databasePath: ClipHub.Database.getPath(),
-                    moduleCount: order.length + 1
+                    initializedModuleCount: initializedModuleCount,
+                    moduleFileCount: moduleFileCount,
+                    moduleCount: initializedModuleCount
                 };
             } catch (error) {
                 shutdownModules();
