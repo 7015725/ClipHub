@@ -63,6 +63,13 @@
         lastTagAction: null,
         windowType: null,
         windowFlags: null,
+        panelWidthPx: null,
+        panelHeightPx: null,
+        panelWidthDp: null,
+        panelHeightDp: null,
+        dimAmount: 0,
+        modalWindow: false,
+        opaqueBackground: false,
         addThreadId: null,
         addThreadName: null,
         removeThreadId: null,
@@ -87,7 +94,8 @@
         var runnable;
         var posted;
         var completed;
-        if (mainLooper !== null && currentLooper !== null && currentLooper === mainLooper) {
+        if (mainLooper !== null && currentLooper !== null &&
+                currentLooper === mainLooper) {
             return { ok: true, value: callback(), direct: true };
         }
         box = { ok: false, value: null, error: null };
@@ -106,12 +114,15 @@
         });
         posted = mainHandler.post(runnable);
         if (!posted) {
-            return { ok: false, error: new Error("Editor main handler post failed") };
+            return { ok: false,
+                error: new Error("Editor main handler post failed") };
         }
-        completed = latch.await(Number(timeoutMs || 2500), TimeUnit.MILLISECONDS);
+        completed = latch.await(Number(timeoutMs || 2500),
+            TimeUnit.MILLISECONDS);
         if (!completed) {
             try { mainHandler.removeCallbacks(runnable); } catch (ignored) {}
-            return { ok: false, error: new Error("Editor main handler timeout") };
+            return { ok: false,
+                error: new Error("Editor main handler timeout") };
         }
         return box;
     }
@@ -126,6 +137,10 @@
 
     function dp(value) {
         return Math.max(1, Math.floor(Number(value) * density + 0.5));
+    }
+
+    function pxToDp(value) {
+        return Math.round(Number(value) / density);
     }
 
     function isDarkMode() {
@@ -170,27 +185,43 @@
         return view;
     }
 
-    function makeButton(text, dark, primary, danger, selected) {
+    function makeButton(text, dark, primary, danger, selected, compact) {
         var color;
         var fill;
         var stroke;
+        var view;
         if (danger) {
-            color = dark ? "#FFFFA3A3" : "#FFB91C1C";
-            fill = dark ? "#2EF87171" : "#18DC2626";
-            stroke = dark ? "#55F87171" : "#35DC2626";
+            color = dark ? "#FFFFB0B0" : "#FFB42323";
+            fill = dark ? "#2AD75D66" : "#14D92D36";
+            stroke = dark ? "#4FD75D66" : "#30D92D36";
         } else if (selected || primary) {
-            color = dark ? "#FFE6F2FF" : "#FF174A78";
-            fill = dark ? "#FF344D66" : "#FFE3EEF8";
-            stroke = dark ? "#667DB4E8" : "#55719BC6";
+            color = dark ? "#FFE5F1FC" : "#FF285777";
+            fill = dark ? "#FF2C4356" : "#FFE8F1F8";
+            stroke = dark ? "#556F9FC7" : "#40799DBB";
         } else {
-            color = dark ? "#FFE4E4E7" : "#FF3F3F46";
-            fill = dark ? "#22FFFFFF" : "#10000000";
-            stroke = dark ? "#25FFFFFF" : "#16000000";
+            color = dark ? "#FFD8D8DC" : "#FF45454D";
+            fill = dark ? "#FF292C31" : "#FFF3F3F5";
+            stroke = dark ? "#28FFFFFF" : "#14000000";
         }
-        var view = makeText(text, 13, color, true);
+        view = makeText(text, compact ? 11 : 12, color,
+            primary || danger || selected);
         view.setGravity(Gravity.CENTER);
-        view.setPadding(dp(12), dp(7), dp(12), dp(7));
-        view.setBackground(roundedBackground(fill, stroke, 10));
+        view.setPadding(dp(compact ? 9 : 11), dp(compact ? 6 : 7),
+            dp(compact ? 9 : 11), dp(compact ? 6 : 7));
+        view.setBackground(roundedBackground(fill, stroke, compact ? 9 : 10));
+        view.setClickable(true);
+        view.setFocusable(true);
+        return view;
+    }
+
+    function makeCloseButton(dark) {
+        var view = makeText("×", 22,
+            dark ? "#FFC7C7CE" : "#FF5A5A63", true);
+        view.setGravity(Gravity.CENTER);
+        view.setPadding(dp(8), dp(2), dp(8), dp(2));
+        view.setBackground(roundedBackground(
+            dark ? "#FF272A2F" : "#FFF2F2F4",
+            dark ? "#24FFFFFF" : "#14000000", 10));
         view.setClickable(true);
         view.setFocusable(true);
         return view;
@@ -236,20 +267,39 @@
         return 0;
     }
 
-    function panelDimensions() {
+    function displayMetrics() {
         var metrics = new DisplayMetrics();
-        var width;
-        var height;
         try {
             windowManager.getDefaultDisplay().getRealMetrics(metrics);
         } catch (ignored) {
             metrics = appContext.getResources().getDisplayMetrics();
         }
-        width = Math.min(dp(400), Math.max(dp(270),
-            Number(metrics.widthPixels) - dp(24)));
-        height = Math.min(dp(540), Math.max(dp(340),
-            Number(metrics.heightPixels) - dp(96)));
-        return { width: width, height: height };
+        return metrics;
+    }
+
+    function panelDimensions(mode) {
+        var metrics = displayMetrics();
+        var width = Math.min(dp(420), Math.max(dp(270),
+            Number(metrics.widthPixels) - dp(12)));
+        var availableHeight = Math.max(dp(300),
+            Number(metrics.heightPixels) - dp(72));
+        var heightDp;
+        var count;
+        if (String(mode) === "tags") {
+            count = 0;
+            try { count = ClipHub.Repository.listTags().length; }
+            catch (ignoredCount) {}
+            heightDp = 222 + Math.min(5, Math.max(1, count)) * 54;
+            heightDp = Math.max(310, Math.min(492, heightDp));
+        } else {
+            heightDp = 430;
+        }
+        return {
+            width: width,
+            height: Math.min(dp(heightDp), availableHeight),
+            widthDp: pxToDp(width),
+            heightDp: Math.min(heightDp, pxToDp(availableHeight))
+        };
     }
 
     function activeInput() {
@@ -280,7 +330,8 @@
         var target = activeInput();
         try {
             if (target !== null && inputMethodManager !== null) {
-                inputMethodManager.hideSoftInputFromWindow(target.getWindowToken(), 0);
+                inputMethodManager.hideSoftInputFromWindow(
+                    target.getWindowToken(), 0);
             }
         } catch (ignored) {}
     }
@@ -409,13 +460,35 @@
         emitTagChanged(action, state.itemId, tagId);
     }
 
+    function updatePanelSizeForMode() {
+        var size;
+        if (panelRoot === null || panelParams === null) { return false; }
+        size = panelDimensions(state.mode);
+        if (Number(panelParams.width) === Number(size.width) &&
+                Number(panelParams.height) === Number(size.height)) {
+            return false;
+        }
+        panelParams.width = size.width;
+        panelParams.height = size.height;
+        state.panelWidthPx = size.width;
+        state.panelHeightPx = size.height;
+        state.panelWidthDp = size.widthDp;
+        state.panelHeightDp = size.heightDp;
+        try { windowManager.updateViewLayout(panelRoot, panelParams); }
+        catch (ignoredUpdate) {}
+        return true;
+    }
+
     function createTagFromInput() {
         var name;
         var tagId;
         if (tagNameInput === null || state.mode !== "tags") { return false; }
         try {
-            name = ClipHub.Repository.normalizeTagName(String(tagNameInput.getText()));
-            if (name.length === 0) { throw new Error("标签名称不能为空"); }
+            name = ClipHub.Repository.normalizeTagName(
+                String(tagNameInput.getText()));
+            if (name.length === 0) {
+                throw new Error("标签名称不能为空");
+            }
             tagId = Number(ClipHub.Repository.ensureTag(name, null));
             if (state.itemId !== null && !itemHasTag(tagId)) {
                 ClipHub.Repository.attachTag(Number(state.itemId), tagId);
@@ -423,6 +496,7 @@
             state.tagCreateCount += 1;
             recordTagAction("tag_created", tagId);
             buildTagContent(false);
+            updatePanelSizeForMode();
             return true;
         } catch (error) {
             state.lastError = String(error);
@@ -460,6 +534,7 @@
             state.tagDeleteCount += 1;
             recordTagAction("tag_deleted", tagId);
             buildTagContent(false);
+            updatePanelSizeForMode();
             return true;
         } catch (error) {
             state.lastError = String(error);
@@ -474,7 +549,12 @@
             if (Number(changed) < 1) { return false; }
             state.tagRenameCount += 1;
             recordTagAction("tag_renamed", tagId);
-            if (state.mode === "tags" && state.attached) { buildTagContent(false); }
+            if (state.mode === "tags" && state.attached) {
+                requireMain(runOnMainSync(function () {
+                    buildTagContent(false);
+                    return true;
+                }, 2500));
+            }
             return true;
         } catch (error) {
             state.lastError = String(error);
@@ -484,17 +564,17 @@
 
     function addTitle(titleText, subtitleText) {
         var dark = isDarkMode();
-        var primary = dark ? "#FFF4F4F5" : "#FF171717";
-        var secondary = dark ? "#FFB4B4BC" : "#FF66666F";
+        var primary = dark ? "#FFF1F1F3" : "#FF1B1B1F";
+        var secondary = dark ? "#FFA9A9B2" : "#FF6A6A73";
         var titleRow = new LinearLayout(appContext);
-        var title = makeText(titleText, 16, primary, true);
+        var title = makeText(titleText, 15, primary, true);
         var subtitle;
         var params;
         titleRow.setOrientation(LinearLayout.HORIZONTAL);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
         titleRow.addView(title, new LinearLayout.LayoutParams(
             0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-        cancelView = makeButton("关闭", dark, false, false, false);
+        cancelView = makeCloseButton(dark);
         cancelView.setContentDescription("关闭编辑窗口");
         cancelView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
             onClick: function () { closePanel("cancel"); }
@@ -505,20 +585,20 @@
         params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dp(8);
+        params.bottomMargin = dp(5);
         panelRoot.addView(titleRow, params);
-        subtitle = makeText(subtitleText, 12, secondary, false);
+        subtitle = makeText(subtitleText, 11, secondary, false);
         params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dp(10);
+        params.bottomMargin = dp(9);
         panelRoot.addView(subtitle, params);
     }
 
     function buildTextContent(initialText) {
         var dark = isDarkMode();
-        var primary = dark ? "#FFF4F4F5" : "#FF171717";
-        var secondary = dark ? "#FFB4B4BC" : "#FF66666F";
+        var primary = dark ? "#FFEDEDF0" : "#FF202024";
+        var secondary = dark ? "#FF9F9FA8" : "#FF72727B";
         var scroll;
         var footer;
         panelRoot.removeAllViews();
@@ -529,7 +609,7 @@
         scroll.setFillViewport(true);
         contentInput = new EditText(appContext);
         contentInput.setText(String(initialText || ""));
-        contentInput.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        contentInput.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         contentInput.setTextColor(Color.parseColor(primary));
         contentInput.setHintTextColor(Color.parseColor(secondary));
         contentInput.setHint("输入剪贴板内容");
@@ -538,21 +618,22 @@
             InputType.TYPE_TEXT_FLAG_MULTI_LINE |
             InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         contentInput.setSingleLine(false);
-        contentInput.setMinLines(8);
-        contentInput.setPadding(dp(12), dp(10), dp(12), dp(10));
+        contentInput.setMinLines(6);
+        contentInput.setPadding(dp(11), dp(9), dp(11), dp(9));
         contentInput.setBackground(roundedBackground(
             dark ? "#FF202328" : "#FFF7F7F8",
-            dark ? "#35FFFFFF" : "#1D000000", 11));
-        scroll.addView(contentInput, new Packages.android.widget.FrameLayout.LayoutParams(
-            Packages.android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
-            Packages.android.widget.FrameLayout.LayoutParams.WRAP_CONTENT));
+            dark ? "#2EFFFFFF" : "#18000000", 11));
+        scroll.addView(contentInput,
+            new Packages.android.widget.FrameLayout.LayoutParams(
+                Packages.android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                Packages.android.widget.FrameLayout.LayoutParams.WRAP_CONTENT));
         panelRoot.addView(scroll, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
         footer = new LinearLayout(appContext);
         footer.setOrientation(LinearLayout.HORIZONTAL);
         footer.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        footer.setPadding(0, dp(12), 0, 0);
-        saveView = makeButton("保存", dark, true, false, false);
+        footer.setPadding(0, dp(9), 0, 0);
+        saveView = makeButton("保存", dark, true, false, false, false);
         saveView.setContentDescription("保存记录");
         saveView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
             onClick: function () { saveFromInput(); }
@@ -568,8 +649,8 @@
 
     function buildTagContent(requestFocus) {
         var dark = isDarkMode();
-        var primary = dark ? "#FFF4F4F5" : "#FF171717";
-        var secondary = dark ? "#FFB4B4BC" : "#FF66666F";
+        var primary = dark ? "#FFEDEDF0" : "#FF202024";
+        var secondary = dark ? "#FF9F9FA8" : "#FF72727B";
         var inputRow;
         var scroll;
         var list;
@@ -593,20 +674,20 @@
         tagNameInput = new EditText(appContext);
         tagNameInput.setSingleLine(true);
         tagNameInput.setHint("新标签名称");
-        tagNameInput.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        tagNameInput.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         tagNameInput.setTextColor(Color.parseColor(primary));
         tagNameInput.setHintTextColor(Color.parseColor(secondary));
         tagNameInput.setInputType(InputType.TYPE_CLASS_TEXT |
             InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
-        tagNameInput.setPadding(dp(11), dp(7), dp(11), dp(7));
+        tagNameInput.setPadding(dp(10), dp(7), dp(10), dp(7));
         tagNameInput.setBackground(roundedBackground(
             dark ? "#FF202328" : "#FFF7F7F8",
-            dark ? "#35FFFFFF" : "#1D000000", 10));
+            dark ? "#2EFFFFFF" : "#18000000", 10));
         inputParams = new LinearLayout.LayoutParams(
             0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
-        inputParams.rightMargin = dp(8);
+        inputParams.rightMargin = dp(7);
         inputRow.addView(tagNameInput, inputParams);
-        createTagView = makeButton("新增", dark, true, false, false);
+        createTagView = makeButton("新增", dark, true, false, false, true);
         createTagView.setContentDescription("创建新标签");
         createTagView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
             onClick: function () { createTagFromInput(); }
@@ -617,7 +698,7 @@
         params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dp(12);
+        params.bottomMargin = dp(9);
         panelRoot.addView(inputRow, params);
         allTags = ClipHub.Repository.listTags();
         attachedTags = ClipHub.Repository.listItemTags(Number(state.itemId));
@@ -627,14 +708,14 @@
         state.tagOptionCount = allTags.length;
         state.attachedTagCount = attachedTags.length;
         scroll = new ScrollView(appContext);
-        scroll.setFillViewport(true);
+        scroll.setFillViewport(false);
         list = new LinearLayout(appContext);
         list.setOrientation(LinearLayout.VERTICAL);
         if (allTags.length === 0) {
-            row = makeText("暂无标签\n在上方输入名称后创建", 14,
+            row = makeText("暂无标签\n在上方输入名称后创建", 13,
                 secondary, false);
             row.setGravity(Gravity.CENTER);
-            row.setPadding(dp(12), dp(36), dp(12), dp(36));
+            row.setPadding(dp(12), dp(24), dp(12), dp(24));
             list.addView(row, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -644,46 +725,51 @@
                 row = new LinearLayout(appContext);
                 row.setOrientation(LinearLayout.HORIZONTAL);
                 row.setGravity(Gravity.CENTER_VERTICAL);
-                row.setPadding(dp(9), dp(8), dp(8), dp(8));
+                row.setPadding(dp(7), dp(6), dp(7), dp(6));
                 row.setBackground(roundedBackground(
-                    dark ? "#FF24272D" : "#FFF4F4F6",
-                    dark ? "#24FFFFFF" : "#12000000", 11));
+                    dark ? "#FF22252A" : "#FFF5F5F6",
+                    dark ? "#20FFFFFF" : "#10000000", 10));
                 toggleView = makeButton(String(tag.name), dark, false, false,
-                    attached[String(tag.id)] === true);
+                    attached[String(tag.id)] === true, true);
                 toggleView.setContentDescription(
                     (attached[String(tag.id)] ? "移除标签 " : "添加标签 ") +
                     String(tag.name));
                 (function (tagId, view) {
-                    view.setOnClickListener(new JavaAdapter(View.OnClickListener, {
-                        onClick: function () { toggleTag(tagId); }
-                    }));
+                    view.setOnClickListener(new JavaAdapter(
+                        View.OnClickListener, {
+                            onClick: function () { toggleTag(tagId); }
+                        }));
                     tagViews[String(tagId)] = view;
                 }(Number(tag.id), toggleView));
                 row.addView(toggleView, new LinearLayout.LayoutParams(
                     0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-                deleteView = makeButton("删除", dark, false, true, false);
-                deleteView.setContentDescription("删除标签 " + String(tag.name));
+                deleteView = makeButton("删除", dark, false, true,
+                    false, true);
+                deleteView.setContentDescription(
+                    "删除标签 " + String(tag.name));
                 (function (tagId, view) {
-                    view.setOnClickListener(new JavaAdapter(View.OnClickListener, {
-                        onClick: function () { deleteTag(tagId); }
-                    }));
+                    view.setOnClickListener(new JavaAdapter(
+                        View.OnClickListener, {
+                            onClick: function () { deleteTag(tagId); }
+                        }));
                     tagDeleteViews[String(tagId)] = view;
                 }(Number(tag.id), deleteView));
                 params = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT);
-                params.leftMargin = dp(8);
+                params.leftMargin = dp(7);
                 row.addView(deleteView, params);
                 params = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT);
-                params.bottomMargin = dp(7);
+                params.bottomMargin = dp(6);
                 list.addView(row, params);
             }
         }
-        scroll.addView(list, new Packages.android.widget.FrameLayout.LayoutParams(
-            Packages.android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
-            Packages.android.widget.FrameLayout.LayoutParams.WRAP_CONTENT));
+        scroll.addView(list,
+            new Packages.android.widget.FrameLayout.LayoutParams(
+                Packages.android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                Packages.android.widget.FrameLayout.LayoutParams.WRAP_CONTENT));
         panelRoot.addView(scroll, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
         if (requestFocus) { requestKeyboardOnMain(); }
@@ -707,25 +793,29 @@
             (mode === "tags" ? "tags" : "new");
         state.itemId = state.mode === "new" ? null : Number(itemId);
         return requireMain(runOnMainSync(function () {
-            var size = panelDimensions();
+            var size = panelDimensions(state.mode);
             var type = Build.VERSION.SDK_INT >= 26 ?
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY :
                 WindowManager.LayoutParams.TYPE_SYSTEM_ALERT;
             var thread = nowThread();
+            var dark = isDarkMode();
             panelRoot = new LinearLayout(appContext);
             panelRoot.setOrientation(LinearLayout.VERTICAL);
-            panelRoot.setPadding(dp(16), dp(14), dp(16), dp(14));
+            panelRoot.setPadding(dp(14), dp(12), dp(14), dp(12));
             panelRoot.setBackground(roundedBackground(
-                isDarkMode() ? "#FA181A1F" : "#FCFFFFFF",
-                isDarkMode() ? "#38FFFFFF" : "#1C000000", 17));
-            if (Build.VERSION.SDK_INT >= 21) { panelRoot.setElevation(dp(18)); }
+                dark ? "#FF181A1F" : "#FFFFFFFF",
+                dark ? "#30FFFFFF" : "#1A000000", 17));
+            if (Build.VERSION.SDK_INT >= 21) {
+                panelRoot.setElevation(dp(20));
+            }
             panelParams = new WindowManager.LayoutParams(
                 size.width, size.height, type,
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL |
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
-                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
+                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED |
+                    WindowManager.LayoutParams.FLAG_DIM_BEHIND,
                 PixelFormat.TRANSLUCENT);
             panelParams.gravity = Gravity.CENTER;
+            panelParams.dimAmount = 0.72;
             panelParams.softInputMode =
                 WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE |
                 WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE;
@@ -737,6 +827,13 @@
             state.openCount += 1;
             state.windowType = Number(type);
             state.windowFlags = Number(panelParams.flags);
+            state.panelWidthPx = size.width;
+            state.panelHeightPx = size.height;
+            state.panelWidthDp = size.widthDp;
+            state.panelHeightDp = size.heightDp;
+            state.dimAmount = Number(panelParams.dimAmount);
+            state.modalWindow = true;
+            state.opaqueBackground = true;
             state.addThreadId = thread.id;
             state.addThreadName = thread.name;
             state.lastError = null;
@@ -756,10 +853,12 @@
         var inputLength = 0;
         var notFocusable = false;
         try {
-            attachedToWindow = panelRoot !== null && panelRoot.isAttachedToWindow();
+            attachedToWindow = panelRoot !== null &&
+                panelRoot.isAttachedToWindow();
         } catch (ignoredAttached) {}
         try {
-            inputLength = input !== null ? String(input.getText()).length : 0;
+            inputLength = input !== null ?
+                String(input.getText()).length : 0;
         } catch (ignoredInput) {}
         if (panelParams !== null) {
             notFocusable = (Number(panelParams.flags) &
@@ -797,6 +896,13 @@
             lastTagAction: state.lastTagAction,
             windowType: state.windowType,
             windowFlags: state.windowFlags,
+            panelWidthPx: state.panelWidthPx,
+            panelHeightPx: state.panelHeightPx,
+            panelWidthDp: state.panelWidthDp,
+            panelHeightDp: state.panelHeightDp,
+            dimAmount: state.dimAmount,
+            modalWindow: state.modalWindow,
+            opaqueBackground: state.opaqueBackground,
             addThreadId: state.addThreadId,
             addThreadName: state.addThreadName,
             removeThreadId: state.removeThreadId,
@@ -810,20 +916,23 @@
     }
 
     function resetState() {
-        var key;
         var defaults = {
             open: false, attached: false, mode: "new", itemId: null,
             inputFocused: false, keyboardRequestCount: 0, openCount: 0,
-            closeCount: 0, saveCount: 0, createCount: 0, updateCount: 0,
-            cancelCount: 0, tagCreateCount: 0, tagToggleCount: 0,
-            tagDeleteCount: 0, tagRenameCount: 0, tagOptionCount: 0,
-            attachedTagCount: 0, lastSavedId: null, lastSaveAction: null,
-            lastTagId: null, lastTagAction: null, windowType: null,
-            windowFlags: null, addThreadId: null, addThreadName: null,
-            removeThreadId: null, removeThreadName: null, saveThreadId: null,
+            closeCount: 0, saveCount: 0, createCount: 0,
+            updateCount: 0, cancelCount: 0, tagCreateCount: 0,
+            tagToggleCount: 0, tagDeleteCount: 0, tagRenameCount: 0,
+            tagOptionCount: 0, attachedTagCount: 0, lastSavedId: null,
+            lastSaveAction: null, lastTagId: null, lastTagAction: null,
+            windowType: null, windowFlags: null, panelWidthPx: null,
+            panelHeightPx: null, panelWidthDp: null, panelHeightDp: null,
+            dimAmount: 0, modalWindow: false, opaqueBackground: false,
+            addThreadId: null, addThreadName: null, removeThreadId: null,
+            removeThreadName: null, saveThreadId: null,
             saveThreadName: null, tagThreadId: null, tagThreadName: null,
             lastError: null
         };
+        var key;
         for (key in defaults) {
             if (defaults.hasOwnProperty(key)) { state[key] = defaults[key]; }
         }
@@ -831,7 +940,7 @@
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 3,
+        MODULE_VERSION: 4,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
@@ -846,7 +955,8 @@
                 throw new Error("WindowManager service unavailable for editor");
             }
             mainHandler = new Handler(Looper.getMainLooper());
-            density = Number(appContext.getResources().getDisplayMetrics().density || 1);
+            density = Number(appContext.getResources()
+                .getDisplayMetrics().density || 1);
             clearViews();
             resetState();
             ready = true;
@@ -863,8 +973,9 @@
             return requireMain(runOnMainSync(function () {
                 var input = activeInput();
                 if (input === null) { return false; }
-                input.setText(String(text === null || text === undefined ? "" : text));
-                input.setSelection(input.length());
+                input.setText(String(text === null || text === undefined ?
+                    "" : text));
+                input.setSelection(input.getText().length());
                 return true;
             }, 2500));
         },
@@ -880,16 +991,20 @@
         },
         performCreateTagClick: function (name) {
             return requireMain(runOnMainSync(function () {
-                if (tagNameInput === null || createTagView === null) { return false; }
-                tagNameInput.setText(String(name === null || name === undefined ? "" : name));
-                tagNameInput.setSelection(tagNameInput.length());
+                if (tagNameInput === null || createTagView === null) {
+                    return false;
+                }
+                tagNameInput.setText(String(name === null ||
+                    name === undefined ? "" : name));
+                tagNameInput.setSelection(tagNameInput.getText().length());
                 return createTagView.performClick();
             }, 2500));
         },
         performTagToggleClick: function (tagId) {
             tagId = String(Number(tagId));
             return requireMain(runOnMainSync(function () {
-                return tagViews[tagId] ? tagViews[tagId].performClick() : false;
+                return tagViews[tagId] ?
+                    tagViews[tagId].performClick() : false;
             }, 2500));
         },
         performTagDeleteClick: function (tagId) {
@@ -899,16 +1014,18 @@
                     tagDeleteViews[tagId].performClick() : false;
             }, 2500));
         },
-        renameTag: renameTag,
+        renameTag: function (tagId, name) {
+            return renameTag(Number(tagId), name);
+        },
         shutdown: function () {
             try { closePanel("shutdown"); } catch (ignoredClose) {}
+            clearViews();
             ready = false;
             androidContext = null;
             appContext = null;
             windowManager = null;
             inputMethodManager = null;
             mainHandler = null;
-            clearViews();
             return true;
         }
     };
