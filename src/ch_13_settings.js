@@ -4,8 +4,8 @@
     var ready = false;
     var lastCleanup = null;
     var DEFAULTS = {
-        historyLimit: 500,
-        autoCleanupDays: 30,
+        historyLimit: 0,
+        autoCleanupDays: 0,
         closeAfterCopy: false,
         themeMode: "system",
         sourceEnabled: true,
