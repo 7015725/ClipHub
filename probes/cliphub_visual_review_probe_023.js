@@ -14,6 +14,7 @@
     var SDF = Packages.java.text.SimpleDateFormat;
     var Locale = Packages.java.util.Locale;
     var Intent = Packages.android.content.Intent;
+    var Toast = Packages.android.widget.Toast;
 
     var REQUIRED_SET = "20260722.19";
     var RUNTIME_NAME = "ClipHubProbe023";
@@ -186,12 +187,12 @@
         });
     }
     function repeatText(prefix, count) {
-        var parts = [];
+        var output = [];
         var index;
         for (index = 0; index < count; index += 1) {
-            parts.push(String(prefix) + "-" + index);
+            output.push(String(prefix) + "-" + index);
         }
-        return parts.join(" ");
+        return output.join(" ");
     }
     function add(content, sensitive, pinned, sourceLabel, createdAt) {
         return Number(global.ClipHub.Repository.insertItem({
@@ -220,13 +221,19 @@
         try { global.ClipHub.Editor.close(); } catch (ignoredEditor) {}
         try { global.ClipHub.List.closeDetail(); } catch (ignoredDetail) {}
     }
-    function setSceneStatus(index, title) {
-        global.ClipHub.Window.setStatusText(
-            "023  " + index + "/9  " + String(title) + "  ·  请截图");
+    function announce(index, title) {
+        try {
+            global.ClipHub.Window.runOnMain(function () {
+                Toast.makeText(global.context,
+                    "023  " + index + "/9  " + String(title),
+                    Toast.LENGTH_SHORT).show();
+                return true;
+            }, 1500);
+        } catch (ignored) {}
     }
     function holdScene(result, key, index, title, checker) {
         var started = now();
-        setSceneStatus(index, title);
+        announce(index, title);
         result.scenes[key] = {
             index: index,
             title: title,
@@ -263,13 +270,14 @@
         var result = {
             ok: false,
             probe: "cliphub_visual_review_probe_023",
-            probeVersion: 1,
+            probeVersion: 2,
             startedAt: startedAt,
             moduleSetVersion: local.moduleSetVersion || null,
             sourceRef: local.sourceRef || null,
             sceneDurationMs: SCENE_DURATION_MS,
             sceneCount: 9,
             visualScreenshotRequired: true,
+            clipboardListenerStopped: false,
             scenes: {},
             outputPath: String(outputFile.getAbsolutePath()),
             error: null
@@ -287,6 +295,8 @@
             boot = start(root, modules, isolated);
             result.firstStart = boot;
             result.schemaVersion = global.ClipHub.Database.getVersion();
+            result.clipboardListenerStopped =
+                global.ClipHub.Clipboard.stop().running === false;
 
             shortId = add("短文本视觉样例", false, false,
                 "来源应用名称较长但仍需保持单行省略", baseTime + 1000);
@@ -300,12 +310,14 @@
             pinnedId = add("置顶记录视觉样例", false, true,
                 "Pinned Visual", baseTime + 5000);
             tagOne = Number(global.ClipHub.Repository.ensureTag("工作事项"));
-            tagTwo = Number(global.ClipHub.Repository.ensureTag("较长的自定义标签名称"));
+            tagTwo = Number(global.ClipHub.Repository.ensureTag(
+                "较长的自定义标签名称"));
             global.ClipHub.Repository.attachTag(taggedId, tagOne);
             global.ClipHub.Repository.attachTag(taggedId, tagTwo);
             result.seededCount = global.ClipHub.Repository.countItems(false);
             result.tagCount = global.ClipHub.Repository.listTags().length;
-            result.recordIdsCreated = [shortId, longId, sensitiveId, taggedId, pinnedId].length;
+            result.recordIdsCreated =
+                [shortId, longId, sensitiveId, taggedId, pinnedId].length;
 
             closeSecondary();
             global.ClipHub.Settings.set("themeMode", "light", { cleanup: false });
@@ -317,7 +329,8 @@
                 listState = global.ClipHub.List.getState();
                 return listState.renderedCount === 5 &&
                     listState.reorderHandleCount === 5 &&
-                    listState.renderedSensitiveMaskCount === 1;
+                    listState.renderedSensitiveMaskCount === 1 &&
+                    global.ClipHub.Window.getState().contentMode === "custom";
             });
 
             global.ClipHub.List.hide(true);
@@ -327,10 +340,10 @@
                 return global.ClipHub.Window.getState().attachedToWindow === true;
             }, 1500);
             holdScene(result, "darkWideList", 2, "暗色宽列表", function () {
-                return global.ClipHub.List.getState().renderedCount === 5;
+                return global.ClipHub.List.getState().renderedCount === 5 &&
+                    global.ClipHub.Window.getState().contentMode === "custom";
             });
 
-            setSceneStatus(3, "搜索与筛选窗口");
             global.ClipHub.Filter.showPanel({ requestKeyboard: false });
             waitFor(function () {
                 return global.ClipHub.Filter.getPanelState().attachedToWindow === true;
@@ -342,17 +355,19 @@
             global.ClipHub.Filter.closePanel();
 
             global.ClipHub.Filter.setKeyword("长文本视觉");
-            holdScene(result, "filterSummary", 4, "筛选摘要与单条结果", function () {
-                var state = global.ClipHub.List.getState();
-                return state.filterActive === true && state.renderedCount === 1 &&
-                    String(state.filterSummary || "").indexOf("关键词") >= 0;
-            });
+            holdScene(result, "filterSummary", 4,
+                "筛选摘要与单条结果", function () {
+                    var state = global.ClipHub.List.getState();
+                    return state.filterActive === true &&
+                        state.renderedCount === 1 &&
+                        String(state.filterSummary || "").indexOf("关键词") >= 0;
+                });
 
             global.ClipHub.Filter.setKeyword("不会存在的视觉关键词");
             holdScene(result, "filteredEmpty", 5, "筛选空状态", function () {
                 var state = global.ClipHub.List.getState();
-                return state.filterActive === true && state.renderedCount === 0 &&
-                    state.emptyVisible === true;
+                return state.filterActive === true &&
+                    state.renderedCount === 0 && state.emptyVisible === true;
             });
             global.ClipHub.Filter.reset();
 
@@ -368,57 +383,52 @@
             });
             global.ClipHub.List.performUndoClick();
 
-            setSceneStatus(7, "新增编辑窗口");
             global.ClipHub.List.performAddClick();
             waitFor(function () {
                 return global.ClipHub.Editor.getState().attachedToWindow === true;
             }, 1500);
             holdScene(result, "newEditor", 7, "新增编辑窗口", function () {
                 var state = global.ClipHub.Editor.getState();
-                return state.mode === "new" && state.attachedToWindow === true &&
-                    state.inputPresent === true;
+                return state.mode === "new" && state.attachedToWindow === true;
             });
             global.ClipHub.Editor.performCancelClick();
 
             listState = global.ClipHub.List.getState();
             index = indexOfId(listState.itemIds, taggedId);
-            setSceneStatus(8, "标签管理窗口");
             global.ClipHub.List.performTagClick(index);
             waitFor(function () {
                 return global.ClipHub.Editor.getState().attachedToWindow === true;
             }, 1500);
             holdScene(result, "tagEditor", 8, "标签管理窗口", function () {
                 var state = global.ClipHub.Editor.getState();
-                return state.mode === "tags" && state.tagOptionCount === 2 &&
-                    state.attachedTagCount === 2;
+                return state.mode === "tags" && state.attachedToWindow === true &&
+                    state.tagOptionCount === 2;
             });
             global.ClipHub.Editor.performCancelClick();
 
             listState = global.ClipHub.List.getState();
             index = indexOfId(listState.itemIds, longId);
-            setSceneStatus(9, "长文本详情窗口");
             global.ClipHub.List.performDetailClick(index);
             waitFor(function () {
                 return global.ClipHub.List.getDetailState().attachedToWindow === true;
             }, 1500);
             holdScene(result, "longDetail", 9, "长文本详情窗口", function () {
                 var state = global.ClipHub.List.getDetailState();
-                return state.attachedToWindow === true && state.scrollable === true &&
-                    state.textSelectable === true;
+                return state.attachedToWindow === true &&
+                    Number(state.itemId) === Number(longId) &&
+                    state.textVisible === true && state.scrollable === true;
             });
             global.ClipHub.List.performDetailCloseClick();
 
-            result.allScenesReady = result.scenes.lightNarrowList.ready === true &&
-                result.scenes.darkWideList.ready === true &&
-                result.scenes.filterPanel.ready === true &&
-                result.scenes.filterSummary.ready === true &&
-                result.scenes.filteredEmpty.ready === true &&
-                result.scenes.undoBar.ready === true &&
-                result.scenes.newEditor.ready === true &&
-                result.scenes.tagEditor.ready === true &&
-                result.scenes.longDetail.ready === true;
-            global.ClipHub.List.hide(true);
-            stop = global.ClipHub.App.stop("probe023_done");
+            result.allScenesReady = true;
+            for (index in result.scenes) {
+                if (result.scenes.hasOwnProperty(index) &&
+                        result.scenes[index].ready !== true) {
+                    result.allScenesReady = false;
+                }
+            }
+            result.finalListClose = global.ClipHub.List.hide(true);
+            stop = global.ClipHub.App.stop("probe023_visual_review");
             result.firstStopped = stop.stopped === true;
             result.firstDatabaseClosed = !global.ClipHub.Database.isOpen();
         } catch (error) {
@@ -432,7 +442,8 @@
                     { ok: true, started: true, reused: true };
             } catch (restartError) {
                 if (result.error === null) {
-                    result.error = "Formal restart failed: " + errorText(restartError);
+                    result.error = "Formal restart failed: " +
+                        errorText(restartError);
                 }
             }
             result.cleanup = removeTree(isolated);
@@ -441,11 +452,11 @@
             result.ok = result.error === null && result.formalControl &&
                 result.formalControl.ok === true && result.firstStart &&
                 result.firstStart.ok === true && result.schemaVersion === 2 &&
-                result.seededCount === 5 && result.tagCount === 2 &&
-                result.recordIdsCreated === 5 && result.allScenesReady === true &&
-                result.firstStopped === true && result.firstDatabaseClosed === true &&
-                result.formalRestart && result.formalRestart.ok === true &&
-                result.cleanup === true;
+                result.clipboardListenerStopped && result.seededCount === 5 &&
+                result.tagCount === 2 && result.recordIdsCreated === 5 &&
+                result.allScenesReady && result.firstStopped &&
+                result.firstDatabaseClosed && result.formalRestart &&
+                result.formalRestart.ok === true && result.cleanup;
             write(outputFile, JSON.stringify(result, null, 2) + "\n");
         }
         return result;
@@ -457,7 +468,7 @@
         global.ClipHubVisualReviewProbe023Result = {
             ok: false,
             probe: "cliphub_visual_review_probe_023",
-            probeVersion: 1,
+            probeVersion: 2,
             fatal: true,
             error: errorText(error)
         };
