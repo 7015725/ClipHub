@@ -1,6 +1,7 @@
 (function (global) {
     var ClipHub = global.ClipHub || (global.ClipHub = {});
     var Context = Packages.android.content.Context;
+    var ComponentCallbacks = Packages.android.content.ComponentCallbacks;
     var Build = Packages.android.os.Build;
     var Looper = Packages.android.os.Looper;
     var Handler = Packages.android.os.Handler;
@@ -12,6 +13,7 @@
     var Gravity = Packages.android.view.Gravity;
     var WindowManager = Packages.android.view.WindowManager;
     var WindowInsets = Packages.android.view.WindowInsets;
+    var ViewConfiguration = Packages.android.view.ViewConfiguration;
     var PixelFormat = Packages.android.graphics.PixelFormat;
     var Color = Packages.android.graphics.Color;
     var GradientDrawable = Packages.android.graphics.drawable.GradientDrawable;
@@ -20,9 +22,17 @@
     var TextView = Packages.android.widget.TextView;
     var TypedValue = Packages.android.util.TypedValue;
     var DisplayMetrics = Packages.android.util.DisplayMetrics;
+    var DisplayManager = Packages.android.hardware.display.DisplayManager;
 
     var androidContext = null;
+    var appContext = null;
     var windowManager = null;
+    var displayManager = null;
+    var mainHandler = null;
+    var componentCallbacks = null;
+    var displayListener = null;
+    var refreshRunnable = null;
+    var pendingRefreshReason = "";
     var density = 1;
     var rootView = null;
     var titleBar = null;
@@ -30,6 +40,8 @@
     var statusView = null;
     var closeView = null;
     var layoutParams = null;
+    var desiredWidthPx = 0;
+    var desiredHeightPx = 0;
     var normalHeightPx = 0;
     var collapsedHeightPx = 0;
     var touchSlopPx = 0;
@@ -49,12 +61,20 @@
         width: 0,
         height: 0,
         safeBounds: { left: 0, top: 0, right: 0, bottom: 0 },
+        positionRatios: { xRatio: 1, yRatio: 0 },
+        savedPosition: null,
         windowType: null,
         openCount: 0,
         closeCount: 0,
         updateCount: 0,
         dragMoveCount: 0,
+        persistenceWriteCount: 0,
+        boundsRefreshCount: 0,
+        configurationChangeCount: 0,
+        displayChangeCount: 0,
         dragListenerInstalled: false,
+        componentCallbacksRegistered: false,
+        displayListenerRegistered: false,
         addThreadId: null,
         addThreadName: null,
         updateThreadId: null,
@@ -62,6 +82,7 @@
         removeThreadId: null,
         removeThreadName: null,
         statusText: "",
+        lastBoundsReason: "",
         lastError: null
     };
 
@@ -78,7 +99,6 @@
         var currentLooper = Looper.myLooper();
         var box;
         var latch;
-        var handler;
         var runnable;
         var posted;
         var completed;
@@ -88,7 +108,6 @@
         }
         box = { ok: false, value: null, error: null };
         latch = new CountDownLatch(1);
-        handler = new Handler(mainLooper);
         runnable = new Packages.java.lang.Runnable({
             run: function () {
                 try {
@@ -101,13 +120,13 @@
                 }
             }
         });
-        posted = handler.post(runnable);
+        posted = mainHandler.post(runnable);
         if (!posted) {
             return { ok: false, error: new Error("Window main handler post failed") };
         }
         completed = latch.await(Number(timeoutMs || 2500), TimeUnit.MILLISECONDS);
         if (!completed) {
-            try { handler.removeCallbacks(runnable); } catch (ignored) {}
+            try { mainHandler.removeCallbacks(runnable); } catch (ignored) {}
             return { ok: false, error: new Error("Window main handler timeout") };
         }
         return box;
@@ -181,17 +200,86 @@
     }
 
     function clamp(value, minimum, maximum) {
+        value = Number(value);
+        if (!isFinite(value)) { value = minimum; }
         if (maximum < minimum) { return minimum; }
         if (value < minimum) { return minimum; }
         if (value > maximum) { return maximum; }
         return value;
     }
 
+    function clamp01(value) {
+        return clamp(Number(value), 0, 1);
+    }
+
     function clampPosition(x, y, width, height, bounds) {
         return {
-            x: clamp(Math.floor(Number(x)), bounds.left, bounds.right - width),
-            y: clamp(Math.floor(Number(y)), bounds.top, bounds.bottom - height)
+            x: Math.floor(clamp(x, bounds.left, bounds.right - width)),
+            y: Math.floor(clamp(y, bounds.top, bounds.bottom - height))
         };
+    }
+
+    function ratiosForPosition(x, y, width, height, bounds) {
+        var travelX = Math.max(0, Number(bounds.right) - Number(bounds.left) - width);
+        var travelY = Math.max(0, Number(bounds.bottom) - Number(bounds.top) - height);
+        return {
+            xRatio: travelX > 0 ? clamp01((Number(x) - Number(bounds.left)) / travelX) : 0,
+            yRatio: travelY > 0 ? clamp01((Number(y) - Number(bounds.top)) / travelY) : 0
+        };
+    }
+
+    function positionForRatios(ratios, width, height, bounds) {
+        var travelX = Math.max(0, Number(bounds.right) - Number(bounds.left) - width);
+        var travelY = Math.max(0, Number(bounds.bottom) - Number(bounds.top) - height);
+        return clampPosition(
+            Number(bounds.left) + travelX * clamp01(ratios.xRatio),
+            Number(bounds.top) + travelY * clamp01(ratios.yRatio),
+            width,
+            height,
+            bounds
+        );
+    }
+
+    function copyPosition(value) {
+        if (!value || typeof value !== "object") { return null; }
+        return {
+            xRatio: clamp01(value.xRatio),
+            yRatio: clamp01(value.yRatio)
+        };
+    }
+
+    function readSavedPosition() {
+        var value = null;
+        try {
+            if (ClipHub.Settings && typeof ClipHub.Settings.get === "function") {
+                value = ClipHub.Settings.get("windowPosition", null);
+            }
+        } catch (ignored) {}
+        state.savedPosition = copyPosition(value);
+        return copyPosition(state.savedPosition);
+    }
+
+    function persistCurrentPosition() {
+        var ratios;
+        if (!state.attached || !ClipHub.Settings ||
+                typeof ClipHub.Settings.set !== "function" ||
+                typeof ClipHub.Settings.isReady !== "function" ||
+                !ClipHub.Settings.isReady()) {
+            return false;
+        }
+        ratios = ratiosForPosition(
+            state.x, state.y, state.width, currentHeight(), state.safeBounds
+        );
+        try {
+            ClipHub.Settings.set("windowPosition", ratios, { cleanup: false });
+            state.savedPosition = copyPosition(ratios);
+            state.positionRatios = copyPosition(ratios);
+            state.persistenceWriteCount += 1;
+            return true;
+        } catch (error) {
+            state.lastError = String(error);
+            return false;
+        }
     }
 
     function isDarkMode() {
@@ -241,6 +329,15 @@
         return state.collapsed ? collapsedHeightPx : normalHeightPx;
     }
 
+    function fitDimensions(bounds) {
+        var safeWidth = Math.max(1, bounds.right - bounds.left);
+        var safeHeight = Math.max(1, bounds.bottom - bounds.top);
+        state.width = Math.min(Math.max(1, desiredWidthPx), safeWidth);
+        normalHeightPx = Math.min(Math.max(1, desiredHeightPx), safeHeight);
+        collapsedHeightPx = Math.min(dp(58), normalHeightPx);
+        state.height = currentHeight();
+    }
+
     function updatePositionOnMain(x, y, countDrag) {
         var bounds;
         var position;
@@ -251,15 +348,20 @@
             return getState();
         }
         bounds = safeBounds();
+        fitDimensions(bounds);
         position = clampPosition(x, y, state.width, currentHeight(), bounds);
+        layoutParams.width = state.width;
+        layoutParams.height = currentHeight();
         layoutParams.x = position.x;
         layoutParams.y = position.y;
-        layoutParams.height = currentHeight();
         windowManager.updateViewLayout(rootView, layoutParams);
         state.safeBounds = bounds;
         state.x = position.x;
         state.y = position.y;
         state.height = currentHeight();
+        state.positionRatios = ratiosForPosition(
+            state.x, state.y, state.width, state.height, bounds
+        );
         state.updateCount += 1;
         if (countDrag) { state.dragMoveCount += 1; }
         thread = nowThread();
@@ -268,12 +370,69 @@
         return getState();
     }
 
+    function refreshBoundsOnMain(reason) {
+        var oldBounds = state.safeBounds;
+        var ratios;
+        var bounds;
+        var position;
+        var thread;
+        if (!state.attached || layoutParams === null || rootView === null) {
+            state.safeBounds = safeBounds();
+            state.lastBoundsReason = String(reason || "refresh");
+            return getState();
+        }
+        ratios = ratiosForPosition(
+            state.x, state.y, state.width, currentHeight(), oldBounds
+        );
+        bounds = safeBounds();
+        fitDimensions(bounds);
+        position = positionForRatios(ratios, state.width, currentHeight(), bounds);
+        layoutParams.width = state.width;
+        layoutParams.height = currentHeight();
+        layoutParams.x = position.x;
+        layoutParams.y = position.y;
+        windowManager.updateViewLayout(rootView, layoutParams);
+        state.safeBounds = bounds;
+        state.x = position.x;
+        state.y = position.y;
+        state.height = currentHeight();
+        state.positionRatios = ratiosForPosition(
+            state.x, state.y, state.width, state.height, bounds
+        );
+        state.boundsRefreshCount += 1;
+        state.updateCount += 1;
+        state.lastBoundsReason = String(reason || "refresh");
+        thread = nowThread();
+        state.updateThreadId = thread.id;
+        state.updateThreadName = thread.name;
+        return getState();
+    }
+
+    function scheduleBoundsRefresh(reason) {
+        if (mainHandler === null) { return false; }
+        pendingRefreshReason = String(reason || "configuration");
+        if (refreshRunnable === null) {
+            refreshRunnable = new Packages.java.lang.Runnable({
+                run: function () {
+                    var reasonValue = pendingRefreshReason;
+                    pendingRefreshReason = "";
+                    if (!state.attached) { return; }
+                    try { refreshBoundsOnMain(reasonValue); }
+                    catch (error) { state.lastError = String(error); }
+                }
+            });
+        }
+        try { mainHandler.removeCallbacks(refreshRunnable); } catch (ignored) {}
+        return mainHandler.postDelayed(refreshRunnable, 180);
+    }
+
     function handleTitleTouch(view, event) {
         var action = Number(event.getActionMasked());
         var rawX = Number(event.getRawX());
         var rawY = Number(event.getRawY());
         var deltaX;
         var deltaY;
+        var completedDrag;
         if (state.pinned) { return true; }
         if (action === MotionEvent.ACTION_DOWN) {
             drag.downRawX = rawX;
@@ -298,7 +457,9 @@
         }
         if (action === MotionEvent.ACTION_UP ||
                 action === MotionEvent.ACTION_CANCEL) {
+            completedDrag = drag.active;
             drag.active = false;
+            if (completedDrag) { persistCurrentPosition(); }
             return true;
         }
         return true;
@@ -384,31 +545,43 @@
         var widthDp = Number(options.widthDp || 320);
         var heightDp = Number(options.heightDp || 180);
         var bounds = safeBounds();
-        var safeWidth = Math.max(1, bounds.right - bounds.left);
-        var safeHeight = Math.max(1, bounds.bottom - bounds.top);
-        var width = Math.min(dp(Math.max(220, widthDp)), safeWidth);
-        var height = Math.min(dp(Math.max(120, heightDp)), safeHeight);
+        var saved;
         var position;
         var type = Build.VERSION.SDK_INT >= 26
             ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             : WindowManager.LayoutParams.TYPE_SYSTEM_ALERT;
-        normalHeightPx = height;
-        collapsedHeightPx = Math.min(dp(58), height);
-        state.width = width;
-        state.height = state.collapsed ? collapsedHeightPx : normalHeightPx;
+        desiredWidthPx = dp(Math.max(220, widthDp));
+        desiredHeightPx = dp(Math.max(120, heightDp));
+        fitDimensions(bounds);
         state.safeBounds = bounds;
-        position = clampPosition(
-            options.x === undefined ? bounds.right - width - dp(18) : Number(options.x),
-            options.y === undefined ? bounds.top + dp(72) : Number(options.y),
-            width,
-            state.height,
-            bounds
-        );
+        saved = readSavedPosition();
+        if (options.x !== undefined || options.y !== undefined) {
+            position = clampPosition(
+                options.x === undefined ? bounds.right - state.width - dp(18) : Number(options.x),
+                options.y === undefined ? bounds.top + dp(72) : Number(options.y),
+                state.width,
+                state.height,
+                bounds
+            );
+        } else if (saved !== null) {
+            position = positionForRatios(saved, state.width, state.height, bounds);
+        } else {
+            position = clampPosition(
+                bounds.right - state.width - dp(18),
+                bounds.top + dp(72),
+                state.width,
+                state.height,
+                bounds
+            );
+        }
         state.x = position.x;
         state.y = position.y;
+        state.positionRatios = ratiosForPosition(
+            state.x, state.y, state.width, state.height, bounds
+        );
         state.windowType = Number(type);
         layoutParams = new WindowManager.LayoutParams(
-            width,
+            state.width,
             state.height,
             type,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE |
@@ -521,27 +694,29 @@
         return state.pinned;
     }
 
-    function moveTo(x, y) {
+    function moveTo(x, y, options) {
+        var result;
+        options = options || {};
         if (!state.attached) {
             state.x = Math.floor(Number(x || 0));
             state.y = Math.floor(Number(y || 0));
             return getState();
         }
-        return requireMainResult(runOnMainSync(function () {
+        result = requireMainResult(runOnMainSync(function () {
             return updatePositionOnMain(x, y, false);
         }, 2500));
+        if (options.persist === true) { persistCurrentPosition(); }
+        return result;
     }
 
-    function moveBy(dx, dy) {
-        return moveTo(state.x + Number(dx || 0), state.y + Number(dy || 0));
+    function moveBy(dx, dy, options) {
+        return moveTo(state.x + Number(dx || 0), state.y + Number(dy || 0), options);
     }
 
-    function refreshBounds() {
-        if (!state.attached) {
-            state.safeBounds = safeBounds();
-            return getState();
-        }
-        return moveTo(state.x, state.y);
+    function refreshBounds(reason) {
+        return requireMainResult(runOnMainSync(function () {
+            return refreshBoundsOnMain(reason || "manual");
+        }, 2500));
     }
 
     function setStatusText(value) {
@@ -571,6 +746,8 @@
             y: Number(state.y),
             width: Number(state.width),
             height: Number(state.height),
+            desiredWidth: Number(desiredWidthPx),
+            desiredHeight: Number(desiredHeightPx),
             normalHeight: Number(normalHeightPx),
             collapsedHeight: Number(collapsedHeightPx),
             safeBounds: {
@@ -579,12 +756,20 @@
                 right: Number(bounds.right || 0),
                 bottom: Number(bounds.bottom || 0)
             },
+            positionRatios: copyPosition(state.positionRatios),
+            savedPosition: copyPosition(state.savedPosition),
             windowType: state.windowType,
             openCount: Number(state.openCount),
             closeCount: Number(state.closeCount),
             updateCount: Number(state.updateCount),
             dragMoveCount: Number(state.dragMoveCount),
+            persistenceWriteCount: Number(state.persistenceWriteCount),
+            boundsRefreshCount: Number(state.boundsRefreshCount),
+            configurationChangeCount: Number(state.configurationChangeCount),
+            displayChangeCount: Number(state.displayChangeCount),
             dragListenerInstalled: state.dragListenerInstalled,
+            componentCallbacksRegistered: state.componentCallbacksRegistered,
+            displayListenerRegistered: state.displayListenerRegistered,
             addThreadId: state.addThreadId,
             addThreadName: state.addThreadName,
             updateThreadId: state.updateThreadId,
@@ -592,47 +777,119 @@
             removeThreadId: state.removeThreadId,
             removeThreadName: state.removeThreadName,
             statusText: state.statusText,
+            lastBoundsReason: state.lastBoundsReason,
             lastError: state.lastError
         };
     }
 
+    function registerObservers() {
+        if (appContext === null) { return false; }
+        componentCallbacks = new JavaAdapter(ComponentCallbacks, {
+            onConfigurationChanged: function () {
+                state.configurationChangeCount += 1;
+                scheduleBoundsRefresh("configuration");
+            },
+            onLowMemory: function () {}
+        });
+        try {
+            appContext.registerComponentCallbacks(componentCallbacks);
+            state.componentCallbacksRegistered = true;
+        } catch (error) {
+            componentCallbacks = null;
+            state.componentCallbacksRegistered = false;
+            state.lastError = String(error);
+        }
+        try {
+            displayManager = appContext.getSystemService(Context.DISPLAY_SERVICE);
+            if (displayManager !== null) {
+                displayListener = new JavaAdapter(DisplayManager.DisplayListener, {
+                    onDisplayAdded: function () {},
+                    onDisplayRemoved: function () {},
+                    onDisplayChanged: function () {
+                        state.displayChangeCount += 1;
+                        scheduleBoundsRefresh("display");
+                    }
+                });
+                displayManager.registerDisplayListener(displayListener, mainHandler);
+                state.displayListenerRegistered = true;
+            }
+        } catch (displayError) {
+            displayListener = null;
+            state.displayListenerRegistered = false;
+            state.lastError = String(displayError);
+        }
+        return state.componentCallbacksRegistered || state.displayListenerRegistered;
+    }
+
+    function unregisterObservers() {
+        if (mainHandler !== null && refreshRunnable !== null) {
+            try { mainHandler.removeCallbacks(refreshRunnable); } catch (ignored) {}
+        }
+        if (appContext !== null && componentCallbacks !== null) {
+            try { appContext.unregisterComponentCallbacks(componentCallbacks); }
+            catch (ignoredComponent) {}
+        }
+        if (displayManager !== null && displayListener !== null) {
+            try { displayManager.unregisterDisplayListener(displayListener); }
+            catch (ignoredDisplay) {}
+        }
+        componentCallbacks = null;
+        displayListener = null;
+        displayManager = null;
+        state.componentCallbacksRegistered = false;
+        state.displayListenerRegistered = false;
+        return true;
+    }
+
     ClipHub.Window = {
         MODULE_NAME: "ch_08_window",
-        MODULE_VERSION: 2,
+        MODULE_VERSION: 3,
         init: function (context) {
             androidContext = context && context.androidContext
                 ? context.androidContext : global.context;
             if (androidContext === null || androidContext === undefined) {
-                throw new Error("Android context unavailable for window");
+                throw new Error("Android context unavailable for WindowManager");
             }
-            windowManager = androidContext.getSystemService(Context.WINDOW_SERVICE);
+            appContext = androidContext.getApplicationContext();
+            if (appContext === null) { appContext = androidContext; }
+            windowManager = appContext.getSystemService(Context.WINDOW_SERVICE);
             if (windowManager === null) {
-                throw new Error("WindowManager unavailable");
+                throw new Error("WindowManager service unavailable");
             }
-            density = Number(androidContext.getResources().getDisplayMetrics().density || 1);
-            touchSlopPx = Math.max(dp(4), Number(
-                Packages.android.view.ViewConfiguration.get(androidContext)
-                    .getScaledTouchSlop()
-            ));
+            mainHandler = new Handler(Looper.getMainLooper());
+            density = Number(appContext.getResources().getDisplayMetrics().density || 1);
+            touchSlopPx = Number(ViewConfiguration.get(appContext).getScaledTouchSlop());
             state.safeBounds = safeBounds();
-            state.attached = false;
-            state.lastError = null;
-            return { ok: true, ready: true, safeBounds: getState().safeBounds };
+            readSavedPosition();
+            registerObservers();
+            return {
+                ok: true,
+                initialized: true,
+                componentCallbacksRegistered: state.componentCallbacksRegistered,
+                displayListenerRegistered: state.displayListenerRegistered,
+                savedPosition: copyPosition(state.savedPosition)
+            };
         },
         open: open,
         close: close,
+        setCollapsed: setCollapsed,
+        setPinned: setPinned,
         isAttached: function () { return state.attached; },
         moveTo: moveTo,
         moveBy: moveBy,
         refreshBounds: refreshBounds,
-        setCollapsed: setCollapsed,
-        setPinned: setPinned,
+        persistPosition: persistCurrentPosition,
         setStatusText: setStatusText,
         getState: getState,
         shutdown: function () {
-            close();
-            windowManager = null;
+            try { close(); } catch (ignoredClose) {}
+            unregisterObservers();
             androidContext = null;
+            appContext = null;
+            windowManager = null;
+            mainHandler = null;
+            refreshRunnable = null;
+            pendingRefreshReason = "";
             return true;
         }
     };
