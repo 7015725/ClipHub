@@ -16,7 +16,7 @@
     {"name":"ch_10_editor.js","path":"src/ch_10_editor.js","sha":"d27903c9b2b55579cb67cc351dac5f2eb4a6bc08"},
     {"name":"ch_11_filter.js","path":"src/ch_11_filter.js","sha":"acc03b93328134fa221498730317e3a58e1fa362"},
     {"name":"ch_12_translation.js","path":"src/ch_12_translation.js","sha":"bdaf530c60620b6ae857ee5359f39fb4634ddd2a"},
-    {"name":"ch_13_settings.js","path":"src/ch_13_settings.js","sha":"f61e7d7f6898392dd1dadd0588f68a76b229d263"},
+    {"name":"ch_13_settings.js","path":"src/ch_13_settings.js","sha":"09a33c32be6ef7f01f2e13bc084d6fcf235e6bd6"},
     {"name":"ch_14_event_bus.js","path":"src/ch_14_event_bus.js","sha":"ac4288d3a94d23d16a351989f0bdf3aa5e5a35e5"},
     {"name":"ch_15_app.js","path":"src/ch_15_app.js","sha":"bc19155cca19ba59418ec5add4b4e16a91edbc0d"}
   ]
