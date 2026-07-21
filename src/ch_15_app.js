@@ -13,7 +13,9 @@
     var Handler = Packages.android.os.Handler;
     var AndroidContext = Packages.android.content.Context;
     var IntentFilter = Packages.android.content.IntentFilter;
+
     var CONTROL_ACTION_BASE = "com.cliphub.runtime.CONTROL";
+    var CONTROL_COMMANDS = ["show", "hide", "toggle", "status", "stop"];
     var order = [
         "Log", "Database", "Classifier", "Repository",
         "EventBus", "Theme", "Clipboard", "Window", "List",
@@ -138,11 +140,12 @@
         );
         var file = new File(cacheDir, "control_endpoint.json");
         writeUtf8(file, JSON.stringify({
-            schemaVersion: 1,
+            schemaVersion: 2,
             transport: "dynamic_broadcast_token",
             action: String(action),
             token: String(token),
             runtimeDir: String(context.runtimeDir),
+            commands: CONTROL_COMMANDS,
             createdAt: ClipHub.Base.now()
         }, null, 2) + "\n");
         state.controlEndpointFile = file;
@@ -211,6 +214,122 @@
         }
     }
 
+    function safeState(module, method, fallback) {
+        try {
+            if (module && typeof module[method] === "function") {
+                return module[method]();
+            }
+        } catch (ignored) {}
+        return fallback;
+    }
+
+    function uiStatus() {
+        var list = safeState(ClipHub.List, "getState", {});
+        var windowState = safeState(ClipHub.Window, "getState", {});
+        var detail = safeState(ClipHub.List, "getDetailState", {});
+        var editor = safeState(ClipHub.Editor, "getState", {});
+        var filter = safeState(ClipHub.Filter, "getPanelState", {});
+        var windowAttached = windowState.attachedToWindow === true ||
+            windowState.attached === true;
+        var detailAttached = detail.attachedToWindow === true ||
+            detail.attached === true;
+        var editorAttached = editor.attachedToWindow === true ||
+            editor.attached === true;
+        var filterAttached = filter.attachedToWindow === true ||
+            filter.attached === true;
+        return {
+            started: state.started === true,
+            uiVisible: windowAttached || detailAttached || editorAttached ||
+                filterAttached,
+            listVisible: list.visible === true,
+            windowAttached: windowAttached,
+            detailAttached: detailAttached,
+            editorAttached: editorAttached,
+            filterAttached: filterAttached,
+            itemCount: Number(list.itemCount || 0),
+            renderedCount: Number(list.renderedCount || 0),
+            filterActive: list.filterActive === true
+        };
+    }
+
+    function closeUi() {
+        try {
+            if (ClipHub.Filter && typeof ClipHub.Filter.closePanel === "function") {
+                ClipHub.Filter.closePanel();
+            }
+        } catch (ignoredFilter) {}
+        try {
+            if (ClipHub.Editor && typeof ClipHub.Editor.close === "function") {
+                ClipHub.Editor.close();
+            }
+        } catch (ignoredEditor) {}
+        try {
+            if (ClipHub.List && typeof ClipHub.List.hide === "function") {
+                ClipHub.List.hide(true);
+            } else if (ClipHub.Window && typeof ClipHub.Window.close === "function") {
+                ClipHub.Window.close();
+            }
+        } catch (ignoredList) {}
+        return uiStatus();
+    }
+
+    function showUi() {
+        var result;
+        closeUi();
+        if (!ClipHub.List || typeof ClipHub.List.show !== "function") {
+            throw new Error("ClipHub list is unavailable");
+        }
+        result = ClipHub.List.show({ limit: 100, widthDp: 340, heightDp: 500 });
+        return { result: result, status: uiStatus() };
+    }
+
+    function executeControlCommand(command) {
+        var before;
+        var after;
+        var stopResult;
+        command = String(command || "").toLowerCase();
+        if (CONTROL_COMMANDS.indexOf(command) < 0) {
+            return { ok: false, command: command,
+                error: "Unsupported control command" };
+        }
+        if (command === "stop") {
+            stopResult = ClipHub.App.stop("broadcast_token");
+            return {
+                ok: true,
+                command: command,
+                action: "stopped",
+                stopped: stopResult.stopped === true
+            };
+        }
+        if (!state.started) {
+            return { ok: false, command: command,
+                error: "ClipHub is not started" };
+        }
+        if (command === "status") {
+            return { ok: true, command: command, action: "status",
+                status: uiStatus() };
+        }
+        if (command === "show") {
+            after = showUi().status;
+            return { ok: true, command: command, action: "shown",
+                status: after };
+        }
+        if (command === "hide") {
+            after = closeUi();
+            return { ok: true, command: command, action: "hidden",
+                status: after };
+        }
+        before = uiStatus();
+        if (before.uiVisible) {
+            after = closeUi();
+            return { ok: true, command: command, action: "hidden",
+                status: after };
+        }
+        after = showUi().status;
+        return { ok: true, command: command, action: "shown",
+            status: after };
+    }
+
     function unregisterControlReceiver() {
         var appContext = state.controlContext;
         var receiver = state.controlReceiver;
@@ -251,7 +370,7 @@
                 var command;
                 var requestId;
                 var suppliedToken;
-                var runtimeDir;
+                var runtimeDir = String(context.runtimeDir);
                 var response;
                 var callbackThread = Thread.currentThread();
                 try {
@@ -263,35 +382,28 @@
                         intent.getStringExtra("requestId");
                     suppliedToken = intent === null ? null :
                         intent.getStringExtra("controlToken");
-                    runtimeDir = state.context === null ? "" :
-                        String(state.context.runtimeDir);
                     if (String(target || "") !== runtimeDir ||
-                            String(command || "") !== "stop" ||
                             String(suppliedToken || "") !== token) {
                         return;
                     }
-                    response = ClipHub.App.stop("broadcast_token");
-                    writeControlAck(runtimeDir, requestId, {
-                        ok: true,
-                        stopped: response.stopped === true,
-                        runtimeDir: runtimeDir,
-                        transport: "dynamic_broadcast_token",
-                        threadId: Number(callbackThread.getId()),
-                        threadName: String(callbackThread.getName())
-                    });
+                    response = executeControlCommand(command);
+                    response.runtimeDir = runtimeDir;
+                    response.transport = "dynamic_broadcast_token";
+                    response.threadId = Number(callbackThread.getId());
+                    response.threadName = String(callbackThread.getName());
+                    writeControlAck(runtimeDir, requestId, response);
                 } catch (error) {
                     try {
-                        writeControlAck(
-                            state.context === null ? String(context.runtimeDir) :
-                                String(state.context.runtimeDir),
-                            requestId,
-                            {
-                                ok: false,
-                                stopped: false,
-                                transport: "dynamic_broadcast_token",
-                                error: errorText(error)
-                            }
-                        );
+                        writeControlAck(runtimeDir, requestId, {
+                            ok: false,
+                            command: String(command || ""),
+                            stopped: false,
+                            runtimeDir: runtimeDir,
+                            transport: "dynamic_broadcast_token",
+                            threadId: Number(callbackThread.getId()),
+                            threadName: String(callbackThread.getName()),
+                            error: errorText(error)
+                        });
                     } catch (ignored) {}
                 }
             }
@@ -299,11 +411,8 @@
         filter = new IntentFilter(action);
         result = runOnMainSync(function () {
             if (Build.VERSION.SDK_INT >= 33) {
-                appContext.registerReceiver(
-                    receiver,
-                    filter,
-                    AndroidContext.RECEIVER_EXPORTED
-                );
+                appContext.registerReceiver(receiver, filter,
+                    AndroidContext.RECEIVER_EXPORTED);
             } else {
                 appContext.registerReceiver(receiver, filter);
             }
@@ -327,8 +436,9 @@
 
     ClipHub.App = {
         MODULE_NAME: "ch_15_app",
-        MODULE_VERSION: 4,
+        MODULE_VERSION: 5,
         CONTROL_ACTION_BASE: CONTROL_ACTION_BASE,
+        CONTROL_COMMANDS: CONTROL_COMMANDS,
         start: function (context) {
             var index;
             var item;
@@ -340,7 +450,6 @@
                 ClipHub.Base.init(context);
                 state.initialized.push(ClipHub.Base);
                 acquireLock(context);
-                registerControlReceiver(context);
                 for (index = 0; index < order.length; index += 1) {
                     item = ClipHub[order[index]];
                     if (!item) {
@@ -350,6 +459,7 @@
                     state.initialized.push(item);
                 }
                 state.started = true;
+                registerControlReceiver(context);
                 ClipHub.Log.info("application skeleton started");
                 return {
                     ok: true,
@@ -362,13 +472,14 @@
                     moduleFileCount: order.length + 2,
                     moduleCount: order.length + 1,
                     controlTransport: "dynamic_broadcast_token",
+                    controlCommands: CONTROL_COMMANDS,
                     controlEndpointPath: String(
                         state.controlEndpointFile.getAbsolutePath()
                     )
                 };
             } catch (error) {
-                shutdownModules();
                 unregisterControlReceiver();
+                shutdownModules();
                 releaseLock();
                 state.context = null;
                 state.started = false;
@@ -390,8 +501,13 @@
             };
         },
         isStarted: function () { return state.started; },
+        getStatus: uiStatus,
+        executeControlCommand: executeControlCommand,
         getControlTransport: function () {
             return "dynamic_broadcast_token";
+        },
+        getControlCommands: function () {
+            return CONTROL_COMMANDS.slice(0);
         },
         getControlEndpointPath: function () {
             return state.controlEndpointFile === null ? null :
