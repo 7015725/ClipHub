@@ -55,4 +55,4 @@
 + cat
 + cp .github/cliphub-stage3d2-4/settings_v5.js src/ch_13_settings.js
 + python3 .github/cliphub-stage3d2-4/patch.py
-clipboard version expected one match, got 0
+filter init tag map expected one match, got 2
