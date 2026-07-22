@@ -8,6 +8,9 @@
     var KeyEvent = Packages.android.view.KeyEvent;
     var WindowManager = Packages.android.view.WindowManager;
     var Context = Packages.android.content.Context;
+    var CountDownLatch = Packages.java.util.concurrent.CountDownLatch;
+    var TimeUnit = Packages.java.util.concurrent.TimeUnit;
+    var AtomicReference = Packages.java.util.concurrent.atomic.AtomicReference;
 
     var translationConfig = { enabled: false, provider: "none" };
     var appContext = null;
@@ -23,12 +26,15 @@
     var hideInProgress = false;
     var originalAppHideUi = null;
     var lastBackAt = 0;
+    var lastBackSignature = "";
     var navState = {
         initCount: 0,
         shutdownCount: 0,
         scanCount: 0,
         registerCount: 0,
         unregisterCount: 0,
+        entryPurgeCount: 0,
+        residualWindowRemoveCount: 0,
         mainFocusableUpgradeCount: 0,
         keyBackCount: 0,
         backStartedCount: 0,
@@ -48,6 +54,7 @@
         lastActivityType: 0,
         lastBackOwner: "",
         lastBackReason: "",
+        lastBackSignature: "",
         lastHideReason: "",
         lastBackgroundReason: "",
         lastError: null
@@ -97,6 +104,44 @@
         return Number(delayMs || 0) > 0 ?
             mainHandler.postDelayed(runnable, Number(delayMs)) :
             mainHandler.post(runnable);
+    }
+
+    function runOnMainSync(callback, timeoutMs) {
+        var valueRef;
+        var errorRef;
+        var latch;
+        var posted;
+        var timeout = Math.max(500, Number(timeoutMs || 3000));
+        if (typeof callback !== "function") {
+            throw new Error("Navigation main callback must be a function");
+        }
+        if (Looper.myLooper() === Looper.getMainLooper()) {
+            return callback();
+        }
+        try {
+            if (ClipHub.Window &&
+                    typeof ClipHub.Window.runOnMain === "function") {
+                return ClipHub.Window.runOnMain(callback, timeout);
+            }
+        } catch (windowError) {
+            navState.lastError = String(windowError);
+        }
+        if (!mainHandler) { return callback(); }
+        valueRef = new AtomicReference();
+        errorRef = new AtomicReference();
+        latch = new CountDownLatch(1);
+        posted = mainHandler.post(new Packages.java.lang.Runnable({
+            run: function () {
+                try { valueRef.set(callback()); }
+                catch (error) { errorRef.set(error); }
+                finally { latch.countDown(); }
+            }
+        }));
+        if (!posted || !latch.await(timeout, TimeUnit.MILLISECONDS)) {
+            throw new Error("Navigation main callback timed out");
+        }
+        if (errorRef.get() !== null) { throw errorRef.get(); }
+        return valueRef.get();
     }
 
     function entryKey(view) {
@@ -266,10 +311,117 @@
         return false;
     }
 
+    function removeEntry(view, restoreVisual) {
+        var key = entryKey(view);
+        var kept = [];
+        var index;
+        var item;
+        var observer;
+        for (index = 0; index < entries.length; index += 1) {
+            item = entries[index];
+            if (!item || item.key !== key) {
+                if (item && !item.removed) { kept.push(item); }
+                continue;
+            }
+            if (item.removed) { continue; }
+            item.removed = true;
+            try {
+                if (item.dispatcher && item.callback) {
+                    item.dispatcher.unregisterOnBackInvokedCallback(
+                        item.callback);
+                }
+            } catch (ignoredDispatcher) {}
+            try {
+                observer = item.view.getViewTreeObserver();
+                if (observer && observer.isAlive() && item.focusListener) {
+                    observer.removeOnWindowFocusChangeListener(
+                        item.focusListener);
+                }
+            } catch (ignoredFocus) {}
+            try {
+                if (item.attachListener) {
+                    item.view.removeOnAttachStateChangeListener(
+                        item.attachListener);
+                }
+            } catch (ignoredAttach) {}
+            if (restoreVisual !== false) { resetVisual(item.view); }
+            navState.unregisterCount += 1;
+        }
+        entries = kept;
+    }
+
+    function unregisterAllEntries(restoreVisual) {
+        var views = [];
+        var index;
+        for (index = 0; index < entries.length; index += 1) {
+            if (entries[index] && entries[index].view) {
+                views.push(entries[index].view);
+            }
+        }
+        for (index = 0; index < views.length; index += 1) {
+            removeEntry(views[index], restoreVisual);
+        }
+        navState.entryPurgeCount += views.length;
+        entries = [];
+        navState.callbackMode = "none";
+        return views.length;
+    }
+
+    function pruneEntries() {
+        var stale = [];
+        var index;
+        var attached;
+        for (index = 0; index < entries.length; index += 1) {
+            attached = false;
+            try {
+                attached = entries[index] && entries[index].view &&
+                    entries[index].view.isAttachedToWindow();
+            } catch (ignored) {}
+            if (!attached) { stale.push(entries[index].view); }
+        }
+        for (index = 0; index < stale.length; index += 1) {
+            removeEntry(stale[index], false);
+        }
+        return stale.length;
+    }
+
+    function purgeResidualWindowsOnMain() {
+        var views = windowViews();
+        var index;
+        var view;
+        var attached;
+        var removed = 0;
+        for (index = 0; index < views.length; index += 1) {
+            view = views[index];
+            if (!view || !clipHubWindow(view)) { continue; }
+            removeEntry(view, false);
+            attached = false;
+            try { attached = view.isAttachedToWindow(); }
+            catch (ignoredAttached) {}
+            if (!attached) { continue; }
+            try {
+                windowManager.removeViewImmediate(view);
+                removed += 1;
+            } catch (errorImmediate) {
+                try {
+                    windowManager.removeView(view);
+                    removed += 1;
+                } catch (errorRemove) {
+                    navState.lastError = String(errorImmediate) +
+                        "; fallback=" + String(errorRemove);
+                }
+            }
+        }
+        unregisterAllEntries(false);
+        navState.residualWindowRemoveCount += removed;
+        return removed;
+    }
+
     function hideUi(reason) {
+        var residualRemoved = 0;
         if (hideInProgress) {
             return { ok: true, hidden: true, reused: true,
-                reason: String(reason || "duplicate") };
+                reason: String(reason || "duplicate"), residualRemoved: 0 };
         }
         hideInProgress = true;
         scanGeneration += 1;
@@ -278,25 +430,37 @@
         try {
             closeFilter();
             closeEditor();
-            closeDetail();
             try {
                 if (ClipHub.List && ClipHub.List.hide) {
                     ClipHub.List.hide(true);
-                } else if (ClipHub.Window && ClipHub.Window.close) {
-                    ClipHub.Window.close();
+                } else {
+                    closeDetail();
+                    if (ClipHub.Window && ClipHub.Window.close) {
+                        ClipHub.Window.close();
+                    }
                 }
             } catch (error) {
                 navState.lastError = String(error);
+                try { closeDetail(); } catch (ignoredDetail) {}
                 try {
                     if (ClipHub.Window && ClipHub.Window.close) {
                         ClipHub.Window.close();
                     }
-                } catch (ignoredFallback) {}
+                } catch (ignoredWindow) {}
+            }
+            try {
+                residualRemoved = Number(runOnMainSync(
+                    purgeResidualWindowsOnMain, 3000) || 0);
+            } catch (cleanupError) {
+                navState.lastError = String(cleanupError);
+                try { unregisterAllEntries(false); }
+                catch (ignoredEntries) {}
             }
             navState.uiHideCount += 1;
             navState.baselinePackage = "";
             return { ok: true, hidden: true, reused: false,
-                reason: navState.lastHideReason };
+                reason: navState.lastHideReason,
+                residualRemoved: residualRemoved };
         } finally {
             hideInProgress = false;
         }
@@ -332,61 +496,40 @@
         return false;
     }
 
+    function isSystemBackReason(reason) {
+        reason = String(reason || "");
+        return reason === "predictive_back" ||
+            reason === "on_back_invoked" ||
+            reason === "back_key" || reason === "escape_key";
+    }
+
+    function backSignature(owner, reason) {
+        return isSystemBackReason(reason) ? "system" :
+            "owner:" + String(owner || "auto");
+    }
+
     function dispatchBack(owner, reason) {
         var timestamp = now();
+        var signature = backSignature(owner, reason);
         var handled;
-        if (timestamp - lastBackAt < 180) {
+        if (timestamp - lastBackAt < 180 &&
+                signature === lastBackSignature) {
             navState.duplicateBackCount += 1;
             return true;
         }
         lastBackAt = timestamp;
+        lastBackSignature = signature;
         navState.backInvokedCount += 1;
         navState.lastBackOwner = String(owner || "");
         navState.lastBackReason = String(reason || "system_back");
+        navState.lastBackSignature = signature;
         handled = closeTop(owner, navState.lastBackReason);
         if (handled) { navState.backHandledCount += 1; }
         log("I", "navigation back owner=" + navState.lastBackOwner +
             " reason=" + navState.lastBackReason +
+            " signature=" + signature +
             " handled=" + String(handled));
         return handled;
-    }
-
-    function removeEntry(view) {
-        var key = entryKey(view);
-        var kept = [];
-        var index;
-        var item;
-        var observer;
-        for (index = 0; index < entries.length; index += 1) {
-            item = entries[index];
-            if (!item || item.key !== key) {
-                if (item && !item.removed) { kept.push(item); }
-                continue;
-            }
-            item.removed = true;
-            try {
-                if (item.dispatcher && item.callback) {
-                    item.dispatcher.unregisterOnBackInvokedCallback(
-                        item.callback);
-                }
-            } catch (ignoredDispatcher) {}
-            try {
-                observer = item.view.getViewTreeObserver();
-                if (observer && observer.isAlive() && item.focusListener) {
-                    observer.removeOnWindowFocusChangeListener(
-                        item.focusListener);
-                }
-            } catch (ignoredFocus) {}
-            try {
-                if (item.attachListener) {
-                    item.view.removeOnAttachStateChangeListener(
-                        item.attachListener);
-                }
-            } catch (ignoredAttach) {}
-            resetVisual(item.view);
-            navState.unregisterCount += 1;
-        }
-        entries = kept;
     }
 
     function anyFocused() {
@@ -447,9 +590,21 @@
             packageName.indexOf("recents") >= 0;
     }
 
+    function captureTaskBaseline(force) {
+        var snapshot = taskSnapshot();
+        navState.lastTopPackage = snapshot.packageName;
+        navState.lastActivityType = snapshot.activityType;
+        if (snapshot.packageName &&
+                (force === true || !navState.baselinePackage)) {
+            navState.baselinePackage = snapshot.packageName;
+        }
+        return snapshot;
+    }
+
     function checkBackground(reason, fallback) {
         var snapshot;
         var changed;
+        pruneEntries();
         if (!initialized || hideInProgress || !uiVisible() || anyFocused()) {
             return false;
         }
@@ -481,7 +636,7 @@
             if (generation === backgroundGeneration) {
                 checkBackground(reason, false);
             }
-        }, 260);
+        }, 280);
         runOnMain(function () {
             if (generation === backgroundGeneration) {
                 checkBackground(reason + "_fallback", true);
@@ -490,16 +645,10 @@
     }
 
     function onFocus(owner, hasFocus) {
-        var snapshot;
         if (hasFocus) {
             backgroundGeneration += 1;
             navState.focusGainCount += 1;
-            snapshot = taskSnapshot();
-            if (!navState.baselinePackage && snapshot.packageName) {
-                navState.baselinePackage = snapshot.packageName;
-            }
-            navState.lastTopPackage = snapshot.packageName;
-            navState.lastActivityType = snapshot.activityType;
+            captureTaskBaseline(false);
             return;
         }
         navState.focusLossCount += 1;
@@ -616,8 +765,7 @@
         try {
             observer = view.getViewTreeObserver();
             if (observer && observer.isAlive()) {
-                observer.addOnWindowFocusChangeListener(
-                    entry.focusListener);
+                observer.addOnWindowFocusChangeListener(entry.focusListener);
             }
         } catch (errorFocus) {
             navState.lastError = String(errorFocus);
@@ -626,7 +774,7 @@
             View.OnAttachStateChangeListener, {
                 onViewAttachedToWindow: function () {},
                 onViewDetachedFromWindow: function (detachedView) {
-                    removeEntry(detachedView);
+                    removeEntry(detachedView, false);
                     scheduleScan(null);
                 }
             });
@@ -672,12 +820,13 @@
         entries.push(entry);
         navState.registerCount += 1;
         try { view.requestFocus(); } catch (ignoredRequestFocus) {}
+        captureTaskBaseline(false);
         if (!entry.dispatcher && Build.VERSION.SDK_INT >= 33 &&
                 entry.retryCount < 3) {
             runOnMain(function () {
                 if (!entry.removed && entry.view &&
                         entry.view.isAttachedToWindow()) {
-                    removeEntry(entry.view);
+                    removeEntry(entry.view, true);
                     registerView(entry.view, entry.owner,
                         entry.retryCount + 1);
                 }
@@ -695,6 +844,7 @@
         var view;
         if (!initialized) { return 0; }
         navState.scanCount += 1;
+        pruneEntries();
         views = windowViews();
         for (index = 0; index < views.length; index += 1) {
             view = views[index];
@@ -784,6 +934,7 @@
         var owners = [];
         var titles = [];
         var index;
+        pruneEntries();
         for (index = 0; index < entries.length; index += 1) {
             owners.push(String(entries[index].owner || ""));
             titles.push(String(entries[index].title || ""));
@@ -796,6 +947,9 @@
             scanCount: Number(navState.scanCount),
             registerCount: Number(navState.registerCount),
             unregisterCount: Number(navState.unregisterCount),
+            entryPurgeCount: Number(navState.entryPurgeCount),
+            residualWindowRemoveCount:
+                Number(navState.residualWindowRemoveCount),
             registeredRootCount: Number(entries.length),
             registeredOwners: owners,
             registeredTitles: titles,
@@ -821,6 +975,7 @@
             lastActivityType: Number(navState.lastActivityType),
             lastBackOwner: navState.lastBackOwner,
             lastBackReason: navState.lastBackReason,
+            lastBackSignature: navState.lastBackSignature,
             lastHideReason: navState.lastHideReason,
             lastBackgroundReason: navState.lastBackgroundReason,
             lastError: navState.lastError
@@ -835,16 +990,18 @@
             throw new Error("Android context unavailable for navigation");
         }
         appContext = appContext.getApplicationContext() || appContext;
-        windowManager = appContext.getSystemService(
-            Context.WINDOW_SERVICE);
-        activityManager = appContext.getSystemService(
-            Context.ACTIVITY_SERVICE);
+        windowManager = appContext.getSystemService(Context.WINDOW_SERVICE);
+        activityManager = appContext.getSystemService(Context.ACTIVITY_SERVICE);
         mainHandler = new Handler(Looper.getMainLooper());
         density = Number(appContext.getResources()
             .getDisplayMetrics().density || 1);
         initialized = true;
+        lastBackAt = 0;
+        lastBackSignature = "";
+        navState.lastBackSignature = "";
         navState.initCount += 1;
         installWrappers();
+        captureTaskBaseline(true);
         scheduleScan(null);
         log("I", "navigation initialized sdk=" +
             String(Build.VERSION.SDK_INT));
@@ -852,19 +1009,15 @@
     }
 
     function navigationShutdown() {
-        var views = [];
-        var index;
         if (!initialized) { return true; }
         initialized = false;
         scanGeneration += 1;
         backgroundGeneration += 1;
         restoreWrappers();
-        for (index = 0; index < entries.length; index += 1) {
-            views.push(entries[index].view);
-        }
-        for (index = 0; index < views.length; index += 1) {
-            removeEntry(views[index]);
-        }
+        try { runOnMainSync(function () {
+            unregisterAllEntries(false);
+            return true;
+        }, 3000); } catch (ignoredEntries) {}
         navState.shutdownCount += 1;
         navState.baselinePackage = "";
         appContext = null;
@@ -872,12 +1025,14 @@
         activityManager = null;
         mainHandler = null;
         hideInProgress = false;
+        lastBackAt = 0;
+        lastBackSignature = "";
         return true;
     }
 
     ClipHub.Navigation = {
         MODULE_NAME: "ch_14_navigation_embedded",
-        MODULE_VERSION: 1,
+        MODULE_VERSION: 2,
         init: navigationInit,
         dispatchBack: function (reason) {
             return dispatchBack("", reason || "api_back");
@@ -896,7 +1051,7 @@
 
     ClipHub.Translation = {
         MODULE_NAME: "ch_12_translation",
-        MODULE_VERSION: 2,
+        MODULE_VERSION: 3,
         init: function (context) {
             translationConfig = { enabled: false, provider: "none" };
             navigationInit(context || {});
