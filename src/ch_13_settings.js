@@ -836,7 +836,7 @@
             if (Number(changed) > 0) {
                 uiState.tagUpdateCount += 1;
                 emitTagsChanged("tag_updated", tagId);
-                buildPage();
+                rebuildTagPage();
                 return true;
             }
             return false;
@@ -851,7 +851,7 @@
             if (ClipHub.Repository.deleteTag(Number(tagId)) > 0) {
                 uiState.tagDeleteCount += 1;
                 emitTagsChanged("tag_deleted", tagId);
-                buildPage();
+                rebuildTagPage();
                 return true;
             }
             return false;
@@ -1405,7 +1405,7 @@
 
     ClipHub.Settings = {
         MODULE_NAME: "ch_13_settings",
-        MODULE_VERSION: 6,
+        MODULE_VERSION: 7,
         DEFAULTS: defaultsCopy(),
         init: function (context) {
             if (!ClipHub.Database || !ClipHub.Database.isOpen()) {
