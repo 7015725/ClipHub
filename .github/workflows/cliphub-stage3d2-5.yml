@@ -1,0 +1,126 @@
+name: Apply ClipHub stage 3D2-5
+
+on:
+  pull_request:
+    branches:
+      - agent/initialize-project-skeleton
+    paths:
+      - .github/cliphub-stage3d2-5-trigger.txt
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: cliphub-stage3d2-5
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.repository == '7015725/ClipHub'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/initialize-project-skeleton
+          fetch-depth: 0
+
+      - name: Apply stage 3D2-5
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          {
+            set -euo pipefail
+            python3 .github/cliphub-stage3d2-5/apply.py
+
+            for file in \
+              src/ch_10_editor.js \
+              src/ch_11_filter.js \
+              src/ch_13_settings.js; do
+              node --check "$file"
+            done
+
+            python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          files = [
+              'src/ch_10_editor.js',
+              'src/ch_11_filter.js',
+              'src/ch_13_settings.js'
+          ]
+          for name in files:
+              text = Path(name).read_text(encoding='utf-8')
+              forbidden = []
+              if re.search(r'(?m)^\s*(?:let|const)\s+', text):
+                  forbidden.append('let/const')
+              if '=>' in text:
+                  forbidden.append('arrow')
+              if '`' in text:
+                  forbidden.append('template literal')
+              if re.search(r'\bclass\s+[A-Za-z_$]', text):
+                  forbidden.append('class')
+              if forbidden:
+                  raise SystemExit(name + ': forbidden ES6: ' + ', '.join(forbidden))
+
+          checks = {
+              'src/ch_10_editor.js': [
+                  'MODULE_VERSION: 10',
+                  'reference_tag_selector_v1',
+                  'performTagSelectionSaveClick',
+                  'ClipHub.Repository.setItemTags(id, editorDraftTagIds)'
+              ],
+              'src/ch_11_filter.js': [
+                  'MODULE_VERSION: 14',
+                  'reference_search_v7',
+                  'tagColorPreviewCount'
+              ],
+              'src/ch_13_settings.js': [
+                  'MODULE_VERSION: 6',
+                  'reference_settings_v2',
+                  'dragReorderEnabled: true',
+                  'deleteRequiresConfirmation: true'
+              ]
+          }
+          for name, markers in checks.items():
+              text = Path(name).read_text(encoding='utf-8')
+              for marker in markers:
+                  if marker not in text:
+                      raise SystemExit(name + ': missing marker ' + marker)
+          PY
+
+            git diff --check
+            git config user.name "ClipHub Automation"
+            git config user.email "actions@github.com"
+            git add \
+              src/ch_10_editor.js \
+              src/ch_11_filter.js \
+              src/ch_13_settings.js \
+              module-manifest.json \
+              docs/阶段3D2-5标签管理与选择器实施说明.md
+            git commit -m "feat: add transactional tag selector and visual tag manager"
+
+            git rm -rf .github/cliphub-stage3d2-5 \
+              .github/workflows/cliphub-stage3d2-5.yml \
+              .github/cliphub-stage3d2-5-trigger.txt
+            git commit -m "chore: remove completed stage 3D2-5 automation"
+            git push origin HEAD:agent/initialize-project-skeleton
+          } > /tmp/cliphub_stage3d25.log 2>&1
+          code=$?
+          tail -n 240 /tmp/cliphub_stage3d25.log
+          if [ "$code" -ne 0 ]; then
+            {
+              echo 'Stage 3D2-5 failed:'
+              echo
+              echo '```text'
+              tail -n 180 /tmp/cliphub_stage3d25.log
+              echo '```'
+            } > /tmp/cliphub_stage3d25_comment.md
+            gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments \
+              --method POST --field body=@/tmp/cliphub_stage3d25_comment.md || true
+          fi
+          exit "$code"
