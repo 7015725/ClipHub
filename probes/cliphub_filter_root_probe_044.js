@@ -1,4 +1,4 @@
-/* ClipHub sole filter-root probe 044 loader. Rhino ES5 only. */
+/* ClipHub sole filter-root probe 044 v2 loader. Rhino ES5 only. */
 (function (global) {
     var URL = Packages.java.net.URL;
     var BR = Packages.java.io.BufferedReader;
@@ -12,7 +12,7 @@
     var line;
     var source;
     var implementationCommit =
-        "20bd4317fad31b185646fc3cd3c43ddd8f1680e0";
+        "634b602d63775594ce4216c70e3b5a5594f4d03a";
     var target = "https://raw.githubusercontent.com/7015725/ClipHub/" +
         implementationCommit + "/probes/" +
         "cliphub_filter_root_probe_044_impl.js" +
@@ -25,7 +25,7 @@
         connection.setReadTimeout(20000);
         connection.setRequestProperty("Cache-Control", "no-cache, no-store");
         connection.setRequestProperty("Pragma", "no-cache");
-        connection.setRequestProperty("User-Agent", "ClipHub-Probe/044-v1");
+        connection.setRequestProperty("User-Agent", "ClipHub-Probe/044-v2");
         input = connection.getInputStream();
         reader = new BR(new ISR(input, "UTF-8"));
         while ((line = reader.readLine()) !== null) {
@@ -35,17 +35,19 @@
         if (!source) {
             throw new Error("Probe 044 implementation is empty");
         }
-        if (source.indexOf("probeVersion: 1") < 0 ||
+        if (source.indexOf("probeVersion: 2") < 0 ||
                 source.indexOf("REQUIRED_SET = \"20260722.37\"") < 0 ||
                 source.indexOf("filterModuleVersion === 11") < 0 ||
                 source.indexOf("appModuleVersion === 7") < 0 ||
                 source.indexOf("cliphub_filter_root_probe_044") < 0 ||
                 source.indexOf("legacyHomeAttached === false") < 0 ||
                 source.indexOf("performResultLongClick") < 0 ||
-                source.indexOf("performBottomActionClick") < 0) {
+                source.indexOf("performBottomActionClick") < 0 ||
+                source.indexOf("returnDebounceWaitMs = 260") < 0 ||
+                source.indexOf("startedAt: startedAt") < 0) {
             throw new Error("Probe 044 implementation validation failed");
         }
-        eval(source + "\n//# sourceURL=ClipHub/probe_044_impl_v1.js");
+        eval(source + "\n//# sourceURL=ClipHub/probe_044_impl_v2.js");
     } finally {
         try { if (reader !== null) { reader.close(); } }
         catch (ignoredReader) {}
