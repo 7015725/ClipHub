@@ -16,7 +16,7 @@
     var Intent = Packages.android.content.Intent;
     var Toast = Packages.android.widget.Toast;
 
-    var REQUIRED_SET = "20260723.01";
+    var REQUIRED_SET = "20260723.02";
     var RUNTIME_NAME = "ClipHubProbe045";
     var SCENE_DURATION_MS = 10000;
     var MODULES = [
@@ -199,10 +199,11 @@
                 stamp(startedAt) + ".json");
         var local = localManifest(formal);
         var formalWasRunning = !lockFree(formal);
+        var extraIndex;
         var result = {
             ok: false,
             probe: "cliphub_content_tags_settings_probe_045",
-            probeVersion: 1,
+            probeVersion: 2,
             startedAt: startedAt,
             moduleSetVersion: local.moduleSetVersion || null,
             sourceRef: local.sourceRef || null,
@@ -268,6 +269,15 @@
                 sourceLabel: "Termux", sourceUid: 10002,
                 sourceConfidence: 100, isPinned: false
             }));
+            result.extraIds = [];
+            for (extraIndex = 0; extraIndex < 25; extraIndex += 1) {
+                result.extraIds.push(Number(global.ClipHub.Repository.insertItem({
+                    content: "ClipHub 分页记录 " + String(extraIndex + 1),
+                    contentType: "text", sourcePackage: "com.termux",
+                    sourceLabel: "Termux", sourceUid: 10002,
+                    sourceConfidence: 100, isPinned: false
+                })));
+            }
             result.urlRow = global.ClipHub.Repository.getItem(result.urlId, false);
             result.phoneRow = global.ClipHub.Repository.getItem(result.phoneId, false);
             result.typeOptions = global.ClipHub.Repository.listContentTypeOptions();
@@ -301,13 +311,40 @@
                     panel.contentTypeOptionCount === 0 &&
                     panel.typeChipCount === 0 &&
                     panel.settingsButtonPresent === true &&
-                    panel.renderedTagLabelCount >= 3;
+                    panel.renderedTagLabelCount >= 3 &&
+                    panel.resultCardCount === 20 &&
+                    panel.loadedResultCount === 20 &&
+                    panel.resultHasMore === true &&
+                    panel.loadMorePresent === true;
             }, 1800);
+            result.firstPageState = global.ClipHub.Filter.getPanelState();
+            result.loadMoreClick = global.ClipHub.Filter.performLoadMoreClick();
+            result.loadMoreReady = waitFor(function () {
+                var panel = global.ClipHub.Filter.getPanelState();
+                return panel.resultCardCount >= 28 &&
+                    panel.loadedResultCount >= 28 &&
+                    panel.resultHasMore === false;
+            }, 1800);
+            result.afterLoadMoreState = global.ClipHub.Filter.getPanelState();
+            result.translationSelect = global.ClipHub.Filter
+                .performResultLongClick(0);
+            result.translationClick = global.ClipHub.Filter
+                .performBottomActionClick("detail");
+            result.translationPopupReady = waitFor(function () {
+                return global.ClipHub.Translation.getState().attached === true;
+            }, 1500);
+            result.translationPopupState = global.ClipHub.Translation.getState();
+            result.translationClose = global.ClipHub.Translation.close(
+                "probe045_translation_guard");
+            result.translationClosedReady = waitFor(function () {
+                return global.ClipHub.Translation.getState().attached === false &&
+                    global.ClipHub.Filter.getPanelState().attached === true;
+            }, 1200);
             result.rootScene = {
                 app: global.ClipHub.App.getStatus(),
                 filter: global.ClipHub.Filter.getState()
             };
-            showToast("045  1/3  标签首页  ·  不得显示内容类型");
+            showToast("045  1/3  标签首页  ·  已验证滚动分页与翻译入口");
             Thread.sleep(SCENE_DURATION_MS);
 
             result.settingsOpen = global.ClipHub.Filter.performSettingsClick();
@@ -389,8 +426,8 @@
                 result.repositoryModuleVersion === 8 &&
                 result.listModuleVersion === 13 &&
                 result.editorModuleVersion === 9 &&
-                result.filterModuleVersion === 12 &&
-                result.translationModuleVersion === 5 &&
+                result.filterModuleVersion === 13 &&
+                result.translationModuleVersion === 6 &&
                 result.settingsModuleVersion === 5 &&
                 result.appModuleVersion === 8 &&
                 result.navigationModuleVersion === 3 &&
@@ -404,6 +441,18 @@
                 result.urlTags.length === 3 &&
                 result.reorderTags && result.reorderTags.ok === true &&
                 result.rootReady === true &&
+                result.firstPageState.resultCardCount === 20 &&
+                result.firstPageState.resultHasMore === true &&
+                result.loadMoreClick === true &&
+                result.loadMoreReady === true &&
+                result.afterLoadMoreState.resultCardCount >= 28 &&
+                result.afterLoadMoreState.resultHasMore === false &&
+                result.translationSelect === true &&
+                result.translationClick === true &&
+                result.translationPopupReady === true &&
+                result.translationPopupState.attached === true &&
+                result.translationClose === true &&
+                result.translationClosedReady === true &&
                 result.rootScene.app.legacyHomeAttached === false &&
                 result.rootScene.filter.panel.contentTypeOptionCount === 0 &&
                 result.settingsOpen === true &&
@@ -435,7 +484,7 @@
     } catch (error) {
         global.ClipHubContentTagsSettingsProbe045Result = {
             ok: false, probe: "cliphub_content_tags_settings_probe_045",
-            probeVersion: 1, fatal: true, error: errorText(error)
+            probeVersion: 2, fatal: true, error: errorText(error)
         };
     }
 }((function () { return this; }())));

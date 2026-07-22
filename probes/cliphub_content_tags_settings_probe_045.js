@@ -23,21 +23,23 @@
         connection.setReadTimeout(20000);
         connection.setRequestProperty("Cache-Control", "no-cache, no-store");
         connection.setRequestProperty("Pragma", "no-cache");
-        connection.setRequestProperty("User-Agent", "ClipHub-Probe/045-v1");
+        connection.setRequestProperty("User-Agent", "ClipHub-Probe/045-v2");
         input = connection.getInputStream();
         reader = new BR(new ISR(input, "UTF-8"));
         while ((line = reader.readLine()) !== null) {
             builder.append(line).append("\n");
         }
         source = String(builder.toString());
-        if (!source || source.indexOf("probeVersion: 1") < 0 ||
-                source.indexOf("REQUIRED_SET = \"20260723.01\"") < 0 ||
+        if (!source || source.indexOf("probeVersion: 2") < 0 ||
+                source.indexOf("REQUIRED_SET = \"20260723.02\"") < 0 ||
                 source.indexOf("contentTypeSettingsPresent") < 0 ||
-                source.indexOf("translationModuleVersion === 5") < 0 ||
+                source.indexOf("translationModuleVersion === 6") < 0 ||
+                source.indexOf("performLoadMoreClick") < 0 ||
+                source.indexOf("translationPopupReady") < 0 ||
                 source.indexOf("cliphub_content_tags_settings_probe_045") < 0) {
             throw new Error("Probe 045 implementation validation failed");
         }
-        eval(source + "\n//# sourceURL=ClipHub/probe_045_impl_v1.js");
+        eval(source + "\n//# sourceURL=ClipHub/probe_045_impl_v2.js");
     } finally {
         try { if (reader !== null) { reader.close(); } } catch (ignored) {}
         try { if (input !== null) { input.close(); } } catch (ignoredInput) {}

@@ -5,6 +5,7 @@
     var Handler = Packages.android.os.Handler;
     var System = Packages.java.lang.System;
     var View = Packages.android.view.View;
+    var Gravity = Packages.android.view.Gravity;
     var KeyEvent = Packages.android.view.KeyEvent;
     var WindowManager = Packages.android.view.WindowManager;
     var Context = Packages.android.content.Context;
@@ -336,6 +337,11 @@
 
     function closeDetail() {
         try {
+            if (translationState.attached === true &&
+                    ClipHub.Translation && ClipHub.Translation.close) {
+                ClipHub.Translation.close("navigation_back");
+                return true;
+            }
             if (ClipHub.List && ClipHub.List.closeDetail) {
                 ClipHub.List.closeDetail();
                 return true;
@@ -1839,7 +1845,7 @@
     }
     ClipHub.Translation = {
         MODULE_NAME: "ch_12_translation",
-        MODULE_VERSION: 5,
+        MODULE_VERSION: 6,
         init: function (context) {
             translationConfig = { enabled: true, provider: "settings" };
             navigationInit(context || {});

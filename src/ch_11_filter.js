@@ -33,8 +33,7 @@
 
     var HISTORY_KEY = "filterSearchHistory";
     var HISTORY_LIMIT = 6;
-    var RESULT_LIMIT = 40;
-    var PREVIEW_LIMIT = 8;
+    var RESULT_PAGE_SIZE = 20;
 
     var androidContext = null;
     var appContext = null;
@@ -81,6 +80,10 @@
     var resultCardViews = [];
     var toolbarActionViews = {};
     var resultTagMap = {};
+    var resultPageLimit = RESULT_PAGE_SIZE;
+    var resultHasMore = false;
+    var resultScrollView = null;
+    var loadMoreView = null;
 
     var state = {
         applyCount: 0,
@@ -158,6 +161,12 @@
         settingsOpenCount: 0,
         settingsButtonPresent: false,
         renderedTagLabelCount: 0,
+        loadedResultCount: 0,
+        resultPageSize: RESULT_PAGE_SIZE,
+        resultPageLimit: RESULT_PAGE_SIZE,
+        resultHasMore: false,
+        resultCanScroll: false,
+        loadMoreCount: 0,
         toolbarEnabledCount: 1,
         repositorySortUnchanged: true,
         sortScope: "result_window",
@@ -719,37 +728,62 @@
         } catch (ignored) {}
     }
 
+    function resetResultPaging() {
+        resultPageLimit = RESULT_PAGE_SIZE;
+        resultHasMore = false;
+        state.loadedResultCount = 0;
+        state.resultPageLimit = resultPageLimit;
+        state.resultHasMore = false;
+        state.resultCanScroll = false;
+        return resultPageLimit;
+    }
+
     function apply(options) {
         var rows;
         var thread;
+        var pagedRequest;
+        var requestedLimit;
         options = options || {};
         if (!ready || value === null) {
             throw new Error("ClipHub filter is not ready");
         }
+        pagedRequest = options.limit === undefined &&
+            (options.offset === undefined || Number(options.offset) === 0);
+        requestedLimit = pagedRequest ? resultPageLimit + 1 :
+            Math.max(1, Math.floor(Number(options.limit || RESULT_PAGE_SIZE)));
         try {
             rows = ClipHub.Repository.listItems(toQueryOptions({
-                limit: options.limit === undefined ? RESULT_LIMIT : options.limit,
+                limit: requestedLimit,
                 offset: options.offset === undefined ? 0 : options.offset
             }));
             rows = sortRows(rows);
-            previewRows = rows.slice(0, PREVIEW_LIMIT);
+            if (pagedRequest) {
+                resultHasMore = rows.length > resultPageLimit;
+                previewRows = rows.slice(0, resultPageLimit);
+            } else {
+                resultHasMore = false;
+                previewRows = rows;
+            }
             if (ClipHub.List &&
                     typeof ClipHub.List.setItems === "function") {
-                ClipHub.List.setItems(rows);
+                ClipHub.List.setItems(previewRows);
             }
             state.applyCount += 1;
             if (options.fromEvent === true) {
                 state.eventApplyCount += 1;
             }
-            state.lastResultCount = rows.length;
+            state.lastResultCount = previewRows.length;
+            state.loadedResultCount = previewRows.length;
+            state.resultPageLimit = resultPageLimit;
+            state.resultHasMore = resultHasMore;
             thread = Thread.currentThread();
             state.lastApplyThreadId = Number(thread.getId());
             state.lastApplyThreadName = String(thread.getName());
             state.lastError = null;
-            emitChanged(rows,
+            emitChanged(previewRows,
                 options.origin ||
                 (options.fromEvent ? "event" : "manual"));
-            return rows;
+            return previewRows;
         } catch (error) {
             state.lastError = String(error);
             throw error;
@@ -772,6 +806,7 @@
 
     function setValue(patch, options) {
         patch = patch || {};
+        resetResultPaging();
         if (patch.hasOwnProperty("keyword")) {
             value.keyword = normalizeText(patch.keyword);
         }
@@ -798,6 +833,7 @@
     }
 
     function reset(options) {
+        resetResultPaging();
         value = emptyValue();
         return applyIfRequested(options);
     }
@@ -1463,9 +1499,15 @@
                 typeof ClipHub.Translation.openForItem !== "function") {
             return false;
         }
-        state.detailActionCount += 1;
-        ClipHub.Translation.openForItem(Number(row.id));
-        return true;
+        try {
+            ClipHub.Translation.openForItem(Number(row.id));
+            state.detailActionCount += 1;
+            state.lastError = null;
+            return true;
+        } catch (error) {
+            state.lastError = "Translation open failed: " + String(error);
+            return false;
+        }
     }
 
     function makeResultCard(row, colors) {
@@ -1572,6 +1614,31 @@
         return card;
     }
 
+    function updateResultScrollState() {
+        try {
+            state.resultCanScroll = resultScrollView !== null &&
+                resultScrollView.canScrollVertically(1);
+        } catch (ignored) {
+            state.resultCanScroll = false;
+        }
+        return state.resultCanScroll;
+    }
+
+    function loadMoreResults() {
+        if (!state.panelAttached || !resultHasMore) { return false; }
+        resultPageLimit += RESULT_PAGE_SIZE;
+        state.loadMoreCount += 1;
+        apply({ origin: "ui_load_more" });
+        refreshResultsOnMain();
+        updateResultCountOnMain();
+        if (mainHandler !== null) {
+            mainHandler.post(new Packages.java.lang.Runnable({
+                run: function () { updateResultScrollState(); }
+            }));
+        }
+        return true;
+    }
+
     function refreshResultsOnMain() {
         var colors = palette();
         var index;
@@ -1612,14 +1679,39 @@
             resultContainer.addView(makeResultCard(
                 previewRows[index], colors), params);
         }
+        loadMoreView = null;
+        if (resultHasMore) {
+            loadMoreView = makeText("加载更多", 11,
+                colors.accentStrong, true);
+            loadMoreView.setGravity(Gravity.CENTER);
+            loadMoreView.setPadding(dp(10), dp(10), dp(10), dp(10));
+            loadMoreView.setBackground(roundedBackground(
+                colors.accentSoft, colors.accentBorder, 12));
+            loadMoreView.setClickable(true);
+            loadMoreView.setFocusable(true);
+            loadMoreView.setContentDescription("加载更多剪贴板记录");
+            loadMoreView.setOnClickListener(new JavaAdapter(
+                View.OnClickListener, {
+                    onClick: function () { loadMoreResults(); }
+                }));
+            params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(44));
+            params.topMargin = dp(2);
+            params.bottomMargin = dp(4);
+            resultContainer.addView(loadMoreView, params);
+        }
+        state.loadedResultCount = previewRows.length;
+        state.resultHasMore = resultHasMore;
+        state.resultPageLimit = resultPageLimit;
         return true;
     }
 
     function updateResultCountOnMain() {
         if (resultCountView !== null) {
-            resultCountView.setText("共 " +
-                Number(state.lastResultCount) +
-                " 条" + (isActive(value) ? "（已筛选）" : ""));
+            resultCountView.setText((resultHasMore ? "已加载 " : "共 ") +
+                Number(state.loadedResultCount) +
+                (resultHasMore ? " 条（还有更多）" : " 条") +
+                (isActive(value) ? "（已筛选）" : ""));
         }
     }
 
@@ -1849,6 +1941,7 @@
         var sort = makeText("按" + sortModeLabel(value.sortMode), 9,
             colors.textSecondary, false);
         var scroll = new ScrollView(appContext);
+        resultScrollView = scroll;
         root.setOrientation(LinearLayout.VERTICAL);
         status.setOrientation(LinearLayout.HORIZONTAL);
         status.setGravity(Gravity.CENTER_VERTICAL);
@@ -1872,6 +1965,11 @@
         root.addView(scroll, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
         refreshResultsOnMain();
+        if (mainHandler !== null) {
+            mainHandler.post(new Packages.java.lang.Runnable({
+                run: function () { updateResultScrollState(); }
+            }));
+        }
         return root;
     }
 
@@ -2095,7 +2193,14 @@
         if (enabled && typeof callback === "function") {
             item.setOnClickListener(new JavaAdapter(
                 View.OnClickListener, {
-                    onClick: function () { callback(); }
+                    onClick: function () {
+                        try {
+                            callback();
+                        } catch (error) {
+                            state.lastError = "Toolbar action " +
+                                String(key) + " failed: " + String(error);
+                        }
+                    }
                 }));
         }
         toolbarActionViews[String(key)] = item;
@@ -2352,11 +2457,8 @@
                 state.panelAddThreadName = thread.name;
                 state.lastError = null;
                 try {
-                    previewRows = ClipHub.Repository.listItems(
-                        toQueryOptions({ limit: RESULT_LIMIT, offset: 0 }));
-                    previewRows = sortRows(previewRows);
-                    state.lastResultCount = previewRows.length;
-                    previewRows = previewRows.slice(0, PREVIEW_LIMIT);
+                    resetResultPaging();
+                    apply({ origin: "panel_open" });
                 } catch (previewError) {
                     state.lastError = String(previewError);
                     previewRows = [];
@@ -2438,6 +2540,8 @@
                 clearHistoryView = null;
                 resultContainer = null;
                 resultCountView = null;
+                resultScrollView = null;
+                loadMoreView = null;
                 drawerContainer = null;
                 drawerScrollView = null;
                 drawerContentView = null;
@@ -2526,6 +2630,13 @@
             settingsButtonPresent: settingsButton !== null,
             settingsOpenCount: Number(state.settingsOpenCount),
             renderedTagLabelCount: Number(state.renderedTagLabelCount),
+            loadedResultCount: Number(state.loadedResultCount),
+            resultPageSize: Number(state.resultPageSize),
+            resultPageLimit: Number(state.resultPageLimit),
+            resultHasMore: state.resultHasMore === true,
+            resultCanScroll: state.resultCanScroll === true,
+            loadMorePresent: loadMoreView !== null,
+            loadMoreCount: Number(state.loadMoreCount),
             resultSourceIconCount:
                 Number(state.resultSourceIconCount),
             advancedDrawerVisible: advancedVisible,
@@ -2703,6 +2814,12 @@
         state.settingsOpenCount = 0;
         state.settingsButtonPresent = false;
         state.renderedTagLabelCount = 0;
+        state.loadedResultCount = 0;
+        state.resultPageSize = RESULT_PAGE_SIZE;
+        state.resultPageLimit = RESULT_PAGE_SIZE;
+        state.resultHasMore = false;
+        state.resultCanScroll = false;
+        state.loadMoreCount = 0;
         state.toolbarEnabledCount = 1;
         state.repositorySortUnchanged = true;
         state.sortScope = "result_window";
@@ -2723,13 +2840,13 @@
         state.resultCardCount = 0;
         state.resultSourceIconCount = 0;
         state.advancedDrawerVisible = false;
-        state.searchPageStyle = "reference_search_v5";
+        state.searchPageStyle = "reference_search_v6";
         state.lastError = null;
     }
 
     ClipHub.Filter = {
         MODULE_NAME: "ch_11_filter",
-        MODULE_VERSION: 12,
+        MODULE_VERSION: 13,
 
         init: function (context) {
             androidContext = context && context.androidContext ?
@@ -2764,6 +2881,9 @@
             resultCardViews = [];
             toolbarActionViews = {};
             resultTagMap = {};
+            resultScrollView = null;
+            loadMoreView = null;
+            resetResultPaging();
             resetState();
             loadHistory();
             registerEvent("clipboard_added");
@@ -2880,6 +3000,13 @@
             return requireMain(runOnMainSync(function () {
                 return toolbarActionViews[action] ?
                     toolbarActionViews[action].performClick() : false;
+            }, 2500));
+        },
+
+        performLoadMoreClick: function () {
+            return requireMain(runOnMainSync(function () {
+                return loadMoreView !== null ?
+                    loadMoreView.performClick() : false;
             }, 2500));
         },
 
@@ -3026,6 +3153,9 @@
             resultCardViews = [];
             toolbarActionViews = {};
             resultTagMap = {};
+            resultScrollView = null;
+            loadMoreView = null;
+            resetResultPaging();
             value = null;
             ready = false;
             androidContext = null;
