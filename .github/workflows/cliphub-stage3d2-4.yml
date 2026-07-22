@@ -46,12 +46,11 @@ jobs:
           code=$?
           tail -n 200 /tmp/cliphub_stage4.log
           if [ "$code" -ne 0 ]; then
-            {
-              echo '```text'
-              tail -n 160 /tmp/cliphub_stage4.log
-              echo '```'
-            } > /tmp/cliphub_stage4_comment.md
-            gh api repos/${{ github.repository }}/issues/13/comments \
-              --method POST --field body=@/tmp/cliphub_stage4_comment.md || true
+            tail -n 80 /tmp/cliphub_stage4.log > .github/cliphub-stage3d2-4-failure.log
+            git config user.name "ClipHub Automation"
+            git config user.email "actions@github.com"
+            git add -f .github/cliphub-stage3d2-4-failure.log
+            git commit -m "chore: record stage 3D2-4 failure" || true
+            git push origin HEAD:agent/initialize-project-skeleton || true
           fi
           exit "$code"
