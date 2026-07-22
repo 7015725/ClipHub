@@ -1,0 +1,106 @@
+name: Apply ClipHub hotfix 046
+
+on:
+  pull_request:
+    branches:
+      - agent/initialize-project-skeleton
+    paths:
+      - .github/cliphub-hotfix-046-trigger.txt
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: cliphub-hotfix-046
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.repository == '7015725/ClipHub'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/initialize-project-skeleton
+          fetch-depth: 0
+
+      - name: Apply hotfix
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          {
+            set -euo pipefail
+            python3 .github/cliphub-hotfix-046/apply.py
+
+            for file in \
+              src/ch_11_filter.js \
+              src/ch_12_translation.js \
+              probes/cliphub_content_tags_settings_probe_045_impl.js \
+              probes/cliphub_content_tags_settings_probe_045.js; do
+              node --check "$file"
+            done
+            git diff --check
+
+            git config user.name "ClipHub Automation"
+            git config user.email "actions@github.com"
+            git add \
+              src/ch_11_filter.js \
+              src/ch_12_translation.js \
+              probes/cliphub_content_tags_settings_probe_045_impl.js \
+              probes/cliphub_content_tags_settings_probe_045.js \
+              module-manifest.json \
+              docs/阶段3D2-4问题修复说明.md \
+              docs/内容标签翻译设置探测045说明.md
+            git commit -m "fix: guard translation launch and page Filter Root results"
+            implementation_commit="$(git rev-parse HEAD)"
+
+            python3 - "$implementation_commit" <<'PY'
+          from pathlib import Path
+          import sys
+          commit = sys.argv[1]
+          loader = Path('probes/cliphub_content_tags_settings_probe_045.js')
+          text = loader.read_text(encoding='utf-8')
+          old = 'var implementationCommit = "579cfd45cd58c4b0e75b9d88bd7bfa44e5114909";'
+          new = 'var implementationCommit = "' + commit + '";'
+          if text.count(old) != 1:
+              raise SystemExit('probe loader commit marker mismatch')
+          loader.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          doc = Path('docs/内容标签翻译设置探测045说明.md')
+          text = doc.read_text(encoding='utf-8')
+          if text.count('__IMPLEMENTATION_COMMIT__') != 1:
+              raise SystemExit('probe doc commit marker mismatch')
+          doc.write_text(text.replace('__IMPLEMENTATION_COMMIT__', commit, 1),
+                         encoding='utf-8')
+          PY
+
+            node --check probes/cliphub_content_tags_settings_probe_045.js
+            git diff --check
+            git add probes/cliphub_content_tags_settings_probe_045.js \
+              docs/内容标签翻译设置探测045说明.md
+            git commit -m "test: upgrade content tags settings probe 045 to v2"
+
+            git rm -rf .github/cliphub-hotfix-046 \
+              .github/workflows/cliphub-hotfix-046.yml
+            git commit -m "chore: remove completed hotfix 046 automation"
+            git push origin HEAD:agent/initialize-project-skeleton
+          } > /tmp/cliphub_hotfix_046.log 2>&1
+          code=$?
+          tail -n 240 /tmp/cliphub_hotfix_046.log
+          if [ "$code" -ne 0 ]; then
+            {
+              echo 'Hotfix 046 failed:'
+              echo
+              echo '```text'
+              tail -n 180 /tmp/cliphub_hotfix_046.log
+              echo '```'
+            } > /tmp/cliphub_hotfix_046_comment.md
+            gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments \
+              --method POST --field body=@/tmp/cliphub_hotfix_046_comment.md || true
+          fi
+          exit "$code"
