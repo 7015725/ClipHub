@@ -28,23 +28,38 @@ jobs:
           fetch-depth: 0
 
       - name: Apply stage 3D2-5
+        id: apply_stage
+        shell: bash
+        run: |
+          set +e
+          python3 .github/cliphub-stage3d2-5/apply.py > /tmp/cliphub_stage3d25.log 2>&1
+          code=$?
+          cat /tmp/cliphub_stage3d25.log
+          exit "$code"
+
+      - name: Report patch failure
+        if: failure()
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set +e
-          {
-            set -euo pipefail
-            python3 .github/cliphub-stage3d2-5/apply.py
+          body="$(printf 'Stage 3D2-5 patch failed:\n\n```text\n%s\n```' "$(tail -n 120 /tmp/cliphub_stage3d25.log)")"
+          gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments \
+            --method POST --raw-field body="$body"
 
-            for file in \
-              src/ch_10_editor.js \
-              src/ch_11_filter.js \
-              src/ch_13_settings.js; do
-              node --check "$file"
-            done
+      - name: Validate and publish
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in \
+            src/ch_10_editor.js \
+            src/ch_11_filter.js \
+            src/ch_13_settings.js; do
+            node --check "$file"
+          done
 
-            python3 - <<'PY'
+          python3 - <<'PY'
           from pathlib import Path
           import re
 
@@ -93,33 +108,19 @@ jobs:
                       raise SystemExit(name + ': missing marker ' + marker)
           PY
 
-            git diff --check
-            git config user.name "ClipHub Automation"
-            git config user.email "actions@github.com"
-            git add \
-              src/ch_10_editor.js \
-              src/ch_11_filter.js \
-              src/ch_13_settings.js \
-              module-manifest.json \
-              docs/阶段3D2-5标签管理与选择器实施说明.md
-            git commit -m "feat: add transactional tag selector and visual tag manager"
+          git diff --check
+          git config user.name "ClipHub Automation"
+          git config user.email "actions@github.com"
+          git add \
+            src/ch_10_editor.js \
+            src/ch_11_filter.js \
+            src/ch_13_settings.js \
+            module-manifest.json \
+            docs/阶段3D2-5标签管理与选择器实施说明.md
+          git commit -m "feat: add transactional tag selector and visual tag manager"
 
-            git rm -rf .github/cliphub-stage3d2-5 \
-              .github/workflows/cliphub-stage3d2-5.yml \
-              .github/cliphub-stage3d2-5-trigger.txt
-            git rm -f .github/cliphub-stage3d2-5-failure.log || true
-            git commit -m "chore: remove completed stage 3D2-5 automation"
-            git push origin HEAD:agent/initialize-project-skeleton
-          } > /tmp/cliphub_stage3d25.log 2>&1
-          code=$?
-          tail -n 240 /tmp/cliphub_stage3d25.log
-          if [ "$code" -ne 0 ]; then
-            tail -n 180 /tmp/cliphub_stage3d25.log > /tmp/stage3d25_failure.log
-            encoded="$(base64 -w0 /tmp/stage3d25_failure.log)"
-            gh api repos/${{ github.repository }}/contents/.github/cliphub-stage3d2-5-failure.log \
-              --method PUT \
-              --field message='chore: record stage 3D2-5 failure' \
-              --field content="$encoded" \
-              --field branch='agent/initialize-project-skeleton' || true
-          fi
-          exit "$code"
+          git rm -rf .github/cliphub-stage3d2-5 \
+            .github/workflows/cliphub-stage3d2-5.yml \
+            .github/cliphub-stage3d2-5-trigger.txt
+          git commit -m "chore: remove completed stage 3D2-5 automation"
+          git push origin HEAD:agent/initialize-project-skeleton
