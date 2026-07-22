@@ -100,8 +100,7 @@ jobs:
               docs/内容标签翻译设置探测045说明.md
             git commit -m "test: repin probe 045 v2 implementation"
 
-            git rm -f .github/workflows/cliphub-probe045-v2-fix.yml \
-              .github/cliphub-probe045-v2-fix-trigger.txt
+            git rm -f .github/workflows/cliphub-probe045-v2-fix.yml
             git commit -m "chore: remove completed probe 045 fix automation"
             git push origin HEAD:agent/initialize-project-skeleton
           } > /tmp/cliphub_probe045_fix.log 2>&1
