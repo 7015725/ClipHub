@@ -59,4 +59,20 @@ jobs:
           PY
       - name: Apply new and edit UI
         shell: bash
-        run: bash .github/cliphub-stage3d2-3-editor/apply.sh
+        run: |
+          set +e
+          bash .github/cliphub-stage3d2-3-editor/apply.sh > /tmp/editor-ui.log 2>&1
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            git reset --hard HEAD
+            git clean -fd
+            mkdir -p .github/cliphub-stage3d2-3-editor-diagnostic
+            cp /tmp/editor-ui.log .github/cliphub-stage3d2-3-editor-diagnostic/error.log
+            git config user.name "ClipHub Automation"
+            git config user.email "actions@github.com"
+            git add .github/cliphub-stage3d2-3-editor-diagnostic/error.log
+            git commit -m "diagnostic: capture editor UI workflow failure"
+            git push --force origin HEAD:agent/cliphub-stage3d2-3-editor-diagnostic
+            exit "$status"
+          fi
