@@ -11,7 +11,8 @@
         sourceEnabled: true,
         sensitivePolicy: "skip",
         ignorePackages: [],
-        windowPosition: null
+        windowPosition: null,
+        filterSearchHistory: []
     };
 
     function copyArray(input) {
@@ -104,6 +105,27 @@
         return output;
     }
 
+    function normalizeSearchHistory(input) {
+        var output = [];
+        var seen = {};
+        var index;
+        var item;
+        input = input || [];
+        if (Object.prototype.toString.call(input) !== "[object Array]") {
+            throw new Error("filterSearchHistory must be an array");
+        }
+        for (index = 0; index < input.length && output.length < 10;
+                index += 1) {
+            item = String(input[index] === null || input[index] === undefined
+                ? "" : input[index]).replace(/^\s+|\s+$/g, "");
+            if (item.length > 0 && !seen[item.toLowerCase()]) {
+                seen[item.toLowerCase()] = true;
+                output.push(item.substring(0, 120));
+            }
+        }
+        return output;
+    }
+
     function normalize(key, value) {
         if (key === "historyLimit") {
             return intRange(value, 0, 100000, DEFAULTS.historyLimit);
@@ -131,6 +153,9 @@
         }
         if (key === "windowPosition") {
             return normalizePosition(value);
+        }
+        if (key === "filterSearchHistory") {
+            return normalizeSearchHistory(value);
         }
         throw new Error("Unknown setting: " + key);
     }
@@ -162,9 +187,7 @@
 
     function load() {
         var rows = ClipHub.Database.queryAll(
-            "SELECT key, value FROM settings",
-            []
-        );
+            "SELECT key, value FROM settings", []);
         var output = defaultsCopy();
         var index;
         var key;
@@ -179,7 +202,8 @@
     }
 
     function applyClipboard() {
-        if (ClipHub.Clipboard && typeof ClipHub.Clipboard.configure === "function") {
+        if (ClipHub.Clipboard &&
+                typeof ClipHub.Clipboard.configure === "function") {
             ClipHub.Clipboard.configure({
                 sourceEnabled: values.sourceEnabled,
                 sensitivePolicy: values.sensitivePolicy,
@@ -218,7 +242,8 @@
                 key === "ignorePackages") {
             applyClipboard();
         }
-        shouldCleanup = key === "historyLimit" || key === "autoCleanupDays";
+        shouldCleanup = key === "historyLimit" ||
+            key === "autoCleanupDays";
         if (shouldCleanup && options.cleanup !== false) { cleanup(); }
         return copyValue(values[key]);
     }
@@ -246,11 +271,13 @@
         for (key in normalized) {
             if (normalized.hasOwnProperty(key)) {
                 values[key] = copyValue(normalized[key]);
-                if (key === "sourceEnabled" || key === "sensitivePolicy" ||
+                if (key === "sourceEnabled" ||
+                        key === "sensitivePolicy" ||
                         key === "ignorePackages") {
                     needsClipboard = true;
                 }
-                if (key === "historyLimit" || key === "autoCleanupDays") {
+                if (key === "historyLimit" ||
+                        key === "autoCleanupDays") {
                     needsCleanup = true;
                 }
             }
@@ -276,14 +303,16 @@
         var key;
         if (lastCleanup === null) { return null; }
         for (key in lastCleanup) {
-            if (lastCleanup.hasOwnProperty(key)) { output[key] = lastCleanup[key]; }
+            if (lastCleanup.hasOwnProperty(key)) {
+                output[key] = lastCleanup[key];
+            }
         }
         return output;
     }
 
     ClipHub.Settings = {
         MODULE_NAME: "ch_13_settings",
-        MODULE_VERSION: 3,
+        MODULE_VERSION: 4,
         DEFAULTS: defaultsCopy(),
         init: function () {
             if (!ClipHub.Database || !ClipHub.Database.isOpen()) {
@@ -324,9 +353,7 @@
             ClipHub.Database.transaction(function () {
                 var key;
                 ClipHub.Database.executeUpdateDelete(
-                    "DELETE FROM settings",
-                    []
-                );
+                    "DELETE FROM settings", []);
                 for (key in defaults) {
                     if (defaults.hasOwnProperty(key)) {
                         persist(key, defaults[key]);
