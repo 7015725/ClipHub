@@ -59,6 +59,9 @@
     var resultContainer = null;
     var resultCountView = null;
     var drawerContainer = null;
+    var drawerScrollView = null;
+    var drawerContentView = null;
+    var drawerFooterView = null;
     var sourceViews = {};
     var typeViews = {};
     var tagViews = {};
@@ -111,6 +114,14 @@
         chipEllipsizeEndEnforced: true,
         drawerContentBottomPaddingDp: 0,
         drawerFooterTopGapDp: 0,
+        drawerFooterHeightDp: 0,
+        advancedChipVerticalPaddingDp: 0,
+        drawerMeasured: false,
+        drawerContentHeightDp: 0,
+        drawerViewportHeightDp: 0,
+        drawerScrollYDp: 0,
+        drawerCanScrollDownAtTop: false,
+        drawerContentFitsViewport: false,
         advancedKeywordInputPresent: false,
         sortOptionCount: 0,
         sourceWrapRowCount: 0,
@@ -139,7 +150,7 @@
         resultCardCount: 0,
         resultSourceIconCount: 0,
         advancedDrawerVisible: false,
-        searchPageStyle: "reference_search_v2",
+        searchPageStyle: "reference_search_v4",
         lastError: null
     };
 
@@ -149,6 +160,47 @@
 
     function pxToDp(valuePx) {
         return Math.round(Number(valuePx) / density);
+    }
+
+    function updateDrawerMeasurements() {
+        var viewportPx = 0;
+        var contentPx = 0;
+        var footerPx = 0;
+        var scrollYPx = 0;
+        var measured = false;
+        var canScrollDown = false;
+        if (!advancedVisible || drawerScrollView === null ||
+                drawerContentView === null || drawerFooterView === null) {
+            state.drawerMeasured = false;
+            state.drawerContentHeightDp = 0;
+            state.drawerViewportHeightDp = 0;
+            state.drawerScrollYDp = 0;
+            state.drawerCanScrollDownAtTop = false;
+            state.drawerContentFitsViewport = false;
+            state.drawerFooterHeightDp = 0;
+            return false;
+        }
+        try {
+            viewportPx = Number(drawerScrollView.getHeight());
+            contentPx = Number(drawerContentView.getHeight());
+            footerPx = Number(drawerFooterView.getHeight());
+            scrollYPx = Number(drawerScrollView.getScrollY());
+            measured = viewportPx > 0 && contentPx > 0 && footerPx > 0;
+            canScrollDown = measured && scrollYPx === 0 &&
+                drawerScrollView.canScrollVertically(1);
+        } catch (ignoredMeasure) {
+            measured = false;
+            canScrollDown = false;
+        }
+        state.drawerMeasured = measured;
+        state.drawerContentHeightDp = measured ? pxToDp(contentPx) : 0;
+        state.drawerViewportHeightDp = measured ? pxToDp(viewportPx) : 0;
+        state.drawerScrollYDp = measured ? pxToDp(scrollYPx) : 0;
+        state.drawerFooterHeightDp = measured ? pxToDp(footerPx) : 0;
+        state.drawerCanScrollDownAtTop = canScrollDown;
+        state.drawerContentFitsViewport = measured &&
+            contentPx <= viewportPx + dp(1);
+        return state.drawerContentFitsViewport;
     }
 
     function normalizeText(input) {
@@ -492,7 +544,8 @@
         return view;
     }
 
-    function makeChip(text, selected, colors) {
+    function makeChip(text, selected, colors, compact) {
+        var verticalPaddingDp = compact === true ? 4 : 6;
         var view = makeText(text, 10,
             selected ? colors.accentStrong : colors.textSecondary,
             selected);
@@ -500,7 +553,11 @@
         view.setSingleLine(true);
         view.setMaxLines(1);
         view.setEllipsize(TextUtils.TruncateAt.END);
-        view.setPadding(dp(9), dp(6), dp(9), dp(6));
+        view.setPadding(dp(9), dp(verticalPaddingDp),
+            dp(9), dp(verticalPaddingDp));
+        if (compact === true) {
+            state.advancedChipVerticalPaddingDp = verticalPaddingDp;
+        }
         view.setBackground(roundedBackground(
             selected ? colors.accentSoft : colors.surface,
             selected ? colors.accentBorder : colors.stroke, 9));
@@ -1099,7 +1156,7 @@
             selected = items[index].all ?
                 selectedList(kind).length === 0 :
                 contains(selectedList(kind), key);
-            chip = makeChip(label, selected, colors);
+            chip = makeChip(label, selected, colors, true);
             chip.setContentDescription(items[index].all ?
                 "筛选" + kind + " 全部" :
                 "筛选" + kind + " " + key);
@@ -1586,7 +1643,8 @@
         row.setGravity(Gravity.CENTER_VERTICAL);
         for (index = 0; index < items.length; index += 1) {
             chip = makeChip(items[index].label,
-                String(items[index].key) === String(selectedKey), colors);
+                String(items[index].key) === String(selectedKey),
+                colors, true);
             (function (key, view) {
                 view.setOnClickListener(new JavaAdapter(
                     View.OnClickListener, {
@@ -1670,6 +1728,9 @@
         var content = new LinearLayout(appContext);
         var footer = new LinearLayout(appContext);
         var params;
+        drawerScrollView = scroll;
+        drawerContentView = content;
+        drawerFooterView = footer;
         var pinnedRow;
         var sensitiveRow;
         var sortRow;
@@ -1696,8 +1757,8 @@
         drawer.addView(buildAdvancedKeywordInput(colors), params);
 
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(0, 0, 0, dp(14));
-        state.drawerContentBottomPaddingDp = 14;
+        content.setPadding(0, 0, 0, dp(6));
+        state.drawerContentBottomPaddingDp = 6;
         if (counts.sources.length > 0) {
             addSection(content, "来源应用（多选）",
                 counts.sources, "source", colors);
@@ -1736,7 +1797,7 @@
         ], value.sensitiveMode, colors, function (mode) {
             setSensitive(mode);
         }, sensitiveViews);
-        addChoiceSection(content, "敏感内容", sensitiveRow, 8, colors);
+        addChoiceSection(content, "敏感内容", sensitiveRow, 4, colors);
 
         scroll.setVerticalScrollBarEnabled(false);
         scroll.addView(content, new FrameLayout.LayoutParams(
@@ -1762,11 +1823,10 @@
         footer.addView(resetView, params);
         footer.addView(applyView,
             new LinearLayout.LayoutParams(0, dp(40), 1));
-        params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(54));
-        params.topMargin = dp(6);
-        drawer.addView(footer, params);
-        state.drawerFooterTopGapDp = 6;
+        drawer.addView(footer, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(48)));
+        state.drawerFooterTopGapDp = 0;
+        state.drawerFooterHeightDp = 48;
         return drawer;
     }
 
@@ -1834,7 +1894,18 @@
         state.drawerHeightDp = 0;
         state.drawerContentBottomPaddingDp = 0;
         state.drawerFooterTopGapDp = 0;
+        state.drawerFooterHeightDp = 0;
+        state.advancedChipVerticalPaddingDp = 0;
+        state.drawerMeasured = false;
+        state.drawerContentHeightDp = 0;
+        state.drawerViewportHeightDp = 0;
+        state.drawerScrollYDp = 0;
+        state.drawerCanScrollDownAtTop = false;
+        state.drawerContentFitsViewport = false;
         drawerContainer = null;
+        drawerScrollView = null;
+        drawerContentView = null;
+        drawerFooterView = null;
         resultContainer = null;
         resultCountView = null;
         state.sourceOptionCount = counts.sources.length;
@@ -2032,6 +2103,9 @@
                 resultContainer = null;
                 resultCountView = null;
                 drawerContainer = null;
+                drawerScrollView = null;
+                drawerContentView = null;
+                drawerFooterView = null;
                 sourceViews = {};
                 typeViews = {};
                 tagViews = {};
@@ -2085,6 +2159,7 @@
             state.inputFocused = keywordInput !== null &&
                 keywordInput.hasFocus();
         } catch (ignoredFocus) {}
+        updateDrawerMeasurements();
         return {
             attached: state.panelAttached,
             attachedToWindow: attachedToWindow,
@@ -2122,6 +2197,20 @@
                 Number(state.drawerContentBottomPaddingDp),
             drawerFooterTopGapDp:
                 Number(state.drawerFooterTopGapDp),
+            drawerFooterHeightDp:
+                Number(state.drawerFooterHeightDp),
+            advancedChipVerticalPaddingDp:
+                Number(state.advancedChipVerticalPaddingDp),
+            drawerMeasured: state.drawerMeasured === true,
+            drawerContentHeightDp:
+                Number(state.drawerContentHeightDp),
+            drawerViewportHeightDp:
+                Number(state.drawerViewportHeightDp),
+            drawerScrollYDp: Number(state.drawerScrollYDp),
+            drawerCanScrollDownAtTop:
+                state.drawerCanScrollDownAtTop === true,
+            drawerContentFitsViewport:
+                state.drawerContentFitsViewport === true,
             repositorySortUnchanged: true,
             sortScope: state.sortScope,
             backLayerCloseCount: Number(state.backLayerCloseCount),
@@ -2206,6 +2295,14 @@
         state.chipEllipsizeEndEnforced = true;
         state.drawerContentBottomPaddingDp = 0;
         state.drawerFooterTopGapDp = 0;
+        state.drawerFooterHeightDp = 0;
+        state.advancedChipVerticalPaddingDp = 0;
+        state.drawerMeasured = false;
+        state.drawerContentHeightDp = 0;
+        state.drawerViewportHeightDp = 0;
+        state.drawerScrollYDp = 0;
+        state.drawerCanScrollDownAtTop = false;
+        state.drawerContentFitsViewport = false;
         state.advancedKeywordInputPresent = false;
         state.sortOptionCount = 0;
         state.sourceWrapRowCount = 0;
@@ -2234,13 +2331,13 @@
         state.resultCardCount = 0;
         state.resultSourceIconCount = 0;
         state.advancedDrawerVisible = false;
-        state.searchPageStyle = "reference_search_v3";
+        state.searchPageStyle = "reference_search_v4";
         state.lastError = null;
     }
 
     ClipHub.Filter = {
         MODULE_NAME: "ch_11_filter",
-        MODULE_VERSION: 8,
+        MODULE_VERSION: 9,
 
         init: function (context) {
             androidContext = context && context.androidContext ?
