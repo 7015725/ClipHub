@@ -26,4 +26,9 @@ jobs:
           fetch-depth: 0
       - name: Apply exclusive-window fix
         shell: bash
-        run: bash .github/cliphub-home-filter-exclusive/apply.sh
+        run: |
+          set +e
+          bash -x .github/cliphub-home-filter-exclusive/apply.sh > /tmp/cliphub_apply.log 2>&1
+          code=$?
+          tail -n 120 /tmp/cliphub_apply.log
+          exit "$code"
