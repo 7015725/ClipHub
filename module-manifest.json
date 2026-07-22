@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260722.27",
+  "moduleSetVersion": "20260722.28",
   "entryMinVersion": 4,
   "sourceRef": "agent/initialize-project-skeleton",
   "modules": [
@@ -14,7 +14,7 @@
     {"name":"ch_08_window.js","path":"src/ch_08_window.js","sha":"abc37b0a008ccaecac0a0d4a46ef7c76ee40f1db"},
     {"name":"ch_09_list.js","path":"src/ch_09_list.js","sha":"08170700c935fc01242f3080e603290856b927e9"},
     {"name":"ch_10_editor.js","path":"src/ch_10_editor.js","sha":"e2afe5ff6f8d8802d8aca7669b5f8b2033064895"},
-    {"name":"ch_11_filter.js","path":"src/ch_11_filter.js","sha":"5070c06efef172b64e09233798d02204eb47ddf4"},
+    {"name":"ch_11_filter.js","path":"src/ch_11_filter.js","sha":"9195cfceda280395940a1c6abb9046ad9386dc64"},
     {"name":"ch_12_translation.js","path":"src/ch_12_translation.js","sha":"d521a3010371f77171bd6338a69197b5e8639d1c"},
     {"name":"ch_13_settings.js","path":"src/ch_13_settings.js","sha":"9d9432105b3ceac7247d1b0e3b5177f91e3d6b54"},
     {"name":"ch_14_event_bus.js","path":"src/ch_14_event_bus.js","sha":"1340517a82be26bb0bbf71454c246067344ce019"},
