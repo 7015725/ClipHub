@@ -86,7 +86,9 @@ jobs:
             git commit -m "test: upgrade content tags settings probe 045 to v2"
 
             git rm -rf .github/cliphub-hotfix-046 \
-              .github/workflows/cliphub-hotfix-046.yml
+              .github/workflows/cliphub-hotfix-046.yml \
+              .github/cliphub-hotfix-046-trigger.txt \
+              .github/cliphub-hotfix-046-trigger-branch.txt
             git commit -m "chore: remove completed hotfix 046 automation"
             git push origin HEAD:agent/initialize-project-skeleton
           } > /tmp/cliphub_hotfix_046.log 2>&1
