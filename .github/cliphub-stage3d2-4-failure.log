@@ -1,80 +1,12 @@
-++ git hash-object src/ch_09_list.js
-+ actual=30e7b1b76aca447ab26b0de695aae3ab0b51b59e
-+ '[' 30e7b1b76aca447ab26b0de695aae3ab0b51b59e '!=' 30e7b1b76aca447ab26b0de695aae3ab0b51b59e ']'
-+ check_hash src/ch_10_editor.js 8de662133eee7c5dcb3ce8ffafb496f02632d5a2
-+ local path=src/ch_10_editor.js expected=8de662133eee7c5dcb3ce8ffafb496f02632d5a2 actual
-++ git hash-object src/ch_10_editor.js
-+ actual=8de662133eee7c5dcb3ce8ffafb496f02632d5a2
-+ '[' 8de662133eee7c5dcb3ce8ffafb496f02632d5a2 '!=' 8de662133eee7c5dcb3ce8ffafb496f02632d5a2 ']'
-+ check_hash src/ch_11_filter.js b24a88aaac0bb2d3dc9251135845b2b2010914ce
-+ local path=src/ch_11_filter.js expected=b24a88aaac0bb2d3dc9251135845b2b2010914ce actual
-++ git hash-object src/ch_11_filter.js
-+ actual=b24a88aaac0bb2d3dc9251135845b2b2010914ce
-+ '[' b24a88aaac0bb2d3dc9251135845b2b2010914ce '!=' b24a88aaac0bb2d3dc9251135845b2b2010914ce ']'
-+ check_hash src/ch_12_translation.js 8cae18cda1737b63c93d09409e24903cac3bc2a6
-+ local path=src/ch_12_translation.js expected=8cae18cda1737b63c93d09409e24903cac3bc2a6 actual
-++ git hash-object src/ch_12_translation.js
-+ actual=8cae18cda1737b63c93d09409e24903cac3bc2a6
-+ '[' 8cae18cda1737b63c93d09409e24903cac3bc2a6 '!=' 8cae18cda1737b63c93d09409e24903cac3bc2a6 ']'
-+ check_hash src/ch_13_settings.js fe5b06b405ed5e9a5f26f2ddefc8dab9337fdc8e
-+ local path=src/ch_13_settings.js expected=fe5b06b405ed5e9a5f26f2ddefc8dab9337fdc8e actual
-++ git hash-object src/ch_13_settings.js
-+ actual=fe5b06b405ed5e9a5f26f2ddefc8dab9337fdc8e
-+ '[' fe5b06b405ed5e9a5f26f2ddefc8dab9337fdc8e '!=' fe5b06b405ed5e9a5f26f2ddefc8dab9337fdc8e ']'
-+ check_hash src/ch_15_app.js 1c68820940b6cd1f74213a03476bd681f22e0031
-+ local path=src/ch_15_app.js expected=1c68820940b6cd1f74213a03476bd681f22e0031 actual
-++ git hash-object src/ch_15_app.js
-+ actual=1c68820940b6cd1f74213a03476bd681f22e0031
-+ '[' 1c68820940b6cd1f74213a03476bd681f22e0031 '!=' 1c68820940b6cd1f74213a03476bd681f22e0031 ']'
-+ check_hash module-manifest.json f28d69bc067dc71ef0a82647883d55a7a1cb6934
-+ local path=module-manifest.json expected=f28d69bc067dc71ef0a82647883d55a7a1cb6934 actual
-++ git hash-object module-manifest.json
-+ actual=f28d69bc067dc71ef0a82647883d55a7a1cb6934
-+ '[' f28d69bc067dc71ef0a82647883d55a7a1cb6934 '!=' f28d69bc067dc71ef0a82647883d55a7a1cb6934 ']'
-+ cat
-+ cp .github/cliphub-stage3d2-4/settings_v5.js src/ch_13_settings.js
-+ python3 .github/cliphub-stage3d2-4/patch.py
-+ python3 -
-+ cp .github/cliphub-stage3d2-4/probe045_impl.js probes/cliphub_content_tags_settings_probe_045_impl.js
-+ cat
-+ for file in src/ch_04_clipboard.js src/ch_05_classifier.js src/ch_06_repository.js src/ch_09_list.js src/ch_10_editor.js src/ch_11_filter.js src/ch_12_translation.js src/ch_13_settings.js src/ch_15_app.js probes/cliphub_content_tags_settings_probe_045_impl.js
-+ node --check src/ch_04_clipboard.js
-+ for file in src/ch_04_clipboard.js src/ch_05_classifier.js src/ch_06_repository.js src/ch_09_list.js src/ch_10_editor.js src/ch_11_filter.js src/ch_12_translation.js src/ch_13_settings.js src/ch_15_app.js probes/cliphub_content_tags_settings_probe_045_impl.js
-+ node --check src/ch_05_classifier.js
-+ for file in src/ch_04_clipboard.js src/ch_05_classifier.js src/ch_06_repository.js src/ch_09_list.js src/ch_10_editor.js src/ch_11_filter.js src/ch_12_translation.js src/ch_13_settings.js src/ch_15_app.js probes/cliphub_content_tags_settings_probe_045_impl.js
-+ node --check src/ch_06_repository.js
-+ for file in src/ch_04_clipboard.js src/ch_05_classifier.js src/ch_06_repository.js src/ch_09_list.js src/ch_10_editor.js src/ch_11_filter.js src/ch_12_translation.js src/ch_13_settings.js src/ch_15_app.js probes/cliphub_content_tags_settings_probe_045_impl.js
-+ node --check src/ch_09_list.js
-+ for file in src/ch_04_clipboard.js src/ch_05_classifier.js src/ch_06_repository.js src/ch_09_list.js src/ch_10_editor.js src/ch_11_filter.js src/ch_12_translation.js src/ch_13_settings.js src/ch_15_app.js probes/cliphub_content_tags_settings_probe_045_impl.js
-+ node --check src/ch_10_editor.js
-+ for file in src/ch_04_clipboard.js src/ch_05_classifier.js src/ch_06_repository.js src/ch_09_list.js src/ch_10_editor.js src/ch_11_filter.js src/ch_12_translation.js src/ch_13_settings.js src/ch_15_app.js probes/cliphub_content_tags_settings_probe_045_impl.js
-+ node --check src/ch_11_filter.js
-+ for file in src/ch_04_clipboard.js src/ch_05_classifier.js src/ch_06_repository.js src/ch_09_list.js src/ch_10_editor.js src/ch_11_filter.js src/ch_12_translation.js src/ch_13_settings.js src/ch_15_app.js probes/cliphub_content_tags_settings_probe_045_impl.js
-+ node --check src/ch_12_translation.js
-+ for file in src/ch_04_clipboard.js src/ch_05_classifier.js src/ch_06_repository.js src/ch_09_list.js src/ch_10_editor.js src/ch_11_filter.js src/ch_12_translation.js src/ch_13_settings.js src/ch_15_app.js probes/cliphub_content_tags_settings_probe_045_impl.js
-+ node --check src/ch_13_settings.js
-+ for file in src/ch_04_clipboard.js src/ch_05_classifier.js src/ch_06_repository.js src/ch_09_list.js src/ch_10_editor.js src/ch_11_filter.js src/ch_12_translation.js src/ch_13_settings.js src/ch_15_app.js probes/cliphub_content_tags_settings_probe_045_impl.js
-+ node --check src/ch_15_app.js
-+ for file in src/ch_04_clipboard.js src/ch_05_classifier.js src/ch_06_repository.js src/ch_09_list.js src/ch_10_editor.js src/ch_11_filter.js src/ch_12_translation.js src/ch_13_settings.js src/ch_15_app.js probes/cliphub_content_tags_settings_probe_045_impl.js
-+ node --check probes/cliphub_content_tags_settings_probe_045_impl.js
-+ python3 -
-+ git diff --check
-+ git config user.name 'ClipHub Automation'
-+ git config user.email actions@github.com
-+ git add src/ch_04_clipboard.js src/ch_05_classifier.js src/ch_06_repository.js src/ch_09_list.js src/ch_10_editor.js src/ch_11_filter.js src/ch_12_translation.js src/ch_13_settings.js src/ch_15_app.js module-manifest.json docs/阶段3D2-4内容标签翻译设置实施说明.md probes/cliphub_content_tags_settings_probe_045_impl.js
-+ git commit -m 'feat: add tags translation popup and settings surface'
-[agent/initialize-project-skeleton 579cfd4] feat: add tags translation popup and settings surface
- 12 files changed, 2542 insertions(+), 126 deletions(-)
- create mode 100644 "docs/\351\230\266\346\256\2653D2-4\345\206\205\345\256\271\346\240\207\347\255\276\347\277\273\350\257\221\350\256\276\347\275\256\345\256\236\346\226\275\350\257\264\346\230\216.md"
- create mode 100644 probes/cliphub_content_tags_settings_probe_045_impl.js
-++ git rev-parse HEAD
-+ implementation_commit=579cfd45cd58c4b0e75b9d88bd7bfa44e5114909
-+ cat
-+ cat
-+ node --check probes/cliphub_content_tags_settings_probe_045.js
-+ git diff --check
-+ git add probes/cliphub_content_tags_settings_probe_045.js docs/内容标签翻译设置探测045说明.md
-+ git rm -r .github/cliphub-stage3d2-4 .github/workflows/cliphub-stage3d2-4.yml
-error: the following file has local modifications:
-    .github/cliphub-stage3d2-4/patch.py
-(use --cached to keep the file, or -f to force removal)
++ set -euo pipefail
++ BRANCH=agent/initialize-project-skeleton
++ HELPER_DIR=.github/cliphub-stage3d2-4
++ WORKFLOW_PATH=.github/workflows/cliphub-stage3d2-4.yml
++ check_hash src/ch_04_clipboard.js 70a1a10215c75012b47bd06eda9a2b271e63f248
++ local path=src/ch_04_clipboard.js expected=70a1a10215c75012b47bd06eda9a2b271e63f248 actual
+++ git hash-object src/ch_04_clipboard.js
++ actual=9dbb0aa8e3bc7318ab6ddfc39fa9c67c8ed739ae
++ '[' 9dbb0aa8e3bc7318ab6ddfc39fa9c67c8ed739ae '!=' 70a1a10215c75012b47bd06eda9a2b271e63f248 ']'
++ echo 'Unexpected base for src/ch_04_clipboard.js: 9dbb0aa8e3bc7318ab6ddfc39fa9c67c8ed739ae != 70a1a10215c75012b47bd06eda9a2b271e63f248'
+Unexpected base for src/ch_04_clipboard.js: 9dbb0aa8e3bc7318ab6ddfc39fa9c67c8ed739ae != 70a1a10215c75012b47bd06eda9a2b271e63f248
++ exit 1
