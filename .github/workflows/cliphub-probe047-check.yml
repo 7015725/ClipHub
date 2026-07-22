@@ -1,0 +1,51 @@
+name: Check ClipHub probe 047
+
+on:
+  pull_request:
+    branches:
+      - agent/initialize-project-skeleton
+    paths:
+      - .github/cliphub-probe047-check-trigger.txt
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/initialize-project-skeleton
+      - name: Validate probe 047
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check probes/cliphub_tag_management_probe_047_impl.js
+          node --check probes/cliphub_tag_management_probe_047.js
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          for name in [
+              'probes/cliphub_tag_management_probe_047_impl.js',
+              'probes/cliphub_tag_management_probe_047.js'
+          ]:
+              text = Path(name).read_text(encoding='utf-8')
+              if re.search(r'(?m)^\s*(?:let|const)\s+', text):
+                  raise SystemExit(name + ': let/const detected')
+              if '=>' in text or '`' in text:
+                  raise SystemExit(name + ': ES6 syntax detected')
+          impl = Path('probes/cliphub_tag_management_probe_047_impl.js').read_text(encoding='utf-8')
+          for marker in [
+              'probeVersion: 1',
+              'REQUIRED_SET = "20260723.04"',
+              'transactionalTagSelectionRequired',
+              'settingsModuleVersion === 7',
+              'editorModuleVersion === 10',
+              'filterModuleVersion === 14'
+          ]:
+              if marker not in impl:
+                  raise SystemExit('missing marker: ' + marker)
+          PY
+          git diff --check
