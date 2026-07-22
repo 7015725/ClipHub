@@ -282,7 +282,7 @@
             result.phoneRow = global.ClipHub.Repository.getItem(result.phoneId, false);
             result.typeOptions = global.ClipHub.Repository.listContentTypeOptions();
             result.typeFilterIgnoredCount = global.ClipHub.Repository.listItems({
-                contentTypes: ["url"], limit: 20
+                contentTypes: ["url"], limit: 100
             }).length;
 
             result.tagA = Number(global.ClipHub.Repository.insertTag({
@@ -315,6 +315,7 @@
                     panel.resultCardCount === 20 &&
                     panel.loadedResultCount === 20 &&
                     panel.resultHasMore === true &&
+                    panel.resultCanScroll === true &&
                     panel.loadMorePresent === true;
             }, 1800);
             result.firstPageState = global.ClipHub.Filter.getPanelState();
@@ -437,12 +438,13 @@
                 String(result.urlRow.content_type) === "text" &&
                 String(result.phoneRow.content_type) === "text" &&
                 result.typeOptions.length === 0 &&
-                result.typeFilterIgnoredCount === 3 &&
+                result.typeFilterIgnoredCount === 28 &&
                 result.urlTags.length === 3 &&
                 result.reorderTags && result.reorderTags.ok === true &&
                 result.rootReady === true &&
                 result.firstPageState.resultCardCount === 20 &&
                 result.firstPageState.resultHasMore === true &&
+                result.firstPageState.resultCanScroll === true &&
                 result.loadMoreClick === true &&
                 result.loadMoreReady === true &&
                 result.afterLoadMoreState.resultCardCount >= 28 &&
