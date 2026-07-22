@@ -1,0 +1,29 @@
+name: Apply ClipHub editor focus handoff
+
+on:
+  pull_request:
+    branches:
+      - agent/initialize-project-skeleton
+    paths:
+      - .github/cliphub-editor-focus-handoff-trigger.txt
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cliphub-editor-focus-handoff
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.repository == '7015725/ClipHub'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/initialize-project-skeleton
+          fetch-depth: 0
+      - name: Apply editor focus handoff
+        shell: bash
+        run: bash .github/cliphub-editor-focus-handoff/apply.sh
