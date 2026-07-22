@@ -174,6 +174,13 @@
         saveThreadName: null,
         tagThreadId: null,
         tagThreadName: null,
+        delayedCallbackPostCount: 0,
+        delayedCallbackRunCount: 0,
+        delayedCallbackCancelCount: 0,
+        delayedCallbackErrorCount: 0,
+        pendingDelayedCallbackCount: 0,
+        postShutdownCallbackAttemptCount: 0,
+        lastDelayedCallbackError: null,
         lastError: null
     };
 
@@ -184,6 +191,10 @@
 
     function runOnMainSync(callback, timeoutMs) {
         var mainLooper = Looper.getMainLooper();
+        if (mainHandler === null) {
+            return { ok: false,
+                error: new Error("Editor main handler unavailable") };
+        }
         var currentLooper = Looper.myLooper();
         var box;
         var latch;
@@ -237,6 +248,54 @@
 
     function pxToDp(value) {
         return Math.round(Number(value) / density);
+    }
+
+    function postEditorDelayed(callback, delayMs, requireAttached) {
+        var generation = imePollGeneration;
+        var handler = mainHandler;
+        var runnable;
+        var posted;
+        if (handler === null || !ready || typeof callback !== "function") {
+            return false;
+        }
+        state.delayedCallbackPostCount += 1;
+        state.pendingDelayedCallbackCount += 1;
+        runnable = new Packages.java.lang.Runnable({
+            run: function () {
+                state.pendingDelayedCallbackCount = Math.max(0,
+                    Number(state.pendingDelayedCallbackCount) - 1);
+                if (generation !== imePollGeneration || !ready ||
+                        appContext === null || windowManager === null ||
+                        (requireAttached === true &&
+                            (!state.attached || panelRoot === null))) {
+                    state.delayedCallbackCancelCount += 1;
+                    if (!ready) {
+                        state.postShutdownCallbackAttemptCount += 1;
+                    }
+                    return;
+                }
+                try {
+                    callback();
+                    state.delayedCallbackRunCount += 1;
+                } catch (error) {
+                    state.delayedCallbackErrorCount += 1;
+                    state.lastDelayedCallbackError = String(error);
+                    state.lastError = String(error);
+                }
+            }
+        });
+        try { posted = handler.postDelayed(runnable, Number(delayMs || 0)); }
+        catch (postError) {
+            posted = false;
+            state.lastDelayedCallbackError = String(postError);
+        }
+        if (!posted) {
+            state.pendingDelayedCallbackCount = Math.max(0,
+                Number(state.pendingDelayedCallbackCount) - 1);
+            state.delayedCallbackErrorCount += 1;
+            return false;
+        }
+        return true;
     }
 
     function isDarkMode() {
@@ -606,42 +665,34 @@
         state.rootFocusRequestedAfterImeHide = requested || focused;
         state.rootFocusedAfterImeHide = focused;
         if (!focused && mainHandler !== null) {
-            mainHandler.postDelayed(new Packages.java.lang.Runnable({
-                run: function () {
-                    var previous = -1;
-                    var retried = false;
-                    if (!state.attached || state.keyboardVisible ||
-                            panelRoot === null || contentInput === null) {
-                        return;
-                    }
-                    try {
-                        previous = Number(
-                            panelRoot.getDescendantFocusability());
-                    } catch (ignoredPrevious) {}
-                    try {
-                        panelRoot.setFocusable(true);
-                        panelRoot.setFocusableInTouchMode(true);
-                        panelRoot.setDescendantFocusability(
-                            ViewGroup.FOCUS_BLOCK_DESCENDANTS);
-                        contentInput.clearFocus();
-                        retried = panelRoot.requestFocus();
-                        state.focusReleasedAfterImeHide =
-                            !contentInput.hasFocus();
-                        state.rootFocusRequestedAfterImeHide =
-                            state.rootFocusRequestedAfterImeHide || retried;
-                        state.rootFocusedAfterImeHide =
-                            panelRoot.isFocused();
-                    } catch (retryError) {
-                        state.lastError = String(retryError);
-                    } finally {
-                        if (previous >= 0 && panelRoot !== null) {
-                            try {
-                                panelRoot.setDescendantFocusability(previous);
-                            } catch (ignoredRestore) {}
-                        }
+            postEditorDelayed(function () {
+                var previous = -1;
+                var retried = false;
+                if (!state.attached || state.keyboardVisible ||
+                        panelRoot === null || contentInput === null) {
+                    return;
+                }
+                try {
+                    previous = Number(panelRoot.getDescendantFocusability());
+                } catch (ignoredPrevious) {}
+                try {
+                    panelRoot.setFocusable(true);
+                    panelRoot.setFocusableInTouchMode(true);
+                    panelRoot.setDescendantFocusability(
+                        ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+                    contentInput.clearFocus();
+                    retried = panelRoot.requestFocus();
+                    state.focusReleasedAfterImeHide = !contentInput.hasFocus();
+                    state.rootFocusRequestedAfterImeHide =
+                        state.rootFocusRequestedAfterImeHide || retried;
+                    state.rootFocusedAfterImeHide = panelRoot.isFocused();
+                } finally {
+                    if (previous >= 0 && panelRoot !== null) {
+                        try { panelRoot.setDescendantFocusability(previous); }
+                        catch (ignoredRestore) {}
                     }
                 }
-            }), 80);
+            }, 80, true);
         }
         return released && (requested || focused);
     }
@@ -750,8 +801,10 @@
 
     function pollEditorIme(generation) {
         var ime;
-        if (generation !== imePollGeneration || !state.attached ||
-                panelRoot === null || state.mode === "tags") {
+        if (generation !== imePollGeneration || !ready ||
+                appContext === null || windowManager === null ||
+                !state.attached || panelRoot === null ||
+                state.mode === "tags") {
             return false;
         }
         state.imePollCount += 1;
@@ -794,20 +847,29 @@
             layoutListener = new JavaAdapter(
                 Packages.android.view.ViewTreeObserver.OnGlobalLayoutListener, {
                     onGlobalLayout: function () {
-                        var ime = readImeState();
-                        applyEditorImeLayout(ime);
-                        measureEditorLayout(ime);
+                        var ime;
+                        if (!ready || !state.attached || panelRoot === null ||
+                                appContext === null || windowManager === null) {
+                            return;
+                        }
+                        try {
+                            ime = readImeState();
+                            applyEditorImeLayout(ime);
+                            measureEditorLayout(ime);
+                        } catch (error) {
+                            state.delayedCallbackErrorCount += 1;
+                            state.lastDelayedCallbackError = String(error);
+                            state.lastError = String(error);
+                        }
                     }
                 });
             layoutObserver.addOnGlobalLayoutListener(layoutListener);
             startEditorImePolling();
-            mainHandler.postDelayed(new Packages.java.lang.Runnable({
-                run: function () {
-                    var ime = readImeState();
-                    applyEditorImeLayout(ime);
-                    measureEditorLayout(ime);
-                }
-            }), 180);
+            postEditorDelayed(function () {
+                var ime = readImeState();
+                applyEditorImeLayout(ime);
+                measureEditorLayout(ime);
+            }, 180, true);
             return true;
         } catch (error) {
             state.lastError = String(error);
@@ -833,9 +895,9 @@
                 }
             }));
         }
-        mainHandler.postDelayed(new Packages.java.lang.Runnable({
-            run: function () { measureEditorLayout(); }
-        }), 120);
+        postEditorDelayed(function () {
+            measureEditorLayout();
+        }, 120, true);
         return true;
     }
 
@@ -881,10 +943,18 @@
 
     function displayMetrics() {
         var metrics = new DisplayMetrics();
-        try {
-            windowManager.getDefaultDisplay().getRealMetrics(metrics);
-        } catch (ignored) {
-            metrics = appContext.getResources().getDisplayMetrics();
+        if (windowManager !== null) {
+            try {
+                windowManager.getDefaultDisplay().getRealMetrics(metrics);
+                if (Number(metrics.widthPixels) > 0 &&
+                        Number(metrics.heightPixels) > 0) {
+                    return metrics;
+                }
+            } catch (ignoredWindow) {}
+        }
+        if (appContext !== null) {
+            try { return appContext.getResources().getDisplayMetrics(); }
+            catch (ignoredContext) {}
         }
         return metrics;
     }
@@ -928,17 +998,13 @@
         state.inputFocused = target.hasFocus();
         state.keyboardRequestCount += 1;
         state.keyboardRequestedOnOpen = true;
-        mainHandler.postDelayed(new Packages.java.lang.Runnable({
-            run: function () {
-                try {
-                    if (target !== null && inputMethodManager !== null) {
-                        inputMethodManager.showSoftInput(
-                            target, InputMethodManager.SHOW_IMPLICIT);
-                        state.inputFocused = target.hasFocus();
-                    }
-                } catch (ignored) {}
+        postEditorDelayed(function () {
+            if (target !== null && inputMethodManager !== null) {
+                inputMethodManager.showSoftInput(
+                    target, InputMethodManager.SHOW_IMPLICIT);
+                state.inputFocused = target.hasFocus();
             }
-        }), 120);
+        }, 120, true);
         return state.inputFocused;
     }
 
@@ -2056,6 +2122,19 @@
             windowLayoutUpdateCount:
                 Number(state.windowLayoutUpdateCount),
             imePollCount: Number(state.imePollCount),
+            delayedCallbackPostCount:
+                Number(state.delayedCallbackPostCount),
+            delayedCallbackRunCount:
+                Number(state.delayedCallbackRunCount),
+            delayedCallbackCancelCount:
+                Number(state.delayedCallbackCancelCount),
+            delayedCallbackErrorCount:
+                Number(state.delayedCallbackErrorCount),
+            pendingDelayedCallbackCount:
+                Number(state.pendingDelayedCallbackCount),
+            postShutdownCallbackAttemptCount:
+                Number(state.postShutdownCallbackAttemptCount),
+            lastDelayedCallbackError: state.lastDelayedCallbackError,
             normalPanelHeightDp: Number(state.normalPanelHeightDp),
             currentPanelHeightDp: Number(state.currentPanelHeightDp),
             currentPanelTopDp: Number(state.currentPanelTopDp),
@@ -2123,6 +2202,11 @@
             keyboardAvoidanceApplyCount: 0,
             keyboardAvoidanceRestoreCount: 0,
             windowLayoutUpdateCount: 0, imePollCount: 0,
+            delayedCallbackPostCount: 0, delayedCallbackRunCount: 0,
+            delayedCallbackCancelCount: 0, delayedCallbackErrorCount: 0,
+            pendingDelayedCallbackCount: 0,
+            postShutdownCallbackAttemptCount: 0,
+            lastDelayedCallbackError: null,
             normalPanelHeightDp: 0, currentPanelHeightDp: 0,
             currentPanelTopDp: 0, focusReleasedAfterImeHide: false,
             focusReleaseCount: 0,
@@ -2142,7 +2226,7 @@
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 10,
+        MODULE_VERSION: 11,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
@@ -2196,9 +2280,9 @@
         hideKeyboard: function () {
             return requireMain(runOnMainSync(function () {
                 hideKeyboardOnMain();
-                mainHandler.postDelayed(new Packages.java.lang.Runnable({
-                    run: function () { measureEditorLayout(); }
-                }), 160);
+                postEditorDelayed(function () {
+                    measureEditorLayout();
+                }, 160, true);
                 return true;
             }, 2500));
         },
@@ -2281,9 +2365,10 @@
             return renameTag(Number(tagId), name);
         },
         shutdown: function () {
+            ready = false;
+            stopEditorImePolling();
             try { closePanel("shutdown"); } catch (ignoredClose) {}
             clearViews();
-            ready = false;
             androidContext = null;
             appContext = null;
             windowManager = null;
