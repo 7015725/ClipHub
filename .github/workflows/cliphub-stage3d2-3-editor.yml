@@ -68,10 +68,10 @@ jobs:
             git reset --hard HEAD
             git clean -fd
             mkdir -p .github/cliphub-stage3d2-3-editor-diagnostic
-            cp /tmp/editor-ui.log .github/cliphub-stage3d2-3-editor-diagnostic/error.log
+            cp /tmp/editor-ui.log .github/cliphub-stage3d2-3-editor-diagnostic/error.txt
             git config user.name "ClipHub Automation"
             git config user.email "actions@github.com"
-            git add .github/cliphub-stage3d2-3-editor-diagnostic/error.log
+            git add -f .github/cliphub-stage3d2-3-editor-diagnostic/error.txt
             git commit -m "diagnostic: capture editor UI workflow failure"
             git push --force origin HEAD:agent/cliphub-stage3d2-3-editor-diagnostic
             exit "$status"
