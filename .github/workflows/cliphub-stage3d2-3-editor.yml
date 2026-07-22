@@ -24,6 +24,39 @@ jobs:
         with:
           ref: agent/initialize-project-skeleton
           fetch-depth: 0
+      - name: Align current development plan base
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/cliphub-stage3d2-3-editor/apply.sh')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace(
+              '5f3a58a2772f7f2ec9a67c943d4871bb54d2b47f',
+              'e057cd8f6d35283d7c26071334815ea1e6426558', 1)
+          old = '''- [x] 发布模块集 `20260722.31`
+          - [x] 新增探测 038
+          - [ ] 运行探测 038 并回传两张未裁剪截图与完整 JSON
+          - [ ] 确认搜索 / 筛选页最终视觉基线
+
+          当前边界：第四轮使用 Android 实际 View 测量判定首屏是否完整容纳，不再只检查配置值。Repository、排序窗口和 Navigation 语义保持不变。
+          #### 后续页面
+
+          - [ ] 3D2-3 复刻新增 / 编辑页'''
+          current = '''- [x] 发布模块集 `20260722.31`
+          - [x] 新增探测 038
+          - [ ] 运行探测 038 并回传两张未裁剪截图与完整 JSON
+          - [ ] 确认搜索 / 筛选页最终视觉基线
+
+          当前边界：第四轮只压缩高级筛选内部纵向占用并增加真实布局测量。搜索历史胶囊、Repository、系统侧滑、三键返回、最近任务和后台隐藏链均不改变。
+          #### 后续页面
+
+          - [ ] 3D2-3 复刻新增 / 编辑页'''
+          if old not in text:
+              raise SystemExit('embedded development plan marker not found')
+          text = text.replace(old, current, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
       - name: Apply new and edit UI
         shell: bash
         run: bash .github/cliphub-stage3d2-3-editor/apply.sh
