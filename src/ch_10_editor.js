@@ -10,6 +10,7 @@
     var View = Packages.android.view.View;
     var Gravity = Packages.android.view.Gravity;
     var WindowManager = Packages.android.view.WindowManager;
+    var WindowInsets = Packages.android.view.WindowInsets;
     var PixelFormat = Packages.android.graphics.PixelFormat;
     var Color = Packages.android.graphics.Color;
     var Rect = Packages.android.graphics.Rect;
@@ -50,6 +51,8 @@
     var contentScrollView = null;
     var layoutObserver = null;
     var layoutListener = null;
+    var imePollRunnable = null;
+    var imePollGeneration = 0;
     var createTagView = null;
     var tagViews = {};
     var tagDeleteViews = {};
@@ -127,6 +130,19 @@
         keyboardShowCount: 0,
         keyboardHideCount: 0,
         lastKeyboardVisible: false,
+        imeInsetsSupported: false,
+        imeInsetSource: "none",
+        imeInsetBottomDp: 0,
+        systemTopInsetDp: 0,
+        availableAboveImeDp: 0,
+        keyboardAvoidanceApplied: false,
+        keyboardAvoidanceApplyCount: 0,
+        keyboardAvoidanceRestoreCount: 0,
+        windowLayoutUpdateCount: 0,
+        imePollCount: 0,
+        normalPanelHeightDp: 0,
+        currentPanelHeightDp: 0,
+        currentPanelTopDp: 0,
         panelGravity: "center",
         panelBottomMarginDp: 0,
         addThreadId: null,
@@ -359,32 +375,202 @@
         return length;
     }
 
-    function measureEditorLayout() {
+    function statusBarHeightPx() {
+        var resources;
+        var resourceId;
+        try {
+            resources = appContext.getResources();
+            resourceId = Number(resources.getIdentifier(
+                "status_bar_height", "dimen", "android"));
+            if (resourceId > 0) {
+                return Number(resources.getDimensionPixelSize(resourceId));
+            }
+        } catch (ignored) {}
+        return dp(24);
+    }
+
+    function inputMethodVisibleHeightPx() {
+        var height = 0;
+        var method;
+        var parameterTypes;
+        var argumentsArray;
+        if (inputMethodManager === null) { return 0; }
+        try {
+            height = Number(inputMethodManager
+                .getInputMethodWindowVisibleHeight());
+            if (isFinite(height) && height > 0) { return height; }
+        } catch (ignoredDirect) {}
+        try {
+            parameterTypes = Packages.java.lang.reflect.Array.newInstance(
+                Packages.java.lang.Class, 0);
+            argumentsArray = Packages.java.lang.reflect.Array.newInstance(
+                Packages.java.lang.Object, 0);
+            method = inputMethodManager.getClass().getDeclaredMethod(
+                "getInputMethodWindowVisibleHeight", parameterTypes);
+            method.setAccessible(true);
+            height = Number(method.invoke(inputMethodManager, argumentsArray));
+            return isFinite(height) && height > 0 ? height : 0;
+        } catch (ignoredReflection) { return 0; }
+    }
+
+    function readImeState() {
+        var metrics = displayMetrics();
+        var output = {
+            visible: false,
+            bottomPx: 0,
+            topInsetPx: statusBarHeightPx(),
+            source: "none",
+            supported: false,
+            screenHeightPx: Number(metrics.heightPixels),
+            visibleBottomPx: Number(metrics.heightPixels)
+        };
+        var rootInsets;
+        var imeMask;
+        var systemMask;
+        var imeInsets;
+        var systemInsets;
+        var immHeight;
         var frame;
+        var frameGap;
+        if (panelRoot === null) { return output; }
+        if (Build.VERSION.SDK_INT >= 30) {
+            try {
+                rootInsets = panelRoot.getRootWindowInsets();
+                if (rootInsets !== null) {
+                    imeMask = WindowInsets.Type.ime();
+                    systemMask = WindowInsets.Type.systemBars();
+                    imeInsets = rootInsets.getInsets(imeMask);
+                    systemInsets = rootInsets.getInsets(systemMask);
+                    output.bottomPx = Math.max(0,
+                        Number(imeInsets.bottom));
+                    output.topInsetPx = Math.max(output.topInsetPx,
+                        Number(systemInsets.top));
+                    output.visible = rootInsets.isVisible(imeMask) ||
+                        output.bottomPx >= dp(120);
+                    output.source = "root_window_insets";
+                    output.supported = true;
+                }
+            } catch (ignoredInsets) {}
+        }
+        immHeight = inputMethodVisibleHeightPx();
+        if (immHeight > output.bottomPx) {
+            output.bottomPx = immHeight;
+            output.visible = immHeight >= dp(120);
+            output.source = "input_method_visible_height";
+            output.supported = true;
+        }
+        try {
+            frame = new Rect();
+            panelRoot.getWindowVisibleDisplayFrame(frame);
+            output.topInsetPx = Math.max(output.topInsetPx,
+                Number(frame.top));
+            frameGap = Math.max(0,
+                Number(metrics.heightPixels) - Number(frame.bottom));
+            if (frameGap > output.bottomPx && frameGap >= dp(120)) {
+                output.bottomPx = frameGap;
+                output.visible = true;
+                output.source = "visible_display_frame";
+                output.supported = true;
+            }
+        } catch (ignoredFrame) {}
+        if (!output.visible) { output.bottomPx = 0; }
+        output.visibleBottomPx = Number(metrics.heightPixels) -
+            Number(output.bottomPx);
+        return output;
+    }
+
+    function applyEditorImeLayout(ime) {
+        var metrics;
+        var normalHeightPx;
+        var targetHeightPx;
+        var targetTopPx;
+        var targetGravity;
+        var targetY;
+        var keyboardTopPx;
+        var topSafePx;
+        var availablePx;
+        var changed = false;
+        var wasApplied;
+        if (panelRoot === null || panelParams === null ||
+                state.mode === "tags") {
+            return false;
+        }
+        metrics = displayMetrics();
+        normalHeightPx = dp(Math.max(300,
+            Number(state.normalPanelHeightDp || state.panelHeightDp || 590)));
+        wasApplied = state.keyboardAvoidanceApplied === true;
+        if (ime.visible && Number(ime.bottomPx) >= dp(120)) {
+            keyboardTopPx = Math.max(0,
+                Number(metrics.heightPixels) - Number(ime.bottomPx));
+            topSafePx = Math.max(dp(6), Number(ime.topInsetPx));
+            availablePx = Math.max(dp(280),
+                keyboardTopPx - topSafePx - dp(6));
+            targetHeightPx = Math.min(normalHeightPx, availablePx);
+            targetTopPx = Math.max(topSafePx,
+                keyboardTopPx - dp(6) - targetHeightPx);
+            targetGravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+            targetY = targetTopPx;
+            state.availableAboveImeDp = pxToDp(availablePx);
+            state.keyboardAvoidanceApplied = true;
+            if (!wasApplied) { state.keyboardAvoidanceApplyCount += 1; }
+            state.panelGravity = "ime_top";
+            state.panelBottomMarginDp = 6;
+        } else {
+            targetHeightPx = normalHeightPx;
+            targetGravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+            targetY = dp(10);
+            targetTopPx = Math.max(0,
+                Number(metrics.heightPixels) - targetHeightPx - targetY);
+            state.availableAboveImeDp = pxToDp(Number(metrics.heightPixels));
+            state.keyboardAvoidanceApplied = false;
+            if (wasApplied) { state.keyboardAvoidanceRestoreCount += 1; }
+            state.panelGravity = "bottom";
+            state.panelBottomMarginDp = 10;
+        }
+        if (Number(panelParams.height) !== Number(targetHeightPx)) {
+            panelParams.height = targetHeightPx;
+            changed = true;
+        }
+        if (Number(panelParams.gravity) !== Number(targetGravity)) {
+            panelParams.gravity = targetGravity;
+            changed = true;
+        }
+        if (Number(panelParams.y) !== Number(targetY)) {
+            panelParams.y = targetY;
+            changed = true;
+        }
+        state.currentPanelHeightDp = pxToDp(targetHeightPx);
+        state.currentPanelTopDp = pxToDp(targetTopPx);
+        if (changed && state.attached && panelRoot.isAttachedToWindow()) {
+            windowManager.updateViewLayout(panelRoot, panelParams);
+            state.windowLayoutUpdateCount += 1;
+        }
+        return changed;
+    }
+
+    function measureEditorLayout(imeSnapshot) {
+        var ime = imeSnapshot || readImeState();
         var metrics;
         var visibleHeightPx = 0;
-        var keyboardInsetDp = 0;
-        var keyboardVisible = false;
         var rootHeightPx = 0;
         var viewportHeightPx = 0;
         var inputHeightPx = 0;
         var footerTopPx = 0;
         var footerBottomPx = 0;
         var footerScreenBottomPx = 0;
+        var keyboardTopPx = 0;
         var location;
         var length = 0;
         var selectionStart = 0;
         var selectionEnd = 0;
         if (panelRoot === null || state.mode === "tags") { return false; }
         try {
-            frame = new Rect();
-            panelRoot.getWindowVisibleDisplayFrame(frame);
             metrics = displayMetrics();
             visibleHeightPx = Math.max(0,
-                Number(frame.bottom) - Number(frame.top));
-            keyboardInsetDp = Math.max(0, pxToDp(
-                Number(metrics.heightPixels) - visibleHeightPx));
-            keyboardVisible = keyboardInsetDp >= 120;
+                Number(metrics.heightPixels) - Number(ime.bottomPx) -
+                    Number(ime.topInsetPx));
+            keyboardTopPx = Number(metrics.heightPixels) -
+                Number(ime.bottomPx);
             rootHeightPx = Number(panelRoot.getHeight());
             if (contentScrollView !== null) {
                 viewportHeightPx = Number(contentScrollView.getHeight());
@@ -405,15 +591,19 @@
                     Number(editorFooterView.getHeight());
             }
             if (state.layoutMeasureCount > 0 &&
-                    state.lastKeyboardVisible !== keyboardVisible) {
-                if (keyboardVisible) { state.keyboardShowCount += 1; }
+                    state.lastKeyboardVisible !== ime.visible) {
+                if (ime.visible) { state.keyboardShowCount += 1; }
                 else { state.keyboardHideCount += 1; }
             }
-            state.lastKeyboardVisible = keyboardVisible;
-            state.keyboardVisible = keyboardVisible;
-            state.keyboardInsetDp = keyboardInsetDp;
+            state.lastKeyboardVisible = ime.visible;
+            state.keyboardVisible = ime.visible;
+            state.keyboardInsetDp = pxToDp(Number(ime.bottomPx));
+            state.imeInsetBottomDp = pxToDp(Number(ime.bottomPx));
+            state.imeInsetSource = String(ime.source || "none");
+            state.imeInsetsSupported = ime.supported === true;
+            state.systemTopInsetDp = pxToDp(Number(ime.topInsetPx));
             state.visibleFrameHeightDp = pxToDp(visibleHeightPx);
-            state.visibleFrameBottomDp = pxToDp(Number(frame.bottom));
+            state.visibleFrameBottomDp = pxToDp(keyboardTopPx);
             state.rootMeasuredHeightDp = pxToDp(rootHeightPx);
             state.inputViewportHeightDp = pxToDp(viewportHeightPx);
             state.inputMeasuredHeightDp = pxToDp(inputHeightPx);
@@ -423,7 +613,7 @@
             state.footerVisibleInRoot = editorFooterView !== null &&
                 footerTopPx >= 0 && footerBottomPx <= rootHeightPx + dp(2);
             state.footerAboveKeyboard = editorFooterView !== null &&
-                footerScreenBottomPx <= Number(frame.bottom) + dp(2);
+                footerScreenBottomPx <= keyboardTopPx + dp(2);
             state.inputViewportAboveFooter =
                 contentScrollView !== null && editorFooterView !== null &&
                 Number(contentScrollView.getBottom()) <= footerTopPx + dp(1);
@@ -447,21 +637,70 @@
         }
     }
 
+    function pollEditorIme(generation) {
+        var ime;
+        if (generation !== imePollGeneration || !state.attached ||
+                panelRoot === null || state.mode === "tags") {
+            return false;
+        }
+        state.imePollCount += 1;
+        ime = readImeState();
+        applyEditorImeLayout(ime);
+        measureEditorLayout(ime);
+        return true;
+    }
+
+    function stopEditorImePolling() {
+        imePollGeneration += 1;
+        if (mainHandler !== null && imePollRunnable !== null) {
+            try { mainHandler.removeCallbacks(imePollRunnable); }
+            catch (ignored) {}
+        }
+        imePollRunnable = null;
+        return true;
+    }
+
+    function startEditorImePolling() {
+        var generation;
+        stopEditorImePolling();
+        generation = imePollGeneration;
+        imePollRunnable = new Packages.java.lang.Runnable({
+            run: function () {
+                if (!pollEditorIme(generation)) { return; }
+                if (mainHandler !== null && imePollRunnable !== null) {
+                    mainHandler.postDelayed(imePollRunnable, 90);
+                }
+            }
+        });
+        mainHandler.post(imePollRunnable);
+        return true;
+    }
+
     function installEditorLayoutObserver() {
         if (panelRoot === null || state.mode === "tags") { return false; }
         try {
             layoutObserver = panelRoot.getViewTreeObserver();
             layoutListener = new JavaAdapter(
                 Packages.android.view.ViewTreeObserver.OnGlobalLayoutListener, {
-                    onGlobalLayout: function () { measureEditorLayout(); }
+                    onGlobalLayout: function () {
+                        var ime = readImeState();
+                        applyEditorImeLayout(ime);
+                        measureEditorLayout(ime);
+                    }
                 });
             layoutObserver.addOnGlobalLayoutListener(layoutListener);
+            startEditorImePolling();
             mainHandler.postDelayed(new Packages.java.lang.Runnable({
-                run: function () { measureEditorLayout(); }
+                run: function () {
+                    var ime = readImeState();
+                    applyEditorImeLayout(ime);
+                    measureEditorLayout(ime);
+                }
             }), 180);
             return true;
         } catch (error) {
             state.lastError = String(error);
+            startEditorImePolling();
             return false;
         }
     }
@@ -603,6 +842,7 @@
     }
 
     function clearViews() {
+        stopEditorImePolling();
         try {
             if (layoutObserver !== null && layoutListener !== null &&
                     layoutObserver.isAlive()) {
@@ -658,6 +898,14 @@
         state.selectionStart = 0;
         state.selectionEnd = 0;
         state.cursorAtEnd = false;
+        state.imeInsetsSupported = false;
+        state.imeInsetSource = "none";
+        state.imeInsetBottomDp = 0;
+        state.systemTopInsetDp = 0;
+        state.availableAboveImeDp = 0;
+        state.keyboardAvoidanceApplied = false;
+        state.currentPanelHeightDp = 0;
+        state.currentPanelTopDp = 0;
     }
 
     function closePanel(reason) {
@@ -926,7 +1174,7 @@
         options = options || {};
 
         panelRoot.removeAllViews();
-        state.editorStyle = "reference_editor_v2";
+        state.editorStyle = "reference_editor_v3";
         state.sourceMetaText = sourceText;
         state.typeMetaText = typeText;
         state.contentMinLines = 10;
@@ -1319,6 +1567,11 @@
             state.panelHeightPx = size.height;
             state.panelWidthDp = size.widthDp;
             state.panelHeightDp = size.heightDp;
+            state.normalPanelHeightDp = size.heightDp;
+            state.currentPanelHeightDp = size.heightDp;
+            state.currentPanelTopDp = state.mode === "tags" ? 0 :
+                Math.max(0, pxToDp(Number(displayMetrics().heightPixels) -
+                    Number(size.height) - dp(10)));
             state.dimAmount = Number(panelParams.dimAmount);
             state.modalWindow = true;
             state.opaqueBackground = true;
@@ -1438,6 +1691,23 @@
             layoutMeasureCount: Number(state.layoutMeasureCount),
             keyboardShowCount: Number(state.keyboardShowCount),
             keyboardHideCount: Number(state.keyboardHideCount),
+            imeInsetsSupported: state.imeInsetsSupported === true,
+            imeInsetSource: state.imeInsetSource,
+            imeInsetBottomDp: Number(state.imeInsetBottomDp),
+            systemTopInsetDp: Number(state.systemTopInsetDp),
+            availableAboveImeDp: Number(state.availableAboveImeDp),
+            keyboardAvoidanceApplied:
+                state.keyboardAvoidanceApplied === true,
+            keyboardAvoidanceApplyCount:
+                Number(state.keyboardAvoidanceApplyCount),
+            keyboardAvoidanceRestoreCount:
+                Number(state.keyboardAvoidanceRestoreCount),
+            windowLayoutUpdateCount:
+                Number(state.windowLayoutUpdateCount),
+            imePollCount: Number(state.imePollCount),
+            normalPanelHeightDp: Number(state.normalPanelHeightDp),
+            currentPanelHeightDp: Number(state.currentPanelHeightDp),
+            currentPanelTopDp: Number(state.currentPanelTopDp),
             panelGravity: state.panelGravity,
             panelBottomMarginDp: Number(state.panelBottomMarginDp),
             addThreadId: state.addThreadId,
@@ -1482,7 +1752,15 @@
             inputCanScrollDown: false, selectionStart: 0, selectionEnd: 0,
             cursorAtEnd: false, layoutMeasureCount: 0,
             keyboardShowCount: 0, keyboardHideCount: 0,
-            lastKeyboardVisible: false, panelGravity: "center",
+            lastKeyboardVisible: false, imeInsetsSupported: false,
+            imeInsetSource: "none", imeInsetBottomDp: 0,
+            systemTopInsetDp: 0, availableAboveImeDp: 0,
+            keyboardAvoidanceApplied: false,
+            keyboardAvoidanceApplyCount: 0,
+            keyboardAvoidanceRestoreCount: 0,
+            windowLayoutUpdateCount: 0, imePollCount: 0,
+            normalPanelHeightDp: 0, currentPanelHeightDp: 0,
+            currentPanelTopDp: 0, panelGravity: "center",
             panelBottomMarginDp: 0,
             addThreadId: null, addThreadName: null, removeThreadId: null,
             removeThreadName: null, saveThreadId: null,
@@ -1497,7 +1775,7 @@
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 6,
+        MODULE_VERSION: 7,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
