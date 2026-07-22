@@ -107,6 +107,10 @@
         modalWindow: false,
         opaqueBackground: false,
         horizontalFadeEnabled: false,
+        chipSingleLineEnforced: true,
+        chipEllipsizeEndEnforced: true,
+        drawerContentBottomPaddingDp: 0,
+        drawerFooterTopGapDp: 0,
         advancedKeywordInputPresent: false,
         sortOptionCount: 0,
         sourceWrapRowCount: 0,
@@ -493,6 +497,9 @@
             selected ? colors.accentStrong : colors.textSecondary,
             selected);
         view.setGravity(Gravity.CENTER);
+        view.setSingleLine(true);
+        view.setMaxLines(1);
+        view.setEllipsize(TextUtils.TruncateAt.END);
         view.setPadding(dp(9), dp(6), dp(9), dp(6));
         view.setBackground(roundedBackground(
             selected ? colors.accentSoft : colors.surface,
@@ -1029,7 +1036,7 @@
             code = text.charCodeAt(index);
             units += code <= 127 ? 0.62 : 1;
         }
-        return Math.min(202, Math.max(42, 19 + units * 9));
+        return Math.min(202, Math.max(44, 22 + units * 10));
     }
 
     function optionClick(kind, key, chip) {
@@ -1689,6 +1696,8 @@
         drawer.addView(buildAdvancedKeywordInput(colors), params);
 
         content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(0, 0, 0, dp(14));
+        state.drawerContentBottomPaddingDp = 14;
         if (counts.sources.length > 0) {
             addSection(content, "来源应用（多选）",
                 counts.sources, "source", colors);
@@ -1727,7 +1736,7 @@
         ], value.sensitiveMode, colors, function (mode) {
             setSensitive(mode);
         }, sensitiveViews);
-        addChoiceSection(content, "敏感内容", sensitiveRow, 3, colors);
+        addChoiceSection(content, "敏感内容", sensitiveRow, 8, colors);
 
         scroll.setVerticalScrollBarEnabled(false);
         scroll.addView(content, new FrameLayout.LayoutParams(
@@ -1753,8 +1762,11 @@
         footer.addView(resetView, params);
         footer.addView(applyView,
             new LinearLayout.LayoutParams(0, dp(40), 1));
-        drawer.addView(footer, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(48)));
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(54));
+        params.topMargin = dp(6);
+        drawer.addView(footer, params);
+        state.drawerFooterTopGapDp = 6;
         return drawer;
     }
 
@@ -1820,6 +1832,8 @@
         state.tagWrapRowCount = 0;
         state.drawerWidthDp = 0;
         state.drawerHeightDp = 0;
+        state.drawerContentBottomPaddingDp = 0;
+        state.drawerFooterTopGapDp = 0;
         drawerContainer = null;
         resultContainer = null;
         resultCountView = null;
@@ -2100,6 +2114,14 @@
             tagWrapRowCount: Number(state.tagWrapRowCount),
             drawerWidthDp: Number(state.drawerWidthDp),
             drawerHeightDp: Number(state.drawerHeightDp),
+            chipSingleLineEnforced:
+                state.chipSingleLineEnforced === true,
+            chipEllipsizeEndEnforced:
+                state.chipEllipsizeEndEnforced === true,
+            drawerContentBottomPaddingDp:
+                Number(state.drawerContentBottomPaddingDp),
+            drawerFooterTopGapDp:
+                Number(state.drawerFooterTopGapDp),
             repositorySortUnchanged: true,
             sortScope: state.sortScope,
             backLayerCloseCount: Number(state.backLayerCloseCount),
@@ -2180,6 +2202,10 @@
         state.modalWindow = false;
         state.opaqueBackground = false;
         state.horizontalFadeEnabled = false;
+        state.chipSingleLineEnforced = true;
+        state.chipEllipsizeEndEnforced = true;
+        state.drawerContentBottomPaddingDp = 0;
+        state.drawerFooterTopGapDp = 0;
         state.advancedKeywordInputPresent = false;
         state.sortOptionCount = 0;
         state.sourceWrapRowCount = 0;
@@ -2208,13 +2234,13 @@
         state.resultCardCount = 0;
         state.resultSourceIconCount = 0;
         state.advancedDrawerVisible = false;
-        state.searchPageStyle = "reference_search_v2";
+        state.searchPageStyle = "reference_search_v3";
         state.lastError = null;
     }
 
     ClipHub.Filter = {
         MODULE_NAME: "ch_11_filter",
-        MODULE_VERSION: 7,
+        MODULE_VERSION: 8,
 
         init: function (context) {
             androidContext = context && context.androidContext ?
