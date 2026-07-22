@@ -203,14 +203,17 @@
         var result = {
             ok: false,
             probe: "cliphub_content_tags_settings_probe_045",
-            probeVersion: 2,
+            probeVersion: 3,
             startedAt: startedAt,
             moduleSetVersion: local.moduleSetVersion || null,
             sourceRef: local.sourceRef || null,
             sceneDurationMs: SCENE_DURATION_MS,
             sceneCount: 3,
             visualScreenshotRequired: true,
-            instruction: "场景1截无内容类型且显示标签的唯一首页；场景2截翻译设置；场景3截标签管理。三张截图均不得裁剪。",
+            instruction: "场景1截默认唯一首页；场景2截已预选有道的翻译设置；场景3截标签管理。三张截图均不得裁剪。",
+            scene1CapturedBeforePagingAndTranslation: true,
+            translationTerminalStateRequired: true,
+            settingsConfiguredBeforeOpen: true,
             outputPath: String(outputFile.getAbsolutePath()),
             formalWasRunning: formalWasRunning,
             schemaVersionPreserved: true,
@@ -302,6 +305,15 @@
                 [result.tagC, result.tagA, result.tagB]);
             result.urlTags = global.ClipHub.Repository.listItemTags(result.urlId);
 
+            result.translationGuardValues = global.ClipHub.Settings.setMany({
+                "translation.engine": "baidu",
+                "translation.baidu.app_id": "",
+                "translation.baidu.app_secret": "",
+                "translation.youdao.app_key": "",
+                "translation.youdao.app_secret": ""
+            }, { cleanup: false });
+            global.ClipHub.Settings.reload();
+
             result.show = global.ClipHub.App.executeControlCommand("show");
             result.rootReady = waitFor(function () {
                 var app = global.ClipHub.App.getStatus();
@@ -311,7 +323,7 @@
                     panel.contentTypeOptionCount === 0 &&
                     panel.typeChipCount === 0 &&
                     panel.settingsButtonPresent === true &&
-                    panel.renderedTagLabelCount >= 3 &&
+                    panel.renderedTagLabelCount >= 2 &&
                     panel.resultCardCount === 20 &&
                     panel.loadedResultCount === 20 &&
                     panel.resultHasMore === true &&
@@ -319,11 +331,19 @@
                     panel.loadMorePresent === true;
             }, 1800);
             result.firstPageState = global.ClipHub.Filter.getPanelState();
+            result.rootScene = {
+                app: global.ClipHub.App.getStatus(),
+                filter: global.ClipHub.Filter.getState()
+            };
+            showToast("045  1/3  默认标签首页  ·  截图前未加载更多或长按");
+            Thread.sleep(SCENE_DURATION_MS);
+
             result.loadMoreClick = global.ClipHub.Filter.performLoadMoreClick();
             result.loadMoreReady = waitFor(function () {
                 var panel = global.ClipHub.Filter.getPanelState();
                 return panel.resultCardCount >= 28 &&
                     panel.loadedResultCount >= 28 &&
+                    panel.renderedTagLabelCount >= 3 &&
                     panel.resultHasMore === false;
             }, 1800);
             result.afterLoadMoreState = global.ClipHub.Filter.getPanelState();
@@ -334,6 +354,13 @@
             result.translationPopupReady = waitFor(function () {
                 return global.ClipHub.Translation.getState().attached === true;
             }, 1500);
+            result.translationTerminalReady = waitFor(function () {
+                var state = global.ClipHub.Translation.getState();
+                return state.attached === true &&
+                    state.running === false &&
+                    state.errorCount >= 1 &&
+                    state.lastError !== null;
+            }, 2500);
             result.translationPopupState = global.ClipHub.Translation.getState();
             result.translationClose = global.ClipHub.Translation.close(
                 "probe045_translation_guard");
@@ -341,21 +368,8 @@
                 return global.ClipHub.Translation.getState().attached === false &&
                     global.ClipHub.Filter.getPanelState().attached === true;
             }, 1200);
-            result.rootScene = {
-                app: global.ClipHub.App.getStatus(),
-                filter: global.ClipHub.Filter.getState()
-            };
-            showToast("045  1/3  标签首页  ·  已验证滚动分页与翻译入口");
-            Thread.sleep(SCENE_DURATION_MS);
 
-            result.settingsOpen = global.ClipHub.Filter.performSettingsClick();
-            result.settingsReady = waitFor(function () {
-                var state = global.ClipHub.Settings.getState();
-                return state.attached === true && state.sectionCount === 4 &&
-                    state.translationFieldCount === 4 &&
-                    state.contentTypeSettingsPresent === false;
-            }, 1500);
-            global.ClipHub.Settings.setMany({
+            result.translationSettingsWrite = global.ClipHub.Settings.setMany({
                 "translation.engine": "youdao",
                 "translation.baidu.app_id": "probe-baidu-id",
                 "translation.baidu.app_secret": "probe-baidu-secret",
@@ -363,6 +377,15 @@
                 "translation.youdao.app_secret": "probe-youdao-secret"
             }, { cleanup: false });
             global.ClipHub.Settings.reload();
+            result.settingsOpen = global.ClipHub.Filter.performSettingsClick();
+            result.settingsReady = waitFor(function () {
+                var state = global.ClipHub.Settings.getState();
+                return state.attached === true && state.sectionCount === 4 &&
+                    state.translationFieldCount === 4 &&
+                    state.contentTypeSettingsPresent === false &&
+                    state.selectedEngine === "youdao" &&
+                    state.configuredEngine === "youdao";
+            }, 1500);
             global.ClipHub.Settings.scrollToSection("translation");
             result.translationSettingsScene = {
                 settings: global.ClipHub.Settings.getState(),
@@ -443,16 +466,24 @@
                 result.reorderTags && result.reorderTags.ok === true &&
                 result.rootReady === true &&
                 result.firstPageState.resultCardCount === 20 &&
+                result.firstPageState.renderedTagLabelCount >= 2 &&
                 result.firstPageState.resultHasMore === true &&
                 result.firstPageState.resultCanScroll === true &&
+                result.rootScene.filter.panel.selectionMode === false &&
+                result.rootScene.filter.panel.loadedResultCount === 20 &&
                 result.loadMoreClick === true &&
                 result.loadMoreReady === true &&
                 result.afterLoadMoreState.resultCardCount >= 28 &&
+                result.afterLoadMoreState.renderedTagLabelCount >= 3 &&
                 result.afterLoadMoreState.resultHasMore === false &&
                 result.translationSelect === true &&
                 result.translationClick === true &&
                 result.translationPopupReady === true &&
+                result.translationTerminalReady === true &&
                 result.translationPopupState.attached === true &&
+                result.translationPopupState.running === false &&
+                result.translationPopupState.errorCount >= 1 &&
+                result.translationPopupState.lastError !== null &&
                 result.translationClose === true &&
                 result.translationClosedReady === true &&
                 result.rootScene.app.legacyHomeAttached === false &&
@@ -461,6 +492,10 @@
                 result.settingsReady === true &&
                 result.translationSettingsScene.settings
                     .contentTypeSettingsPresent === false &&
+                result.translationSettingsScene.settings
+                    .selectedEngine === "youdao" &&
+                result.translationSettingsScene.settings
+                    .configuredEngine === "youdao" &&
                 result.translationSettingsScene.values
                     ["translation.engine"] === "youdao" &&
                 result.tagSettingsScene.settings.tagRowCount === 3 &&
@@ -486,7 +521,7 @@
     } catch (error) {
         global.ClipHubContentTagsSettingsProbe045Result = {
             ok: false, probe: "cliphub_content_tags_settings_probe_045",
-            probeVersion: 2, fatal: true, error: errorText(error)
+            probeVersion: 3, fatal: true, error: errorText(error)
         };
     }
 }((function () { return this; }())));
