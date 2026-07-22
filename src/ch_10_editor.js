@@ -8,6 +8,7 @@
     var TimeUnit = Packages.java.util.concurrent.TimeUnit;
     var Thread = Packages.java.lang.Thread;
     var View = Packages.android.view.View;
+    var ViewGroup = Packages.android.view.ViewGroup;
     var Gravity = Packages.android.view.Gravity;
     var WindowManager = Packages.android.view.WindowManager;
     var WindowInsets = Packages.android.view.WindowInsets;
@@ -143,6 +144,10 @@
         normalPanelHeightDp: 0,
         currentPanelHeightDp: 0,
         currentPanelTopDp: 0,
+        focusReleasedAfterImeHide: false,
+        focusReleaseCount: 0,
+        rootFocusRequestedAfterImeHide: false,
+        rootFocusedAfterImeHide: false,
         panelGravity: "center",
         panelBottomMarginDp: 0,
         addThreadId: null,
@@ -548,6 +553,83 @@
         return changed;
     }
 
+    function handoffEditorFocusAfterImeHide() {
+        var previousDescendantFocusability = -1;
+        var released = false;
+        var requested = false;
+        var focused = false;
+        if (panelRoot === null || contentInput === null ||
+                state.mode === "tags") {
+            return false;
+        }
+        state.focusReleaseCount += 1;
+        try {
+            previousDescendantFocusability =
+                Number(panelRoot.getDescendantFocusability());
+        } catch (ignoredDescendantRead) {}
+        try {
+            panelRoot.setFocusable(true);
+            panelRoot.setFocusableInTouchMode(true);
+            panelRoot.setDescendantFocusability(
+                ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+            contentInput.clearFocus();
+            released = !contentInput.hasFocus();
+            requested = panelRoot.requestFocus();
+            focused = panelRoot.isFocused();
+        } catch (error) {
+            state.lastError = String(error);
+        } finally {
+            if (previousDescendantFocusability >= 0) {
+                try {
+                    panelRoot.setDescendantFocusability(
+                        previousDescendantFocusability);
+                } catch (ignoredDescendantRestore) {}
+            }
+        }
+        state.focusReleasedAfterImeHide = released;
+        state.rootFocusRequestedAfterImeHide = requested || focused;
+        state.rootFocusedAfterImeHide = focused;
+        if (!focused && mainHandler !== null) {
+            mainHandler.postDelayed(new Packages.java.lang.Runnable({
+                run: function () {
+                    var previous = -1;
+                    var retried = false;
+                    if (!state.attached || state.keyboardVisible ||
+                            panelRoot === null || contentInput === null) {
+                        return;
+                    }
+                    try {
+                        previous = Number(
+                            panelRoot.getDescendantFocusability());
+                    } catch (ignoredPrevious) {}
+                    try {
+                        panelRoot.setFocusable(true);
+                        panelRoot.setFocusableInTouchMode(true);
+                        panelRoot.setDescendantFocusability(
+                            ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+                        contentInput.clearFocus();
+                        retried = panelRoot.requestFocus();
+                        state.focusReleasedAfterImeHide =
+                            !contentInput.hasFocus();
+                        state.rootFocusRequestedAfterImeHide =
+                            state.rootFocusRequestedAfterImeHide || retried;
+                        state.rootFocusedAfterImeHide =
+                            panelRoot.isFocused();
+                    } catch (retryError) {
+                        state.lastError = String(retryError);
+                    } finally {
+                        if (previous >= 0 && panelRoot !== null) {
+                            try {
+                                panelRoot.setDescendantFocusability(previous);
+                            } catch (ignoredRestore) {}
+                        }
+                    }
+                }
+            }), 80);
+        }
+        return released && (requested || focused);
+    }
+
     function measureEditorLayout(imeSnapshot) {
         var ime = imeSnapshot || readImeState();
         var metrics;
@@ -563,6 +645,7 @@
         var length = 0;
         var selectionStart = 0;
         var selectionEnd = 0;
+        var keyboardWasVisible = state.lastKeyboardVisible === true;
         if (panelRoot === null || state.mode === "tags") { return false; }
         try {
             metrics = displayMetrics();
@@ -592,10 +675,22 @@
             }
             if (state.layoutMeasureCount > 0 &&
                     state.lastKeyboardVisible !== ime.visible) {
-                if (ime.visible) { state.keyboardShowCount += 1; }
-                else { state.keyboardHideCount += 1; }
+                if (ime.visible) {
+                    state.keyboardShowCount += 1;
+                } else {
+                    state.keyboardHideCount += 1;
+                    if (keyboardWasVisible) {
+                        handoffEditorFocusAfterImeHide();
+                    }
+                }
             }
             state.lastKeyboardVisible = ime.visible;
+            if (!ime.visible && state.focusReleasedAfterImeHide === true &&
+                    panelRoot !== null) {
+                try {
+                    state.rootFocusedAfterImeHide = panelRoot.isFocused();
+                } catch (ignoredRootFocus) {}
+            }
             state.keyboardVisible = ime.visible;
             state.keyboardInsetDp = pxToDp(Number(ime.bottomPx));
             state.imeInsetBottomDp = pxToDp(Number(ime.bottomPx));
@@ -906,6 +1001,9 @@
         state.keyboardAvoidanceApplied = false;
         state.currentPanelHeightDp = 0;
         state.currentPanelTopDp = 0;
+        state.focusReleasedAfterImeHide = false;
+        state.rootFocusRequestedAfterImeHide = false;
+        state.rootFocusedAfterImeHide = false;
     }
 
     function closePanel(reason) {
@@ -1174,7 +1272,7 @@
         options = options || {};
 
         panelRoot.removeAllViews();
-        state.editorStyle = "reference_editor_v3";
+        state.editorStyle = "reference_editor_v4";
         state.sourceMetaText = sourceText;
         state.typeMetaText = typeText;
         state.contentMinLines = 10;
@@ -1503,6 +1601,9 @@
         requestKeyboard = options.requestKeyboard !== false;
         state.requestKeyboardOnOpen = requestKeyboard;
         state.keyboardRequestedOnOpen = false;
+        state.focusReleasedAfterImeHide = false;
+        state.rootFocusRequestedAfterImeHide = false;
+        state.rootFocusedAfterImeHide = false;
         return requireMain(runOnMainSync(function () {
             var size = panelDimensions(state.mode);
             var type = Build.VERSION.SDK_INT >= 26 ?
@@ -1596,6 +1697,10 @@
         var input = activeInput();
         var inputLength = 0;
         var notFocusable = false;
+        var rootFocused = false;
+        try {
+            rootFocused = panelRoot !== null && panelRoot.isFocused();
+        } catch (ignoredRootFocus) {}
         try {
             attachedToWindow = panelRoot !== null &&
                 panelRoot.isAttachedToWindow();
@@ -1708,6 +1813,14 @@
             normalPanelHeightDp: Number(state.normalPanelHeightDp),
             currentPanelHeightDp: Number(state.currentPanelHeightDp),
             currentPanelTopDp: Number(state.currentPanelTopDp),
+            focusReleasedAfterImeHide:
+                state.focusReleasedAfterImeHide === true,
+            focusReleaseCount: Number(state.focusReleaseCount),
+            rootFocusRequestedAfterImeHide:
+                state.rootFocusRequestedAfterImeHide === true,
+            rootFocusedAfterImeHide:
+                state.rootFocusedAfterImeHide === true,
+            rootFocused: rootFocused,
             panelGravity: state.panelGravity,
             panelBottomMarginDp: Number(state.panelBottomMarginDp),
             addThreadId: state.addThreadId,
@@ -1760,7 +1873,10 @@
             keyboardAvoidanceRestoreCount: 0,
             windowLayoutUpdateCount: 0, imePollCount: 0,
             normalPanelHeightDp: 0, currentPanelHeightDp: 0,
-            currentPanelTopDp: 0, panelGravity: "center",
+            currentPanelTopDp: 0, focusReleasedAfterImeHide: false,
+            focusReleaseCount: 0,
+            rootFocusRequestedAfterImeHide: false,
+            rootFocusedAfterImeHide: false, panelGravity: "center",
             panelBottomMarginDp: 0,
             addThreadId: null, addThreadName: null, removeThreadId: null,
             removeThreadName: null, saveThreadId: null,
@@ -1775,7 +1891,7 @@
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 7,
+        MODULE_VERSION: 8,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;

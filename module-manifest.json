@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260722.34",
+  "moduleSetVersion": "20260722.35",
   "entryMinVersion": 4,
   "sourceRef": "agent/initialize-project-skeleton",
   "modules": [
@@ -52,7 +52,7 @@
     {
       "name": "ch_10_editor.js",
       "path": "src/ch_10_editor.js",
-      "sha": "1bf0fe8bbfc5a18e5a6d26ea1a2760439665da6e"
+      "sha": "8de662133eee7c5dcb3ce8ffafb496f02632d5a2"
     },
     {
       "name": "ch_11_filter.js",
