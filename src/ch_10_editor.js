@@ -14,11 +14,14 @@
     var Color = Packages.android.graphics.Color;
     var GradientDrawable = Packages.android.graphics.drawable.GradientDrawable;
     var LinearLayout = Packages.android.widget.LinearLayout;
+    var FrameLayout = Packages.android.widget.FrameLayout;
     var ScrollView = Packages.android.widget.ScrollView;
     var TextView = Packages.android.widget.TextView;
     var EditText = Packages.android.widget.EditText;
     var TypedValue = Packages.android.util.TypedValue;
     var InputType = Packages.android.text.InputType;
+    var TextWatcher = Packages.android.text.TextWatcher;
+    var TextUtils = Packages.android.text.TextUtils;
     var InputMethodManager = Packages.android.view.inputmethod.InputMethodManager;
     var DisplayMetrics = Packages.android.util.DisplayMetrics;
 
@@ -34,6 +37,15 @@
     var tagNameInput = null;
     var saveView = null;
     var cancelView = null;
+    var headerCloseView = null;
+    var titleIconView = null;
+    var titleTextView = null;
+    var subtitleTextView = null;
+    var contentLabelView = null;
+    var characterCountView = null;
+    var metadataSourceView = null;
+    var metadataTypeView = null;
+    var editorFooterView = null;
     var createTagView = null;
     var tagViews = {};
     var tagDeleteViews = {};
@@ -70,6 +82,25 @@
         dimAmount: 0,
         modalWindow: false,
         opaqueBackground: false,
+        editorStyle: "legacy_editor_v1",
+        dragHandlePresent: false,
+        headerIconPresent: false,
+        headerCloseButtonPresent: false,
+        contentLabelPresent: false,
+        characterCountPresent: false,
+        metadataRowPresent: false,
+        sourceMetaText: "",
+        typeMetaText: "",
+        contentLength: 0,
+        contentMinLines: 0,
+        footerActionCount: 0,
+        editorFooterHeightDp: 0,
+        cancelButtonPresent: false,
+        saveButtonPresent: false,
+        requestKeyboardOnOpen: true,
+        keyboardRequestedOnOpen: false,
+        panelGravity: "center",
+        panelBottomMarginDp: 0,
         addThreadId: null,
         addThreadName: null,
         removeThreadId: null,
@@ -227,6 +258,79 @@
         return view;
     }
 
+    function editorPalette() {
+        var dark = isDarkMode();
+        try {
+            if (ClipHub.Theme &&
+                    typeof ClipHub.Theme.getPalette === "function") {
+                return ClipHub.Theme.getPalette(appContext);
+            }
+        } catch (ignored) {}
+        return {
+            dark: dark,
+            accentStrong: dark ? "#FF9476F8" : "#FF5A37E6",
+            accentSoft: dark ? "#FF302946" : "#FFF0ECFF",
+            accentBorder: dark ? "#FF6F5A9D" : "#FFBBAAF8",
+            surface: dark ? "#FF211E2A" : "#FFFFFFFF",
+            surfaceMuted: dark ? "#FF292532" : "#FFF5F3FB",
+            stroke: dark ? "#FF3D3748" : "#FFE5E0EF",
+            textPrimary: dark ? "#FFF7F3FF" : "#FF1F1C28",
+            textSecondary: dark ? "#FFC8C0D1" : "#FF6F697A",
+            textTertiary: dark ? "#FF968DA1" : "#FF9992A3",
+            icon: dark ? "#FFE7DFF1" : "#FF3D3748"
+        };
+    }
+
+    function makeEditorPill(text, colors, accent) {
+        var view = makeText(text, 10,
+            accent ? colors.accentStrong : colors.textSecondary,
+            accent === true);
+        view.setGravity(Gravity.CENTER);
+        view.setSingleLine(true);
+        view.setMaxLines(1);
+        view.setEllipsize(TextUtils.TruncateAt.END);
+        view.setPadding(dp(9), dp(5), dp(9), dp(5));
+        view.setBackground(roundedBackground(
+            accent ? colors.accentSoft : colors.surfaceMuted,
+            accent ? colors.accentBorder : colors.stroke, 9));
+        return view;
+    }
+
+    function makeEditorAction(text, colors, primary) {
+        var view = makeText(text, 12,
+            primary ? "#FFFFFFFF" : colors.accentStrong, true);
+        view.setGravity(Gravity.CENTER);
+        view.setSingleLine(true);
+        view.setBackground(roundedBackground(
+            primary ? colors.accentStrong : colors.surface,
+            primary ? colors.accentStrong : colors.accentBorder, 13));
+        view.setClickable(true);
+        view.setFocusable(true);
+        return view;
+    }
+
+    function contentTypeLabel(value) {
+        value = String(value || "text").toLowerCase();
+        if (value === "url" || value === "link") { return "链接"; }
+        if (value === "code") { return "代码"; }
+        if (value === "email") { return "邮件"; }
+        if (value === "phone") { return "电话"; }
+        return "文本";
+    }
+
+    function updateCharacterCount() {
+        var length = 0;
+        try {
+            length = contentInput === null ? 0 :
+                String(contentInput.getText()).length;
+        } catch (ignored) {}
+        state.contentLength = length;
+        if (characterCountView !== null) {
+            characterCountView.setText(String(length) + " / 200000");
+        }
+        return length;
+    }
+
     function emitMutation(name, id, mutation, extra) {
         var thread = nowThread();
         var payload = {
@@ -279,20 +383,23 @@
 
     function panelDimensions(mode) {
         var metrics = displayMetrics();
-        var width = Math.min(dp(420), Math.max(dp(270),
-            Number(metrics.widthPixels) - dp(12)));
+        var tagsMode = String(mode) === "tags";
+        var maxWidthDp = tagsMode ? 420 : 390;
+        var minWidthDp = tagsMode ? 270 : 300;
+        var width = Math.min(dp(maxWidthDp), Math.max(dp(minWidthDp),
+            Number(metrics.widthPixels) - dp(tagsMode ? 12 : 20)));
         var availableHeight = Math.max(dp(300),
-            Number(metrics.heightPixels) - dp(72));
+            Number(metrics.heightPixels) - dp(tagsMode ? 72 : 86));
         var heightDp;
         var count;
-        if (String(mode) === "tags") {
+        if (tagsMode) {
             count = 0;
             try { count = ClipHub.Repository.listTags().length; }
             catch (ignoredCount) {}
             heightDp = 222 + Math.min(5, Math.max(1, count)) * 54;
             heightDp = Math.max(310, Math.min(492, heightDp));
         } else {
-            heightDp = 430;
+            heightDp = 590;
         }
         return {
             width: width,
@@ -312,6 +419,7 @@
         target.requestFocus();
         state.inputFocused = target.hasFocus();
         state.keyboardRequestCount += 1;
+        state.keyboardRequestedOnOpen = true;
         mainHandler.postDelayed(new Packages.java.lang.Runnable({
             run: function () {
                 try {
@@ -343,9 +451,28 @@
         tagNameInput = null;
         saveView = null;
         cancelView = null;
+        headerCloseView = null;
+        titleIconView = null;
+        titleTextView = null;
+        subtitleTextView = null;
+        contentLabelView = null;
+        characterCountView = null;
+        metadataSourceView = null;
+        metadataTypeView = null;
+        editorFooterView = null;
         createTagView = null;
         tagViews = {};
         tagDeleteViews = {};
+        state.dragHandlePresent = false;
+        state.headerIconPresent = false;
+        state.headerCloseButtonPresent = false;
+        state.contentLabelPresent = false;
+        state.characterCountPresent = false;
+        state.metadataRowPresent = false;
+        state.cancelButtonPresent = false;
+        state.saveButtonPresent = false;
+        state.footerActionCount = 0;
+        state.editorFooterHeightDp = 0;
     }
 
     function closePanel(reason) {
@@ -595,56 +722,200 @@
         panelRoot.addView(subtitle, params);
     }
 
-    function buildTextContent(initialText) {
-        var dark = isDarkMode();
-        var primary = dark ? "#FFEDEDF0" : "#FF202024";
-        var secondary = dark ? "#FF9F9FA8" : "#FF72727B";
-        var scroll;
-        var footer;
+    function buildTextContent(initialText, row, options) {
+        var colors = editorPalette();
+        var isNew = state.mode === "new";
+        var sourceText = isNew ? "ClipHub 手动" :
+            String(row && row.source_label ? row.source_label : "未知来源");
+        var typeText = isNew ? "文本" :
+            contentTypeLabel(row && row.content_type);
+        var dragRow = new LinearLayout(appContext);
+        var dragHandle = new View(appContext);
+        var header = new LinearLayout(appContext);
+        var titleStack = new LinearLayout(appContext);
+        var metaRow = new LinearLayout(appContext);
+        var sectionRow = new LinearLayout(appContext);
+        var scroll = new ScrollView(appContext);
+        var footer = new LinearLayout(appContext);
+        var params;
+        options = options || {};
+
         panelRoot.removeAllViews();
-        addTitle(state.mode === "new" ? "新增记录" : "编辑记录",
-            state.mode === "new" ? "手动添加文本记录" :
-                "仅修改正文，来源和类型保持不变");
-        scroll = new ScrollView(appContext);
+        state.editorStyle = "reference_editor_v1";
+        state.sourceMetaText = sourceText;
+        state.typeMetaText = typeText;
+        state.contentMinLines = 10;
+        state.contentLength = String(initialText || "").length;
+
+        dragRow.setGravity(Gravity.CENTER);
+        dragHandle.setBackground(roundedBackground(
+            colors.accentBorder, null, 3));
+        dragRow.addView(dragHandle,
+            new LinearLayout.LayoutParams(dp(42), dp(4)));
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(16));
+        params.bottomMargin = dp(4);
+        panelRoot.addView(dragRow, params);
+        state.dragHandlePresent = true;
+
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        titleIconView = makeText(isNew ? "+" : "✎", 19,
+            colors.accentStrong, true);
+        titleIconView.setGravity(Gravity.CENTER);
+        titleIconView.setBackground(roundedBackground(
+            colors.accentSoft, colors.accentBorder, 10));
+        params = new LinearLayout.LayoutParams(dp(38), dp(38));
+        params.rightMargin = dp(9);
+        header.addView(titleIconView, params);
+
+        titleStack.setOrientation(LinearLayout.VERTICAL);
+        titleTextView = makeText(isNew ? "新增剪贴板" : "编辑剪贴板",
+            18, colors.textPrimary, true);
+        subtitleTextView = makeText(isNew ?
+            "手动添加一条本地剪贴板记录" :
+            "仅修改正文，来源和类型保持不变",
+            10, colors.textSecondary, false);
+        titleStack.addView(titleTextView,
+            new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.topMargin = dp(2);
+        titleStack.addView(subtitleTextView, params);
+        header.addView(titleStack, new LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+
+        headerCloseView = makeText("×", 22, colors.icon, true);
+        headerCloseView.setGravity(Gravity.CENTER);
+        headerCloseView.setContentDescription("关闭编辑窗口");
+        headerCloseView.setBackground(roundedBackground(
+            colors.surfaceMuted, null, 18));
+        headerCloseView.setClickable(true);
+        headerCloseView.setFocusable(true);
+        headerCloseView.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, {
+                onClick: function () { closePanel("cancel"); }
+            }));
+        header.addView(headerCloseView,
+            new LinearLayout.LayoutParams(dp(38), dp(38)));
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.bottomMargin = dp(10);
+        panelRoot.addView(header, params);
+        state.headerIconPresent = true;
+        state.headerCloseButtonPresent = true;
+
+        metaRow.setOrientation(LinearLayout.HORIZONTAL);
+        metaRow.setGravity(Gravity.CENTER_VERTICAL);
+        metadataTypeView = makeEditorPill("类型  " + typeText,
+            colors, true);
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, dp(32));
+        params.rightMargin = dp(7);
+        metaRow.addView(metadataTypeView, params);
+        metadataSourceView = makeEditorPill("来源  " + sourceText,
+            colors, false);
+        metaRow.addView(metadataSourceView,
+            new LinearLayout.LayoutParams(0, dp(32), 1));
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(32));
+        params.bottomMargin = dp(10);
+        panelRoot.addView(metaRow, params);
+        state.metadataRowPresent = true;
+
+        sectionRow.setOrientation(LinearLayout.HORIZONTAL);
+        sectionRow.setGravity(Gravity.CENTER_VERTICAL);
+        contentLabelView = makeText("内容", 12,
+            colors.textPrimary, true);
+        sectionRow.addView(contentLabelView,
+            new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        characterCountView = makeText("0 / 200000", 9,
+            colors.textTertiary, false);
+        sectionRow.addView(characterCountView,
+            new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.bottomMargin = dp(6);
+        panelRoot.addView(sectionRow, params);
+        state.contentLabelPresent = true;
+        state.characterCountPresent = true;
+
         scroll.setFillViewport(true);
+        scroll.setVerticalScrollBarEnabled(false);
         contentInput = new EditText(appContext);
         contentInput.setText(String(initialText || ""));
         contentInput.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-        contentInput.setTextColor(Color.parseColor(primary));
-        contentInput.setHintTextColor(Color.parseColor(secondary));
+        contentInput.setTextColor(Color.parseColor(colors.textPrimary));
+        contentInput.setHintTextColor(Color.parseColor(colors.textTertiary));
         contentInput.setHint("输入剪贴板内容");
         contentInput.setGravity(Gravity.TOP | Gravity.START);
         contentInput.setInputType(InputType.TYPE_CLASS_TEXT |
             InputType.TYPE_TEXT_FLAG_MULTI_LINE |
             InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         contentInput.setSingleLine(false);
-        contentInput.setMinLines(6);
-        contentInput.setPadding(dp(11), dp(9), dp(11), dp(9));
+        contentInput.setMinLines(10);
+        contentInput.setHorizontallyScrolling(false);
+        contentInput.setPadding(dp(12), dp(11), dp(12), dp(11));
         contentInput.setBackground(roundedBackground(
-            dark ? "#FF202328" : "#FFF7F7F8",
-            dark ? "#2EFFFFFF" : "#18000000", 11));
-        scroll.addView(contentInput,
-            new Packages.android.widget.FrameLayout.LayoutParams(
-                Packages.android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
-                Packages.android.widget.FrameLayout.LayoutParams.WRAP_CONTENT));
-        panelRoot.addView(scroll, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
-        footer = new LinearLayout(appContext);
-        footer.setOrientation(LinearLayout.HORIZONTAL);
-        footer.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        footer.setPadding(0, dp(9), 0, 0);
-        saveView = makeButton("保存", dark, true, false, false, false);
-        saveView.setContentDescription("保存记录");
-        saveView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
-            onClick: function () { saveFromInput(); }
+            colors.surface, colors.stroke, 15));
+        contentInput.addTextChangedListener(new JavaAdapter(TextWatcher, {
+            beforeTextChanged: function () {},
+            onTextChanged: function () { updateCharacterCount(); },
+            afterTextChanged: function () {}
         }));
-        footer.addView(saveView, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT));
-        panelRoot.addView(footer, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT));
-        requestKeyboardOnMain();
+        if (contentInput.getText().length() > 0) {
+            contentInput.setSelection(contentInput.getText().length());
+        }
+        scroll.addView(contentInput,
+            new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT));
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1);
+        params.bottomMargin = dp(8);
+        panelRoot.addView(scroll, params);
+        updateCharacterCount();
+
+        footer.setOrientation(LinearLayout.HORIZONTAL);
+        footer.setGravity(Gravity.CENTER_VERTICAL);
+        cancelView = makeEditorAction("取消", colors, false);
+        cancelView.setContentDescription("取消编辑");
+        cancelView.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, {
+                onClick: function () { closePanel("cancel"); }
+            }));
+        saveView = makeEditorAction("保存", colors, true);
+        saveView.setContentDescription("保存记录");
+        saveView.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, {
+                onClick: function () { saveFromInput(); }
+            }));
+        params = new LinearLayout.LayoutParams(0, dp(42), 1);
+        params.rightMargin = dp(8);
+        footer.addView(cancelView, params);
+        footer.addView(saveView,
+            new LinearLayout.LayoutParams(0, dp(42), 1));
+        editorFooterView = footer;
+        panelRoot.addView(footer,
+            new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(50)));
+        state.footerActionCount = 2;
+        state.editorFooterHeightDp = 50;
+        state.cancelButtonPresent = true;
+        state.saveButtonPresent = true;
+
+        if (options.requestKeyboard !== false) {
+            requestKeyboardOnMain();
+        }
+        return true;
     }
 
     function buildTagContent(requestFocus) {
@@ -776,9 +1047,11 @@
         return true;
     }
 
-    function openPanel(mode, itemId) {
+    function openPanel(mode, itemId, options) {
         var row = null;
         var initialText = "";
+        var requestKeyboard;
+        options = options || {};
         if (!ready) { throw new Error("ClipHub editor is not ready"); }
         mode = String(mode || "new");
         if (mode === "edit" || mode === "tags") {
@@ -792,6 +1065,9 @@
         state.mode = mode === "edit" ? "edit" :
             (mode === "tags" ? "tags" : "new");
         state.itemId = state.mode === "new" ? null : Number(itemId);
+        requestKeyboard = options.requestKeyboard !== false;
+        state.requestKeyboardOnOpen = requestKeyboard;
+        state.keyboardRequestedOnOpen = false;
         return requireMain(runOnMainSync(function () {
             var size = panelDimensions(state.mode);
             var type = Build.VERSION.SDK_INT >= 26 ?
@@ -799,12 +1075,19 @@
                 WindowManager.LayoutParams.TYPE_SYSTEM_ALERT;
             var thread = nowThread();
             var dark = isDarkMode();
+            var colors = editorPalette();
             panelRoot = new LinearLayout(appContext);
             panelRoot.setOrientation(LinearLayout.VERTICAL);
-            panelRoot.setPadding(dp(14), dp(12), dp(14), dp(12));
-            panelRoot.setBackground(roundedBackground(
-                dark ? "#FF181A1F" : "#FFFFFFFF",
-                dark ? "#30FFFFFF" : "#1A000000", 17));
+            if (state.mode === "tags") {
+                panelRoot.setPadding(dp(14), dp(12), dp(14), dp(12));
+                panelRoot.setBackground(roundedBackground(
+                    dark ? "#FF181A1F" : "#FFFFFFFF",
+                    dark ? "#30FFFFFF" : "#1A000000", 17));
+            } else {
+                panelRoot.setPadding(dp(12), dp(8), dp(12), dp(10));
+                panelRoot.setBackground(roundedBackground(
+                    colors.surface, colors.stroke, 24));
+            }
             if (Build.VERSION.SDK_INT >= 21) {
                 panelRoot.setElevation(dp(20));
             }
@@ -814,11 +1097,25 @@
                     WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED |
                     WindowManager.LayoutParams.FLAG_DIM_BEHIND,
                 PixelFormat.TRANSLUCENT);
-            panelParams.gravity = Gravity.CENTER;
-            panelParams.dimAmount = 0.72;
+            if (state.mode === "tags") {
+                panelParams.gravity = Gravity.CENTER;
+                panelParams.y = 0;
+                panelParams.dimAmount = 0.72;
+                state.panelGravity = "center";
+                state.panelBottomMarginDp = 0;
+            } else {
+                panelParams.gravity = Gravity.BOTTOM |
+                    Gravity.CENTER_HORIZONTAL;
+                panelParams.y = dp(10);
+                panelParams.dimAmount = 0.44;
+                state.panelGravity = "bottom";
+                state.panelBottomMarginDp = 10;
+            }
             panelParams.softInputMode =
                 WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE |
-                WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE;
+                (requestKeyboard ?
+                    WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE :
+                    WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
             try { panelParams.setTitle("ClipHub Editor Panel"); }
             catch (ignoredTitle) {}
             windowManager.addView(panelRoot, panelParams);
@@ -838,9 +1135,12 @@
             state.addThreadName = thread.name;
             state.lastError = null;
             if (state.mode === "tags") {
-                buildTagContent(true);
+                state.editorStyle = "legacy_tags_v1";
+                buildTagContent(requestKeyboard);
             } else {
-                buildTextContent(initialText);
+                buildTextContent(initialText, row, {
+                    requestKeyboard: requestKeyboard
+                });
             }
             return { ok: true, attached: true, mode: state.mode,
                 itemId: state.itemId, state: getState() };
@@ -903,6 +1203,28 @@
             dimAmount: state.dimAmount,
             modalWindow: state.modalWindow,
             opaqueBackground: state.opaqueBackground,
+            editorStyle: state.editorStyle,
+            dragHandlePresent: state.dragHandlePresent === true,
+            headerIconPresent: state.headerIconPresent === true,
+            headerCloseButtonPresent:
+                state.headerCloseButtonPresent === true,
+            contentLabelPresent: state.contentLabelPresent === true,
+            characterCountPresent: state.characterCountPresent === true,
+            metadataRowPresent: state.metadataRowPresent === true,
+            sourceMetaText: state.sourceMetaText,
+            typeMetaText: state.typeMetaText,
+            contentLength: Number(state.contentLength),
+            contentMinLines: Number(state.contentMinLines),
+            footerActionCount: Number(state.footerActionCount),
+            editorFooterHeightDp: Number(state.editorFooterHeightDp),
+            cancelButtonPresent: cancelView !== null,
+            saveButtonPresent: saveView !== null,
+            headerCloseViewPresent: headerCloseView !== null,
+            requestKeyboardOnOpen: state.requestKeyboardOnOpen === true,
+            keyboardRequestedOnOpen:
+                state.keyboardRequestedOnOpen === true,
+            panelGravity: state.panelGravity,
+            panelBottomMarginDp: Number(state.panelBottomMarginDp),
             addThreadId: state.addThreadId,
             addThreadName: state.addThreadName,
             removeThreadId: state.removeThreadId,
@@ -927,6 +1249,15 @@
             windowType: null, windowFlags: null, panelWidthPx: null,
             panelHeightPx: null, panelWidthDp: null, panelHeightDp: null,
             dimAmount: 0, modalWindow: false, opaqueBackground: false,
+            editorStyle: "legacy_editor_v1", dragHandlePresent: false,
+            headerIconPresent: false, headerCloseButtonPresent: false,
+            contentLabelPresent: false, characterCountPresent: false,
+            metadataRowPresent: false, sourceMetaText: "", typeMetaText: "",
+            contentLength: 0, contentMinLines: 0, footerActionCount: 0,
+            editorFooterHeightDp: 0, cancelButtonPresent: false,
+            saveButtonPresent: false, requestKeyboardOnOpen: true,
+            keyboardRequestedOnOpen: false, panelGravity: "center",
+            panelBottomMarginDp: 0,
             addThreadId: null, addThreadName: null, removeThreadId: null,
             removeThreadName: null, saveThreadId: null,
             saveThreadName: null, tagThreadId: null, tagThreadName: null,
@@ -940,7 +1271,7 @@
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 4,
+        MODULE_VERSION: 5,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
@@ -964,9 +1295,15 @@
         },
         isReady: function () { return ready; },
         isOpen: function () { return state.attached; },
-        openNew: function () { return openPanel("new", null); },
-        openItem: function (id) { return openPanel("edit", Number(id)); },
-        openTags: function (id) { return openPanel("tags", Number(id)); },
+        openNew: function (options) {
+            return openPanel("new", null, options || {});
+        },
+        openItem: function (id, options) {
+            return openPanel("edit", Number(id), options || {});
+        },
+        openTags: function (id, options) {
+            return openPanel("tags", Number(id), options || {});
+        },
         close: function () { return closePanel("close"); },
         getState: getState,
         setInputText: function (text) {
@@ -987,6 +1324,12 @@
         performCancelClick: function () {
             return requireMain(runOnMainSync(function () {
                 return cancelView !== null ? cancelView.performClick() : false;
+            }, 2500));
+        },
+        performHeaderCloseClick: function () {
+            return requireMain(runOnMainSync(function () {
+                return headerCloseView !== null ?
+                    headerCloseView.performClick() : false;
             }, 2500));
         },
         performCreateTagClick: function (name) {
