@@ -1,0 +1,58 @@
++ set -euo pipefail
++ BRANCH=agent/initialize-project-skeleton
++ HELPER_DIR=.github/cliphub-stage3d2-4
++ WORKFLOW_PATH=.github/workflows/cliphub-stage3d2-4.yml
++ check_hash src/ch_04_clipboard.js 70a1a10215c75012b47bd06eda9a2b271e63f248
++ local path=src/ch_04_clipboard.js expected=70a1a10215c75012b47bd06eda9a2b271e63f248 actual
+++ git hash-object src/ch_04_clipboard.js
++ actual=70a1a10215c75012b47bd06eda9a2b271e63f248
++ '[' 70a1a10215c75012b47bd06eda9a2b271e63f248 '!=' 70a1a10215c75012b47bd06eda9a2b271e63f248 ']'
++ check_hash src/ch_05_classifier.js c78f3d652ecdf75a5c454312aa03e15ab55ab38f
++ local path=src/ch_05_classifier.js expected=c78f3d652ecdf75a5c454312aa03e15ab55ab38f actual
+++ git hash-object src/ch_05_classifier.js
++ actual=c78f3d652ecdf75a5c454312aa03e15ab55ab38f
++ '[' c78f3d652ecdf75a5c454312aa03e15ab55ab38f '!=' c78f3d652ecdf75a5c454312aa03e15ab55ab38f ']'
++ check_hash src/ch_06_repository.js d9050715d061f3058de983104330283080ec55f2
++ local path=src/ch_06_repository.js expected=d9050715d061f3058de983104330283080ec55f2 actual
+++ git hash-object src/ch_06_repository.js
++ actual=d9050715d061f3058de983104330283080ec55f2
++ '[' d9050715d061f3058de983104330283080ec55f2 '!=' d9050715d061f3058de983104330283080ec55f2 ']'
++ check_hash src/ch_09_list.js 30e7b1b76aca447ab26b0de695aae3ab0b51b59e
++ local path=src/ch_09_list.js expected=30e7b1b76aca447ab26b0de695aae3ab0b51b59e actual
+++ git hash-object src/ch_09_list.js
++ actual=30e7b1b76aca447ab26b0de695aae3ab0b51b59e
++ '[' 30e7b1b76aca447ab26b0de695aae3ab0b51b59e '!=' 30e7b1b76aca447ab26b0de695aae3ab0b51b59e ']'
++ check_hash src/ch_10_editor.js 8de662133eee7c5dcb3ce8ffafb496f02632d5a2
++ local path=src/ch_10_editor.js expected=8de662133eee7c5dcb3ce8ffafb496f02632d5a2 actual
+++ git hash-object src/ch_10_editor.js
++ actual=8de662133eee7c5dcb3ce8ffafb496f02632d5a2
++ '[' 8de662133eee7c5dcb3ce8ffafb496f02632d5a2 '!=' 8de662133eee7c5dcb3ce8ffafb496f02632d5a2 ']'
++ check_hash src/ch_11_filter.js b24a88aaac0bb2d3dc9251135845b2b2010914ce
++ local path=src/ch_11_filter.js expected=b24a88aaac0bb2d3dc9251135845b2b2010914ce actual
+++ git hash-object src/ch_11_filter.js
++ actual=b24a88aaac0bb2d3dc9251135845b2b2010914ce
++ '[' b24a88aaac0bb2d3dc9251135845b2b2010914ce '!=' b24a88aaac0bb2d3dc9251135845b2b2010914ce ']'
++ check_hash src/ch_12_translation.js 8cae18cda1737b63c93d09409e24903cac3bc2a6
++ local path=src/ch_12_translation.js expected=8cae18cda1737b63c93d09409e24903cac3bc2a6 actual
+++ git hash-object src/ch_12_translation.js
++ actual=8cae18cda1737b63c93d09409e24903cac3bc2a6
++ '[' 8cae18cda1737b63c93d09409e24903cac3bc2a6 '!=' 8cae18cda1737b63c93d09409e24903cac3bc2a6 ']'
++ check_hash src/ch_13_settings.js fe5b06b405ed5e9a5f26f2ddefc8dab9337fdc8e
++ local path=src/ch_13_settings.js expected=fe5b06b405ed5e9a5f26f2ddefc8dab9337fdc8e actual
+++ git hash-object src/ch_13_settings.js
++ actual=fe5b06b405ed5e9a5f26f2ddefc8dab9337fdc8e
++ '[' fe5b06b405ed5e9a5f26f2ddefc8dab9337fdc8e '!=' fe5b06b405ed5e9a5f26f2ddefc8dab9337fdc8e ']'
++ check_hash src/ch_15_app.js 1c68820940b6cd1f74213a03476bd681f22e0031
++ local path=src/ch_15_app.js expected=1c68820940b6cd1f74213a03476bd681f22e0031 actual
+++ git hash-object src/ch_15_app.js
++ actual=1c68820940b6cd1f74213a03476bd681f22e0031
++ '[' 1c68820940b6cd1f74213a03476bd681f22e0031 '!=' 1c68820940b6cd1f74213a03476bd681f22e0031 ']'
++ check_hash module-manifest.json f28d69bc067dc71ef0a82647883d55a7a1cb6934
++ local path=module-manifest.json expected=f28d69bc067dc71ef0a82647883d55a7a1cb6934 actual
+++ git hash-object module-manifest.json
++ actual=f28d69bc067dc71ef0a82647883d55a7a1cb6934
++ '[' f28d69bc067dc71ef0a82647883d55a7a1cb6934 '!=' f28d69bc067dc71ef0a82647883d55a7a1cb6934 ']'
++ cat
++ cp .github/cliphub-stage3d2-4/settings_v5.js src/ch_13_settings.js
++ python3 .github/cliphub-stage3d2-4/patch.py
+clipboard version expected one match, got 0
