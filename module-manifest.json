@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260722.37",
+  "moduleSetVersion": "20260723.01",
   "entryMinVersion": 4,
   "sourceRef": "agent/initialize-project-skeleton",
   "modules": [
@@ -22,17 +22,17 @@
     {
       "name": "ch_04_clipboard.js",
       "path": "src/ch_04_clipboard.js",
-      "sha": "70a1a10215c75012b47bd06eda9a2b271e63f248"
+      "sha": "9dbb0aa8e3bc7318ab6ddfc39fa9c67c8ed739ae"
     },
     {
       "name": "ch_05_classifier.js",
       "path": "src/ch_05_classifier.js",
-      "sha": "c78f3d652ecdf75a5c454312aa03e15ab55ab38f"
+      "sha": "7f4ea64a79b38eceab0351a6129c0901366aa404"
     },
     {
       "name": "ch_06_repository.js",
       "path": "src/ch_06_repository.js",
-      "sha": "d9050715d061f3058de983104330283080ec55f2"
+      "sha": "8442c2eb741ea21e3f713b8470655ee83e57235f"
     },
     {
       "name": "ch_07_theme.js",
@@ -47,27 +47,27 @@
     {
       "name": "ch_09_list.js",
       "path": "src/ch_09_list.js",
-      "sha": "30e7b1b76aca447ab26b0de695aae3ab0b51b59e"
+      "sha": "8060dd75f23147e3fbc2c231f8138e7051cd159f"
     },
     {
       "name": "ch_10_editor.js",
       "path": "src/ch_10_editor.js",
-      "sha": "8de662133eee7c5dcb3ce8ffafb496f02632d5a2"
+      "sha": "40376488c13846095c86482ab135a446f956eafb"
     },
     {
       "name": "ch_11_filter.js",
       "path": "src/ch_11_filter.js",
-      "sha": "b24a88aaac0bb2d3dc9251135845b2b2010914ce"
+      "sha": "40e39a506d75f7cebdeb1541d26920f4a76383da"
     },
     {
       "name": "ch_12_translation.js",
       "path": "src/ch_12_translation.js",
-      "sha": "8cae18cda1737b63c93d09409e24903cac3bc2a6"
+      "sha": "99b90516d8785d84fbf881fe04d194fa72675d4c"
     },
     {
       "name": "ch_13_settings.js",
       "path": "src/ch_13_settings.js",
-      "sha": "fe5b06b405ed5e9a5f26f2ddefc8dab9337fdc8e"
+      "sha": "ec16115e869a76b0d9714b0fc5fad174990bf244"
     },
     {
       "name": "ch_14_event_bus.js",
@@ -77,7 +77,7 @@
     {
       "name": "ch_15_app.js",
       "path": "src/ch_15_app.js",
-      "sha": "1c68820940b6cd1f74213a03476bd681f22e0031"
+      "sha": "1c9a02037e75ac3fc5b3c0c0e3930daa9aa1d740"
     }
   ]
 }

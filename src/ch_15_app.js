@@ -19,7 +19,7 @@
     var order = [
         "Log", "Database", "Classifier", "Repository",
         "EventBus", "Theme", "Clipboard", "Window", "List",
-        "Editor", "Filter", "Translation", "Settings"
+        "Editor", "Filter", "Settings", "Translation"
     ];
     var state = {
         started: false,
@@ -229,6 +229,8 @@
         var detail = safeState(ClipHub.List, "getDetailState", {});
         var editor = safeState(ClipHub.Editor, "getState", {});
         var filter = safeState(ClipHub.Filter, "getPanelState", {});
+        var settings = safeState(ClipHub.Settings, "getState", {});
+        var translation = safeState(ClipHub.Translation, "getState", {});
         var windowAttached = windowState.attachedToWindow === true ||
             windowState.attached === true;
         var detailAttached = detail.attachedToWindow === true ||
@@ -237,15 +239,21 @@
             editor.attached === true;
         var filterAttached = filter.attachedToWindow === true ||
             filter.attached === true;
+        var settingsAttached = settings.attachedToWindow === true ||
+            settings.attached === true;
+        var translationAttached = translation.attachedToWindow === true ||
+            translation.attached === true;
         return {
             started: state.started === true,
             uiVisible: windowAttached || detailAttached || editorAttached ||
-                filterAttached,
+                filterAttached || settingsAttached || translationAttached,
             listVisible: list.visible === true,
             windowAttached: windowAttached,
             detailAttached: detailAttached,
             editorAttached: editorAttached,
             filterAttached: filterAttached,
+            settingsAttached: settingsAttached,
+            translationAttached: translationAttached,
             homeFilterAttachedCount:
                 (windowAttached ? 1 : 0) + (filterAttached ? 1 : 0),
             homeFilterExclusive:
@@ -262,6 +270,16 @@
     }
 
     function closeUi() {
+        try {
+            if (ClipHub.Translation && typeof ClipHub.Translation.close === "function") {
+                ClipHub.Translation.close("app_hide");
+            }
+        } catch (ignoredTranslation) {}
+        try {
+            if (ClipHub.Settings && typeof ClipHub.Settings.close === "function") {
+                ClipHub.Settings.close("app_hide");
+            }
+        } catch (ignoredSettings) {}
         try {
             if (ClipHub.Filter && typeof ClipHub.Filter.closePanel === "function") {
                 ClipHub.Filter.closePanel({
@@ -464,7 +482,7 @@
 
     ClipHub.App = {
         MODULE_NAME: "ch_15_app",
-        MODULE_VERSION: 7,
+        MODULE_VERSION: 8,
         CONTROL_ACTION_BASE: CONTROL_ACTION_BASE,
         CONTROL_COMMANDS: CONTROL_COMMANDS,
         start: function (context) {

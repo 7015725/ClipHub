@@ -490,15 +490,11 @@
             }
             state.lastObserved.hash = hash;
             state.lastObserved.at = eventAt;
-            classified = ClipHub.Classifier &&
-                typeof ClipHub.Classifier.classify === "function"
-                ? ClipHub.Classifier.classify(read.text)
-                : { type: "text" };
+            classified = { type: "text", confidence: 100 };
             result = recordText(
                 read.text,
                 hash,
-                classified && classified.type
-                    ? String(classified.type) : "text",
+                "text",
                 eventAt,
                 read
             );

@@ -137,7 +137,7 @@
             [
                 content,
                 item.normalizedHash || sha256(normalized),
-                item.contentType || "text",
+                "text",
                 item.sourcePackage === undefined ? null : item.sourcePackage,
                 item.sourceLabel === undefined ? null : item.sourceLabel,
                 item.sourceUid === undefined || item.sourceUid === null
@@ -194,11 +194,6 @@
             sources = [String(options.sourcePackage)];
         }
         appendIn(where, args, "clipboard_items.source_package", sources);
-        types = stringList(options.contentTypes);
-        if (types.length < 1 && options.contentType) {
-            types = [String(options.contentType)];
-        }
-        appendIn(where, args, "clipboard_items.content_type", types);
         tagIds = intList(options.tagIds);
         if (tagIds.length > 0) {
             where.push("EXISTS (SELECT 1 FROM clipboard_item_tags filter_tags " +
@@ -239,19 +234,12 @@
 
     function listContentTypeOptions() {
         requireReady();
-        return ClipHub.Database.queryAll(
-            "SELECT content_type, COUNT(*) AS item_count FROM clipboard_items " +
-            "WHERE deleted_at IS NULL AND content_type IS NOT NULL " +
-            "AND content_type <> '' GROUP BY content_type " +
-            "ORDER BY content_type COLLATE NOCASE ASC",
-            []
-        );
+        return [];
     }
 
     function updateItem(id, patch) {
         var allowed = {
             content: true,
-            content_type: true,
             source_package: true,
             source_label: true,
             source_uid: true,
@@ -619,9 +607,28 @@
         return attached;
     }
 
+    function reorderTags(tagIds) {
+        var ids = intList(tagIds);
+        var index;
+        var changed = 0;
+        requireReady();
+        ClipHub.Database.transaction(function () {
+            for (index = 0; index < ids.length; index += 1) {
+                changed += updateTag(ids[index], {
+                    manualOrder: (index + 1) * 1000
+                });
+            }
+        });
+        return {
+            ok: true,
+            updatedCount: changed,
+            tagIds: ids
+        };
+    }
+
     ClipHub.Repository = {
         MODULE_NAME: "ch_06_repository",
-        MODULE_VERSION: 7,
+        MODULE_VERSION: 8,
         init: function () {
             ready = !!(ClipHub.Database && ClipHub.Database.isOpen());
             if (!ready) { throw new Error("Database is unavailable"); }
@@ -658,6 +665,7 @@
         attachTag: attachTag,
         detachTag: detachTag,
         setItemTags: setItemTags,
+        reorderTags: reorderTags,
         insert: insertItem,
         update: updateItem,
         remove: softDeleteItem,

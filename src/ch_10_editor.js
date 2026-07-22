@@ -1258,8 +1258,6 @@
         var isNew = state.mode === "new";
         var sourceText = isNew ? "ClipHub 手动" :
             String(row && row.source_label ? row.source_label : "未知来源");
-        var typeText = isNew ? "文本" :
-            contentTypeLabel(row && row.content_type);
         var dragRow = new LinearLayout(appContext);
         var dragHandle = new View(appContext);
         var header = new LinearLayout(appContext);
@@ -1272,9 +1270,9 @@
         options = options || {};
 
         panelRoot.removeAllViews();
-        state.editorStyle = "reference_editor_v4";
+        state.editorStyle = "reference_editor_v5";
         state.sourceMetaText = sourceText;
-        state.typeMetaText = typeText;
+        state.typeMetaText = "";
         state.contentMinLines = 10;
         state.contentLength = String(initialText || "").length;
 
@@ -1305,7 +1303,7 @@
             18, colors.textPrimary, true);
         subtitleTextView = makeText(isNew ?
             "手动添加一条本地剪贴板记录" :
-            "仅修改正文，来源和类型保持不变",
+            "修改正文并管理当前记录的自定义标签",
             10, colors.textSecondary, false);
         titleStack.addView(titleTextView,
             new LinearLayout.LayoutParams(
@@ -1342,16 +1340,30 @@
 
         metaRow.setOrientation(LinearLayout.HORIZONTAL);
         metaRow.setGravity(Gravity.CENTER_VERTICAL);
-        metadataTypeView = makeEditorPill("类型  " + typeText,
-            colors, true);
-        params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT, dp(32));
-        params.rightMargin = dp(7);
-        metaRow.addView(metadataTypeView, params);
         metadataSourceView = makeEditorPill("来源  " + sourceText,
             colors, false);
-        metaRow.addView(metadataSourceView,
-            new LinearLayout.LayoutParams(0, dp(32), 1));
+        params = new LinearLayout.LayoutParams(0, dp(32), 1);
+        params.rightMargin = dp(7);
+        metaRow.addView(metadataSourceView, params);
+        metadataTypeView = makeEditorPill(isNew ?
+            "标签  保存后设置" : "标签  管理", colors, !isNew);
+        metadataTypeView.setEnabled(!isNew);
+        metadataTypeView.setAlpha(isNew ? 0.55 : 1);
+        if (!isNew) {
+            metadataTypeView.setClickable(true);
+            metadataTypeView.setFocusable(true);
+            metadataTypeView.setContentDescription("管理当前记录标签");
+            metadataTypeView.setOnClickListener(new JavaAdapter(
+                View.OnClickListener, {
+                    onClick: function () {
+                        openPanel("tags", state.itemId, {
+                            requestKeyboard: false
+                        });
+                    }
+                }));
+        }
+        metaRow.addView(metadataTypeView,
+            new LinearLayout.LayoutParams(dp(116), dp(32)));
         params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(32));
         params.bottomMargin = dp(10);
@@ -1891,7 +1903,7 @@
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 8,
+        MODULE_VERSION: 9,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;

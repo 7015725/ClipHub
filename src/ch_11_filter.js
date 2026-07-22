@@ -53,6 +53,7 @@
     var searchView = null;
     var resetView = null;
     var closeView = null;
+    var settingsButton = null;
     var advancedView = null;
     var applyView = null;
     var clearHistoryView = null;
@@ -79,6 +80,7 @@
     var selectedItemId = null;
     var resultCardViews = [];
     var toolbarActionViews = {};
+    var resultTagMap = {};
 
     var state = {
         applyCount: 0,
@@ -153,6 +155,9 @@
         addActionCount: 0,
         deleteActionCount: 0,
         detailActionCount: 0,
+        settingsOpenCount: 0,
+        settingsButtonPresent: false,
+        renderedTagLabelCount: 0,
         toolbarEnabledCount: 1,
         repositorySortUnchanged: true,
         sortScope: "result_window",
@@ -319,7 +324,7 @@
         return {
             keyword: String(input.keyword || ""),
             sourcePackages: copyList(input.sourcePackages),
-            contentTypes: copyList(input.contentTypes),
+            contentTypes: [],
             tagIds: copyList(input.tagIds),
             pinnedOnly: input.pinnedOnly === true,
             sensitiveMode: String(input.sensitiveMode || "all"),
@@ -331,7 +336,6 @@
         input = input || value || emptyValue();
         return normalizeText(input.keyword).length > 0 ||
             input.sourcePackages.length > 0 ||
-            input.contentTypes.length > 0 ||
             input.tagIds.length > 0 ||
             input.pinnedOnly === true ||
             String(input.sensitiveMode || "all") !== "all";
@@ -407,7 +411,6 @@
         }
         options.keyword = value.keyword;
         options.sourcePackages = copyList(value.sourcePackages);
-        options.contentTypes = copyList(value.contentTypes);
         options.tagIds = copyList(value.tagIds);
         options.pinnedOnly = value.pinnedOnly;
         if (value.sensitiveMode === "only") {
@@ -1238,9 +1241,8 @@
 
     function optionCounts() {
         var sources = ClipHub.Repository.listSourceOptions();
-        var types = ClipHub.Repository.listContentTypeOptions();
         var tags = ClipHub.Repository.listTags();
-        return { sources: sources, types: types, tags: tags };
+        return { sources: sources, types: [], tags: tags };
     }
 
     function displayMetrics() {
@@ -1309,14 +1311,29 @@
             }
         } catch (ignoredIcon) {}
         if (holder.getChildCount() === 0) {
-            fallback = makeText(typeLabel(row.content_type).substring(0, 1),
-                14, colors.accentStrong, true);
+            fallback = makeText("剪", 14, colors.accentStrong, true);
             fallback.setGravity(Gravity.CENTER);
             holder.addView(fallback, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
         }
         return holder;
+    }
+
+    function tagsForResult(row) {
+        var key = row && row.id !== undefined ? String(row.id) : "";
+        return resultTagMap[key] || [];
+    }
+
+    function tagSummary(tags) {
+        var labels = [];
+        var index;
+        tags = tags || [];
+        for (index = 0; index < tags.length && index < 2; index += 1) {
+            labels.push(String(tags[index].name || ""));
+        }
+        if (tags.length > 2) { labels.push("+" + String(tags.length - 2)); }
+        return labels.length > 0 ? labels.join("  ") : "无标签";
     }
 
     function selectedResultRow() {
@@ -1442,12 +1459,13 @@
 
     function openSelectedDetail() {
         var row = selectedResultRow();
-        if (row === null || !ClipHub.List ||
-                typeof ClipHub.List.openDetail !== "function") {
+        if (row === null || !ClipHub.Translation ||
+                typeof ClipHub.Translation.openForItem !== "function") {
             return false;
         }
         state.detailActionCount += 1;
-        return ClipHub.List.openDetail(Number(row.id)) === true;
+        ClipHub.Translation.openForItem(Number(row.id));
+        return true;
     }
 
     function makeResultCard(row, colors) {
@@ -1459,8 +1477,10 @@
         var content = makeText(String(row.content || ""),
             11, colors.textPrimary, selected);
         var metaRow = new LinearLayout(appContext);
-        var type = makeText(typeLabel(row.content_type),
-            8, colors.accentStrong, true);
+        var tags = tagsForResult(row);
+        var tagBadge = makeText(tagSummary(tags),
+            8, tags.length > 0 ? colors.accentStrong : colors.textTertiary,
+            tags.length > 0);
         var source = makeText(sourceLabel(row),
             8, colors.textSecondary, false);
         var right = new LinearLayout(appContext);
@@ -1506,14 +1526,18 @@
             LinearLayout.LayoutParams.WRAP_CONTENT));
         metaRow.setOrientation(LinearLayout.HORIZONTAL);
         metaRow.setGravity(Gravity.CENTER_VERTICAL);
-        type.setPadding(dp(6), dp(2), dp(6), dp(2));
-        type.setBackground(roundedBackground(colors.accentSoft,
+        tagBadge.setPadding(dp(6), dp(2), dp(6), dp(2));
+        tagBadge.setSingleLine(true);
+        tagBadge.setMaxLines(1);
+        tagBadge.setEllipsize(TextUtils.TruncateAt.END);
+        tagBadge.setBackground(roundedBackground(
+            tags.length > 0 ? colors.accentSoft : colors.surfaceMuted,
             null, 7));
-        params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
+        params = new LinearLayout.LayoutParams(dp(112),
             LinearLayout.LayoutParams.WRAP_CONTENT);
         params.rightMargin = dp(6);
-        metaRow.addView(type, params);
+        metaRow.addView(tagBadge, params);
+        state.renderedTagLabelCount += Math.min(2, tags.length);
         source.setSingleLine(true);
         source.setEllipsize(TextUtils.TruncateAt.END);
         metaRow.addView(source, new LinearLayout.LayoutParams(
@@ -1553,13 +1577,19 @@
         var index;
         var empty;
         var params;
+        var ids = [];
         if (resultContainer === null) {
             return false;
         }
         resultContainer.removeAllViews();
         state.resultCardCount = 0;
         state.resultSourceIconCount = 0;
+        state.renderedTagLabelCount = 0;
         resultCardViews = [];
+        for (index = 0; index < previewRows.length; index += 1) {
+            ids.push(Number(previewRows[index].id));
+        }
+        resultTagMap = ClipHub.Repository.listItemTagMap(ids);
         if (selectedItemId !== null && selectedResultRow() === null) {
             clearSelectedResult();
         }
@@ -1691,6 +1721,27 @@
         titleRow.addView(logo, params);
         titleRow.addView(title, new LinearLayout.LayoutParams(
             0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        settingsButton = makeIcon("⚙", 18, colors.icon,
+            "打开 ClipHub 设置");
+        settingsButton.setBackground(circleBackground(
+            colors.surfaceMuted, null));
+        settingsButton.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, {
+                onClick: function () {
+                    try {
+                        if (ClipHub.Settings && ClipHub.Settings.open) {
+                            state.settingsOpenCount += 1;
+                            ClipHub.Settings.open();
+                        }
+                    } catch (error) {
+                        state.lastError = String(error);
+                    }
+                }
+            }));
+        titleRow.addView(settingsButton,
+            new LinearLayout.LayoutParams(dp(36), dp(36)));
+        state.settingsButtonPresent = true;
+
         closeView = makeIcon("×", 22, colors.icon,
             "关闭搜索与筛选");
         closeView.setBackground(circleBackground(colors.surfaceMuted, null));
@@ -1953,10 +2004,6 @@
         if (counts.sources.length > 0) {
             addSection(content, "来源应用（多选）",
                 counts.sources, "source", colors);
-        }
-        if (counts.types.length > 0) {
-            addSection(content, "内容类型（多选）",
-                counts.types, "type", colors);
         }
         if (counts.tags.length > 0) {
             addSection(content, "标签（多选）",
@@ -2385,6 +2432,7 @@
                 searchView = null;
                 resetView = null;
                 closeView = null;
+                settingsButton = null;
                 advancedView = null;
                 applyView = null;
                 clearHistoryView = null;
@@ -2475,6 +2523,9 @@
             tagChipCount: Object.keys(tagViews).length,
             historyChipCount: Number(state.historyChipCount),
             resultCardCount: Number(state.resultCardCount),
+            settingsButtonPresent: settingsButton !== null,
+            settingsOpenCount: Number(state.settingsOpenCount),
+            renderedTagLabelCount: Number(state.renderedTagLabelCount),
             resultSourceIconCount:
                 Number(state.resultSourceIconCount),
             advancedDrawerVisible: advancedVisible,
@@ -2649,6 +2700,9 @@
         state.addActionCount = 0;
         state.deleteActionCount = 0;
         state.detailActionCount = 0;
+        state.settingsOpenCount = 0;
+        state.settingsButtonPresent = false;
+        state.renderedTagLabelCount = 0;
         state.toolbarEnabledCount = 1;
         state.repositorySortUnchanged = true;
         state.sortScope = "result_window";
@@ -2669,13 +2723,13 @@
         state.resultCardCount = 0;
         state.resultSourceIconCount = 0;
         state.advancedDrawerVisible = false;
-        state.searchPageStyle = "reference_search_v4";
+        state.searchPageStyle = "reference_search_v5";
         state.lastError = null;
     }
 
     ClipHub.Filter = {
         MODULE_NAME: "ch_11_filter",
-        MODULE_VERSION: 11,
+        MODULE_VERSION: 12,
 
         init: function (context) {
             androidContext = context && context.androidContext ?
@@ -2709,6 +2763,7 @@
             selectedItemId = null;
             resultCardViews = [];
             toolbarActionViews = {};
+            resultTagMap = {};
             resetState();
             loadHistory();
             registerEvent("clipboard_added");
@@ -2846,6 +2901,13 @@
             }, 3000));
         },
 
+        performSettingsClick: function () {
+            return requireMain(runOnMainSync(function () {
+                return settingsButton !== null ?
+                    settingsButton.performClick() : false;
+            }, 2500));
+        },
+
         performAdvancedClick: function () {
             return requireMain(runOnMainSync(function () {
                 return advancedView !== null ?
@@ -2963,6 +3025,7 @@
             selectedItemId = null;
             resultCardViews = [];
             toolbarActionViews = {};
+            resultTagMap = {};
             value = null;
             ready = false;
             androidContext = null;

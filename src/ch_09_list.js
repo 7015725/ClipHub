@@ -2517,7 +2517,7 @@
 
     ClipHub.List = {
         MODULE_NAME: "ch_09_list",
-        MODULE_VERSION: 12,
+        MODULE_VERSION: 13,
         LONG_TEXT_THRESHOLD: LONG_TEXT_THRESHOLD,
 
         init: function (context) {
@@ -2604,6 +2604,18 @@
         },
 
         hide: function (closeWindow) {
+            try {
+                if (ClipHub.Translation && ClipHub.Translation.isAttached &&
+                        ClipHub.Translation.isAttached()) {
+                    ClipHub.Translation.close("list_hide");
+                }
+            } catch (ignoredTranslation) {}
+            try {
+                if (ClipHub.Settings && ClipHub.Settings.isAttached &&
+                        ClipHub.Settings.isAttached()) {
+                    ClipHub.Settings.close("list_hide");
+                }
+            } catch (ignoredSettings) {}
             visible = false;
             filterPanelSuspended = false;
             selectionMode = false;
@@ -2730,10 +2742,37 @@
         },
 
         closeDetail: function () {
+            try {
+                if (ClipHub.Translation && ClipHub.Translation.isAttached &&
+                        ClipHub.Translation.isAttached()) {
+                    return ClipHub.Translation.close("navigation");
+                }
+            } catch (ignoredTranslation) {}
+            try {
+                if (ClipHub.Settings && ClipHub.Settings.isAttached &&
+                        ClipHub.Settings.isAttached()) {
+                    return ClipHub.Settings.close("navigation");
+                }
+            } catch (ignoredSettings) {}
             return closeDetail("api");
         },
 
-        getDetailState: getDetailState,
+        getDetailState: function () {
+            var external;
+            try {
+                external = ClipHub.Translation && ClipHub.Translation.getState ?
+                    ClipHub.Translation.getState() : null;
+                if (external && (external.attached === true ||
+                        external.open === true)) { return external; }
+            } catch (ignoredTranslation) {}
+            try {
+                external = ClipHub.Settings && ClipHub.Settings.getState ?
+                    ClipHub.Settings.getState() : null;
+                if (external && (external.attached === true ||
+                        external.open === true)) { return external; }
+            } catch (ignoredSettings) {}
+            return getDetailState();
+        },
 
         performUndoClick: function () {
             return ClipHub.Window.runOnMain(function () {
