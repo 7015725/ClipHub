@@ -32,6 +32,44 @@ jobs:
         shell: bash
         run: |
           set +e
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/cliphub-stage3d2-5/apply.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''text = replace_once(text,
+          ''' + "'''" + '''            ClipHub.Repository.reorderTags(ids);
+                      uiState.tagReorderCount += 1;
+                      emitTagsChanged("tag_reordered", tagId);
+                      buildPage();
+                      return true;
+          ''' + "'''" + ''',
+          ''' + "'''" + '''            ClipHub.Repository.reorderTags(ids);
+                      uiState.tagReorderCount += 1;
+                      emitTagsChanged("tag_reordered", tagId);
+                      rebuildTagPage();
+                      return true;
+          ''' + "'''" + ''', 'settings reorder rebuild')'''
+          new = '''old_reorder = ''' + "'''" + '''            ClipHub.Repository.reorderTags(ids);
+                      uiState.tagReorderCount += 1;
+                      emitTagsChanged("tag_reordered", tagId);
+                      buildPage();
+                      return true;
+          ''' + "'''" + '''
+          new_reorder = ''' + "'''" + '''            ClipHub.Repository.reorderTags(ids);
+                      uiState.tagReorderCount += 1;
+                      emitTagsChanged("tag_reordered", tagId);
+                      rebuildTagPage();
+                      return true;
+          ''' + "'''" + '''
+          if old_reorder in text:
+              text = text.replace(old_reorder, new_reorder, 1)
+          elif new_reorder not in text:
+              raise SystemExit('settings reorder rebuild marker missing')'''
+          if text.count(old) != 1:
+              raise SystemExit('runtime compatibility patch marker mismatch')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
           python3 .github/cliphub-stage3d2-5/apply.py > /tmp/cliphub_stage3d25.log 2>&1
           code=$?
           cat /tmp/cliphub_stage3d25.log
@@ -118,9 +156,4 @@ jobs:
             module-manifest.json \
             docs/阶段3D2-5标签管理与选择器实施说明.md
           git commit -m "feat: add transactional tag selector and visual tag manager"
-
-          git rm -rf .github/cliphub-stage3d2-5 \
-            .github/workflows/cliphub-stage3d2-5.yml \
-            .github/cliphub-stage3d2-5-trigger.txt
-          git commit -m "chore: remove completed stage 3D2-5 automation"
           git push origin HEAD:agent/initialize-project-skeleton
