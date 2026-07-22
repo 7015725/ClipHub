@@ -1,0 +1,45 @@
+name: Apply ClipHub probe 044 v2 timing fix
+
+on:
+  pull_request:
+    branches:
+      - agent/initialize-project-skeleton
+    paths:
+      - .github/cliphub-probe044-v2-trigger.txt
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: cliphub-probe044-v2
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.repository == '7015725/ClipHub'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/initialize-project-skeleton
+          fetch-depth: 0
+      - name: Apply probe 044 v2 correction
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          bash -x .github/cliphub-probe044-v2/apply.sh > /tmp/cliphub_probe044_v2.log 2>&1
+          code=$?
+          if [ "$code" -ne 0 ]; then
+            {
+              echo '```text'
+              tail -n 180 /tmp/cliphub_probe044_v2.log
+              echo '```'
+            } > /tmp/cliphub_probe044_v2_comment.md
+            gh api repos/${{ github.repository }}/issues/12/comments --method POST --field body=@/tmp/cliphub_probe044_v2_comment.md || true
+          fi
+          exit "$code"
