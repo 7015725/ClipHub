@@ -1,0 +1,121 @@
+name: Fix ClipHub probe 045 v2
+
+on:
+  pull_request:
+    branches:
+      - agent/initialize-project-skeleton
+    paths:
+      - .github/cliphub-probe045-v2-fix-trigger.txt
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: cliphub-probe045-v2-fix
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.repository == '7015725/ClipHub'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/initialize-project-skeleton
+          fetch-depth: 0
+
+      - name: Correct probe expectations
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          {
+            set -euo pipefail
+            python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('probes/cliphub_content_tags_settings_probe_045_impl.js')
+          text = path.read_text(encoding='utf-8')
+
+          replacements = [
+              ('contentTypes: ["url"], limit: 20',
+               'contentTypes: ["url"], limit: 100',
+               'type filter query limit'),
+              ('result.typeFilterIgnoredCount === 3 &&',
+               'result.typeFilterIgnoredCount === 28 &&',
+               'type filter expected count'),
+              ('panel.resultHasMore === true &&\n                    panel.loadMorePresent === true;',
+               'panel.resultHasMore === true &&\n                    panel.resultCanScroll === true &&\n                    panel.loadMorePresent === true;',
+               'root scroll readiness'),
+              ('result.firstPageState.resultHasMore === true &&\n                result.loadMoreClick === true &&',
+               'result.firstPageState.resultHasMore === true &&\n                result.firstPageState.resultCanScroll === true &&\n                result.loadMoreClick === true &&',
+               'scroll success condition')
+          ]
+
+          for old, new, label in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit('%s expected one match, got %d' % (label, count))
+              text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+            node --check probes/cliphub_content_tags_settings_probe_045_impl.js
+            git diff --check
+            git config user.name "ClipHub Automation"
+            git config user.email "actions@github.com"
+            git add probes/cliphub_content_tags_settings_probe_045_impl.js
+            git commit -m "test: correct probe 045 paging expectations"
+            implementation_commit="$(git rev-parse HEAD)"
+
+            python3 - "$implementation_commit" <<'PY'
+          from pathlib import Path
+          import sys
+
+          commit = sys.argv[1]
+          loader = Path('probes/cliphub_content_tags_settings_probe_045.js')
+          text = loader.read_text(encoding='utf-8')
+          old = 'var implementationCommit = "608d495152734c57950da2c6fe2756d36378d81d";'
+          new = 'var implementationCommit = "' + commit + '";'
+          if text.count(old) != 1:
+              raise SystemExit('loader commit marker mismatch')
+          loader.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          doc = Path('docs/内容标签翻译设置探测045说明.md')
+          text = doc.read_text(encoding='utf-8')
+          old = '608d495152734c57950da2c6fe2756d36378d81d'
+          if text.count(old) != 1:
+              raise SystemExit('doc commit marker mismatch')
+          doc.write_text(text.replace(old, commit, 1), encoding='utf-8')
+          PY
+
+            node --check probes/cliphub_content_tags_settings_probe_045.js
+            git diff --check
+            git add probes/cliphub_content_tags_settings_probe_045.js \
+              docs/内容标签翻译设置探测045说明.md
+            git commit -m "test: repin probe 045 v2 implementation"
+
+            git rm -f .github/workflows/cliphub-probe045-v2-fix.yml \
+              .github/cliphub-probe045-v2-fix-trigger.txt
+            git commit -m "chore: remove completed probe 045 fix automation"
+            git push origin HEAD:agent/initialize-project-skeleton
+          } > /tmp/cliphub_probe045_fix.log 2>&1
+          code=$?
+          tail -n 180 /tmp/cliphub_probe045_fix.log
+          if [ "$code" -ne 0 ]; then
+            {
+              echo 'Probe 045 v2 fix failed:'
+              echo
+              echo '```text'
+              tail -n 140 /tmp/cliphub_probe045_fix.log
+              echo '```'
+            } > /tmp/cliphub_probe045_fix_comment.md
+            gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments \
+              --method POST --field body=@/tmp/cliphub_probe045_fix_comment.md || true
+          fi
+          exit "$code"
