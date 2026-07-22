@@ -99,8 +99,7 @@ jobs:
             git commit -m "test: publish probe 045 v3 loader"
 
             git rm -rf .github/cliphub-probe045-v3 \
-              .github/workflows/cliphub-probe045-v3.yml \
-              .github/cliphub-probe045-v3-trigger.txt
+              .github/workflows/cliphub-probe045-v3.yml
             git commit -m "chore: remove completed probe 045 v3 automation"
             git push origin HEAD:agent/initialize-project-skeleton
           } > /tmp/cliphub_probe045_v3.log 2>&1
