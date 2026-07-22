@@ -30,5 +30,12 @@ jobs:
           set +e
           bash -x .github/cliphub-home-filter-exclusive/apply.sh > /tmp/cliphub_apply.log 2>&1
           code=$?
-          tail -n 120 /tmp/cliphub_apply.log
+          if [ "$code" -ne 0 ]; then
+            tail -n 180 /tmp/cliphub_apply.log > .github/cliphub-home-filter-exclusive/failure.log
+            git config user.name "ClipHub Automation"
+            git config user.email "actions@github.com"
+            git add .github/cliphub-home-filter-exclusive/failure.log
+            git commit -m "chore: record home filter workflow failure" || true
+            git push origin HEAD:agent/initialize-project-skeleton
+          fi
           exit "$code"
