@@ -1,0 +1,29 @@
+name: Apply ClipHub home filter exclusive-window fix
+
+on:
+  pull_request:
+    branches:
+      - agent/initialize-project-skeleton
+    paths:
+      - .github/cliphub-home-filter-exclusive-trigger.txt
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cliphub-home-filter-exclusive
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.repository == '7015725/ClipHub'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/initialize-project-skeleton
+          fetch-depth: 0
+      - name: Apply exclusive-window fix
+        shell: bash
+        run: bash .github/cliphub-home-filter-exclusive/apply.sh
