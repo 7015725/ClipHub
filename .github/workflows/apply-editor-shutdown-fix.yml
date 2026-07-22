@@ -1,0 +1,416 @@
+name: Apply Editor Shutdown Race Fix
+
+on:
+  push:
+    branches:
+      - agent/initialize-project-skeleton
+    paths:
+      - .github/workflows/apply-editor-shutdown-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/initialize-project-skeleton
+          fetch-depth: 0
+
+      - name: Patch Editor lifecycle
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import json
+
+          editor_path = Path("src/ch_10_editor.js")
+          manifest_path = Path("module-manifest.json")
+          text = editor_path.read_text(encoding="utf-8")
+
+          def replace_once(old, new, label):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected 1 marker, found {count}")
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              '        lastError: null\n    };',
+              '        delayedCallbackPostCount: 0,\n'
+              '        delayedCallbackRunCount: 0,\n'
+              '        delayedCallbackCancelCount: 0,\n'
+              '        delayedCallbackErrorCount: 0,\n'
+              '        pendingDelayedCallbackCount: 0,\n'
+              '        postShutdownCallbackAttemptCount: 0,\n'
+              '        lastDelayedCallbackError: null,\n'
+              '        lastError: null\n    };',
+              'state delayed callback counters')
+
+          replace_once(
+              '''    function runOnMainSync(callback, timeoutMs) {
+        var mainLooper = Looper.getMainLooper();''',
+              '''    function runOnMainSync(callback, timeoutMs) {
+        var mainLooper = Looper.getMainLooper();
+        if (mainHandler === null) {
+            return { ok: false,
+                error: new Error("Editor main handler unavailable") };
+        }''',
+              'runOnMainSync handler guard')
+
+          replace_once(
+              '''    function pxToDp(value) {
+        return Math.round(Number(value) / density);
+    }
+
+    function isDarkMode() {''',
+              '''    function pxToDp(value) {
+        return Math.round(Number(value) / density);
+    }
+
+    function postEditorDelayed(callback, delayMs, requireAttached) {
+        var generation = imePollGeneration;
+        var handler = mainHandler;
+        var runnable;
+        var posted;
+        if (handler === null || !ready || typeof callback !== "function") {
+            return false;
+        }
+        state.delayedCallbackPostCount += 1;
+        state.pendingDelayedCallbackCount += 1;
+        runnable = new Packages.java.lang.Runnable({
+            run: function () {
+                state.pendingDelayedCallbackCount = Math.max(0,
+                    Number(state.pendingDelayedCallbackCount) - 1);
+                if (generation !== imePollGeneration || !ready ||
+                        appContext === null || windowManager === null ||
+                        (requireAttached === true &&
+                            (!state.attached || panelRoot === null))) {
+                    state.delayedCallbackCancelCount += 1;
+                    if (!ready) {
+                        state.postShutdownCallbackAttemptCount += 1;
+                    }
+                    return;
+                }
+                try {
+                    callback();
+                    state.delayedCallbackRunCount += 1;
+                } catch (error) {
+                    state.delayedCallbackErrorCount += 1;
+                    state.lastDelayedCallbackError = String(error);
+                    state.lastError = String(error);
+                }
+            }
+        });
+        try { posted = handler.postDelayed(runnable, Number(delayMs || 0)); }
+        catch (postError) {
+            posted = false;
+            state.lastDelayedCallbackError = String(postError);
+        }
+        if (!posted) {
+            state.pendingDelayedCallbackCount = Math.max(0,
+                Number(state.pendingDelayedCallbackCount) - 1);
+            state.delayedCallbackErrorCount += 1;
+            return false;
+        }
+        return true;
+    }
+
+    function isDarkMode() {''',
+              'guarded delayed callback helper')
+
+          replace_once(
+              '''    function pollEditorIme(generation) {
+        var ime;
+        if (generation !== imePollGeneration || !state.attached ||
+                panelRoot === null || state.mode === "tags") {''',
+              '''    function pollEditorIme(generation) {
+        var ime;
+        if (generation !== imePollGeneration || !ready ||
+                appContext === null || windowManager === null ||
+                !state.attached || panelRoot === null ||
+                state.mode === "tags") {''',
+              'IME polling lifecycle guard')
+
+          replace_once(
+              '''                    onGlobalLayout: function () {
+                        var ime = readImeState();
+                        applyEditorImeLayout(ime);
+                        measureEditorLayout(ime);
+                    }''',
+              '''                    onGlobalLayout: function () {
+                        var ime;
+                        if (!ready || !state.attached || panelRoot === null ||
+                                appContext === null || windowManager === null) {
+                            return;
+                        }
+                        try {
+                            ime = readImeState();
+                            applyEditorImeLayout(ime);
+                            measureEditorLayout(ime);
+                        } catch (error) {
+                            state.delayedCallbackErrorCount += 1;
+                            state.lastDelayedCallbackError = String(error);
+                            state.lastError = String(error);
+                        }
+                    }''',
+              'layout observer lifecycle guard')
+
+          replace_once(
+              '''            startEditorImePolling();
+            mainHandler.postDelayed(new Packages.java.lang.Runnable({
+                run: function () {
+                    var ime = readImeState();
+                    applyEditorImeLayout(ime);
+                    measureEditorLayout(ime);
+                }
+            }), 180);''',
+              '''            startEditorImePolling();
+            postEditorDelayed(function () {
+                var ime = readImeState();
+                applyEditorImeLayout(ime);
+                measureEditorLayout(ime);
+            }, 180, true);''',
+              'initial IME delayed measurement')
+
+          replace_once(
+              '''        mainHandler.postDelayed(new Packages.java.lang.Runnable({
+            run: function () { measureEditorLayout(); }
+        }), 120);''',
+              '''        postEditorDelayed(function () {
+            measureEditorLayout();
+        }, 120, true);''',
+              'scroll delayed measurement')
+
+          replace_once(
+              '''        mainHandler.postDelayed(new Packages.java.lang.Runnable({
+            run: function () {
+                try {
+                    if (target !== null && inputMethodManager !== null) {
+                        inputMethodManager.showSoftInput(
+                            target, InputMethodManager.SHOW_IMPLICIT);
+                        state.inputFocused = target.hasFocus();
+                    }
+                } catch (ignored) {}
+            }
+        }), 120);''',
+              '''        postEditorDelayed(function () {
+            if (target !== null && inputMethodManager !== null) {
+                inputMethodManager.showSoftInput(
+                    target, InputMethodManager.SHOW_IMPLICIT);
+                state.inputFocused = target.hasFocus();
+            }
+        }, 120, true);''',
+              'keyboard request delayed callback')
+
+          replace_once(
+              '''            mainHandler.postDelayed(new Packages.java.lang.Runnable({
+                run: function () {
+                    var previous = -1;
+                    var retried = false;
+                    if (!state.attached || state.keyboardVisible ||
+                            panelRoot === null || contentInput === null) {
+                        return;
+                    }
+                    try {
+                        previous = Number(
+                            panelRoot.getDescendantFocusability());
+                    } catch (ignoredPrevious) {}
+                    try {
+                        panelRoot.setFocusable(true);
+                        panelRoot.setFocusableInTouchMode(true);
+                        panelRoot.setDescendantFocusability(
+                            ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+                        contentInput.clearFocus();
+                        retried = panelRoot.requestFocus();
+                        state.focusReleasedAfterImeHide =
+                            !contentInput.hasFocus();
+                        state.rootFocusRequestedAfterImeHide =
+                            state.rootFocusRequestedAfterImeHide || retried;
+                        state.rootFocusedAfterImeHide =
+                            panelRoot.isFocused();
+                    } catch (retryError) {
+                        state.lastError = String(retryError);
+                    } finally {
+                        if (previous >= 0 && panelRoot !== null) {
+                            try {
+                                panelRoot.setDescendantFocusability(previous);
+                            } catch (ignoredRestore) {}
+                        }
+                    }
+                }
+            }), 80);''',
+              '''            postEditorDelayed(function () {
+                var previous = -1;
+                var retried = false;
+                if (!state.attached || state.keyboardVisible ||
+                        panelRoot === null || contentInput === null) {
+                    return;
+                }
+                try {
+                    previous = Number(panelRoot.getDescendantFocusability());
+                } catch (ignoredPrevious) {}
+                try {
+                    panelRoot.setFocusable(true);
+                    panelRoot.setFocusableInTouchMode(true);
+                    panelRoot.setDescendantFocusability(
+                        ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+                    contentInput.clearFocus();
+                    retried = panelRoot.requestFocus();
+                    state.focusReleasedAfterImeHide = !contentInput.hasFocus();
+                    state.rootFocusRequestedAfterImeHide =
+                        state.rootFocusRequestedAfterImeHide || retried;
+                    state.rootFocusedAfterImeHide = panelRoot.isFocused();
+                } finally {
+                    if (previous >= 0 && panelRoot !== null) {
+                        try { panelRoot.setDescendantFocusability(previous); }
+                        catch (ignoredRestore) {}
+                    }
+                }
+            }, 80, true);''',
+              'focus handoff retry')
+
+          replace_once(
+              '''    function displayMetrics() {
+        var metrics = new DisplayMetrics();
+        try {
+            windowManager.getDefaultDisplay().getRealMetrics(metrics);
+        } catch (ignored) {
+            metrics = appContext.getResources().getDisplayMetrics();
+        }
+        return metrics;
+    }''',
+              '''    function displayMetrics() {
+        var metrics = new DisplayMetrics();
+        if (windowManager !== null) {
+            try {
+                windowManager.getDefaultDisplay().getRealMetrics(metrics);
+                if (Number(metrics.widthPixels) > 0 &&
+                        Number(metrics.heightPixels) > 0) {
+                    return metrics;
+                }
+            } catch (ignoredWindow) {}
+        }
+        if (appContext !== null) {
+            try { return appContext.getResources().getDisplayMetrics(); }
+            catch (ignoredContext) {}
+        }
+        return metrics;
+    }''',
+              'display metrics null guard')
+
+          replace_once(
+              '''                hideKeyboardOnMain();
+                mainHandler.postDelayed(new Packages.java.lang.Runnable({
+                    run: function () { measureEditorLayout(); }
+                }), 160);''',
+              '''                hideKeyboardOnMain();
+                postEditorDelayed(function () {
+                    measureEditorLayout();
+                }, 160, true);''',
+              'hide keyboard delayed measurement')
+
+          replace_once(
+              '''            imePollCount: Number(state.imePollCount),
+            normalPanelHeightDp: Number(state.normalPanelHeightDp),''',
+              '''            imePollCount: Number(state.imePollCount),
+            delayedCallbackPostCount:
+                Number(state.delayedCallbackPostCount),
+            delayedCallbackRunCount:
+                Number(state.delayedCallbackRunCount),
+            delayedCallbackCancelCount:
+                Number(state.delayedCallbackCancelCount),
+            delayedCallbackErrorCount:
+                Number(state.delayedCallbackErrorCount),
+            pendingDelayedCallbackCount:
+                Number(state.pendingDelayedCallbackCount),
+            postShutdownCallbackAttemptCount:
+                Number(state.postShutdownCallbackAttemptCount),
+            lastDelayedCallbackError: state.lastDelayedCallbackError,
+            normalPanelHeightDp: Number(state.normalPanelHeightDp),''',
+              'getState delayed callback counters')
+
+          replace_once(
+              '''            windowLayoutUpdateCount: 0, imePollCount: 0,
+            normalPanelHeightDp: 0, currentPanelHeightDp: 0,''',
+              '''            windowLayoutUpdateCount: 0, imePollCount: 0,
+            delayedCallbackPostCount: 0, delayedCallbackRunCount: 0,
+            delayedCallbackCancelCount: 0, delayedCallbackErrorCount: 0,
+            pendingDelayedCallbackCount: 0,
+            postShutdownCallbackAttemptCount: 0,
+            lastDelayedCallbackError: null,
+            normalPanelHeightDp: 0, currentPanelHeightDp: 0,''',
+              'reset delayed callback counters')
+
+          replace_once(
+              '        MODULE_VERSION: 10,',
+              '        MODULE_VERSION: 11,',
+              'Editor module version')
+
+          replace_once(
+              '''        shutdown: function () {
+            try { closePanel("shutdown"); } catch (ignoredClose) {}
+            clearViews();
+            ready = false;''',
+              '''        shutdown: function () {
+            ready = false;
+            stopEditorImePolling();
+            try { closePanel("shutdown"); } catch (ignoredClose) {}
+            clearViews();''',
+              'shutdown invalidation order')
+
+          # The only remaining direct delayed post is the generation-bound IME poll loop.
+          remaining = text.count('mainHandler.postDelayed')
+          if remaining != 1:
+              raise SystemExit(f"unexpected direct mainHandler.postDelayed count: {remaining}")
+          if 'MODULE_VERSION: 11' not in text:
+              raise SystemExit('Editor v11 marker missing')
+
+          editor_path.write_text(text, encoding="utf-8")
+
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          if manifest.get("moduleSetVersion") != "20260723.04":
+              raise SystemExit("unexpected moduleSetVersion")
+          manifest["moduleSetVersion"] = "20260723.05"
+          data = text.encode("utf-8")
+          blob_sha = hashlib.sha1(
+              b"blob " + str(len(data)).encode("ascii") + b"\0" + data
+          ).hexdigest()
+          found = False
+          for item in manifest.get("modules", []):
+              if item.get("name") == "ch_10_editor.js":
+                  if item.get("sha") != "8d20f92286290bc10e773e1c9388ba943dd1c4cc":
+                      raise SystemExit("unexpected previous Editor blob SHA")
+                  item["sha"] = blob_sha
+                  found = True
+          if not found:
+              raise SystemExit("Editor manifest entry missing")
+          manifest_path.write_text(
+              json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8")
+
+          print("Editor blob SHA:", blob_sha)
+          print("moduleSetVersion:", manifest["moduleSetVersion"])
+          PY
+
+      - name: Validate syntax markers
+        shell: bash
+        run: |
+          grep -n 'MODULE_VERSION: 11' src/ch_10_editor.js
+          grep -n 'function postEditorDelayed' src/ch_10_editor.js
+          grep -n 'delayedCallbackErrorCount' src/ch_10_editor.js
+          grep -n '20260723.05' module-manifest.json
+          test "$(grep -c 'mainHandler.postDelayed' src/ch_10_editor.js)" -eq 1
+
+      - name: Commit formal fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/apply-editor-shutdown-fix.yml
+          git add src/ch_10_editor.js module-manifest.json
+          git commit -m "fix: guard editor delayed callbacks during shutdown"
+          git push origin HEAD:agent/initialize-project-skeleton
