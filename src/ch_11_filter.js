@@ -49,6 +49,7 @@
     var panelRoot = null;
     var panelParams = null;
     var keywordInput = null;
+    var advancedKeywordInput = null;
     var searchView = null;
     var resetView = null;
     var closeView = null;
@@ -63,6 +64,7 @@
     var tagViews = {};
     var pinnedViews = {};
     var sensitiveViews = {};
+    var sortViews = {};
     var historyViews = [];
     var advancedVisible = false;
     var searchHistory = [];
@@ -87,6 +89,7 @@
         tagToggleCount: 0,
         pinnedToggleCount: 0,
         sensitiveToggleCount: 0,
+        sortToggleCount: 0,
         resetActionCount: 0,
         applyActionCount: 0,
         advancedOpenCount: 0,
@@ -104,6 +107,17 @@
         modalWindow: false,
         opaqueBackground: false,
         horizontalFadeEnabled: false,
+        advancedKeywordInputPresent: false,
+        sortOptionCount: 0,
+        sourceWrapRowCount: 0,
+        typeWrapRowCount: 0,
+        tagWrapRowCount: 0,
+        drawerWidthDp: 0,
+        drawerHeightDp: 0,
+        backLayerCloseCount: 0,
+        lastBackLayer: "",
+        repositorySortUnchanged: true,
+        sortScope: "result_window",
         panelAddThreadId: null,
         panelAddThreadName: null,
         panelRemoveThreadId: null,
@@ -121,7 +135,7 @@
         resultCardCount: 0,
         resultSourceIconCount: 0,
         advancedDrawerVisible: false,
-        searchPageStyle: "reference_search_v1",
+        searchPageStyle: "reference_search_v2",
         lastError: null
     };
 
@@ -216,7 +230,8 @@
             contentTypes: [],
             tagIds: [],
             pinnedOnly: false,
-            sensitiveMode: "all"
+            sensitiveMode: "all",
+            sortMode: "latest"
         };
     }
 
@@ -228,7 +243,8 @@
             contentTypes: copyList(input.contentTypes),
             tagIds: copyList(input.tagIds),
             pinnedOnly: input.pinnedOnly === true,
-            sensitiveMode: String(input.sensitiveMode || "all")
+            sensitiveMode: String(input.sensitiveMode || "all"),
+            sortMode: validateSortMode(input.sortMode)
         };
     }
 
@@ -248,6 +264,57 @@
             throw new Error("Invalid sensitive filter mode");
         }
         return mode;
+    }
+
+    function validateSortMode(mode) {
+        mode = String(mode || "latest");
+        if (mode !== "latest" && mode !== "pinned" &&
+                mode !== "source") {
+            throw new Error("Invalid filter sort mode");
+        }
+        return mode;
+    }
+
+    function sortModeLabel(mode) {
+        mode = validateSortMode(mode);
+        if (mode === "pinned") { return "置顶优先"; }
+        if (mode === "source") { return "来源应用"; }
+        return "最新优先";
+    }
+
+    function sortRows(rows) {
+        var mode = validateSortMode(value && value.sortMode);
+        var decorated = [];
+        var output = [];
+        var index;
+        rows = rows || [];
+        if (mode === "latest") { return rows.slice(0); }
+        for (index = 0; index < rows.length; index += 1) {
+            decorated.push({ row: rows[index], index: index });
+        }
+        decorated.sort(function (left, right) {
+            var leftPinned;
+            var rightPinned;
+            var leftSource;
+            var rightSource;
+            if (mode === "pinned") {
+                leftPinned = Number(left.row.is_pinned || 0);
+                rightPinned = Number(right.row.is_pinned || 0);
+                if (leftPinned !== rightPinned) {
+                    return rightPinned - leftPinned;
+                }
+            } else {
+                leftSource = sourceLabel(left.row).toLowerCase();
+                rightSource = sourceLabel(right.row).toLowerCase();
+                if (leftSource < rightSource) { return -1; }
+                if (leftSource > rightSource) { return 1; }
+            }
+            return left.index - right.index;
+        });
+        for (index = 0; index < decorated.length; index += 1) {
+            output.push(decorated[index].row);
+        }
+        return output;
     }
 
     function toQueryOptions(extra) {
@@ -546,7 +613,8 @@
                 types: copyList(value.contentTypes),
                 tagIds: copyList(value.tagIds),
                 pinnedOnly: value.pinnedOnly === true,
-                sensitiveMode: String(value.sensitiveMode || "all")
+                sensitiveMode: String(value.sensitiveMode || "all"),
+                sortMode: validateSortMode(value.sortMode)
             },
             resultCount: rows.length,
             origin: String(origin || "manual"),
@@ -573,6 +641,7 @@
                 limit: options.limit === undefined ? RESULT_LIMIT : options.limit,
                 offset: options.offset === undefined ? 0 : options.offset
             }));
+            rows = sortRows(rows);
             previewRows = rows.slice(0, PREVIEW_LIMIT);
             if (ClipHub.List &&
                     typeof ClipHub.List.setItems === "function") {
@@ -631,6 +700,9 @@
         if (patch.hasOwnProperty("sensitiveMode")) {
             value.sensitiveMode = validateSensitiveMode(
                 patch.sensitiveMode);
+        }
+        if (patch.hasOwnProperty("sortMode")) {
+            value.sortMode = validateSortMode(patch.sortMode);
         }
         return applyIfRequested(options);
     }
@@ -702,7 +774,14 @@
                 inputMethodManager.hideSoftInputFromWindow(
                     keywordInput.getWindowToken(), 0);
             }
-        } catch (ignored) {}
+        } catch (ignoredHeader) {}
+        try {
+            if (inputMethodManager !== null &&
+                    advancedKeywordInput !== null) {
+                inputMethodManager.hideSoftInputFromWindow(
+                    advancedKeywordInput.getWindowToken(), 0);
+            }
+        } catch (ignoredDrawer) {}
     }
 
     function requestKeyboardOnMain() {
@@ -745,6 +824,20 @@
         state.searchActionCount += 1;
         setValue({ keyword: text }, {
             origin: origin || "ui_search"
+        });
+        rememberKeyword(text);
+        hideKeyboardOnMain();
+        buildPanelContent(false);
+        return true;
+    }
+
+    function performAdvancedKeywordFromInput(origin) {
+        var text = advancedKeywordInput === null ? "" :
+            String(advancedKeywordInput.getText());
+        markUiThread();
+        state.searchActionCount += 1;
+        setValue({ keyword: text }, {
+            origin: origin || "ui_advanced_search"
         });
         rememberKeyword(text);
         hideKeyboardOnMain();
@@ -826,6 +919,16 @@
         return true;
     }
 
+    function setSortMode(mode) {
+        markUiThread();
+        state.sortToggleCount += 1;
+        setValue({ sortMode: validateSortMode(mode) }, {
+            origin: "ui_sort"
+        });
+        buildPanelContent(false);
+        return true;
+    }
+
     function resetFromUi() {
         markUiThread();
         state.resetActionCount += 1;
@@ -834,6 +937,9 @@
         try {
             if (keywordInput !== null) {
                 keywordInput.setText("");
+            }
+            if (advancedKeywordInput !== null) {
+                advancedKeywordInput.setText("");
             }
         } finally {
             suppressTextWatcher = false;
@@ -914,88 +1020,118 @@
         }
     }
 
+    function chipWidthDp(label) {
+        var text = String(label || "");
+        var units = 0;
+        var index;
+        var code;
+        for (index = 0; index < text.length; index += 1) {
+            code = text.charCodeAt(index);
+            units += code <= 127 ? 0.62 : 1;
+        }
+        return Math.min(202, Math.max(42, 19 + units * 9));
+    }
+
+    function optionClick(kind, key, chip) {
+        if (kind === "source") {
+            (function (target, view) {
+                view.setOnClickListener(new JavaAdapter(
+                    View.OnClickListener, {
+                        onClick: function () { toggleSource(target); }
+                    }));
+                sourceViews[target] = view;
+            }(key, chip));
+        } else if (kind === "type") {
+            (function (target, view) {
+                view.setOnClickListener(new JavaAdapter(
+                    View.OnClickListener, {
+                        onClick: function () { toggleType(target); }
+                    }));
+                typeViews[target] = view;
+            }(key, chip));
+        } else {
+            (function (target, view) {
+                view.setOnClickListener(new JavaAdapter(
+                    View.OnClickListener, {
+                        onClick: function () { toggleTag(Number(target)); }
+                    }));
+                tagViews[target] = view;
+            }(key, chip));
+        }
+    }
+
     function makeChipRow(options, kind, colors) {
-        var horizontal = new HorizontalScrollView(appContext);
-        var row = new LinearLayout(appContext);
-        var allView;
+        var root = new LinearLayout(appContext);
+        var row = null;
+        var rowWidth = 0;
+        var maxWidth = 208;
+        var rowCount = 0;
+        var items = [{ all: true, key: "", label: "全部" }];
         var index;
         var option;
         var key;
+        var label;
         var selected;
         var chip;
+        var width;
         var params;
-        horizontal.setHorizontalScrollBarEnabled(false);
-        try {
-            horizontal.setHorizontalFadingEdgeEnabled(true);
-            horizontal.setFadingEdgeLength(dp(18));
-            state.horizontalFadeEnabled = true;
-        } catch (ignoredFade) {
-            state.horizontalFadeEnabled = false;
-        }
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        allView = makeChip("全部",
-            selectedList(kind).length === 0, colors);
-        allView.setOnClickListener(new JavaAdapter(
-            View.OnClickListener, {
-                onClick: function () {
-                    markUiThread();
-                    clearKind(kind);
-                    buildPanelContent(false);
-                }
-            }));
-        row.addView(allView, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT));
+        root.setOrientation(LinearLayout.VERTICAL);
+        state.horizontalFadeEnabled = false;
         for (index = 0; index < options.length && index < 30;
                 index += 1) {
             option = options[index];
-            key = optionKey(option, kind);
-            selected = contains(selectedList(kind), key);
-            chip = makeChip(optionLabel(option, kind), selected, colors);
-            chip.setContentDescription("筛选" + kind + " " + key);
-            if (kind === "source") {
-                (function (target, view) {
-                    view.setOnClickListener(new JavaAdapter(
-                        View.OnClickListener, {
-                            onClick: function () {
-                                toggleSource(target);
-                            }
-                        }));
-                    sourceViews[target] = view;
-                }(key, chip));
-            } else if (kind === "type") {
-                (function (target, view) {
-                    view.setOnClickListener(new JavaAdapter(
-                        View.OnClickListener, {
-                            onClick: function () {
-                                toggleType(target);
-                            }
-                        }));
-                    typeViews[target] = view;
-                }(key, chip));
-            } else {
-                (function (target, view) {
-                    view.setOnClickListener(new JavaAdapter(
-                        View.OnClickListener, {
-                            onClick: function () {
-                                toggleTag(Number(target));
-                            }
-                        }));
-                    tagViews[target] = view;
-                }(key, chip));
-            }
-            params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-            params.leftMargin = dp(6);
-            row.addView(chip, params);
+            items.push({
+                all: false,
+                key: optionKey(option, kind),
+                label: optionLabel(option, kind)
+            });
         }
-        horizontal.addView(row,
-            new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT));
-        return horizontal;
+        for (index = 0; index < items.length; index += 1) {
+            key = items[index].key;
+            label = items[index].label;
+            selected = items[index].all ?
+                selectedList(kind).length === 0 :
+                contains(selectedList(kind), key);
+            chip = makeChip(label, selected, colors);
+            chip.setContentDescription(items[index].all ?
+                "筛选" + kind + " 全部" :
+                "筛选" + kind + " " + key);
+            if (items[index].all) {
+                chip.setOnClickListener(new JavaAdapter(
+                    View.OnClickListener, {
+                        onClick: function () {
+                            markUiThread();
+                            clearKind(kind);
+                            buildPanelContent(false);
+                        }
+                    }));
+            } else {
+                optionClick(kind, key, chip);
+            }
+            width = chipWidthDp(label);
+            if (row === null ||
+                    (rowWidth > 0 && rowWidth + 6 + width > maxWidth)) {
+                row = new LinearLayout(appContext);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                row.setGravity(Gravity.CENTER_VERTICAL);
+                params = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+                if (rowCount > 0) { params.topMargin = dp(5); }
+                root.addView(row, params);
+                rowWidth = 0;
+                rowCount += 1;
+            }
+            params = new LinearLayout.LayoutParams(dp(width),
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+            if (rowWidth > 0) { params.leftMargin = dp(6); }
+            row.addView(chip, params);
+            rowWidth += (rowWidth > 0 ? 6 : 0) + width;
+        }
+        if (kind === "source") { state.sourceWrapRowCount = rowCount; }
+        if (kind === "type") { state.typeWrapRowCount = rowCount; }
+        if (kind === "tag") { state.tagWrapRowCount = rowCount; }
+        return root;
     }
 
     function addSection(parent, title, options, kind, colors) {
@@ -1009,7 +1145,7 @@
         params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dp(10);
+        params.bottomMargin = dp(8);
         parent.addView(makeChipRow(options, kind, colors), params);
     }
 
@@ -1362,8 +1498,7 @@
         params.rightMargin = dp(8);
         searchRow.addView(keywordInput, params);
 
-        advancedView = makeText(advancedVisible ?
-            "☷  收起" : "☷  筛选", 11,
+        advancedView = makeText("☷  筛选", 11,
             colors.accentStrong, true);
         advancedView.setGravity(Gravity.CENTER);
         advancedView.setBackground(roundedBackground(colors.accentSoft,
@@ -1405,7 +1540,7 @@
     function buildResultArea(colors) {
         var root = new LinearLayout(appContext);
         var status = new LinearLayout(appContext);
-        var sort = makeText("按最新优先⌄", 9,
+        var sort = makeText("按" + sortModeLabel(value.sortMode), 9,
             colors.textSecondary, false);
         var scroll = new ScrollView(appContext);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -1434,6 +1569,89 @@
         return root;
     }
 
+    function makeChoiceChipRow(items, selectedKey, colors, onSelect,
+            targetViews) {
+        var row = new LinearLayout(appContext);
+        var index;
+        var chip;
+        var params;
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        for (index = 0; index < items.length; index += 1) {
+            chip = makeChip(items[index].label,
+                String(items[index].key) === String(selectedKey), colors);
+            (function (key, view) {
+                view.setOnClickListener(new JavaAdapter(
+                    View.OnClickListener, {
+                        onClick: function () { onSelect(key); }
+                    }));
+                if (targetViews) { targetViews[String(key)] = view; }
+            }(items[index].key, chip));
+            params = new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+            if (index > 0) { params.leftMargin = dp(5); }
+            row.addView(chip, params);
+        }
+        return row;
+    }
+
+    function addChoiceSection(parent, title, row, bottomDp, colors) {
+        var label = makeText(title, 10, colors.textSecondary, true);
+        var params;
+        parent.addView(label, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT));
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.topMargin = dp(5);
+        params.bottomMargin = dp(bottomDp);
+        parent.addView(row, params);
+    }
+
+    function buildAdvancedKeywordInput(colors) {
+        var input = new EditText(appContext);
+        input.setSingleLine(true);
+        suppressTextWatcher = true;
+        input.setText(String(value.keyword || ""));
+        input.setSelection(input.getText().length());
+        suppressTextWatcher = false;
+        input.setHint("在筛选结果中搜索");
+        input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        input.setTextColor(Color.parseColor(colors.textPrimary));
+        input.setHintTextColor(Color.parseColor(colors.textSecondary));
+        input.setInputType(InputType.TYPE_CLASS_TEXT |
+            InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        input.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
+        input.setPadding(dp(10), dp(5), dp(8), dp(5));
+        input.setBackground(roundedBackground(colors.surfaceMuted,
+            colors.stroke, 13));
+        input.setOnEditorActionListener(new JavaAdapter(
+            TextView.OnEditorActionListener, {
+                onEditorAction: function (view, actionId) {
+                    if (Number(actionId) ===
+                            Number(EditorInfo.IME_ACTION_SEARCH)) {
+                        performAdvancedKeywordFromInput(
+                            "ui_advanced_search_ime");
+                        return true;
+                    }
+                    return false;
+                }
+            }));
+        input.addTextChangedListener(new JavaAdapter(TextWatcher, {
+            beforeTextChanged: function () {},
+            onTextChanged: function (text) {
+                if (!suppressTextWatcher) {
+                    scheduleRealtimeSearch(String(text));
+                }
+            },
+            afterTextChanged: function () {}
+        }));
+        advancedKeywordInput = input;
+        state.advancedKeywordInputPresent = true;
+        return input;
+    }
+
     function buildAdvancedDrawer(colors, counts) {
         var drawer = new LinearLayout(appContext);
         var titleRow = new LinearLayout(appContext);
@@ -1444,20 +1662,16 @@
         var scroll = new ScrollView(appContext);
         var content = new LinearLayout(appContext);
         var footer = new LinearLayout(appContext);
+        var params;
         var pinnedRow;
         var sensitiveRow;
-        var params;
-        var allSensitive;
-        var onlySensitive;
-        var excludeSensitive;
+        var sortRow;
 
         drawer.setOrientation(LinearLayout.VERTICAL);
-        drawer.setPadding(dp(12), dp(11), dp(12), dp(11));
+        drawer.setPadding(dp(11), dp(9), dp(11), dp(9));
         drawer.setBackground(roundedBackground(colors.surface,
             colors.stroke, 17));
-        if (Build.VERSION.SDK_INT >= 21) {
-            drawer.setElevation(dp(16));
-        }
+        if (Build.VERSION.SDK_INT >= 21) { drawer.setElevation(dp(16)); }
         titleRow.setOrientation(LinearLayout.HORIZONTAL);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
         titleRow.addView(title, new LinearLayout.LayoutParams(
@@ -1465,10 +1679,14 @@
         close.setOnClickListener(new JavaAdapter(View.OnClickListener, {
             onClick: function () { toggleAdvanced(); }
         }));
-        titleRow.addView(close, new LinearLayout.LayoutParams(dp(32), dp(32)));
+        titleRow.addView(close, new LinearLayout.LayoutParams(dp(30), dp(30)));
         drawer.addView(titleRow, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT));
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(34)));
+
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(40));
+        params.bottomMargin = dp(9);
+        drawer.addView(buildAdvancedKeywordInput(colors), params);
 
         content.setOrientation(LinearLayout.VERTICAL);
         if (counts.sources.length > 0) {
@@ -1484,86 +1702,32 @@
                 counts.tags, "tag", colors);
         }
 
-        pinnedRow = new LinearLayout(appContext);
-        pinnedRow.setOrientation(LinearLayout.HORIZONTAL);
-        pinnedRow.setGravity(Gravity.CENTER_VERTICAL);
-        pinnedRow.addView(makeText("置顶状态", 10,
-            colors.textSecondary, true),
-            new LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-        pinnedViews.all = makeChip("全部", !value.pinnedOnly, colors);
-        pinnedViews.only = makeChip("仅置顶", value.pinnedOnly, colors);
-        pinnedViews.all.setOnClickListener(new JavaAdapter(
-            View.OnClickListener, {
-                onClick: function () {
-                    if (value.pinnedOnly) { togglePinned(); }
-                }
-            }));
-        pinnedViews.only.setOnClickListener(new JavaAdapter(
-            View.OnClickListener, {
-                onClick: function () {
-                    if (!value.pinnedOnly) { togglePinned(); }
-                }
-            }));
-        params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.rightMargin = dp(5);
-        pinnedRow.addView(pinnedViews.all, params);
-        pinnedRow.addView(pinnedViews.only,
-            new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-        params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dp(10);
-        content.addView(pinnedRow, params);
+        sortRow = makeChoiceChipRow([
+            { key: "latest", label: "最新优先" },
+            { key: "pinned", label: "置顶优先" },
+            { key: "source", label: "来源应用" }
+        ], value.sortMode, colors, function (mode) {
+            setSortMode(mode);
+        }, sortViews);
+        state.sortOptionCount = 3;
+        addChoiceSection(content, "排序方式", sortRow, 8, colors);
 
-        content.addView(makeText("敏感内容", 10,
-            colors.textSecondary, true),
-            new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-        sensitiveRow = new LinearLayout(appContext);
-        sensitiveRow.setOrientation(LinearLayout.HORIZONTAL);
-        sensitiveRow.setPadding(0, dp(5), 0, dp(6));
-        allSensitive = makeChip("全部",
-            value.sensitiveMode === "all", colors);
-        onlySensitive = makeChip("仅敏感",
-            value.sensitiveMode === "only", colors);
-        excludeSensitive = makeChip("隐藏敏感",
-            value.sensitiveMode === "exclude", colors);
-        sensitiveViews.all = allSensitive;
-        sensitiveViews.only = onlySensitive;
-        sensitiveViews.exclude = excludeSensitive;
-        allSensitive.setOnClickListener(new JavaAdapter(
-            View.OnClickListener, {
-                onClick: function () { setSensitive("all"); }
-            }));
-        onlySensitive.setOnClickListener(new JavaAdapter(
-            View.OnClickListener, {
-                onClick: function () { setSensitive("only"); }
-            }));
-        excludeSensitive.setOnClickListener(new JavaAdapter(
-            View.OnClickListener, {
-                onClick: function () { setSensitive("exclude"); }
-            }));
-        params = new LinearLayout.LayoutParams(
-            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
-        params.rightMargin = dp(4);
-        sensitiveRow.addView(allSensitive, params);
-        params = new LinearLayout.LayoutParams(
-            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
-        params.rightMargin = dp(4);
-        sensitiveRow.addView(onlySensitive, params);
-        sensitiveRow.addView(excludeSensitive,
-            new LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-        content.addView(sensitiveRow,
-            new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
+        pinnedRow = makeChoiceChipRow([
+            { key: "all", label: "全部" },
+            { key: "only", label: "仅置顶" }
+        ], value.pinnedOnly ? "only" : "all", colors, function (mode) {
+            if ((mode === "only") !== value.pinnedOnly) { togglePinned(); }
+        }, pinnedViews);
+        addChoiceSection(content, "置顶状态", pinnedRow, 8, colors);
+
+        sensitiveRow = makeChoiceChipRow([
+            { key: "all", label: "全部" },
+            { key: "only", label: "仅敏感" },
+            { key: "exclude", label: "隐藏敏感" }
+        ], value.sensitiveMode, colors, function (mode) {
+            setSensitive(mode);
+        }, sensitiveViews);
+        addChoiceSection(content, "敏感内容", sensitiveRow, 3, colors);
 
         scroll.setVerticalScrollBarEnabled(false);
         scroll.addView(content, new FrameLayout.LayoutParams(
@@ -1647,6 +1811,15 @@
         tagViews = {};
         pinnedViews = {};
         sensitiveViews = {};
+        sortViews = {};
+        advancedKeywordInput = null;
+        state.advancedKeywordInputPresent = false;
+        state.sortOptionCount = 0;
+        state.sourceWrapRowCount = 0;
+        state.typeWrapRowCount = 0;
+        state.tagWrapRowCount = 0;
+        state.drawerWidthDp = 0;
+        state.drawerHeightDp = 0;
         drawerContainer = null;
         resultContainer = null;
         resultCountView = null;
@@ -1686,9 +1859,11 @@
             FrameLayout.LayoutParams.MATCH_PARENT));
         if (advancedVisible) {
             drawerContainer = buildAdvancedDrawer(colors, counts);
-            params = new FrameLayout.LayoutParams(dp(238),
-                FrameLayout.LayoutParams.MATCH_PARENT);
-            params.gravity = Gravity.END;
+            state.drawerWidthDp = 238;
+            state.drawerHeightDp = 540;
+            params = new FrameLayout.LayoutParams(dp(state.drawerWidthDp),
+                dp(state.drawerHeightDp));
+            params.gravity = Gravity.END | Gravity.TOP;
             bodyFrame.addView(drawerContainer, params);
         }
         panelRoot.addView(bodyFrame, new LinearLayout.LayoutParams(
@@ -1716,6 +1891,7 @@
         if (!ready) {
             throw new Error("ClipHub filter is not ready");
         }
+        loadHistory();
         advancedVisible = options.showAdvanced === true;
         state.advancedDrawerVisible = advancedVisible;
         if (state.panelAttached) {
@@ -1779,6 +1955,7 @@
             try {
                 previewRows = ClipHub.Repository.listItems(
                     toQueryOptions({ limit: RESULT_LIMIT, offset: 0 }));
+                previewRows = sortRows(previewRows);
                 state.lastResultCount = previewRows.length;
                 previewRows = previewRows.slice(0, PREVIEW_LIMIT);
             } catch (previewError) {
@@ -1831,6 +2008,7 @@
                 panelRoot = null;
                 panelParams = null;
                 keywordInput = null;
+                advancedKeywordInput = null;
                 searchView = null;
                 resetView = null;
                 closeView = null;
@@ -1845,6 +2023,7 @@
                 tagViews = {};
                 pinnedViews = {};
                 sensitiveViews = {};
+                sortViews = {};
                 historyViews = [];
             }
         }, 3000));
@@ -1854,6 +2033,26 @@
             alreadyClosed: false,
             state: getPanelState()
         };
+    }
+
+    function handleBack() {
+        if (!state.panelAttached) { return false; }
+        if (advancedVisible) {
+            advancedVisible = false;
+            state.advancedDrawerVisible = false;
+            state.advancedCloseCount += 1;
+            state.backLayerCloseCount += 1;
+            state.lastBackLayer = "advanced_drawer";
+            requireMain(runOnMainSync(function () {
+                buildPanelContent(false);
+                return true;
+            }, 2500));
+            return true;
+        }
+        state.backLayerCloseCount += 1;
+        state.lastBackLayer = "search_panel";
+        closePanel();
+        return true;
     }
 
     function getPanelState() {
@@ -1877,6 +2076,8 @@
             attachedToWindow: attachedToWindow,
             focusableWindow: !notFocusable,
             inputPresent: keywordInput !== null,
+            advancedKeywordInputPresent:
+                advancedKeywordInput !== null,
             inputFocused: state.inputFocused,
             sourceOptionCount: Number(state.sourceOptionCount),
             contentTypeOptionCount:
@@ -1890,6 +2091,19 @@
             resultSourceIconCount:
                 Number(state.resultSourceIconCount),
             advancedDrawerVisible: advancedVisible,
+            advancedButtonText: advancedView !== null ?
+                String(advancedView.getText()) : "",
+            sortMode: validateSortMode(value && value.sortMode),
+            sortOptionCount: Number(state.sortOptionCount),
+            sourceWrapRowCount: Number(state.sourceWrapRowCount),
+            typeWrapRowCount: Number(state.typeWrapRowCount),
+            tagWrapRowCount: Number(state.tagWrapRowCount),
+            drawerWidthDp: Number(state.drawerWidthDp),
+            drawerHeightDp: Number(state.drawerHeightDp),
+            repositorySortUnchanged: true,
+            sortScope: state.sortScope,
+            backLayerCloseCount: Number(state.backLayerCloseCount),
+            lastBackLayer: state.lastBackLayer,
             panelWindowType: state.panelWindowType,
             panelFlags: state.panelFlags,
             panelWidthPx: state.panelWidthPx,
@@ -1912,6 +2126,7 @@
             pinnedToggleCount: Number(state.pinnedToggleCount),
             sensitiveToggleCount:
                 Number(state.sensitiveToggleCount),
+            sortToggleCount: Number(state.sortToggleCount),
             resetActionCount: Number(state.resetActionCount),
             applyActionCount: Number(state.applyActionCount),
             advancedOpenCount: Number(state.advancedOpenCount),
@@ -1947,6 +2162,7 @@
         state.tagToggleCount = 0;
         state.pinnedToggleCount = 0;
         state.sensitiveToggleCount = 0;
+        state.sortToggleCount = 0;
         state.resetActionCount = 0;
         state.applyActionCount = 0;
         state.advancedOpenCount = 0;
@@ -1964,6 +2180,17 @@
         state.modalWindow = false;
         state.opaqueBackground = false;
         state.horizontalFadeEnabled = false;
+        state.advancedKeywordInputPresent = false;
+        state.sortOptionCount = 0;
+        state.sourceWrapRowCount = 0;
+        state.typeWrapRowCount = 0;
+        state.tagWrapRowCount = 0;
+        state.drawerWidthDp = 0;
+        state.drawerHeightDp = 0;
+        state.backLayerCloseCount = 0;
+        state.lastBackLayer = "";
+        state.repositorySortUnchanged = true;
+        state.sortScope = "result_window";
         state.panelAddThreadId = null;
         state.panelAddThreadName = null;
         state.panelRemoveThreadId = null;
@@ -1981,13 +2208,13 @@
         state.resultCardCount = 0;
         state.resultSourceIconCount = 0;
         state.advancedDrawerVisible = false;
-        state.searchPageStyle = "reference_search_v1";
+        state.searchPageStyle = "reference_search_v2";
         state.lastError = null;
     }
 
     ClipHub.Filter = {
         MODULE_NAME: "ch_11_filter",
-        MODULE_VERSION: 6,
+        MODULE_VERSION: 7,
 
         init: function (context) {
             androidContext = context && context.androidContext ?
@@ -2049,8 +2276,8 @@
         toQueryOptions: toQueryOptions,
 
         query: function (options) {
-            return ClipHub.Repository.listItems(
-                toQueryOptions(options || {}));
+            return sortRows(ClipHub.Repository.listItems(
+                toQueryOptions(options || {})));
         },
 
         apply: apply,
@@ -2081,6 +2308,10 @@
             return setValue({ sensitiveMode: mode }, options);
         },
 
+        setSortMode: function (mode, options) {
+            return setValue({ sortMode: mode }, options);
+        },
+
         getSourceOptions: function () {
             return ClipHub.Repository.listSourceOptions();
         },
@@ -2095,6 +2326,7 @@
 
         showPanel: showPanel,
         closePanel: closePanel,
+        handleBack: handleBack,
         getPanelState: getPanelState,
 
         performSearch: function (text) {
@@ -2120,6 +2352,26 @@
                 return advancedView !== null ?
                     advancedView.performClick() : false;
             }, 2500));
+        },
+
+        performAdvancedKeywordSearch: function (text) {
+            return requireMain(runOnMainSync(function () {
+                if (!state.panelAttached ||
+                        advancedKeywordInput === null) {
+                    return false;
+                }
+                suppressTextWatcher = true;
+                try {
+                    advancedKeywordInput.setText(String(text === null ||
+                        text === undefined ? "" : text));
+                    advancedKeywordInput.setSelection(
+                        advancedKeywordInput.getText().length());
+                } finally {
+                    suppressTextWatcher = false;
+                }
+                return performAdvancedKeywordFromInput(
+                    "api_advanced_search");
+            }, 3000));
         },
 
         performApplyClick: function () {
@@ -2150,6 +2402,14 @@
             return requireMain(runOnMainSync(function () {
                 return tagViews[tagId] ?
                     tagViews[tagId].performClick() : false;
+            }, 2500));
+        },
+
+        performSortClick: function (mode) {
+            mode = validateSortMode(mode);
+            return requireMain(runOnMainSync(function () {
+                return sortViews[mode] ?
+                    sortViews[mode].performClick() : false;
             }, 2500));
         },
 

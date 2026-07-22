@@ -1,23 +1,83 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260722.28",
+  "moduleSetVersion": "20260722.29",
   "entryMinVersion": 4,
   "sourceRef": "agent/initialize-project-skeleton",
   "modules": [
-    {"name":"ch_01_base.js","path":"src/ch_01_base.js","sha":"563791ff518078bfd57d7b73fc51b9c7482a3ffb"},
-    {"name":"ch_02_log.js","path":"src/ch_02_log.js","sha":"581d7a9a0e47bdee2be0341cbfbe6b0308c207bb"},
-    {"name":"ch_03_database.js","path":"src/ch_03_database.js","sha":"3c3ea319844cf9470aff385def30cac11bf95e3c"},
-    {"name":"ch_04_clipboard.js","path":"src/ch_04_clipboard.js","sha":"70a1a10215c75012b47bd06eda9a2b271e63f248"},
-    {"name":"ch_05_classifier.js","path":"src/ch_05_classifier.js","sha":"c78f3d652ecdf75a5c454312aa03e15ab55ab38f"},
-    {"name":"ch_06_repository.js","path":"src/ch_06_repository.js","sha":"d9050715d061f3058de983104330283080ec55f2"},
-    {"name":"ch_07_theme.js","path":"src/ch_07_theme.js","sha":"bcdb99700fffbb54d6315b773e051aa78294de1b"},
-    {"name":"ch_08_window.js","path":"src/ch_08_window.js","sha":"abc37b0a008ccaecac0a0d4a46ef7c76ee40f1db"},
-    {"name":"ch_09_list.js","path":"src/ch_09_list.js","sha":"08170700c935fc01242f3080e603290856b927e9"},
-    {"name":"ch_10_editor.js","path":"src/ch_10_editor.js","sha":"e2afe5ff6f8d8802d8aca7669b5f8b2033064895"},
-    {"name":"ch_11_filter.js","path":"src/ch_11_filter.js","sha":"9195cfceda280395940a1c6abb9046ad9386dc64"},
-    {"name":"ch_12_translation.js","path":"src/ch_12_translation.js","sha":"d521a3010371f77171bd6338a69197b5e8639d1c"},
-    {"name":"ch_13_settings.js","path":"src/ch_13_settings.js","sha":"fe5b06b405ed5e9a5f26f2ddefc8dab9337fdc8e"},
-    {"name":"ch_14_event_bus.js","path":"src/ch_14_event_bus.js","sha":"1340517a82be26bb0bbf71454c246067344ce019"},
-    {"name":"ch_15_app.js","path":"src/ch_15_app.js","sha":"470c3173ceeaed2ae293d640fd81d4be28ee5183"}
+    {
+      "name": "ch_01_base.js",
+      "path": "src/ch_01_base.js",
+      "sha": "563791ff518078bfd57d7b73fc51b9c7482a3ffb"
+    },
+    {
+      "name": "ch_02_log.js",
+      "path": "src/ch_02_log.js",
+      "sha": "581d7a9a0e47bdee2be0341cbfbe6b0308c207bb"
+    },
+    {
+      "name": "ch_03_database.js",
+      "path": "src/ch_03_database.js",
+      "sha": "3c3ea319844cf9470aff385def30cac11bf95e3c"
+    },
+    {
+      "name": "ch_04_clipboard.js",
+      "path": "src/ch_04_clipboard.js",
+      "sha": "70a1a10215c75012b47bd06eda9a2b271e63f248"
+    },
+    {
+      "name": "ch_05_classifier.js",
+      "path": "src/ch_05_classifier.js",
+      "sha": "c78f3d652ecdf75a5c454312aa03e15ab55ab38f"
+    },
+    {
+      "name": "ch_06_repository.js",
+      "path": "src/ch_06_repository.js",
+      "sha": "d9050715d061f3058de983104330283080ec55f2"
+    },
+    {
+      "name": "ch_07_theme.js",
+      "path": "src/ch_07_theme.js",
+      "sha": "bcdb99700fffbb54d6315b773e051aa78294de1b"
+    },
+    {
+      "name": "ch_08_window.js",
+      "path": "src/ch_08_window.js",
+      "sha": "abc37b0a008ccaecac0a0d4a46ef7c76ee40f1db"
+    },
+    {
+      "name": "ch_09_list.js",
+      "path": "src/ch_09_list.js",
+      "sha": "08170700c935fc01242f3080e603290856b927e9"
+    },
+    {
+      "name": "ch_10_editor.js",
+      "path": "src/ch_10_editor.js",
+      "sha": "e2afe5ff6f8d8802d8aca7669b5f8b2033064895"
+    },
+    {
+      "name": "ch_11_filter.js",
+      "path": "src/ch_11_filter.js",
+      "sha": "732f9d658e5c7fe1da72d261426e34816644806e"
+    },
+    {
+      "name": "ch_12_translation.js",
+      "path": "src/ch_12_translation.js",
+      "sha": "8cae18cda1737b63c93d09409e24903cac3bc2a6"
+    },
+    {
+      "name": "ch_13_settings.js",
+      "path": "src/ch_13_settings.js",
+      "sha": "fe5b06b405ed5e9a5f26f2ddefc8dab9337fdc8e"
+    },
+    {
+      "name": "ch_14_event_bus.js",
+      "path": "src/ch_14_event_bus.js",
+      "sha": "1340517a82be26bb0bbf71454c246067344ce019"
+    },
+    {
+      "name": "ch_15_app.js",
+      "path": "src/ch_15_app.js",
+      "sha": "470c3173ceeaed2ae293d640fd81d4be28ee5183"
+    }
   ]
 }

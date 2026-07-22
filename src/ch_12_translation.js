@@ -43,6 +43,7 @@
         backInvokedCount: 0,
         backHandledCount: 0,
         duplicateBackCount: 0,
+        filterBackCount: 0,
         uiHideCount: 0,
         backgroundCheckCount: 0,
         backgroundHideCount: 0,
@@ -291,6 +292,20 @@
         return false;
     }
 
+    function backFilter() {
+        try {
+            if (ClipHub.Filter &&
+                    typeof ClipHub.Filter.handleBack === "function") {
+                navState.filterBackCount += 1;
+                return ClipHub.Filter.handleBack() === true;
+            }
+        } catch (errorHandle) {
+            navState.lastError = String(errorHandle);
+            return closeFilter();
+        }
+        return closeFilter();
+    }
+
     function closeEditor() {
         try {
             if (ClipHub.Editor && ClipHub.Editor.close) {
@@ -470,7 +485,7 @@
         owner = String(owner || "");
         if (owner === "filter" &&
                 moduleAttached(ClipHub.Filter, "getPanelState")) {
-            return closeFilter();
+            return backFilter();
         }
         if ((owner === "editor" || owner === "tags") &&
                 moduleAttached(ClipHub.Editor, "getState")) {
@@ -481,7 +496,7 @@
             return closeDetail();
         }
         if (moduleAttached(ClipHub.Filter, "getPanelState")) {
-            return closeFilter();
+            return backFilter();
         }
         if (moduleAttached(ClipHub.Editor, "getState")) {
             return closeEditor();
@@ -963,6 +978,7 @@
             backInvokedCount: Number(navState.backInvokedCount),
             backHandledCount: Number(navState.backHandledCount),
             duplicateBackCount: Number(navState.duplicateBackCount),
+            filterBackCount: Number(navState.filterBackCount),
             uiHideCount: Number(navState.uiHideCount),
             backgroundCheckCount:
                 Number(navState.backgroundCheckCount),
@@ -1032,7 +1048,7 @@
 
     ClipHub.Navigation = {
         MODULE_NAME: "ch_14_navigation_embedded",
-        MODULE_VERSION: 2,
+        MODULE_VERSION: 3,
         init: navigationInit,
         dispatchBack: function (reason) {
             return dispatchBack("", reason || "api_back");
@@ -1051,7 +1067,7 @@
 
     ClipHub.Translation = {
         MODULE_NAME: "ch_12_translation",
-        MODULE_VERSION: 3,
+        MODULE_VERSION: 4,
         init: function (context) {
             translationConfig = { enabled: false, provider: "none" };
             navigationInit(context || {});

@@ -1,4 +1,4 @@
-/* ClipHub search and advanced filter visual probe 035. Rhino ES5 only. */
+/* ClipHub search and advanced filter visual probe 036. Rhino ES5 only. */
 (function (global) {
     var File = Packages.java.io.File;
     var FIS = Packages.java.io.FileInputStream;
@@ -16,8 +16,8 @@
     var Intent = Packages.android.content.Intent;
     var Toast = Packages.android.widget.Toast;
 
-    var REQUIRED_SET = "20260722.28";
-    var RUNTIME_NAME = "ClipHubProbe035";
+    var REQUIRED_SET = "20260722.29";
+    var RUNTIME_NAME = "ClipHubProbe036";
     var SCENE_DURATION_MS = 10000;
     var MODULES = [
         "ch_01_base.js", "ch_02_log.js", "ch_03_database.js",
@@ -227,7 +227,7 @@
         return Number(global.ClipHub.Repository.insertItem({
             content: String(content),
             contentType: String(contentType || "text"),
-            sourcePackage: String(sourcePackage || "com.cliphub.probe035"),
+            sourcePackage: String(sourcePackage || "com.cliphub.probe036"),
             sourceLabel: String(sourceLabel || "探测来源"),
             sourceUid: 10000,
             sourceConfidence: 100,
@@ -239,6 +239,15 @@
         }));
     }
 
+    function containsText(items, target) {
+        var index;
+        items = items || [];
+        for (index = 0; index < items.length; index += 1) {
+            if (String(items[index]) === String(target)) { return true; }
+        }
+        return false;
+    }
+
     function main() {
         var startedAt = now();
         var root = String(shortx.getShortXDir());
@@ -246,7 +255,7 @@
         var modules = new File(formal, "modules");
         var isolated = new File(root, RUNTIME_NAME);
         var outputFile = new File(ensureDir(new File(formal, "probes")),
-            "cliphub_search_filter_ui_probe_035_" +
+            "cliphub_search_filter_ui_probe_036_" +
                 stamp(startedAt) + ".json");
         var local = localManifest(formal);
         var formalWasRunning = !lockFree(formal);
@@ -256,20 +265,25 @@
         var tagNews;
         var searchState;
         var advancedState;
+        var advancedBackState;
         var appliedState;
+        var searchBackState;
+        var restartState;
         var result = {
             ok: false,
-            probe: "cliphub_search_filter_ui_probe_035",
+            probe: "cliphub_search_filter_ui_probe_036",
             probeVersion: 1,
             moduleSetVersion: local.moduleSetVersion || null,
             sourceRef: local.sourceRef || null,
             sceneDurationMs: SCENE_DURATION_MS,
             sceneCount: 2,
             visualScreenshotRequired: true,
-            instruction: "场景1截搜索结果页；场景2截高级筛选抽屉。",
+            instruction: "场景1截完整搜索结果页；场景2截完整高级筛选抽屉。两张截图均不得裁剪。",
             outputPath: String(outputFile.getAbsolutePath()),
             formalWasRunning: formalWasRunning,
             startedAt: startedAt,
+            repositoryKeywordSemanticsChanged: false,
+            sortImplementation: "filter_result_window_only",
             error: null
         };
 
@@ -288,12 +302,16 @@
             result.windowModuleVersion = Number(global.ClipHub.Window.MODULE_VERSION);
             result.listModuleVersion = Number(global.ClipHub.List.MODULE_VERSION);
             result.filterModuleVersion = Number(global.ClipHub.Filter.MODULE_VERSION);
+            result.translationModuleVersion =
+                Number(global.ClipHub.Translation.MODULE_VERSION);
+            result.navigationModuleVersion =
+                Number(global.ClipHub.Navigation.MODULE_VERSION);
             result.schemaVersion = Number(global.ClipHub.Database.getVersion());
             result.clipboardListenerStopped =
                 global.ClipHub.Clipboard.stop().running === false;
             global.ClipHub.Settings.set("themeMode", "light", { cleanup: false });
             global.ClipHub.Settings.set("filterSearchHistory",
-                ["Android", "meeting"], { cleanup: false });
+                ["meeting"], { cleanup: false });
 
             ids.push(add("https://developer.android.com/ Android Developers",
                 "url", "com.android.chrome", "Chrome 浏览器",
@@ -324,6 +342,11 @@
                 global.ClipHub.Repository.countItems(false));
             result.tagCount = Number(
                 global.ClipHub.Repository.listTags().length);
+            result.fixtureUnrelatedPackage = "com.google.docs.editor";
+            result.fixturePackageContainsAndroid =
+                result.fixtureUnrelatedPackage.toLowerCase()
+                    .indexOf("android") >= 0;
+
             result.homeShow = global.ClipHub.List.show({
                 limit: 20, widthDp: 340, heightDp: 560
             });
@@ -338,15 +361,20 @@
                     current.lastResultCount === 5 &&
                     current.panel.attachedToWindow === true &&
                     current.panel.resultCardCount === 5 &&
-                    current.panel.searchPageStyle === "reference_search_v1";
+                    current.panel.searchPageStyle === "reference_search_v2" &&
+                    current.panel.advancedButtonText.indexOf("筛选") >= 0 &&
+                    current.panel.advancedButtonText.indexOf("收起") < 0;
             }, 1800);
             searchState = global.ClipHub.Filter.getState();
             result.searchScene = searchState;
             result.searchNavigation = global.ClipHub.Navigation.getState();
-            showToast("035  1/2  搜索结果页  ·  请截图");
+            showToast("036  1/2  搜索结果页  ·  请截完整页面");
             Thread.sleep(SCENE_DURATION_MS);
 
             result.advancedOpen = global.ClipHub.Filter.performAdvancedClick();
+            result.advancedKeywordAction =
+                global.ClipHub.Filter.performAdvancedKeywordSearch("Android");
+            result.sortToggle = global.ClipHub.Filter.performSortClick("source");
             result.sourceToggle = global.ClipHub.Filter.performSourceClick(
                 "com.android.chrome");
             result.typeToggle = global.ClipHub.Filter.performTypeClick("url");
@@ -356,30 +384,84 @@
             result.advancedReady = waitFor(function () {
                 var current = global.ClipHub.Filter.getState();
                 return current.panel.advancedDrawerVisible === true &&
+                    current.panel.advancedKeywordInputPresent === true &&
+                    current.panel.advancedButtonText.indexOf("筛选") >= 0 &&
+                    current.panel.advancedButtonText.indexOf("收起") < 0 &&
+                    current.panel.sourceWrapRowCount >= 2 &&
+                    current.panel.sortOptionCount === 3 &&
+                    current.panel.drawerHeightDp >= 520 &&
+                    current.panel.drawerHeightDp <= 560 &&
+                    current.panel.repositorySortUnchanged === true &&
+                    current.panel.sortScope === "result_window" &&
+                    current.criteria.sortMode === "source" &&
                     current.criteria.sourcePackages.length === 1 &&
                     current.criteria.contentTypes.length === 1 &&
                     current.criteria.tagIds.length === 1 &&
                     current.criteria.sensitiveMode === "exclude" &&
-                    current.panel.sourceChipCount >= 5 &&
-                    current.panel.typeChipCount >= 4 &&
-                    current.panel.tagChipCount === 2;
+                    current.lastResultCount === 1;
             }, 1800);
             advancedState = global.ClipHub.Filter.getState();
             result.advancedScene = advancedState;
             result.advancedNavigation = global.ClipHub.Navigation.getState();
-            showToast("035  2/2  高级筛选抽屉  ·  请截图");
+            showToast("036  2/2  高级筛选抽屉  ·  请截完整页面");
             Thread.sleep(SCENE_DURATION_MS);
 
+            result.advancedBack = global.ClipHub.Navigation
+                .dispatchBackForOwner("filter", "probe_advanced_back_036");
+            result.advancedBackReady = waitFor(function () {
+                var current = global.ClipHub.Filter.getState();
+                return current.panel.attachedToWindow === true &&
+                    current.panel.advancedDrawerVisible === false &&
+                    current.panel.lastBackLayer === "advanced_drawer";
+            }, 1200);
+            advancedBackState = global.ClipHub.Filter.getState();
+            result.advancedBackState = advancedBackState;
+
+            result.advancedReopen =
+                global.ClipHub.Filter.performAdvancedClick();
             result.applyClick = global.ClipHub.Filter.performApplyClick();
             appliedState = global.ClipHub.Filter.getState();
             result.appliedState = appliedState;
-            result.panelClose = global.ClipHub.Filter.closePanel();
-            result.listClose = global.ClipHub.List.hide(true);
-            result.stop = global.ClipHub.App.stop("probe035_search_filter_ui");
+            Thread.sleep(220);
+            result.searchBack = global.ClipHub.Navigation
+                .dispatchBackForOwner("filter", "probe_search_back_036");
+            result.searchBackReady = waitFor(function () {
+                return global.ClipHub.Filter.getPanelState().attached === false;
+            }, 1200);
+            searchBackState = {
+                filter: global.ClipHub.Filter.getState(),
+                list: global.ClipHub.List.getState(),
+                navigation: global.ClipHub.Navigation.getState()
+            };
+            result.searchBackState = searchBackState;
+
+            result.firstStop = global.ClipHub.App.stop(
+                "probe036_history_restart_1");
+            result.firstDatabaseClosed = !global.ClipHub.Database.isOpen();
+            result.firstLockReleased = lockFree(isolated);
+
+            result.restart = start(root, modules, isolated);
+            result.restartClipboardListenerStopped =
+                global.ClipHub.Clipboard.stop().running === false;
+            result.restartHomeShow = global.ClipHub.List.show({
+                limit: 20, widthDp: 340, heightDp: 560
+            });
+            result.restartPanelShow = global.ClipHub.Filter.showPanel({
+                requestKeyboard: false, showAdvanced: false
+            });
+            restartState = global.ClipHub.Filter.getState();
+            result.restartState = restartState;
+            result.historyRestored = containsText(
+                restartState.searchHistory, "Android");
+            result.restartPanelClose = global.ClipHub.Filter.closePanel();
+            result.restartListClose = global.ClipHub.List.hide(true);
+            result.stop = global.ClipHub.App.stop(
+                "probe036_search_filter_ui");
             result.databaseClosed = !global.ClipHub.Database.isOpen();
+            result.lockReleased = lockFree(isolated);
         } catch (error) {
             result.error = errorText(error);
-            try { global.ClipHub.App.stop("probe035_error"); }
+            try { global.ClipHub.App.stop("probe036_error"); }
             catch (ignoredStop) {}
         } finally {
             try {
@@ -411,33 +493,46 @@
                 result.themeModuleVersion === 2 &&
                 result.windowModuleVersion === 5 &&
                 result.listModuleVersion === 11 &&
-                result.filterModuleVersion === 6 &&
+                result.filterModuleVersion === 7 &&
+                result.translationModuleVersion === 4 &&
+                result.navigationModuleVersion === 3 &&
                 result.clipboardListenerStopped === true &&
                 result.seededCount === 6 && result.tagCount === 2 &&
+                result.fixturePackageContainsAndroid === false &&
                 result.searchReady === true &&
-                result.advancedReady === true &&
                 result.searchScene &&
                 result.searchScene.lastResultCount === 5 &&
-                result.searchScene.panel.panelWidthDp >= 380 &&
-                result.searchScene.panel.panelHeightDp >= 680 &&
-                result.searchScene.panel.dimAmount >= 0.43 &&
                 result.searchScene.panel.resultCardCount === 5 &&
-                result.searchScene.panel.historyChipCount >= 1 &&
+                result.advancedReady === true &&
                 result.advancedScene &&
-                result.advancedScene.panel.advancedDrawerVisible === true &&
-                result.advancedScene.panel.sourceChipCount >= 5 &&
-                result.advancedScene.panel.typeChipCount >= 4 &&
-                result.advancedScene.panel.tagChipCount === 2 &&
-                result.appliedState &&
+                result.advancedScene.panel.sourceWrapRowCount >= 2 &&
+                result.advancedScene.panel.sortOptionCount === 3 &&
+                result.advancedScene.panel.drawerHeightDp >= 520 &&
+                result.advancedScene.panel.drawerHeightDp <= 560 &&
+                result.advancedScene.lastResultCount === 1 &&
+                result.advancedBack === true &&
+                result.advancedBackReady === true &&
+                result.advancedBackState.panel.attached === true &&
+                result.advancedBackState.panel.advancedDrawerVisible === false &&
+                result.applyClick === true &&
+                result.appliedState.lastResultCount === 1 &&
                 result.appliedState.panel.advancedDrawerVisible === false &&
-                result.appliedState.criteria.sourcePackages.length === 1 &&
-                result.appliedState.criteria.contentTypes.length === 1 &&
-                result.appliedState.criteria.tagIds.length === 1 &&
-                result.appliedState.criteria.sensitiveMode === "exclude" &&
-                result.panelClose && result.panelClose.ok === true &&
-                result.listClose === true && result.stop &&
-                result.stop.stopped === true &&
+                result.searchBack === true &&
+                result.searchBackReady === true &&
+                result.searchBackState.filter.panel.attached === false &&
+                result.searchBackState.list.visible === true &&
+                result.firstStop && result.firstStop.stopped === true &&
+                result.firstDatabaseClosed === true &&
+                result.firstLockReleased === true &&
+                result.restart && result.restart.ok === true &&
+                result.restartClipboardListenerStopped === true &&
+                result.historyRestored === true &&
+                result.restartPanelClose &&
+                result.restartPanelClose.ok === true &&
+                result.restartListClose === true &&
+                result.stop && result.stop.stopped === true &&
                 result.databaseClosed === true &&
+                result.lockReleased === true &&
                 result.formalRestart && result.formalRestart.ok === true &&
                 result.cleanup === true;
             write(outputFile, JSON.stringify(result, null, 2) + "\n");
@@ -446,11 +541,11 @@
     }
 
     try {
-        global.ClipHubSearchFilterUiProbe035Result = main();
+        global.ClipHubSearchFilterUiProbe036Result = main();
     } catch (error) {
-        global.ClipHubSearchFilterUiProbe035Result = {
+        global.ClipHubSearchFilterUiProbe036Result = {
             ok: false,
-            probe: "cliphub_search_filter_ui_probe_035",
+            probe: "cliphub_search_filter_ui_probe_036",
             probeVersion: 1,
             fatal: true,
             error: errorText(error)
@@ -458,4 +553,4 @@
     }
 }((function () { return this; }())));
 
-JSON.stringify(ClipHubSearchFilterUiProbe035Result);
+JSON.stringify(ClipHubSearchFilterUiProbe036Result);
