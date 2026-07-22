@@ -75,6 +75,10 @@
     var suppressTextWatcher = false;
     var searchGeneration = 0;
     var restoreListOnClose = false;
+    var rootMode = false;
+    var selectedItemId = null;
+    var resultCardViews = [];
+    var toolbarActionViews = {};
 
     var state = {
         applyCount: 0,
@@ -137,6 +141,19 @@
         homeRestoreCount: 0,
         homeRestoreCancelCount: 0,
         exclusiveHomeFilter: true,
+        rootMode: false,
+        primarySurface: "filter_overlay",
+        selectedItemId: null,
+        selectionMode: false,
+        resultCardClickCount: 0,
+        resultCardLongPressCount: 0,
+        copyActionCount: 0,
+        pinActionCount: 0,
+        editActionCount: 0,
+        addActionCount: 0,
+        deleteActionCount: 0,
+        detailActionCount: 0,
+        toolbarEnabledCount: 1,
         repositorySortUnchanged: true,
         sortScope: "result_window",
         panelAddThreadId: null,
@@ -1302,12 +1319,145 @@
         return holder;
     }
 
+    function selectedResultRow() {
+        var index;
+        if (selectedItemId === null) { return null; }
+        for (index = 0; index < previewRows.length; index += 1) {
+            if (Number(previewRows[index].id) === Number(selectedItemId)) {
+                return previewRows[index];
+            }
+        }
+        return null;
+    }
+
+    function setSelectedResult(row) {
+        selectedItemId = row === null || row === undefined ?
+            null : Number(row.id);
+        state.selectedItemId = selectedItemId;
+        state.selectionMode = selectedItemId !== null;
+        return selectedItemId;
+    }
+
+    function clearSelectedResult() {
+        setSelectedResult(null);
+        return true;
+    }
+
+    function refreshPrimaryResults(origin) {
+        apply({ origin: String(origin || "primary_action") });
+        if (state.panelAttached) {
+            buildPanelContent(false);
+        }
+        return true;
+    }
+
+    function copyResultRow(row) {
+        var result;
+        var closeAfter = false;
+        if (row === null || row === undefined) { return false; }
+        try {
+            result = ClipHub.Clipboard.writeText(String(row.content || ""), {
+                label: "ClipHub",
+                sensitive: Number(row.is_sensitive || 0) === 1
+            });
+            state.resultCardClickCount += 1;
+            state.copyActionCount += 1;
+            try {
+                closeAfter = ClipHub.Settings &&
+                    ClipHub.Settings.get("closeAfterCopy", false) === true;
+            } catch (ignoredSetting) {}
+            if (closeAfter) {
+                closePanel({
+                    restoreList: false,
+                    reason: "copy_close"
+                });
+            }
+            return result && result.ok === true;
+        } catch (error) {
+            state.lastError = String(error);
+            return false;
+        }
+    }
+
+    function selectResultRow(row) {
+        if (row === null || row === undefined) { return false; }
+        state.resultCardLongPressCount += 1;
+        setSelectedResult(row);
+        if (state.panelAttached) {
+            buildPanelContent(false);
+        }
+        return true;
+    }
+
+    function toggleResultPinned(row) {
+        var changed;
+        if (row === null || row === undefined || !ClipHub.List ||
+                typeof ClipHub.List.togglePinned !== "function") {
+            return false;
+        }
+        changed = ClipHub.List.togglePinned(Number(row.id));
+        if (changed) {
+            state.pinActionCount += 1;
+            refreshPrimaryResults("primary_pin");
+        }
+        return changed === true;
+    }
+
+    function editSelectedResult() {
+        var row = selectedResultRow();
+        if (row === null || !ClipHub.Editor ||
+                typeof ClipHub.Editor.openItem !== "function") {
+            return false;
+        }
+        state.editActionCount += 1;
+        ClipHub.Editor.openItem(Number(row.id));
+        return true;
+    }
+
+    function addNewResult() {
+        if (!ClipHub.Editor ||
+                typeof ClipHub.Editor.openNew !== "function") {
+            return false;
+        }
+        state.addActionCount += 1;
+        ClipHub.Editor.openNew();
+        return true;
+    }
+
+    function deleteSelectedResult() {
+        var row = selectedResultRow();
+        var changed;
+        if (row === null || !ClipHub.List ||
+                typeof ClipHub.List.deleteItem !== "function") {
+            return false;
+        }
+        changed = ClipHub.List.deleteItem(Number(row.id));
+        if (changed) {
+            state.deleteActionCount += 1;
+            clearSelectedResult();
+            refreshPrimaryResults("primary_delete");
+        }
+        return changed === true;
+    }
+
+    function openSelectedDetail() {
+        var row = selectedResultRow();
+        if (row === null || !ClipHub.List ||
+                typeof ClipHub.List.openDetail !== "function") {
+            return false;
+        }
+        state.detailActionCount += 1;
+        return ClipHub.List.openDetail(Number(row.id)) === true;
+    }
+
     function makeResultCard(row, colors) {
+        var selected = selectedItemId !== null &&
+            Number(selectedItemId) === Number(row.id);
         var card = new LinearLayout(appContext);
         var icon = makeSourceIcon(row, colors);
         var center = new LinearLayout(appContext);
         var content = makeText(String(row.content || ""),
-            11, colors.textPrimary, false);
+            11, colors.textPrimary, selected);
         var metaRow = new LinearLayout(appContext);
         var type = makeText(typeLabel(row.content_type),
             8, colors.accentStrong, true);
@@ -1325,8 +1475,24 @@
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
         card.setPadding(dp(8), dp(7), dp(7), dp(7));
-        card.setBackground(roundedBackground(colors.card,
-            colors.stroke, 12));
+        card.setBackground(roundedBackground(
+            selected ? colors.accentSoft : colors.card,
+            selected ? colors.accentBorder : colors.stroke, 12));
+        card.setClickable(true);
+        card.setFocusable(true);
+        card.setContentDescription("剪贴板记录，点击复制，长按选择");
+        (function (target, view) {
+            view.setOnClickListener(new JavaAdapter(
+                View.OnClickListener, {
+                    onClick: function () { copyResultRow(target); }
+                }));
+            view.setOnLongClickListener(new JavaAdapter(
+                View.OnLongClickListener, {
+                    onLongClick: function () {
+                        return selectResultRow(target);
+                    }
+                }));
+        }(row, card));
 
         params = new LinearLayout.LayoutParams(dp(34), dp(34));
         params.rightMargin = dp(8);
@@ -1364,10 +1530,20 @@
         right.addView(time, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(16)));
         star.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        star.setClickable(true);
+        star.setFocusable(true);
+        star.setContentDescription("切换置顶");
+        (function (target, view) {
+            view.setOnClickListener(new JavaAdapter(
+                View.OnClickListener, {
+                    onClick: function () { toggleResultPinned(target); }
+                }));
+        }(row, star));
         right.addView(star, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(28)));
         card.addView(right, new LinearLayout.LayoutParams(dp(48),
             LinearLayout.LayoutParams.WRAP_CONTENT));
+        resultCardViews.push(card);
         state.resultCardCount += 1;
         return card;
     }
@@ -1383,6 +1559,10 @@
         resultContainer.removeAllViews();
         state.resultCardCount = 0;
         state.resultSourceIconCount = 0;
+        resultCardViews = [];
+        if (selectedItemId !== null && selectedResultRow() === null) {
+            clearSelectedResult();
+        }
         if (previewRows.length === 0) {
             empty = makeText("没有匹配的剪贴板记录",
                 12, colors.textSecondary, false);
@@ -1517,7 +1697,10 @@
         closeView.setOnClickListener(new JavaAdapter(
             View.OnClickListener, {
                 onClick: function () {
-                    closePanel({ reason: "button" });
+                    closePanel({
+                        reason: "button",
+                        restoreList: rootMode ? false : true
+                    });
                 }
             }));
         titleRow.addView(closeView,
@@ -1838,38 +2021,67 @@
         return drawer;
     }
 
+    function makeToolbarAction(key, iconText, labelText, colors,
+            enabled, primary, callback) {
+        var item = new LinearLayout(appContext);
+        var icon = makeText(iconText, primary ? 22 : 16,
+            enabled ? (primary ? colors.accentStrong : colors.icon) :
+                colors.textTertiary,
+            primary === true);
+        var label = makeText(labelText, 9,
+            enabled ? colors.textSecondary : colors.textTertiary,
+            primary === true);
+        item.setOrientation(LinearLayout.VERTICAL);
+        item.setGravity(Gravity.CENTER);
+        item.setAlpha(enabled ? 1 : 0.48);
+        item.setEnabled(enabled);
+        item.setClickable(enabled);
+        item.setFocusable(enabled);
+        item.setContentDescription(String(labelText));
+        icon.setGravity(Gravity.CENTER);
+        label.setGravity(Gravity.CENTER);
+        item.addView(icon, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(26)));
+        item.addView(label, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT));
+        if (enabled && typeof callback === "function") {
+            item.setOnClickListener(new JavaAdapter(
+                View.OnClickListener, {
+                    onClick: function () { callback(); }
+                }));
+        }
+        toolbarActionViews[String(key)] = item;
+        return item;
+    }
+
     function buildBottomToolbar(colors) {
         var toolbar = new LinearLayout(appContext);
-        var labels = ["置顶", "编辑", "新增", "删除", "翻译"];
-        var icons = ["⌖", "✎", "+", "⌫", "文"];
-        var index;
-        var item;
-        var icon;
-        var label;
+        var hasSelection = selectedResultRow() !== null;
+        var params = new LinearLayout.LayoutParams(0, dp(56), 1);
+        toolbarActionViews = {};
         toolbar.setOrientation(LinearLayout.HORIZONTAL);
         toolbar.setGravity(Gravity.CENTER);
         toolbar.setPadding(dp(4), dp(3), dp(4), dp(3));
         toolbar.setBackground(roundedBackground(colors.toolbar,
             null, 17));
-        for (index = 0; index < labels.length; index += 1) {
-            item = new LinearLayout(appContext);
-            item.setOrientation(LinearLayout.VERTICAL);
-            item.setGravity(Gravity.CENTER);
-            icon = makeText(icons[index], index === 2 ? 22 : 16,
-                index === 2 ? colors.accentStrong : colors.icon,
-                index === 2);
-            icon.setGravity(Gravity.CENTER);
-            label = makeText(labels[index], 9,
-                colors.textSecondary, index === 2);
-            label.setGravity(Gravity.CENTER);
-            item.addView(icon, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(26)));
-            item.addView(label, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-            toolbar.addView(item, new LinearLayout.LayoutParams(
-                0, dp(56), 1));
-        }
+        toolbar.addView(makeToolbarAction("pin", "⌖", "置顶", colors,
+            hasSelection, false, function () {
+                toggleResultPinned(selectedResultRow());
+            }), params);
+        toolbar.addView(makeToolbarAction("edit", "✎", "编辑", colors,
+            hasSelection, false, editSelectedResult),
+            new LinearLayout.LayoutParams(0, dp(56), 1));
+        toolbar.addView(makeToolbarAction("add", "+", "新增", colors,
+            true, true, addNewResult),
+            new LinearLayout.LayoutParams(0, dp(56), 1));
+        toolbar.addView(makeToolbarAction("delete", "⌫", "删除", colors,
+            hasSelection, false, deleteSelectedResult),
+            new LinearLayout.LayoutParams(0, dp(56), 1));
+        toolbar.addView(makeToolbarAction("detail", "文", "翻译", colors,
+            hasSelection, false, openSelectedDetail),
+            new LinearLayout.LayoutParams(0, dp(56), 1));
+        state.toolbarEnabledCount = hasSelection ? 5 : 1;
         return toolbar;
     }
 
@@ -2017,6 +2229,10 @@
     function showPanel(options) {
         var result;
         options = options || {};
+        rootMode = options.rootMode === true;
+        state.rootMode = rootMode;
+        state.primarySurface = rootMode ?
+            "filter_root" : "filter_overlay";
         if (!ready) {
             throw new Error("ClipHub filter is not ready");
         }
@@ -2035,7 +2251,12 @@
                 state: getPanelState()
             };
         }
-        suspendHomeWindow();
+        if (rootMode) {
+            restoreListOnClose = false;
+            state.homeWindowSuspended = false;
+        } else {
+            suspendHomeWindow();
+        }
         try {
             result = requireMain(runOnMainSync(function () {
                 var size = panelDimensions();
@@ -2103,19 +2324,29 @@
             }, 3000));
             return result;
         } catch (error) {
-            finishHomeWindow({
-                restoreList: true,
-                reason: "show_failed"
-            });
+            if (!rootMode) {
+                finishHomeWindow({
+                    restoreList: true,
+                    reason: "show_failed"
+                });
+            }
+            rootMode = false;
+            state.rootMode = false;
+            state.primarySurface = "filter_overlay";
             throw error;
         }
     }
 
     function closePanel(options) {
         var result;
+        var wasRootMode = rootMode;
         options = options || {};
         if (!state.panelAttached && panelRoot === null) {
-            finishHomeWindow(options);
+            if (!wasRootMode) { finishHomeWindow(options); }
+            rootMode = false;
+            state.rootMode = false;
+            state.primarySurface = "filter_overlay";
+            clearSelectedResult();
             return {
                 ok: true,
                 attached: false,
@@ -2172,7 +2403,13 @@
                 historyViews = [];
             }
         }, 3000));
-        finishHomeWindow(options);
+        if (!wasRootMode) { finishHomeWindow(options); }
+        rootMode = false;
+        state.rootMode = false;
+        state.primarySurface = "filter_overlay";
+        clearSelectedResult();
+        resultCardViews = [];
+        toolbarActionViews = {};
         return {
             ok: result === true,
             attached: false,
@@ -2197,7 +2434,10 @@
         }
         state.backLayerCloseCount += 1;
         state.lastBackLayer = "search_panel";
-        closePanel({ reason: "back" });
+        closePanel({
+            reason: "back",
+            restoreList: rootMode ? false : true
+        });
         return true;
     }
 
@@ -2279,6 +2519,22 @@
             homeRestoreCancelCount:
                 Number(state.homeRestoreCancelCount),
             exclusiveHomeFilter: state.exclusiveHomeFilter === true,
+            rootMode: rootMode === true,
+            primarySurface: state.primarySurface,
+            selectedItemId: selectedItemId,
+            selectionMode: selectedItemId !== null,
+            resultCardClickCount:
+                Number(state.resultCardClickCount),
+            resultCardLongPressCount:
+                Number(state.resultCardLongPressCount),
+            copyActionCount: Number(state.copyActionCount),
+            pinActionCount: Number(state.pinActionCount),
+            editActionCount: Number(state.editActionCount),
+            addActionCount: Number(state.addActionCount),
+            deleteActionCount: Number(state.deleteActionCount),
+            detailActionCount: Number(state.detailActionCount),
+            toolbarEnabledCount:
+                Number(state.toolbarEnabledCount),
             panelWindowType: state.panelWindowType,
             panelFlags: state.panelFlags,
             panelWidthPx: state.panelWidthPx,
@@ -2381,6 +2637,19 @@
         state.homeRestoreCount = 0;
         state.homeRestoreCancelCount = 0;
         state.exclusiveHomeFilter = true;
+        state.rootMode = false;
+        state.primarySurface = "filter_overlay";
+        state.selectedItemId = null;
+        state.selectionMode = false;
+        state.resultCardClickCount = 0;
+        state.resultCardLongPressCount = 0;
+        state.copyActionCount = 0;
+        state.pinActionCount = 0;
+        state.editActionCount = 0;
+        state.addActionCount = 0;
+        state.deleteActionCount = 0;
+        state.detailActionCount = 0;
+        state.toolbarEnabledCount = 1;
         state.repositorySortUnchanged = true;
         state.sortScope = "result_window";
         state.panelAddThreadId = null;
@@ -2406,7 +2675,7 @@
 
     ClipHub.Filter = {
         MODULE_NAME: "ch_11_filter",
-        MODULE_VERSION: 10,
+        MODULE_VERSION: 11,
 
         init: function (context) {
             androidContext = context && context.androidContext ?
@@ -2436,6 +2705,10 @@
             previewRows = [];
             searchGeneration = 0;
             restoreListOnClose = false;
+            rootMode = false;
+            selectedItemId = null;
+            resultCardViews = [];
+            toolbarActionViews = {};
             resetState();
             loadHistory();
             registerEvent("clipboard_added");
@@ -2518,9 +2791,42 @@
         },
 
         showPanel: showPanel,
+        showRoot: function (options) {
+            options = options || {};
+            options.rootMode = true;
+            if (options.requestKeyboard === undefined) {
+                options.requestKeyboard = false;
+            }
+            return showPanel(options);
+        },
         closePanel: closePanel,
         handleBack: handleBack,
         getPanelState: getPanelState,
+        getSelectedItemId: function () { return selectedItemId; },
+
+        performResultClick: function (index) {
+            index = Math.floor(Number(index));
+            return requireMain(runOnMainSync(function () {
+                return index >= 0 && index < resultCardViews.length ?
+                    resultCardViews[index].performClick() : false;
+            }, 2500));
+        },
+
+        performResultLongClick: function (index) {
+            index = Math.floor(Number(index));
+            return requireMain(runOnMainSync(function () {
+                return index >= 0 && index < resultCardViews.length ?
+                    resultCardViews[index].performLongClick() : false;
+            }, 2500));
+        },
+
+        performBottomActionClick: function (action) {
+            action = String(action || "");
+            return requireMain(runOnMainSync(function () {
+                return toolbarActionViews[action] ?
+                    toolbarActionViews[action].performClick() : false;
+            }, 2500));
+        },
 
         performSearch: function (text) {
             return requireMain(runOnMainSync(function () {
@@ -2653,6 +2959,10 @@
             } catch (ignoredClose) {}
             unregisterEvents();
             searchGeneration += 1;
+            rootMode = false;
+            selectedItemId = null;
+            resultCardViews = [];
+            toolbarActionViews = {};
             value = null;
             ready = false;
             androidContext = null;

@@ -251,6 +251,10 @@
             homeFilterExclusive:
                 ((windowAttached ? 1 : 0) +
                     (filterAttached ? 1 : 0)) <= 1,
+            primarySurface: filterAttached && filter.rootMode === true ?
+                "filter_root" : (windowAttached ? "legacy_list" : "none"),
+            filterRootMode: filter.rootMode === true,
+            legacyHomeAttached: windowAttached,
             itemCount: Number(list.itemCount || 0),
             renderedCount: Number(list.renderedCount || 0),
             filterActive: list.filterActive === true
@@ -284,10 +288,26 @@
     function showUi() {
         var result;
         closeUi();
-        if (!ClipHub.List || typeof ClipHub.List.show !== "function") {
-            throw new Error("ClipHub list is unavailable");
+        if (ClipHub.List && typeof ClipHub.List.hide === "function") {
+            ClipHub.List.hide(true);
         }
-        result = ClipHub.List.show({ limit: 100, widthDp: 340, heightDp: 500 });
+        if (!ClipHub.Filter) {
+            throw new Error("ClipHub filter root is unavailable");
+        }
+        if (typeof ClipHub.Filter.showRoot === "function") {
+            result = ClipHub.Filter.showRoot({
+                requestKeyboard: false,
+                showAdvanced: false
+            });
+        } else if (typeof ClipHub.Filter.showPanel === "function") {
+            result = ClipHub.Filter.showPanel({
+                requestKeyboard: false,
+                showAdvanced: false,
+                rootMode: true
+            });
+        } else {
+            throw new Error("ClipHub filter root cannot be shown");
+        }
         return { result: result, status: uiStatus() };
     }
 
@@ -444,7 +464,7 @@
 
     ClipHub.App = {
         MODULE_NAME: "ch_15_app",
-        MODULE_VERSION: 6,
+        MODULE_VERSION: 7,
         CONTROL_ACTION_BASE: CONTROL_ACTION_BASE,
         CONTROL_COMMANDS: CONTROL_COMMANDS,
         start: function (context) {
