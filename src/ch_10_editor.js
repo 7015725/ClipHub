@@ -57,6 +57,13 @@
     var createTagView = null;
     var tagViews = {};
     var tagDeleteViews = {};
+    var tagSelectionSaveView = null;
+    var tagSelectionCancelView = null;
+    var editorDraftTagIds = [];
+    var tagSelectorOriginalIds = [];
+    var tagReturnMode = null;
+    var tagReturnText = "";
+    var tagReturnRow = null;
     var ready = false;
     var state = {
         open: false,
@@ -75,6 +82,15 @@
         tagToggleCount: 0,
         tagDeleteCount: 0,
         tagRenameCount: 0,
+        tagSelectionOpenCount: 0,
+        tagSelectionSaveCount: 0,
+        tagSelectionCancelCount: 0,
+        tagSelectionDirty: false,
+        tagDraftCount: 0,
+        tagOriginalCount: 0,
+        tagColorPreviewCount: 0,
+        tagFooterActionCount: 0,
+        tagSelectorStyle: "reference_tag_selector_v1",
         tagOptionCount: 0,
         attachedTagCount: 0,
         lastSavedId: null,
@@ -876,20 +892,20 @@
     function panelDimensions(mode) {
         var metrics = displayMetrics();
         var tagsMode = String(mode) === "tags";
-        var maxWidthDp = tagsMode ? 420 : 390;
-        var minWidthDp = tagsMode ? 270 : 300;
+        var maxWidthDp = 390;
+        var minWidthDp = 300;
         var width = Math.min(dp(maxWidthDp), Math.max(dp(minWidthDp),
-            Number(metrics.widthPixels) - dp(tagsMode ? 12 : 20)));
+            Number(metrics.widthPixels) - dp(20)));
         var availableHeight = Math.max(dp(300),
-            Number(metrics.heightPixels) - dp(tagsMode ? 72 : 86));
+            Number(metrics.heightPixels) - dp(86));
         var heightDp;
         var count;
         if (tagsMode) {
             count = 0;
             try { count = ClipHub.Repository.listTags().length; }
             catch (ignoredCount) {}
-            heightDp = 222 + Math.min(5, Math.max(1, count)) * 54;
-            heightDp = Math.max(310, Math.min(492, heightDp));
+            heightDp = 274 + Math.min(5, Math.max(1, count)) * 52;
+            heightDp = Math.max(430, Math.min(590, heightDp));
         } else {
             heightDp = 590;
         }
@@ -965,6 +981,13 @@
         createTagView = null;
         tagViews = {};
         tagDeleteViews = {};
+        tagSelectionSaveView = null;
+        tagSelectionCancelView = null;
+        editorDraftTagIds = [];
+        tagSelectorOriginalIds = [];
+        tagReturnMode = null;
+        tagReturnText = "";
+        tagReturnRow = null;
         state.dragHandlePresent = false;
         state.headerIconPresent = false;
         state.headerCloseButtonPresent = false;
@@ -1007,6 +1030,16 @@
     }
 
     function closePanel(reason) {
+        if (state.mode === "tags" && tagReturnMode !== null &&
+                String(reason || "") !== "shutdown" &&
+                String(reason || "") !== "replace" &&
+                String(reason || "") !== "save") {
+            requireMain(runOnMainSync(function () {
+                return restoreTextEditorOnMain(false);
+            }, 2500));
+            return { ok: true, attached: true, returnedToEditor: true,
+                state: getState() };
+        }
         if (!state.attached && panelRoot === null) {
             state.open = false;
             state.itemId = null;
@@ -1082,6 +1115,8 @@
                 state.lastSaveAction = "updated";
                 delivered = emitMutation("clipboard_merged", id, "updated", {});
             }
+            ClipHub.Repository.setItemTags(id, editorDraftTagIds);
+            emitTagChanged("item_tags_saved", id, null);
             state.saveCount += 1;
             state.lastSavedId = id;
             state.saveThreadId = thread.id;
@@ -1099,13 +1134,46 @@
         }
     }
 
-    function itemHasTag(tagId) {
-        var tags = ClipHub.Repository.listItemTags(Number(state.itemId));
+    function copyTagIds(input) {
+        var output = [];
+        var seen = {};
         var index;
-        for (index = 0; index < tags.length; index += 1) {
-            if (Number(tags[index].id) === Number(tagId)) { return true; }
+        var id;
+        input = input || [];
+        for (index = 0; index < input.length; index += 1) {
+            id = Number(input[index]);
+            if (id > 0 && !seen[String(id)]) {
+                seen[String(id)] = true;
+                output.push(id);
+            }
         }
-        return false;
+        return output;
+    }
+
+    function loadItemTagIds(itemId) {
+        var tags;
+        var output = [];
+        var index;
+        if (itemId === null || itemId === undefined) { return output; }
+        tags = ClipHub.Repository.listItemTags(Number(itemId));
+        for (index = 0; index < tags.length; index += 1) {
+            output.push(Number(tags[index].id));
+        }
+        return output;
+    }
+
+    function tagIndex(tagId) {
+        var index;
+        for (index = 0; index < editorDraftTagIds.length; index += 1) {
+            if (Number(editorDraftTagIds[index]) === Number(tagId)) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    function itemHasTag(tagId) {
+        return tagIndex(tagId) >= 0;
     }
 
     function recordTagAction(action, tagId) {
@@ -1147,12 +1215,16 @@
             if (name.length === 0) {
                 throw new Error("标签名称不能为空");
             }
-            tagId = Number(ClipHub.Repository.ensureTag(name, null));
-            if (state.itemId !== null && !itemHasTag(tagId)) {
-                ClipHub.Repository.attachTag(Number(state.itemId), tagId);
+            tagId = Number(ClipHub.Repository.ensureTag(name,
+                Number(Color.parseColor("#7C5CFC"))));
+            if (!itemHasTag(tagId)) {
+                editorDraftTagIds.push(tagId);
             }
             state.tagCreateCount += 1;
-            recordTagAction("tag_created", tagId);
+            state.tagSelectionDirty = true;
+            state.tagDraftCount = editorDraftTagIds.length;
+            recordTagAction("tag_created_draft", tagId);
+            tagNameInput.setText("");
             buildTagContent(false);
             updatePanelSizeForMode();
             return true;
@@ -1163,18 +1235,20 @@
     }
 
     function toggleTag(tagId) {
-        var attached;
-        if (state.mode !== "tags" || state.itemId === null) { return false; }
+        var index;
+        if (state.mode !== "tags") { return false; }
         try {
-            attached = itemHasTag(tagId);
-            if (attached) {
-                ClipHub.Repository.detachTag(Number(state.itemId), Number(tagId));
-                recordTagAction("tag_detached", tagId);
+            index = tagIndex(tagId);
+            if (index >= 0) {
+                editorDraftTagIds.splice(index, 1);
+                recordTagAction("tag_draft_detached", tagId);
             } else {
-                ClipHub.Repository.attachTag(Number(state.itemId), Number(tagId));
-                recordTagAction("tag_attached", tagId);
+                editorDraftTagIds.push(Number(tagId));
+                recordTagAction("tag_draft_attached", tagId);
             }
             state.tagToggleCount += 1;
+            state.tagSelectionDirty = true;
+            state.tagDraftCount = editorDraftTagIds.length;
             buildTagContent(false);
             return true;
         } catch (error) {
@@ -1218,6 +1292,70 @@
             state.lastError = String(error);
             return false;
         }
+    }
+
+    function tagColorText(tag, fallback) {
+        var value;
+        var hex;
+        if (!tag || tag.color_value === null || tag.color_value === undefined) {
+            return String(fallback || "#7C5CFC");
+        }
+        value = Number(tag.color_value) >>> 0;
+        hex = value.toString(16).toUpperCase();
+        while (hex.length < 8) { hex = "0" + hex; }
+        return "#" + hex;
+    }
+
+    function openTagSelectorOnMain() {
+        if (state.mode !== "new" && state.mode !== "edit") { return false; }
+        tagReturnMode = state.mode;
+        tagReturnText = contentInput === null ? "" :
+            String(contentInput.getText());
+        tagReturnRow = state.itemId === null ? null :
+            ClipHub.Repository.getItem(Number(state.itemId), false);
+        tagSelectorOriginalIds = copyTagIds(editorDraftTagIds);
+        state.tagOriginalCount = tagSelectorOriginalIds.length;
+        state.tagDraftCount = editorDraftTagIds.length;
+        state.tagSelectionDirty = false;
+        state.tagSelectionOpenCount += 1;
+        state.mode = "tags";
+        hideKeyboardOnMain();
+        buildTagContent(false);
+        updatePanelSizeForMode();
+        return true;
+    }
+
+    function restoreTextEditorOnMain(commit) {
+        var parentMode = tagReturnMode ||
+            (state.itemId === null ? "new" : "edit");
+        if (commit === true) {
+            tagSelectorOriginalIds = copyTagIds(editorDraftTagIds);
+            state.tagSelectionSaveCount += 1;
+        } else {
+            editorDraftTagIds = copyTagIds(tagSelectorOriginalIds);
+            state.tagSelectionCancelCount += 1;
+        }
+        state.tagSelectionDirty = false;
+        state.tagDraftCount = editorDraftTagIds.length;
+        state.mode = parentMode;
+        buildTextContent(tagReturnText, tagReturnRow, {
+            requestKeyboard: false
+        });
+        updatePanelSizeForMode();
+        tagReturnMode = null;
+        return true;
+    }
+
+    function saveTagSelectionDraft() {
+        return requireMain(runOnMainSync(function () {
+            return restoreTextEditorOnMain(true);
+        }, 2500));
+    }
+
+    function cancelTagSelectionDraft() {
+        return requireMain(runOnMainSync(function () {
+            return restoreTextEditorOnMain(false);
+        }, 2500));
     }
 
     function addTitle(titleText, subtitleText) {
@@ -1345,23 +1483,17 @@
         params = new LinearLayout.LayoutParams(0, dp(32), 1);
         params.rightMargin = dp(7);
         metaRow.addView(metadataSourceView, params);
-        metadataTypeView = makeEditorPill(isNew ?
-            "标签  保存后设置" : "标签  管理", colors, !isNew);
-        metadataTypeView.setEnabled(!isNew);
-        metadataTypeView.setAlpha(isNew ? 0.55 : 1);
-        if (!isNew) {
-            metadataTypeView.setClickable(true);
-            metadataTypeView.setFocusable(true);
-            metadataTypeView.setContentDescription("管理当前记录标签");
-            metadataTypeView.setOnClickListener(new JavaAdapter(
-                View.OnClickListener, {
-                    onClick: function () {
-                        openPanel("tags", state.itemId, {
-                            requestKeyboard: false
-                        });
-                    }
-                }));
-        }
+        metadataTypeView = makeEditorPill(
+            editorDraftTagIds.length > 0 ?
+                "标签  " + String(editorDraftTagIds.length) + " 个" :
+                "标签  未设置", colors, editorDraftTagIds.length > 0);
+        metadataTypeView.setClickable(true);
+        metadataTypeView.setFocusable(true);
+        metadataTypeView.setContentDescription("选择当前记录标签");
+        metadataTypeView.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, {
+                onClick: function () { openTagSelectorOnMain(); }
+            }));
         metaRow.addView(metadataTypeView,
             new LinearLayout.LayoutParams(dp(116), dp(32)));
         params = new LinearLayout.LayoutParams(
@@ -1464,74 +1596,120 @@
     }
 
     function buildTagContent(requestFocus) {
-        var dark = isDarkMode();
-        var primary = dark ? "#FFEDEDF0" : "#FF202024";
-        var secondary = dark ? "#FF9F9FA8" : "#FF72727B";
-        var inputRow;
-        var scroll;
-        var list;
-        var allTags;
-        var attachedTags;
-        var attached = {};
+        var colors = editorPalette();
+        var dragRow = new LinearLayout(appContext);
+        var dragHandle = new View(appContext);
+        var header = new LinearLayout(appContext);
+        var titleStack = new LinearLayout(appContext);
+        var title;
+        var subtitle;
+        var inputRow = new LinearLayout(appContext);
+        var scroll = new ScrollView(appContext);
+        var list = new LinearLayout(appContext);
+        var footer = new LinearLayout(appContext);
+        var allTags = ClipHub.Repository.listTags();
         var index;
         var tag;
         var row;
-        var toggleView;
-        var deleteView;
+        var dot;
+        var labels;
+        var name;
+        var count;
+        var check;
         var params;
         var inputParams;
+
         panelRoot.removeAllViews();
         tagViews = {};
         tagDeleteViews = {};
-        addTitle("管理标签", "创建标签并绑定到当前记录");
-        inputRow = new LinearLayout(appContext);
+        state.editorStyle = "reference_tag_selector_v1";
+        state.tagSelectorStyle = "reference_tag_selector_v1";
+        state.tagColorPreviewCount = 0;
+        state.tagFooterActionCount = 2;
+
+        dragRow.setGravity(Gravity.CENTER);
+        dragHandle.setBackground(roundedBackground(
+            colors.accentBorder, null, 3));
+        dragRow.addView(dragHandle,
+            new LinearLayout.LayoutParams(dp(42), dp(4)));
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(16));
+        params.bottomMargin = dp(4);
+        panelRoot.addView(dragRow, params);
+
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        titleStack.setOrientation(LinearLayout.VERTICAL);
+        title = makeText("选择标签", 18, colors.textPrimary, true);
+        subtitle = makeText("已选择 " + String(editorDraftTagIds.length) +
+            " 个 · 取消不会保存更改", 10, colors.textSecondary, false);
+        titleStack.addView(title, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT));
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.topMargin = dp(2);
+        titleStack.addView(subtitle, params);
+        header.addView(titleStack, new LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        headerCloseView = makeText("×", 22, colors.icon, true);
+        headerCloseView.setGravity(Gravity.CENTER);
+        headerCloseView.setBackground(roundedBackground(
+            colors.surfaceMuted, null, 18));
+        headerCloseView.setClickable(true);
+        headerCloseView.setFocusable(true);
+        headerCloseView.setContentDescription("取消标签选择");
+        headerCloseView.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, {
+                onClick: function () { cancelTagSelectionDraft(); }
+            }));
+        header.addView(headerCloseView,
+            new LinearLayout.LayoutParams(dp(38), dp(38)));
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.bottomMargin = dp(10);
+        panelRoot.addView(header, params);
+
         inputRow.setOrientation(LinearLayout.HORIZONTAL);
         inputRow.setGravity(Gravity.CENTER_VERTICAL);
         tagNameInput = new EditText(appContext);
         tagNameInput.setSingleLine(true);
         tagNameInput.setHint("新标签名称");
-        tagNameInput.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        tagNameInput.setTextColor(Color.parseColor(primary));
-        tagNameInput.setHintTextColor(Color.parseColor(secondary));
+        tagNameInput.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        tagNameInput.setTextColor(Color.parseColor(colors.textPrimary));
+        tagNameInput.setHintTextColor(Color.parseColor(colors.textTertiary));
         tagNameInput.setInputType(InputType.TYPE_CLASS_TEXT |
             InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         tagNameInput.setPadding(dp(10), dp(7), dp(10), dp(7));
         tagNameInput.setBackground(roundedBackground(
-            dark ? "#FF202328" : "#FFF7F7F8",
-            dark ? "#2EFFFFFF" : "#18000000", 10));
+            colors.surfaceMuted, colors.stroke, 11));
         inputParams = new LinearLayout.LayoutParams(
-            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+            0, dp(42), 1);
         inputParams.rightMargin = dp(7);
         inputRow.addView(tagNameInput, inputParams);
-        createTagView = makeButton("新增", dark, true, false, false, true);
-        createTagView.setContentDescription("创建新标签");
-        createTagView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
-            onClick: function () { createTagFromInput(); }
-        }));
-        inputRow.addView(createTagView, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT));
+        createTagView = makeEditorAction("新增", colors, true);
+        createTagView.setContentDescription("创建并选择新标签");
+        createTagView.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, {
+                onClick: function () { createTagFromInput(); }
+            }));
+        inputRow.addView(createTagView,
+            new LinearLayout.LayoutParams(dp(70), dp(42)));
         params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT);
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(42));
         params.bottomMargin = dp(9);
         panelRoot.addView(inputRow, params);
-        allTags = ClipHub.Repository.listTags();
-        attachedTags = ClipHub.Repository.listItemTags(Number(state.itemId));
-        for (index = 0; index < attachedTags.length; index += 1) {
-            attached[String(attachedTags[index].id)] = true;
-        }
-        state.tagOptionCount = allTags.length;
-        state.attachedTagCount = attachedTags.length;
-        scroll = new ScrollView(appContext);
+
         scroll.setFillViewport(false);
-        list = new LinearLayout(appContext);
+        scroll.setVerticalScrollBarEnabled(false);
         list.setOrientation(LinearLayout.VERTICAL);
         if (allTags.length === 0) {
-            row = makeText("暂无标签\n在上方输入名称后创建", 13,
-                secondary, false);
+            row = makeText("暂无标签\n可在上方创建第一个标签", 12,
+                colors.textSecondary, false);
             row.setGravity(Gravity.CENTER);
-            row.setPadding(dp(12), dp(24), dp(12), dp(24));
+            row.setPadding(dp(12), dp(28), dp(12), dp(28));
             list.addView(row, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -1541,53 +1719,89 @@
                 row = new LinearLayout(appContext);
                 row.setOrientation(LinearLayout.HORIZONTAL);
                 row.setGravity(Gravity.CENTER_VERTICAL);
-                row.setPadding(dp(7), dp(6), dp(7), dp(6));
+                row.setPadding(dp(10), dp(8), dp(9), dp(8));
                 row.setBackground(roundedBackground(
-                    dark ? "#FF22252A" : "#FFF5F5F6",
-                    dark ? "#20FFFFFF" : "#10000000", 10));
-                toggleView = makeButton(String(tag.name), dark, false, false,
-                    attached[String(tag.id)] === true, true);
-                toggleView.setContentDescription(
-                    (attached[String(tag.id)] ? "移除标签 " : "添加标签 ") +
-                    String(tag.name));
+                    itemHasTag(tag.id) ? colors.accentSoft : colors.surfaceMuted,
+                    itemHasTag(tag.id) ? colors.accentBorder : colors.stroke, 12));
+                row.setClickable(true);
+                row.setFocusable(true);
+                row.setContentDescription((itemHasTag(tag.id) ?
+                    "取消选择标签 " : "选择标签 ") + String(tag.name));
+                dot = new View(appContext);
+                dot.setBackground(roundedBackground(
+                    tagColorText(tag, colors.accentStrong), null, 99));
+                params = new LinearLayout.LayoutParams(dp(14), dp(14));
+                params.rightMargin = dp(9);
+                row.addView(dot, params);
+                state.tagColorPreviewCount += 1;
+                labels = new LinearLayout(appContext);
+                labels.setOrientation(LinearLayout.VERTICAL);
+                name = makeText(String(tag.name), 12,
+                    colors.textPrimary, itemHasTag(tag.id));
+                name.setSingleLine(true);
+                name.setMaxLines(1);
+                name.setEllipsize(TextUtils.TruncateAt.END);
+                count = makeText(String(Number(tag.item_count || 0)) +
+                    " 条记录", 9, colors.textSecondary, false);
+                labels.addView(name, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
+                labels.addView(count, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
+                row.addView(labels, new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+                check = makeText(itemHasTag(tag.id) ? "✓" : "+", 15,
+                    itemHasTag(tag.id) ? colors.accentStrong :
+                        colors.textTertiary, true);
+                check.setGravity(Gravity.CENTER);
+                row.addView(check,
+                    new LinearLayout.LayoutParams(dp(34), dp(34)));
                 (function (tagId, view) {
                     view.setOnClickListener(new JavaAdapter(
                         View.OnClickListener, {
                             onClick: function () { toggleTag(tagId); }
                         }));
                     tagViews[String(tagId)] = view;
-                }(Number(tag.id), toggleView));
-                row.addView(toggleView, new LinearLayout.LayoutParams(
-                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-                deleteView = makeButton("删除", dark, false, true,
-                    false, true);
-                deleteView.setContentDescription(
-                    "删除标签 " + String(tag.name));
-                (function (tagId, view) {
-                    view.setOnClickListener(new JavaAdapter(
-                        View.OnClickListener, {
-                            onClick: function () { deleteTag(tagId); }
-                        }));
-                    tagDeleteViews[String(tagId)] = view;
-                }(Number(tag.id), deleteView));
+                }(Number(tag.id), row));
                 params = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT);
-                params.leftMargin = dp(7);
-                row.addView(deleteView, params);
-                params = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT);
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(54));
                 params.bottomMargin = dp(6);
                 list.addView(row, params);
             }
         }
+        state.tagOptionCount = allTags.length;
+        state.attachedTagCount = editorDraftTagIds.length;
+        state.tagDraftCount = editorDraftTagIds.length;
         scroll.addView(list,
-            new Packages.android.widget.FrameLayout.LayoutParams(
-                Packages.android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
-                Packages.android.widget.FrameLayout.LayoutParams.WRAP_CONTENT));
-        panelRoot.addView(scroll, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
+            new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT));
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1);
+        params.bottomMargin = dp(8);
+        panelRoot.addView(scroll, params);
+
+        footer.setOrientation(LinearLayout.HORIZONTAL);
+        footer.setGravity(Gravity.CENTER_VERTICAL);
+        tagSelectionCancelView = makeEditorAction("取消", colors, false);
+        tagSelectionCancelView.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, {
+                onClick: function () { cancelTagSelectionDraft(); }
+            }));
+        tagSelectionSaveView = makeEditorAction(
+            "完成（" + String(editorDraftTagIds.length) + "）", colors, true);
+        tagSelectionSaveView.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, {
+                onClick: function () { saveTagSelectionDraft(); }
+            }));
+        params = new LinearLayout.LayoutParams(0, dp(42), 1);
+        params.rightMargin = dp(8);
+        footer.addView(tagSelectionCancelView, params);
+        footer.addView(tagSelectionSaveView,
+            new LinearLayout.LayoutParams(0, dp(42), 1));
+        panelRoot.addView(footer, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(50)));
         if (requestFocus) { requestKeyboardOnMain(); }
         return true;
     }
@@ -1610,6 +1824,17 @@
         state.mode = mode === "edit" ? "edit" :
             (mode === "tags" ? "tags" : "new");
         state.itemId = state.mode === "new" ? null : Number(itemId);
+        if (state.mode === "new" || state.mode === "edit") {
+            editorDraftTagIds = state.mode === "edit" ?
+                loadItemTagIds(state.itemId) : [];
+            tagSelectorOriginalIds = copyTagIds(editorDraftTagIds);
+            state.tagDraftCount = editorDraftTagIds.length;
+            state.tagOriginalCount = editorDraftTagIds.length;
+            state.tagSelectionDirty = false;
+            tagReturnMode = null;
+            tagReturnText = initialText;
+            tagReturnRow = row;
+        }
         requestKeyboard = options.requestKeyboard !== false;
         state.requestKeyboardOnOpen = requestKeyboard;
         state.keyboardRequestedOnOpen = false;
@@ -1747,6 +1972,15 @@
             tagToggleCount: Number(state.tagToggleCount),
             tagDeleteCount: Number(state.tagDeleteCount),
             tagRenameCount: Number(state.tagRenameCount),
+            tagSelectionOpenCount: Number(state.tagSelectionOpenCount),
+            tagSelectionSaveCount: Number(state.tagSelectionSaveCount),
+            tagSelectionCancelCount: Number(state.tagSelectionCancelCount),
+            tagSelectionDirty: state.tagSelectionDirty === true,
+            tagDraftCount: Number(state.tagDraftCount),
+            tagOriginalCount: Number(state.tagOriginalCount),
+            tagColorPreviewCount: Number(state.tagColorPreviewCount),
+            tagFooterActionCount: Number(state.tagFooterActionCount),
+            tagSelectorStyle: state.tagSelectorStyle,
             tagOptionCount: Number(state.tagOptionCount),
             attachedTagCount: Number(state.attachedTagCount),
             tagButtonCount: Object.keys(tagViews).length,
@@ -1854,6 +2088,11 @@
             closeCount: 0, saveCount: 0, createCount: 0,
             updateCount: 0, cancelCount: 0, tagCreateCount: 0,
             tagToggleCount: 0, tagDeleteCount: 0, tagRenameCount: 0,
+            tagSelectionOpenCount: 0, tagSelectionSaveCount: 0,
+            tagSelectionCancelCount: 0, tagSelectionDirty: false,
+            tagDraftCount: 0, tagOriginalCount: 0,
+            tagColorPreviewCount: 0, tagFooterActionCount: 0,
+            tagSelectorStyle: "reference_tag_selector_v1",
             tagOptionCount: 0, attachedTagCount: 0, lastSavedId: null,
             lastSaveAction: null, lastTagId: null, lastTagAction: null,
             windowType: null, windowFlags: null, panelWidthPx: null,
@@ -1903,7 +2142,7 @@
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 9,
+        MODULE_VERSION: 10,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
@@ -1934,7 +2173,13 @@
             return openPanel("edit", Number(id), options || {});
         },
         openTags: function (id, options) {
-            return openPanel("tags", Number(id), options || {});
+            var opened = openPanel("edit", Number(id), options || {
+                requestKeyboard: false
+            });
+            requireMain(runOnMainSync(function () {
+                return openTagSelectorOnMain();
+            }, 2500));
+            return opened;
         },
         close: function () { return closePanel("close"); },
         getState: getState,
@@ -2013,6 +2258,25 @@
                     tagDeleteViews[tagId].performClick() : false;
             }, 2500));
         },
+        performOpenTagSelectorClick: function () {
+            return requireMain(runOnMainSync(function () {
+                return metadataTypeView !== null ?
+                    metadataTypeView.performClick() : false;
+            }, 2500));
+        },
+        performTagSelectionSaveClick: function () {
+            return requireMain(runOnMainSync(function () {
+                return tagSelectionSaveView !== null ?
+                    tagSelectionSaveView.performClick() : false;
+            }, 2500));
+        },
+        performTagSelectionCancelClick: function () {
+            return requireMain(runOnMainSync(function () {
+                return tagSelectionCancelView !== null ?
+                    tagSelectionCancelView.performClick() : false;
+            }, 2500));
+        },
+        getDraftTagIds: function () { return copyTagIds(editorDraftTagIds); },
         renameTag: function (tagId, name) {
             return renameTag(Number(tagId), name);
         },

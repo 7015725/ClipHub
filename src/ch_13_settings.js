@@ -5,6 +5,7 @@
     var Looper = Packages.android.os.Looper;
     var Handler = Packages.android.os.Handler;
     var View = Packages.android.view.View;
+    var MotionEvent = Packages.android.view.MotionEvent;
     var Gravity = Packages.android.view.Gravity;
     var WindowManager = Packages.android.view.WindowManager;
     var PixelFormat = Packages.android.graphics.PixelFormat;
@@ -17,6 +18,7 @@
     var EditText = Packages.android.widget.EditText;
     var TypedValue = Packages.android.util.TypedValue;
     var InputType = Packages.android.text.InputType;
+    var TextWatcher = Packages.android.text.TextWatcher;
     var TextUtils = Packages.android.text.TextUtils;
     var CountDownLatch = Packages.java.util.concurrent.CountDownLatch;
     var TimeUnit = Packages.java.util.concurrent.TimeUnit;
@@ -57,6 +59,7 @@
     var translationSectionView = null;
     var tagsSectionView = null;
     var dataSectionView = null;
+    var pendingDeleteTagId = null;
     var uiState = {
         attached: false,
         openCount: 0,
@@ -69,8 +72,14 @@
         tagUpdateCount: 0,
         tagDeleteCount: 0,
         tagReorderCount: 0,
+        tagDragStartCount: 0,
+        tagDragCommitCount: 0,
+        tagColorPreviewCount: 0,
+        tagDeleteConfirmCount: 0,
+        lastDraggedTagId: null,
+        pendingDeleteTagId: null,
         clearHistoryCount: 0,
-        settingsStyle: "reference_settings_v1",
+        settingsStyle: "reference_settings_v2",
         sectionCount: 4,
         translationFieldCount: 4,
         tagRowCount: 0,
@@ -684,6 +693,104 @@
         return "#" + hex.substring(2);
     }
 
+    function colorValueText(value, fallback) {
+        var number;
+        var hex;
+        if (value === null || value === undefined) {
+            return String(fallback || "#7C5CFC");
+        }
+        number = Number(value) >>> 0;
+        hex = number.toString(16).toUpperCase();
+        while (hex.length < 8) { hex = "0" + hex; }
+        return "#" + hex;
+    }
+
+    function makeColorSwatch(value, colors) {
+        var swatch = new View(appContext);
+        swatch.setBackground(roundedBackground(
+            colorValueText(value, colors.accentStrong), colors.stroke, 99));
+        uiState.tagColorPreviewCount += 1;
+        return swatch;
+    }
+
+    function bindColorPreview(input, swatch, fallback, colors) {
+        input.addTextChangedListener(new JavaAdapter(TextWatcher, {
+            beforeTextChanged: function () {},
+            onTextChanged: function () {
+                var value = parseColorValue(String(input.getText()), fallback);
+                swatch.setBackground(roundedBackground(
+                    colorValueText(value, colors.accentStrong),
+                    colors.stroke, 99));
+            },
+            afterTextChanged: function () {}
+        }));
+    }
+
+    function rebuildTagPage() {
+        buildPage();
+        if (mainHandler !== null) {
+            mainHandler.post(new Packages.java.lang.Runnable({
+                run: function () { scrollToSection("tags"); }
+            }));
+        }
+        return true;
+    }
+
+    function requestDeleteTag(tagId, itemCount, deleteView) {
+        tagId = Number(tagId);
+        if (pendingDeleteTagId !== tagId) {
+            pendingDeleteTagId = tagId;
+            uiState.pendingDeleteTagId = tagId;
+            uiState.tagDeleteConfirmCount += 1;
+            deleteView.setText("确认删除");
+            deleteView.setContentDescription("再次点击删除标签，当前关联 " +
+                String(Number(itemCount || 0)) + " 条记录");
+            return false;
+        }
+        pendingDeleteTagId = null;
+        uiState.pendingDeleteTagId = null;
+        return deleteTagRow(tagId);
+    }
+
+    function bindTagDrag(handle, rowRoot, tagId) {
+        var startY = 0;
+        var dragging = false;
+        handle.setOnTouchListener(new JavaAdapter(View.OnTouchListener, {
+            onTouch: function (view, event) {
+                var action = Number(event.getActionMasked());
+                var delta;
+                if (action === MotionEvent.ACTION_DOWN) {
+                    startY = Number(event.getRawY());
+                    dragging = true;
+                    uiState.tagDragStartCount += 1;
+                    uiState.lastDraggedTagId = Number(tagId);
+                    rowRoot.setAlpha(0.92);
+                    return true;
+                }
+                if (action === MotionEvent.ACTION_MOVE && dragging) {
+                    delta = Math.max(-dp(64), Math.min(dp(64),
+                        Number(event.getRawY()) - startY));
+                    rowRoot.setTranslationY(delta);
+                    return true;
+                }
+                if ((action === MotionEvent.ACTION_UP ||
+                        action === MotionEvent.ACTION_CANCEL) && dragging) {
+                    delta = Number(event.getRawY()) - startY;
+                    dragging = false;
+                    rowRoot.setTranslationY(0);
+                    rowRoot.setAlpha(1);
+                    if (Math.abs(delta) >= dp(28)) {
+                        if (moveTag(Number(tagId), delta > 0 ? 1 : -1)) {
+                            uiState.tagDragCommitCount += 1;
+                        }
+                    }
+                    return true;
+                }
+                return false;
+            }
+        }));
+    }
+
     function emitTagsChanged(action, tagId) {
         try {
             if (ClipHub.EventBus && typeof ClipHub.EventBus.emit === "function") {
@@ -711,7 +818,7 @@
             }));
             uiState.tagCreateCount += 1;
             emitTagsChanged("tag_created", id);
-            buildPage();
+            rebuildTagPage();
             return true;
         } catch (error) {
             uiState.lastError = String(error);
@@ -772,7 +879,7 @@
             ClipHub.Repository.reorderTags(ids);
             uiState.tagReorderCount += 1;
             emitTagsChanged("tag_reordered", tagId);
-            buildPage();
+            rebuildTagPage();
             return true;
         } catch (error) {
             uiState.lastError = String(error);
@@ -931,60 +1038,69 @@
         var root = new LinearLayout(appContext);
         var first = new LinearLayout(appContext);
         var actions = new LinearLayout(appContext);
+        var handle = makeText("≡", 18, colors.textTertiary, true);
+        var swatch = makeColorSwatch(tag.color_value, colors);
         var nameInput = makeInput("标签名称", String(tag.name), colors, false);
         var colorInput = makeInput("#RRGGBB", colorText(tag.color_value),
             colors, false);
         var count = makeText(String(Number(tag.item_count || 0)) + " 条记录",
             9, colors.textSecondary, false);
-        var up = makeButton("↑", colors, false, false);
-        var down = makeButton("↓", colors, false, false);
         var save = makeButton("保存", colors, false, false);
         var del = makeButton("删除", colors, false, true);
         var params;
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(7), dp(7), dp(7), dp(7));
+        root.setPadding(dp(8), dp(8), dp(8), dp(8));
         root.setBackground(roundedBackground(colors.surfaceMuted,
-            colors.stroke, 11));
+            colors.stroke, 12));
         first.setOrientation(LinearLayout.HORIZONTAL);
+        first.setGravity(Gravity.CENTER_VERTICAL);
+        handle.setGravity(Gravity.CENTER);
+        handle.setContentDescription("拖动排序标签 " + String(tag.name));
+        params = new LinearLayout.LayoutParams(dp(32), dp(40));
+        params.rightMargin = dp(5);
+        first.addView(handle, params);
+        params = new LinearLayout.LayoutParams(dp(22), dp(22));
+        params.rightMargin = dp(7);
+        first.addView(swatch, params);
         params = new LinearLayout.LayoutParams(0, dp(40), 1);
         params.rightMargin = dp(5);
         first.addView(nameInput, params);
         first.addView(colorInput,
-            new LinearLayout.LayoutParams(dp(92), dp(40)));
+            new LinearLayout.LayoutParams(dp(88), dp(40)));
         root.addView(first, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(40)));
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setGravity(Gravity.CENTER_VERTICAL);
         actions.addView(count, new LinearLayout.LayoutParams(
             0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-        up.setEnabled(index > 0); up.setAlpha(index > 0 ? 1 : 0.4);
-        down.setEnabled(index < total - 1);
-        down.setAlpha(index < total - 1 ? 1 : 0.4);
-        (function (tagId) {
-            up.setOnClickListener(new JavaAdapter(View.OnClickListener, {
-                onClick: function () { moveTag(tagId, -1); }
-            }));
-            down.setOnClickListener(new JavaAdapter(View.OnClickListener, {
-                onClick: function () { moveTag(tagId, 1); }
-            }));
+        (function (tagId, itemCount) {
             save.setOnClickListener(new JavaAdapter(View.OnClickListener, {
-                onClick: function () { saveTagRow(tagId, nameInput, colorInput); }
+                onClick: function () {
+                    pendingDeleteTagId = null;
+                    uiState.pendingDeleteTagId = null;
+                    saveTagRow(tagId, nameInput, colorInput);
+                }
             }));
             del.setOnClickListener(new JavaAdapter(View.OnClickListener, {
-                onClick: function () { deleteTagRow(tagId); }
+                onClick: function () {
+                    requestDeleteTag(tagId, itemCount, del);
+                }
             }));
-        }(Number(tag.id)));
-        actions.addView(up, new LinearLayout.LayoutParams(dp(38), dp(34)));
-        actions.addView(down, new LinearLayout.LayoutParams(dp(38), dp(34)));
-        actions.addView(save, new LinearLayout.LayoutParams(dp(54), dp(34)));
-        actions.addView(del, new LinearLayout.LayoutParams(dp(54), dp(34)));
+            bindTagDrag(handle, root, tagId);
+        }(Number(tag.id), Number(tag.item_count || 0)));
+        actions.addView(save, new LinearLayout.LayoutParams(dp(58), dp(34)));
+        params = new LinearLayout.LayoutParams(dp(68), dp(34));
+        params.leftMargin = dp(5);
+        actions.addView(del, params);
         params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(34));
-        params.topMargin = dp(5);
+        params.topMargin = dp(6);
         root.addView(actions, params);
+        bindColorPreview(colorInput, swatch,
+            Number(tag.color_value || Color.parseColor("#7C5CFC")), colors);
         tagRowViews[String(tag.id)] = {
             root: root, name: nameInput, color: colorInput,
-            up: up, down: down, save: save, deleteView: del
+            handle: handle, swatch: swatch, save: save, deleteView: del
         };
         return root;
     }
@@ -993,13 +1109,19 @@
         var section = makeSection(colors);
         var createRow = new LinearLayout(appContext);
         var createButton;
+        var preview;
         var tags = ClipHub.Repository.listTags();
         var index;
         var params;
         var empty;
         makeSectionTitle(section, "标签管理",
-            "名称、颜色、排序、删除与关联数量", colors);
+            "拖动排序 · 颜色预览 · 删除只解除关联", colors);
         createRow.setOrientation(LinearLayout.HORIZONTAL);
+        createRow.setGravity(Gravity.CENTER_VERTICAL);
+        preview = makeColorSwatch(Number(Color.parseColor("#7C5CFC")), colors);
+        params = new LinearLayout.LayoutParams(dp(24), dp(24));
+        params.rightMargin = dp(6);
+        createRow.addView(preview, params);
         newTagNameInput = makeInput("新标签名称", "", colors, false);
         newTagColorInput = makeInput("#7C5CFC", "#7C5CFC", colors, false);
         createButton = makeButton("新增", colors, true, false);
@@ -1008,15 +1130,17 @@
         params = new LinearLayout.LayoutParams(0, dp(40), 1);
         params.rightMargin = dp(5);
         createRow.addView(newTagNameInput, params);
-        params = new LinearLayout.LayoutParams(dp(94), dp(40));
+        params = new LinearLayout.LayoutParams(dp(88), dp(40));
         params.rightMargin = dp(5);
         createRow.addView(newTagColorInput, params);
         createRow.addView(createButton,
             new LinearLayout.LayoutParams(dp(54), dp(40)));
         params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(40));
-        params.bottomMargin = dp(7);
+        params.bottomMargin = dp(8);
         section.addView(createRow, params);
+        bindColorPreview(newTagColorInput, preview,
+            Number(Color.parseColor("#7C5CFC")), colors);
         tagRowViews = {};
         for (index = 0; index < tags.length; index += 1) {
             params = new LinearLayout.LayoutParams(
@@ -1068,7 +1192,7 @@
         var params;
         if (scrollRoot === null) { return false; }
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(12), dp(9), dp(12), dp(12));
+        content.setPadding(dp(12), dp(9), dp(12), dp(28));
         (function () {
             var handleRow = new LinearLayout(appContext);
             var handle = new View(appContext);
@@ -1206,6 +1330,8 @@
                 translationSectionView = null;
                 tagsSectionView = null;
                 dataSectionView = null;
+                pendingDeleteTagId = null;
+                uiState.pendingDeleteTagId = null;
             }
         }, 3000);
     }
@@ -1246,6 +1372,14 @@
             tagUpdateCount: Number(uiState.tagUpdateCount),
             tagDeleteCount: Number(uiState.tagDeleteCount),
             tagReorderCount: Number(uiState.tagReorderCount),
+            tagDragStartCount: Number(uiState.tagDragStartCount),
+            tagDragCommitCount: Number(uiState.tagDragCommitCount),
+            tagColorPreviewCount: Number(uiState.tagColorPreviewCount),
+            tagDeleteConfirmCount: Number(uiState.tagDeleteConfirmCount),
+            lastDraggedTagId: uiState.lastDraggedTagId,
+            pendingDeleteTagId: uiState.pendingDeleteTagId,
+            dragReorderEnabled: true,
+            deleteRequiresConfirmation: true,
             clearHistoryCount: Number(uiState.clearHistoryCount),
             settingsStyle: uiState.settingsStyle,
             sectionCount: Number(uiState.sectionCount),
@@ -1271,7 +1405,7 @@
 
     ClipHub.Settings = {
         MODULE_NAME: "ch_13_settings",
-        MODULE_VERSION: 5,
+        MODULE_VERSION: 6,
         DEFAULTS: defaultsCopy(),
         init: function (context) {
             if (!ClipHub.Database || !ClipHub.Database.isOpen()) {
@@ -1326,6 +1460,39 @@
                 newTagColorInput.setText(String(colorTextValue || "#7C5CFC"));
                 return createTagFromSettings();
             }, 3000);
+        },
+        performUpdateTag: function (tagId, name, colorTextValue) {
+            tagId = String(Number(tagId));
+            return runOnMainSync(function () {
+                var row = tagRowViews[tagId];
+                if (!row) { return false; }
+                row.name.setText(String(name || ""));
+                row.color.setText(String(colorTextValue || "#7C5CFC"));
+                return row.save.performClick();
+            }, 3000);
+        },
+        performMoveTag: function (tagId, delta) {
+            return runOnMainSync(function () {
+                return moveTag(Number(tagId), Number(delta));
+            }, 3000);
+        },
+        performDeleteTagConfirm: function (tagId) {
+            tagId = String(Number(tagId));
+            return runOnMainSync(function () {
+                var row = tagRowViews[tagId];
+                if (!row) { return false; }
+                row.deleteView.performClick();
+                return row.deleteView.performClick();
+            }, 3000);
+        },
+        getTagOrder: function () {
+            var tags = ClipHub.Repository.listTags();
+            var ids = [];
+            var index;
+            for (index = 0; index < tags.length; index += 1) {
+                ids.push(Number(tags[index].id));
+            }
+            return ids;
         },
         reset: function (options) {
             var defaults = defaultsCopy();

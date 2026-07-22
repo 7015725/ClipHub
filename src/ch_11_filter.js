@@ -161,6 +161,7 @@
         settingsOpenCount: 0,
         settingsButtonPresent: false,
         renderedTagLabelCount: 0,
+        tagColorPreviewCount: 0,
         loadedResultCount: 0,
         resultPageSize: RESULT_PAGE_SIZE,
         resultPageLimit: RESULT_PAGE_SIZE,
@@ -1372,6 +1373,18 @@
         return labels.length > 0 ? labels.join("  ") : "无标签";
     }
 
+    function tagColorText(tag, fallback) {
+        var value;
+        var hex;
+        if (!tag || tag.color_value === null || tag.color_value === undefined) {
+            return String(fallback || "#7C5CFC");
+        }
+        value = Number(tag.color_value) >>> 0;
+        hex = value.toString(16).toUpperCase();
+        while (hex.length < 8) { hex = "0" + hex; }
+        return "#" + hex;
+    }
+
     function selectedResultRow() {
         var index;
         if (selectedItemId === null) { return null; }
@@ -1520,9 +1533,10 @@
             11, colors.textPrimary, selected);
         var metaRow = new LinearLayout(appContext);
         var tags = tagsForResult(row);
-        var tagBadge = makeText(tagSummary(tags),
-            8, tags.length > 0 ? colors.accentStrong : colors.textTertiary,
-            tags.length > 0);
+        var tagBadge = makeText((tags.length > 0 ? "●  " : "") +
+            tagSummary(tags), 8,
+            tags.length > 0 ? tagColorText(tags[0], colors.accentStrong) :
+                colors.textTertiary, tags.length > 0);
         var source = makeText(sourceLabel(row),
             8, colors.textSecondary, false);
         var right = new LinearLayout(appContext);
@@ -1580,6 +1594,7 @@
         params.rightMargin = dp(6);
         metaRow.addView(tagBadge, params);
         state.renderedTagLabelCount += Math.min(2, tags.length);
+        if (tags.length > 0) { state.tagColorPreviewCount += 1; }
         source.setSingleLine(true);
         source.setEllipsize(TextUtils.TruncateAt.END);
         metaRow.addView(source, new LinearLayout.LayoutParams(
@@ -2630,6 +2645,7 @@
             settingsButtonPresent: settingsButton !== null,
             settingsOpenCount: Number(state.settingsOpenCount),
             renderedTagLabelCount: Number(state.renderedTagLabelCount),
+            tagColorPreviewCount: Number(state.tagColorPreviewCount),
             loadedResultCount: Number(state.loadedResultCount),
             resultPageSize: Number(state.resultPageSize),
             resultPageLimit: Number(state.resultPageLimit),
@@ -2814,6 +2830,7 @@
         state.settingsOpenCount = 0;
         state.settingsButtonPresent = false;
         state.renderedTagLabelCount = 0;
+        state.tagColorPreviewCount = 0;
         state.loadedResultCount = 0;
         state.resultPageSize = RESULT_PAGE_SIZE;
         state.resultPageLimit = RESULT_PAGE_SIZE;
@@ -2840,13 +2857,13 @@
         state.resultCardCount = 0;
         state.resultSourceIconCount = 0;
         state.advancedDrawerVisible = false;
-        state.searchPageStyle = "reference_search_v6";
+        state.searchPageStyle = "reference_search_v7";
         state.lastError = null;
     }
 
     ClipHub.Filter = {
         MODULE_NAME: "ch_11_filter",
-        MODULE_VERSION: 13,
+        MODULE_VERSION: 14,
 
         init: function (context) {
             androidContext = context && context.androidContext ?
