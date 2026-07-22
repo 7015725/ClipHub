@@ -1,0 +1,1 @@
+Trigger ClipHub stage 3D2-5 settings positioning fix.
