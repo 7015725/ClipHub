@@ -12,6 +12,7 @@
     var WindowManager = Packages.android.view.WindowManager;
     var PixelFormat = Packages.android.graphics.PixelFormat;
     var Color = Packages.android.graphics.Color;
+    var Rect = Packages.android.graphics.Rect;
     var GradientDrawable = Packages.android.graphics.drawable.GradientDrawable;
     var LinearLayout = Packages.android.widget.LinearLayout;
     var FrameLayout = Packages.android.widget.FrameLayout;
@@ -46,6 +47,9 @@
     var metadataSourceView = null;
     var metadataTypeView = null;
     var editorFooterView = null;
+    var contentScrollView = null;
+    var layoutObserver = null;
+    var layoutListener = null;
     var createTagView = null;
     var tagViews = {};
     var tagDeleteViews = {};
@@ -99,6 +103,30 @@
         saveButtonPresent: false,
         requestKeyboardOnOpen: true,
         keyboardRequestedOnOpen: false,
+        softInputMode: 0,
+        softInputAdjustResize: false,
+        keyboardVisible: false,
+        keyboardInsetDp: 0,
+        visibleFrameHeightDp: 0,
+        visibleFrameBottomDp: 0,
+        rootMeasuredHeightDp: 0,
+        inputViewportHeightDp: 0,
+        inputMeasuredHeightDp: 0,
+        footerTopDp: 0,
+        footerBottomDp: 0,
+        footerScreenBottomDp: 0,
+        footerVisibleInRoot: false,
+        footerAboveKeyboard: false,
+        inputViewportAboveFooter: false,
+        inputCanScrollUp: false,
+        inputCanScrollDown: false,
+        selectionStart: 0,
+        selectionEnd: 0,
+        cursorAtEnd: false,
+        layoutMeasureCount: 0,
+        keyboardShowCount: 0,
+        keyboardHideCount: 0,
+        lastKeyboardVisible: false,
         panelGravity: "center",
         panelBottomMarginDp: 0,
         addThreadId: null,
@@ -331,6 +359,136 @@
         return length;
     }
 
+    function measureEditorLayout() {
+        var frame;
+        var metrics;
+        var visibleHeightPx = 0;
+        var keyboardInsetDp = 0;
+        var keyboardVisible = false;
+        var rootHeightPx = 0;
+        var viewportHeightPx = 0;
+        var inputHeightPx = 0;
+        var footerTopPx = 0;
+        var footerBottomPx = 0;
+        var footerScreenBottomPx = 0;
+        var location;
+        var length = 0;
+        var selectionStart = 0;
+        var selectionEnd = 0;
+        if (panelRoot === null || state.mode === "tags") { return false; }
+        try {
+            frame = new Rect();
+            panelRoot.getWindowVisibleDisplayFrame(frame);
+            metrics = displayMetrics();
+            visibleHeightPx = Math.max(0,
+                Number(frame.bottom) - Number(frame.top));
+            keyboardInsetDp = Math.max(0, pxToDp(
+                Number(metrics.heightPixels) - visibleHeightPx));
+            keyboardVisible = keyboardInsetDp >= 120;
+            rootHeightPx = Number(panelRoot.getHeight());
+            if (contentScrollView !== null) {
+                viewportHeightPx = Number(contentScrollView.getHeight());
+            }
+            if (contentInput !== null) {
+                inputHeightPx = Number(contentInput.getHeight());
+                length = String(contentInput.getText()).length;
+                selectionStart = Number(contentInput.getSelectionStart());
+                selectionEnd = Number(contentInput.getSelectionEnd());
+            }
+            if (editorFooterView !== null) {
+                footerTopPx = Number(editorFooterView.getTop());
+                footerBottomPx = Number(editorFooterView.getBottom());
+                location = Packages.java.lang.reflect.Array.newInstance(
+                    Packages.java.lang.Integer.TYPE, 2);
+                editorFooterView.getLocationOnScreen(location);
+                footerScreenBottomPx = Number(location[1]) +
+                    Number(editorFooterView.getHeight());
+            }
+            if (state.layoutMeasureCount > 0 &&
+                    state.lastKeyboardVisible !== keyboardVisible) {
+                if (keyboardVisible) { state.keyboardShowCount += 1; }
+                else { state.keyboardHideCount += 1; }
+            }
+            state.lastKeyboardVisible = keyboardVisible;
+            state.keyboardVisible = keyboardVisible;
+            state.keyboardInsetDp = keyboardInsetDp;
+            state.visibleFrameHeightDp = pxToDp(visibleHeightPx);
+            state.visibleFrameBottomDp = pxToDp(Number(frame.bottom));
+            state.rootMeasuredHeightDp = pxToDp(rootHeightPx);
+            state.inputViewportHeightDp = pxToDp(viewportHeightPx);
+            state.inputMeasuredHeightDp = pxToDp(inputHeightPx);
+            state.footerTopDp = pxToDp(footerTopPx);
+            state.footerBottomDp = pxToDp(footerBottomPx);
+            state.footerScreenBottomDp = pxToDp(footerScreenBottomPx);
+            state.footerVisibleInRoot = editorFooterView !== null &&
+                footerTopPx >= 0 && footerBottomPx <= rootHeightPx + dp(2);
+            state.footerAboveKeyboard = editorFooterView !== null &&
+                footerScreenBottomPx <= Number(frame.bottom) + dp(2);
+            state.inputViewportAboveFooter =
+                contentScrollView !== null && editorFooterView !== null &&
+                Number(contentScrollView.getBottom()) <= footerTopPx + dp(1);
+            state.inputCanScrollUp = contentInput !== null &&
+                (contentInput.canScrollVertically(-1) ||
+                    (contentScrollView !== null &&
+                        contentScrollView.canScrollVertically(-1)));
+            state.inputCanScrollDown = contentInput !== null &&
+                (contentInput.canScrollVertically(1) ||
+                    (contentScrollView !== null &&
+                        contentScrollView.canScrollVertically(1)));
+            state.selectionStart = selectionStart;
+            state.selectionEnd = selectionEnd;
+            state.cursorAtEnd = contentInput !== null &&
+                selectionStart === length && selectionEnd === length;
+            state.layoutMeasureCount += 1;
+            return true;
+        } catch (error) {
+            state.lastError = String(error);
+            return false;
+        }
+    }
+
+    function installEditorLayoutObserver() {
+        if (panelRoot === null || state.mode === "tags") { return false; }
+        try {
+            layoutObserver = panelRoot.getViewTreeObserver();
+            layoutListener = new JavaAdapter(
+                Packages.android.view.ViewTreeObserver.OnGlobalLayoutListener, {
+                    onGlobalLayout: function () { measureEditorLayout(); }
+                });
+            layoutObserver.addOnGlobalLayoutListener(layoutListener);
+            mainHandler.postDelayed(new Packages.java.lang.Runnable({
+                run: function () { measureEditorLayout(); }
+            }), 180);
+            return true;
+        } catch (error) {
+            state.lastError = String(error);
+            return false;
+        }
+    }
+
+    function scrollInputToEndOnMain() {
+        var length;
+        if (contentInput === null) { return false; }
+        length = Number(contentInput.getText().length());
+        contentInput.requestFocus();
+        contentInput.setSelection(length);
+        if (contentScrollView !== null) {
+            contentScrollView.post(new Packages.java.lang.Runnable({
+                run: function () {
+                    try {
+                        contentScrollView.fullScroll(View.FOCUS_DOWN);
+                        contentInput.setSelection(contentInput.getText().length());
+                        measureEditorLayout();
+                    } catch (ignored) {}
+                }
+            }));
+        }
+        mainHandler.postDelayed(new Packages.java.lang.Runnable({
+            run: function () { measureEditorLayout(); }
+        }), 120);
+        return true;
+    }
+
     function emitMutation(name, id, mutation, extra) {
         var thread = nowThread();
         var payload = {
@@ -445,6 +603,15 @@
     }
 
     function clearViews() {
+        try {
+            if (layoutObserver !== null && layoutListener !== null &&
+                    layoutObserver.isAlive()) {
+                layoutObserver.removeOnGlobalLayoutListener(layoutListener);
+            }
+        } catch (ignoredLayoutObserver) {}
+        layoutObserver = null;
+        layoutListener = null;
+        contentScrollView = null;
         panelRoot = null;
         panelParams = null;
         contentInput = null;
@@ -473,6 +640,24 @@
         state.saveButtonPresent = false;
         state.footerActionCount = 0;
         state.editorFooterHeightDp = 0;
+        state.keyboardVisible = false;
+        state.keyboardInsetDp = 0;
+        state.visibleFrameHeightDp = 0;
+        state.visibleFrameBottomDp = 0;
+        state.rootMeasuredHeightDp = 0;
+        state.inputViewportHeightDp = 0;
+        state.inputMeasuredHeightDp = 0;
+        state.footerTopDp = 0;
+        state.footerBottomDp = 0;
+        state.footerScreenBottomDp = 0;
+        state.footerVisibleInRoot = false;
+        state.footerAboveKeyboard = false;
+        state.inputViewportAboveFooter = false;
+        state.inputCanScrollUp = false;
+        state.inputCanScrollDown = false;
+        state.selectionStart = 0;
+        state.selectionEnd = 0;
+        state.cursorAtEnd = false;
     }
 
     function closePanel(reason) {
@@ -741,7 +926,7 @@
         options = options || {};
 
         panelRoot.removeAllViews();
-        state.editorStyle = "reference_editor_v1";
+        state.editorStyle = "reference_editor_v2";
         state.sourceMetaText = sourceText;
         state.typeMetaText = typeText;
         state.contentMinLines = 10;
@@ -850,6 +1035,7 @@
 
         scroll.setFillViewport(true);
         scroll.setVerticalScrollBarEnabled(false);
+        contentScrollView = scroll;
         contentInput = new EditText(appContext);
         contentInput.setText(String(initialText || ""));
         contentInput.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
@@ -911,6 +1097,7 @@
         state.editorFooterHeightDp = 50;
         state.cancelButtonPresent = true;
         state.saveButtonPresent = true;
+        installEditorLayoutObserver();
 
         if (options.requestKeyboard !== false) {
             requestKeyboardOnMain();
@@ -1116,6 +1303,10 @@
                 (requestKeyboard ?
                     WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE :
                     WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
+            state.softInputMode = Number(panelParams.softInputMode);
+            state.softInputAdjustResize =
+                (Number(panelParams.softInputMode) &
+                    Number(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)) !== 0;
             try { panelParams.setTitle("ClipHub Editor Panel"); }
             catch (ignoredTitle) {}
             windowManager.addView(panelRoot, panelParams);
@@ -1223,6 +1414,30 @@
             requestKeyboardOnOpen: state.requestKeyboardOnOpen === true,
             keyboardRequestedOnOpen:
                 state.keyboardRequestedOnOpen === true,
+            softInputMode: Number(state.softInputMode),
+            softInputAdjustResize: state.softInputAdjustResize === true,
+            keyboardVisible: state.keyboardVisible === true,
+            keyboardInsetDp: Number(state.keyboardInsetDp),
+            visibleFrameHeightDp: Number(state.visibleFrameHeightDp),
+            visibleFrameBottomDp: Number(state.visibleFrameBottomDp),
+            rootMeasuredHeightDp: Number(state.rootMeasuredHeightDp),
+            inputViewportHeightDp: Number(state.inputViewportHeightDp),
+            inputMeasuredHeightDp: Number(state.inputMeasuredHeightDp),
+            footerTopDp: Number(state.footerTopDp),
+            footerBottomDp: Number(state.footerBottomDp),
+            footerScreenBottomDp: Number(state.footerScreenBottomDp),
+            footerVisibleInRoot: state.footerVisibleInRoot === true,
+            footerAboveKeyboard: state.footerAboveKeyboard === true,
+            inputViewportAboveFooter:
+                state.inputViewportAboveFooter === true,
+            inputCanScrollUp: state.inputCanScrollUp === true,
+            inputCanScrollDown: state.inputCanScrollDown === true,
+            selectionStart: Number(state.selectionStart),
+            selectionEnd: Number(state.selectionEnd),
+            cursorAtEnd: state.cursorAtEnd === true,
+            layoutMeasureCount: Number(state.layoutMeasureCount),
+            keyboardShowCount: Number(state.keyboardShowCount),
+            keyboardHideCount: Number(state.keyboardHideCount),
             panelGravity: state.panelGravity,
             panelBottomMarginDp: Number(state.panelBottomMarginDp),
             addThreadId: state.addThreadId,
@@ -1256,7 +1471,18 @@
             contentLength: 0, contentMinLines: 0, footerActionCount: 0,
             editorFooterHeightDp: 0, cancelButtonPresent: false,
             saveButtonPresent: false, requestKeyboardOnOpen: true,
-            keyboardRequestedOnOpen: false, panelGravity: "center",
+            keyboardRequestedOnOpen: false, softInputMode: 0,
+            softInputAdjustResize: false, keyboardVisible: false,
+            keyboardInsetDp: 0, visibleFrameHeightDp: 0,
+            visibleFrameBottomDp: 0, rootMeasuredHeightDp: 0,
+            inputViewportHeightDp: 0, inputMeasuredHeightDp: 0,
+            footerTopDp: 0, footerBottomDp: 0, footerScreenBottomDp: 0,
+            footerVisibleInRoot: false, footerAboveKeyboard: false,
+            inputViewportAboveFooter: false, inputCanScrollUp: false,
+            inputCanScrollDown: false, selectionStart: 0, selectionEnd: 0,
+            cursorAtEnd: false, layoutMeasureCount: 0,
+            keyboardShowCount: 0, keyboardHideCount: 0,
+            lastKeyboardVisible: false, panelGravity: "center",
             panelBottomMarginDp: 0,
             addThreadId: null, addThreadName: null, removeThreadId: null,
             removeThreadName: null, saveThreadId: null,
@@ -1271,7 +1497,7 @@
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 5,
+        MODULE_VERSION: 6,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
@@ -1306,6 +1532,30 @@
         },
         close: function () { return closePanel("close"); },
         getState: getState,
+        refreshLayoutMetrics: function () {
+            return requireMain(runOnMainSync(function () {
+                return measureEditorLayout();
+            }, 2500));
+        },
+        requestKeyboard: function () {
+            return requireMain(runOnMainSync(function () {
+                return requestKeyboardOnMain();
+            }, 2500));
+        },
+        hideKeyboard: function () {
+            return requireMain(runOnMainSync(function () {
+                hideKeyboardOnMain();
+                mainHandler.postDelayed(new Packages.java.lang.Runnable({
+                    run: function () { measureEditorLayout(); }
+                }), 160);
+                return true;
+            }, 2500));
+        },
+        scrollInputToEnd: function () {
+            return requireMain(runOnMainSync(function () {
+                return scrollInputToEndOnMain();
+            }, 2500));
+        },
         setInputText: function (text) {
             return requireMain(runOnMainSync(function () {
                 var input = activeInput();
