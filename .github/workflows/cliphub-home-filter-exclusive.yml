@@ -31,9 +31,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          cp .github/cliphub-home-filter-exclusive/apply.sh /tmp/cliphub_apply.sh
           python3 - <<'PY'
           from pathlib import Path
-          path = Path('.github/cliphub-home-filter-exclusive/apply.sh')
+          path = Path('/tmp/cliphub_apply.sh')
           text = path.read_text(encoding='utf-8')
           old = "re.search(r'\\b(?:let|const)\\s+', text)"
           new = "re.search(r'(?m)^\\s*(?:let|const)\\s+', text)"
@@ -42,7 +43,7 @@ jobs:
           path.write_text(text.replace(old, new), encoding='utf-8')
           PY
           set +e
-          bash -x .github/cliphub-home-filter-exclusive/apply.sh > /tmp/cliphub_apply.log 2>&1
+          bash -x /tmp/cliphub_apply.sh > /tmp/cliphub_apply.log 2>&1
           code=$?
           if [ "$code" -ne 0 ]; then
             {
