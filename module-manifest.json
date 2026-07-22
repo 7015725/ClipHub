@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260722.35",
+  "moduleSetVersion": "20260722.36",
   "entryMinVersion": 4,
   "sourceRef": "agent/initialize-project-skeleton",
   "modules": [
@@ -47,7 +47,7 @@
     {
       "name": "ch_09_list.js",
       "path": "src/ch_09_list.js",
-      "sha": "08170700c935fc01242f3080e603290856b927e9"
+      "sha": "30e7b1b76aca447ab26b0de695aae3ab0b51b59e"
     },
     {
       "name": "ch_10_editor.js",
@@ -57,7 +57,7 @@
     {
       "name": "ch_11_filter.js",
       "path": "src/ch_11_filter.js",
-      "sha": "d8c1cb0987f2ceef1d13f2d01bc056e5f9825b80"
+      "sha": "82593e8c8cd106d1c86f1e656d156a7240c4c715"
     },
     {
       "name": "ch_12_translation.js",
@@ -77,7 +77,7 @@
     {
       "name": "ch_15_app.js",
       "path": "src/ch_15_app.js",
-      "sha": "470c3173ceeaed2ae293d640fd81d4be28ee5183"
+      "sha": "04b4f8c3aacbfb0423c6f25b9e74f1a7802bc384"
     }
   ]
 }

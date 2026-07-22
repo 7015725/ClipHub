@@ -74,6 +74,7 @@
     var previewRows = [];
     var suppressTextWatcher = false;
     var searchGeneration = 0;
+    var restoreListOnClose = false;
 
     var state = {
         applyCount: 0,
@@ -131,6 +132,11 @@
         drawerHeightDp: 0,
         backLayerCloseCount: 0,
         lastBackLayer: "",
+        homeWindowSuspended: false,
+        homeSuspendCount: 0,
+        homeRestoreCount: 0,
+        homeRestoreCancelCount: 0,
+        exclusiveHomeFilter: true,
         repositorySortUnchanged: true,
         sortScope: "result_window",
         panelAddThreadId: null,
@@ -1510,7 +1516,9 @@
         closeView.setBackground(circleBackground(colors.surfaceMuted, null));
         closeView.setOnClickListener(new JavaAdapter(
             View.OnClickListener, {
-                onClick: function () { closePanel(); }
+                onClick: function () {
+                    closePanel({ reason: "button" });
+                }
             }));
         titleRow.addView(closeView,
             new LinearLayout.LayoutParams(dp(36), dp(36)));
@@ -1971,7 +1979,43 @@
         return true;
     }
 
+    function suspendHomeWindow() {
+        var suspended = false;
+        if (ClipHub.List &&
+                typeof ClipHub.List.suspendForFilterPanel === "function") {
+            suspended = ClipHub.List.suspendForFilterPanel() === true;
+        }
+        restoreListOnClose = suspended;
+        state.homeWindowSuspended = suspended;
+        if (suspended) { state.homeSuspendCount += 1; }
+        return suspended;
+    }
+
+    function finishHomeWindow(options) {
+        var restored = false;
+        var shouldRestore;
+        options = options || {};
+        shouldRestore = restoreListOnClose &&
+            options.restoreList !== false;
+        if (ClipHub.List &&
+                typeof ClipHub.List.finishFilterPanel === "function") {
+            restored = ClipHub.List.finishFilterPanel({
+                restore: shouldRestore,
+                reason: String(options.reason || "filter_closed")
+            }) === true;
+        }
+        if (restored) {
+            state.homeRestoreCount += 1;
+        } else if (restoreListOnClose && !shouldRestore) {
+            state.homeRestoreCancelCount += 1;
+        }
+        restoreListOnClose = false;
+        state.homeWindowSuspended = false;
+        return restored;
+    }
+
     function showPanel(options) {
+        var result;
         options = options || {};
         if (!ready) {
             throw new Error("ClipHub filter is not ready");
@@ -1991,74 +2035,87 @@
                 state: getPanelState()
             };
         }
-        return requireMain(runOnMainSync(function () {
-            var size = panelDimensions();
-            var type = Build.VERSION.SDK_INT >= 26 ?
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY :
-                WindowManager.LayoutParams.TYPE_SYSTEM_ALERT;
-            var thread = nowThread();
-            var colors = palette();
-            panelRoot = new LinearLayout(appContext);
-            panelRoot.setOrientation(LinearLayout.VERTICAL);
-            panelRoot.setPadding(dp(12), dp(8), dp(12), dp(10));
-            panelRoot.setBackground(roundedBackground(colors.surface,
-                colors.stroke, 24));
-            if (Build.VERSION.SDK_INT >= 21) {
-                panelRoot.setElevation(dp(20));
-            }
-            panelParams = new WindowManager.LayoutParams(
-                size.width, size.height, type,
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
-                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED |
-                    WindowManager.LayoutParams.FLAG_DIM_BEHIND,
-                PixelFormat.TRANSLUCENT);
-            panelParams.gravity = Gravity.BOTTOM |
-                Gravity.CENTER_HORIZONTAL;
-            panelParams.y = dp(10);
-            panelParams.dimAmount = 0.44;
-            panelParams.softInputMode =
-                WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE |
-                WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE;
-            try {
-                panelParams.setTitle("ClipHub Filter Panel");
-            } catch (ignoredTitle) {}
-            windowManager.addView(panelRoot, panelParams);
-            state.panelAttached = true;
-            state.panelOpenCount += 1;
-            state.panelWindowType = Number(type);
-            state.panelFlags = Number(panelParams.flags);
-            state.panelWidthPx = size.width;
-            state.panelHeightPx = size.height;
-            state.panelWidthDp = size.widthDp;
-            state.panelHeightDp = size.heightDp;
-            state.dimAmount = Number(panelParams.dimAmount);
-            state.modalWindow = true;
-            state.opaqueBackground = true;
-            state.panelAddThreadId = thread.id;
-            state.panelAddThreadName = thread.name;
-            state.lastError = null;
-            try {
-                previewRows = ClipHub.Repository.listItems(
-                    toQueryOptions({ limit: RESULT_LIMIT, offset: 0 }));
-                previewRows = sortRows(previewRows);
-                state.lastResultCount = previewRows.length;
-                previewRows = previewRows.slice(0, PREVIEW_LIMIT);
-            } catch (previewError) {
-                state.lastError = String(previewError);
-                previewRows = [];
-            }
-            buildPanelContent(options.requestKeyboard !== false);
-            return {
-                ok: true,
-                attached: true,
-                reused: false,
-                state: getPanelState()
-            };
-        }, 3000));
+        suspendHomeWindow();
+        try {
+            result = requireMain(runOnMainSync(function () {
+                var size = panelDimensions();
+                var type = Build.VERSION.SDK_INT >= 26 ?
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY :
+                    WindowManager.LayoutParams.TYPE_SYSTEM_ALERT;
+                var thread = nowThread();
+                var colors = palette();
+                panelRoot = new LinearLayout(appContext);
+                panelRoot.setOrientation(LinearLayout.VERTICAL);
+                panelRoot.setPadding(dp(12), dp(8), dp(12), dp(10));
+                panelRoot.setBackground(roundedBackground(colors.surface,
+                    colors.stroke, 24));
+                if (Build.VERSION.SDK_INT >= 21) {
+                    panelRoot.setElevation(dp(20));
+                }
+                panelParams = new WindowManager.LayoutParams(
+                    size.width, size.height, type,
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
+                        WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED |
+                        WindowManager.LayoutParams.FLAG_DIM_BEHIND,
+                    PixelFormat.TRANSLUCENT);
+                panelParams.gravity = Gravity.BOTTOM |
+                    Gravity.CENTER_HORIZONTAL;
+                panelParams.y = dp(10);
+                panelParams.dimAmount = 0.44;
+                panelParams.softInputMode =
+                    WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE |
+                    WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE;
+                try {
+                    panelParams.setTitle("ClipHub Filter Panel");
+                } catch (ignoredTitle) {}
+                windowManager.addView(panelRoot, panelParams);
+                state.panelAttached = true;
+                state.panelOpenCount += 1;
+                state.panelWindowType = Number(type);
+                state.panelFlags = Number(panelParams.flags);
+                state.panelWidthPx = size.width;
+                state.panelHeightPx = size.height;
+                state.panelWidthDp = size.widthDp;
+                state.panelHeightDp = size.heightDp;
+                state.dimAmount = Number(panelParams.dimAmount);
+                state.modalWindow = true;
+                state.opaqueBackground = true;
+                state.panelAddThreadId = thread.id;
+                state.panelAddThreadName = thread.name;
+                state.lastError = null;
+                try {
+                    previewRows = ClipHub.Repository.listItems(
+                        toQueryOptions({ limit: RESULT_LIMIT, offset: 0 }));
+                    previewRows = sortRows(previewRows);
+                    state.lastResultCount = previewRows.length;
+                    previewRows = previewRows.slice(0, PREVIEW_LIMIT);
+                } catch (previewError) {
+                    state.lastError = String(previewError);
+                    previewRows = [];
+                }
+                buildPanelContent(options.requestKeyboard !== false);
+                return {
+                    ok: true,
+                    attached: true,
+                    reused: false,
+                    state: getPanelState()
+                };
+            }, 3000));
+            return result;
+        } catch (error) {
+            finishHomeWindow({
+                restoreList: true,
+                reason: "show_failed"
+            });
+            throw error;
+        }
     }
 
-    function closePanel() {
+    function closePanel(options) {
+        var result;
+        options = options || {};
         if (!state.panelAttached && panelRoot === null) {
+            finishHomeWindow(options);
             return {
                 ok: true,
                 attached: false,
@@ -2066,7 +2123,7 @@
                 state: getPanelState()
             };
         }
-        requireMain(runOnMainSync(function () {
+        result = requireMain(runOnMainSync(function () {
             var thread = nowThread();
             try {
                 hideKeyboardOnMain();
@@ -2115,8 +2172,9 @@
                 historyViews = [];
             }
         }, 3000));
+        finishHomeWindow(options);
         return {
-            ok: true,
+            ok: result === true,
             attached: false,
             alreadyClosed: false,
             state: getPanelState()
@@ -2139,7 +2197,7 @@
         }
         state.backLayerCloseCount += 1;
         state.lastBackLayer = "search_panel";
-        closePanel();
+        closePanel({ reason: "back" });
         return true;
     }
 
@@ -2215,6 +2273,12 @@
             sortScope: state.sortScope,
             backLayerCloseCount: Number(state.backLayerCloseCount),
             lastBackLayer: state.lastBackLayer,
+            homeWindowSuspended: state.homeWindowSuspended === true,
+            homeSuspendCount: Number(state.homeSuspendCount),
+            homeRestoreCount: Number(state.homeRestoreCount),
+            homeRestoreCancelCount:
+                Number(state.homeRestoreCancelCount),
+            exclusiveHomeFilter: state.exclusiveHomeFilter === true,
             panelWindowType: state.panelWindowType,
             panelFlags: state.panelFlags,
             panelWidthPx: state.panelWidthPx,
@@ -2312,6 +2376,11 @@
         state.drawerHeightDp = 0;
         state.backLayerCloseCount = 0;
         state.lastBackLayer = "";
+        state.homeWindowSuspended = false;
+        state.homeSuspendCount = 0;
+        state.homeRestoreCount = 0;
+        state.homeRestoreCancelCount = 0;
+        state.exclusiveHomeFilter = true;
         state.repositorySortUnchanged = true;
         state.sortScope = "result_window";
         state.panelAddThreadId = null;
@@ -2337,7 +2406,7 @@
 
     ClipHub.Filter = {
         MODULE_NAME: "ch_11_filter",
-        MODULE_VERSION: 9,
+        MODULE_VERSION: 10,
 
         init: function (context) {
             androidContext = context && context.androidContext ?
@@ -2366,6 +2435,7 @@
             advancedVisible = false;
             previewRows = [];
             searchGeneration = 0;
+            restoreListOnClose = false;
             resetState();
             loadHistory();
             registerEvent("clipboard_added");
@@ -2576,7 +2646,10 @@
 
         shutdown: function () {
             try {
-                closePanel();
+                closePanel({
+                    restoreList: false,
+                    reason: "shutdown"
+                });
             } catch (ignoredClose) {}
             unregisterEvents();
             searchGeneration += 1;

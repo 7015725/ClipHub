@@ -246,6 +246,11 @@
             detailAttached: detailAttached,
             editorAttached: editorAttached,
             filterAttached: filterAttached,
+            homeFilterAttachedCount:
+                (windowAttached ? 1 : 0) + (filterAttached ? 1 : 0),
+            homeFilterExclusive:
+                ((windowAttached ? 1 : 0) +
+                    (filterAttached ? 1 : 0)) <= 1,
             itemCount: Number(list.itemCount || 0),
             renderedCount: Number(list.renderedCount || 0),
             filterActive: list.filterActive === true
@@ -255,7 +260,10 @@
     function closeUi() {
         try {
             if (ClipHub.Filter && typeof ClipHub.Filter.closePanel === "function") {
-                ClipHub.Filter.closePanel();
+                ClipHub.Filter.closePanel({
+                    restoreList: false,
+                    reason: "app_hide"
+                });
             }
         } catch (ignoredFilter) {}
         try {
@@ -436,7 +444,7 @@
 
     ClipHub.App = {
         MODULE_NAME: "ch_15_app",
-        MODULE_VERSION: 5,
+        MODULE_VERSION: 6,
         CONTROL_ACTION_BASE: CONTROL_ACTION_BASE,
         CONTROL_COMMANDS: CONTROL_COMMANDS,
         start: function (context) {

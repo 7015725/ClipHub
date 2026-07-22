@@ -62,6 +62,7 @@
     var selectedItemId = null;
     var selectionMode = false;
     var eventBindings = [];
+    var filterPanelSuspended = false;
 
     var detailWindowManager = null;
     var detailRoot = null;
@@ -97,6 +98,9 @@
         editOpenCount: 0,
         tagOpenCount: 0,
         filterOpenCount: 0,
+        filterPanelHideCount: 0,
+        filterPanelRestoreCount: 0,
+        filterPanelCancelCount: 0,
         detailOpenCount: 0,
         detailCloseCount: 0,
         detailCopyCount: 0,
@@ -162,6 +166,7 @@
         renderThreadId: null,
         renderThreadName: null,
         lastDetailAction: null,
+        lastFilterPanelAction: null,
         homeStyle: "reference_home_v2",
         lastError: null
     };
@@ -688,6 +693,56 @@
             return true;
         } catch (error) {
             state.lastError = String(error);
+            return false;
+        }
+    }
+
+    function suspendForFilterPanel() {
+        var shouldSuspend;
+        if (filterPanelSuspended) { return true; }
+        shouldSuspend = visible && ClipHub.Window &&
+            ClipHub.Window.isAttached();
+        filterPanelSuspended = shouldSuspend;
+        if (!shouldSuspend) {
+            state.lastFilterPanelAction = "open_without_home";
+            return false;
+        }
+        ClipHub.Window.close();
+        state.filterPanelHideCount += 1;
+        state.lastFilterPanelAction = "home_suspended";
+        return true;
+    }
+
+    function finishFilterPanel(options) {
+        var shouldRestore;
+        options = options || {};
+        shouldRestore = filterPanelSuspended &&
+            options.restore !== false && visible;
+        filterPanelSuspended = false;
+        if (!shouldRestore) {
+            if (options.restore === false) {
+                state.filterPanelCancelCount += 1;
+                state.lastFilterPanelAction = "restore_cancelled";
+            } else {
+                state.lastFilterPanelAction = "restore_not_required";
+            }
+            return false;
+        }
+        try {
+            ClipHub.Window.open({
+                widthDp: Number(lastShowOptions.widthDp || 390),
+                heightDp: Number(lastShowOptions.heightDp || 720),
+                statusText: "正在加载剪贴板历史",
+                dimAmount: 0.44
+            });
+            refresh(false);
+            state.filterPanelRestoreCount += 1;
+            state.lastFilterPanelAction = String(
+                options.reason || "filter_closed");
+            return true;
+        } catch (error) {
+            state.lastError = String(error);
+            state.lastFilterPanelAction = "restore_failed";
             return false;
         }
     }
@@ -2224,6 +2279,14 @@
             editOpenCount: Number(state.editOpenCount),
             tagOpenCount: Number(state.tagOpenCount),
             filterOpenCount: Number(state.filterOpenCount),
+            filterPanelSuspended: filterPanelSuspended === true,
+            filterPanelHideCount:
+                Number(state.filterPanelHideCount),
+            filterPanelRestoreCount:
+                Number(state.filterPanelRestoreCount),
+            filterPanelCancelCount:
+                Number(state.filterPanelCancelCount),
+            lastFilterPanelAction: state.lastFilterPanelAction,
             detailOpenCount: Number(state.detailOpenCount),
             detailCloseCount: Number(state.detailCloseCount),
             detailCopyCount: Number(state.detailCopyCount),
@@ -2352,6 +2415,10 @@
         state.editOpenCount = 0;
         state.tagOpenCount = 0;
         state.filterOpenCount = 0;
+        state.filterPanelHideCount = 0;
+        state.filterPanelRestoreCount = 0;
+        state.filterPanelCancelCount = 0;
+        state.lastFilterPanelAction = null;
         state.detailOpenCount = 0;
         state.detailCloseCount = 0;
         state.detailCopyCount = 0;
@@ -2450,7 +2517,7 @@
 
     ClipHub.List = {
         MODULE_NAME: "ch_09_list",
-        MODULE_VERSION: 11,
+        MODULE_VERSION: 12,
         LONG_TEXT_THRESHOLD: LONG_TEXT_THRESHOLD,
 
         init: function (context) {
@@ -2507,6 +2574,7 @@
             selectedItemId = null;
             selectionMode = false;
             visible = false;
+            filterPanelSuspended = false;
             eventBindings = [];
             detailRoot = null;
             detailParams = null;
@@ -2537,6 +2605,7 @@
 
         hide: function (closeWindow) {
             visible = false;
+            filterPanelSuspended = false;
             selectionMode = false;
             selectRow(null);
             closeDetail("list_hide");
@@ -2545,6 +2614,10 @@
             }
             return true;
         },
+
+        suspendForFilterPanel: suspendForFilterPanel,
+
+        finishFilterPanel: finishFilterPanel,
 
         setItems: function (value) {
             items = copyRows(value || []);
@@ -2741,6 +2814,7 @@
             selectedItemId = null;
             selectionMode = false;
             visible = false;
+            filterPanelSuspended = false;
             ready = false;
             detailWindowManager = null;
             androidContext = null;
