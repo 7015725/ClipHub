@@ -1,0 +1,29 @@
+name: Fix ClipHub editor keyboard probe 040
+
+on:
+  pull_request:
+    branches:
+      - agent/initialize-project-skeleton
+    paths:
+      - .github/cliphub-probe040-fix-trigger.txt
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cliphub-probe040-fix
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.repository == '7015725/ClipHub'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/initialize-project-skeleton
+          fetch-depth: 0
+      - name: Fix probe 040
+        shell: bash
+        run: bash .github/cliphub-probe040-fix/apply.sh
