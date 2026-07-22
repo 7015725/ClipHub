@@ -11,7 +11,7 @@
     var builder = new SB();
     var line;
     var source;
-    var implementationCommit = "608d495152734c57950da2c6fe2756d36378d81d";
+    var implementationCommit = "274d8ad0650b69a1972109051cfa47d2c226d2fa";
     var target = "https://raw.githubusercontent.com/7015725/ClipHub/" +
         implementationCommit + "/probes/" +
         "cliphub_content_tags_settings_probe_045_impl.js" +
