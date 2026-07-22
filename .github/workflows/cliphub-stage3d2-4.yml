@@ -31,6 +31,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/cliphub-stage3d2-4/patch.py')
+          text = path.read_text(encoding='utf-8')
+          old = '                eventAt, metadata);'
+          new = '                eventAt,\n                read\n            );'
+          if text.count(old) != 2:
+              raise SystemExit('clipboard patch compatibility marker mismatch')
+          path.write_text(text.replace(old, new), encoding='utf-8')
+          PY
           set +e
           bash -x .github/cliphub-stage3d2-4/apply.sh > /tmp/cliphub_stage4.log 2>&1
           code=$?
