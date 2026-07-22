@@ -6,6 +6,11 @@ on:
       - agent/initialize-project-skeleton
     paths:
       - .github/workflows/cliphub-stage3d2-2-apply.yml
+  pull_request:
+    branches:
+      - agent/initialize-project-skeleton
+    paths:
+      - .github/cliphub-stage3d2-2-trigger.txt
 
 permissions:
   contents: write
