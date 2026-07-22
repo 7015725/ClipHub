@@ -1,0 +1,34 @@
+name: Apply ClipHub stage 3D2-4
+
+on:
+  pull_request:
+    branches:
+      - agent/initialize-project-skeleton
+    paths:
+      - .github/cliphub-stage3d2-4-trigger.txt
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cliphub-stage3d2-4
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.repository == '7015725/ClipHub'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/initialize-project-skeleton
+          fetch-depth: 0
+      - name: Apply stage 3D2-4
+        shell: bash
+        run: |
+          set +e
+          bash -x .github/cliphub-stage3d2-4/apply.sh > /tmp/cliphub_stage4.log 2>&1
+          code=$?
+          tail -n 200 /tmp/cliphub_stage4.log
+          exit "$code"
