@@ -1,0 +1,29 @@
+name: Apply ClipHub search filter visual close
+
+on:
+  pull_request:
+    branches:
+      - agent/initialize-project-skeleton
+    paths:
+      - .github/cliphub-stage3d2-2-visual-close-trigger.txt
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cliphub-stage3d2-2-visual-close
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.repository == '7015725/ClipHub'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/initialize-project-skeleton
+          fetch-depth: 0
+      - name: Apply visual close
+        shell: bash
+        run: bash .github/cliphub-stage3d2-2-visual-close/apply.sh
