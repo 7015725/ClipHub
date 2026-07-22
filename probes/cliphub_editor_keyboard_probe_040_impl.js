@@ -1,4 +1,4 @@
-/* ClipHub new and edit visual probe 040. Rhino ES5 only. */
+/* ClipHub editor keyboard and long-text probe 040. Rhino ES5 only. */
 (function (global) {
     var File = Packages.java.io.File;
     var FIS = Packages.java.io.FileInputStream;
@@ -355,12 +355,9 @@
                 requestKeyboard: true
             });
             result.setShortText = global.ClipHub.Editor.setInputText(shortText);
+            result.keyboardRetry = global.ClipHub.Editor.requestKeyboard();
             if (!waitFor(function () {
                     var current = global.ClipHub.Editor.getState();
-                    if (!current.keyboardVisible &&
-                            current.keyboardRequestedOnOpen === true) {
-                        global.ClipHub.Editor.requestKeyboard();
-                    }
                     return current.attachedToWindow === true &&
                         current.editorStyle === "reference_editor_v2" &&
                         current.inputFocused === true &&
@@ -505,7 +502,7 @@
     } catch (error) {
         global.ClipHubEditorKeyboardProbe040Result = {
             ok: false,
-            probe: "cliphub_editor_ui_probe_040",
+            probe: "cliphub_editor_keyboard_probe_040",
             probeVersion: 1,
             fatal: true,
             error: errorText(error)
