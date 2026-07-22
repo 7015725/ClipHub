@@ -47,7 +47,7 @@
         connection.setReadTimeout(20000);
         connection.setRequestProperty("Cache-Control", "no-cache, no-store");
         connection.setRequestProperty("Pragma", "no-cache");
-        connection.setRequestProperty("User-Agent", "ClipHub-Probe/047-v3-safe");
+        connection.setRequestProperty("User-Agent", "ClipHub-Probe/047-v4-guarded");
         input = connection.getInputStream();
         reader = new BR(new ISR(input, "UTF-8"));
         while ((line = reader.readLine()) !== null) {
@@ -57,6 +57,7 @@
         if (!source || source.indexOf("probeVersion: 1") < 0 ||
                 source.indexOf("REQUIRED_SET = \"20260723.04\"") < 0 ||
                 source.indexOf("function stopFormal(context, runtimeDir) {") < 0 ||
+                source.indexOf("function start(root, moduleDir, runtimeDir) {") < 0 ||
                 source.indexOf("transactionalTagSelectionRequired") < 0 ||
                 source.indexOf("performTagSelectionSaveClick") < 0 ||
                 source.indexOf("performDeleteTagConfirm") < 0 ||
@@ -121,6 +122,127 @@
 
         source = replaceOnce(source,
             [
+                "    function start(root, moduleDir, runtimeDir) {",
+                "        var index;",
+                "        var file;",
+                "        global.ClipHub = {};",
+                "        for (index = 0; index < MODULES.length; index += 1) {",
+                "            file = new File(moduleDir, MODULES[index]);",
+                "            if (!file.isFile()) {",
+                "                throw new Error(\"Missing module: \" + file.getAbsolutePath());",
+                "            }",
+                "            eval(read(file));",
+                "        }",
+                "        return global.ClipHub.App.start({",
+                "            shortxRoot: root,",
+                "            runtimeDir: String(runtimeDir.getAbsolutePath()),",
+                "            moduleDir: String(moduleDir.getAbsolutePath()),",
+                "            androidContext: global.context",
+                "        });",
+                "    }"
+            ].join("\n"),
+            [
+                "    function patchEditorModuleSource(moduleSource) {",
+                "        var oldMetrics = [",
+                "            \"    function displayMetrics() {\",",
+                "            \"        var metrics = new DisplayMetrics();\",",
+                "            \"        try {\",",
+                "            \"            windowManager.getDefaultDisplay().getRealMetrics(metrics);\",",
+                "            \"        } catch (ignored) {\",",
+                "            \"            metrics = appContext.getResources().getDisplayMetrics();\",",
+                "            \"        }\",",
+                "            \"        return metrics;\",",
+                "            \"    }\"",
+                "        ].join(\"\\n\");",
+                "        var newMetrics = [",
+                "            \"    function displayMetrics() {\",",
+                "            \"        var metrics = new DisplayMetrics();\",",
+                "            \"        if (windowManager !== null) {\",",
+                "            \"            try {\",",
+                "            \"                windowManager.getDefaultDisplay().getRealMetrics(metrics);\",",
+                "            \"                if (Number(metrics.widthPixels) > 0 &&\",",
+                "            \"                        Number(metrics.heightPixels) > 0) {\",",
+                "            \"                    return metrics;\",",
+                "            \"                }\",",
+                "            \"            } catch (ignoredWindow) {}\",",
+                "            \"        }\",",
+                "            \"        if (appContext !== null) {\",",
+                "            \"            try { return appContext.getResources().getDisplayMetrics(); }\",",
+                "            \"            catch (ignoredContext) {}\",",
+                "            \"        }\",",
+                "            \"        return metrics;\",",
+                "            \"    }\"",
+                "        ].join(\"\\n\");",
+                "        var oldObserver = [",
+                "            \"            startEditorImePolling();\",",
+                "            \"            mainHandler.postDelayed(new Packages.java.lang.Runnable({\",",
+                "            \"                run: function () {\",",
+                "            \"                    var ime = readImeState();\",",
+                "            \"                    applyEditorImeLayout(ime);\",",
+                "            \"                    measureEditorLayout(ime);\",",
+                "            \"                }\",",
+                "            \"            }), 180);\"",
+                "        ].join(\"\\n\");",
+                "        var newObserver = [",
+                "            \"            startEditorImePolling();\",",
+                "            \"            (function (generation) {\",",
+                "            \"                mainHandler.postDelayed(\",",
+                "            \"                    new Packages.java.lang.Runnable({\",",
+                "            \"                        run: function () {\",",
+                "            \"                            var ime;\",",
+                "            \"                            if (generation !== imePollGeneration ||\",",
+                "            \"                                    !ready || !state.attached ||\",",
+                "            \"                                    panelRoot === null ||\",",
+                "            \"                                    appContext === null ||\",",
+                "            \"                                    windowManager === null) {\",",
+                "            \"                                return;\",",
+                "            \"                            }\",",
+                "            \"                            ime = readImeState();\",",
+                "            \"                            applyEditorImeLayout(ime);\",",
+                "            \"                            measureEditorLayout(ime);\",",
+                "            \"                        }\",",
+                "            \"                    }), 180);\",",
+                "            \"            }(imePollGeneration));\"",
+                "        ].join(\"\\n\");",
+                "        if (moduleSource.indexOf(oldMetrics) < 0 ||",
+                "                moduleSource.indexOf(oldObserver) < 0) {",
+                "            throw new Error(\"Editor shutdown guard markers missing\");",
+                "        }",
+                "        moduleSource = moduleSource.replace(oldMetrics, newMetrics);",
+                "        moduleSource = moduleSource.replace(oldObserver, newObserver);",
+                "        global.ClipHubProbe047EditorGuardApplied = true;",
+                "        return moduleSource;",
+                "    }",
+                "",
+                "    function start(root, moduleDir, runtimeDir) {",
+                "        var index;",
+                "        var file;",
+                "        var moduleSource;",
+                "        global.ClipHub = {};",
+                "        global.ClipHubProbe047EditorGuardApplied = false;",
+                "        for (index = 0; index < MODULES.length; index += 1) {",
+                "            file = new File(moduleDir, MODULES[index]);",
+                "            if (!file.isFile()) {",
+                "                throw new Error(\"Missing module: \" + file.getAbsolutePath());",
+                "            }",
+                "            moduleSource = read(file);",
+                "            if (String(MODULES[index]) === \"ch_10_editor.js\") {",
+                "                moduleSource = patchEditorModuleSource(moduleSource);",
+                "            }",
+                "            eval(moduleSource);",
+                "        }",
+                "        return global.ClipHub.App.start({",
+                "            shortxRoot: root,",
+                "            runtimeDir: String(runtimeDir.getAbsolutePath()),",
+                "            moduleDir: String(moduleDir.getAbsolutePath()),",
+                "            androidContext: global.context",
+                "        });",
+                "    }"
+            ].join("\n"),
+            "editor shutdown race guard");
+
+        source = replaceOnce(source,
+            [
                 "            result.formalControl = stopFormal(global.context, formal);",
                 "            if (!result.formalControl.ok) {",
                 "                throw new Error(result.formalControl.error ||",
@@ -153,6 +275,8 @@
                 "            result.lastCheckpoint = \"before_isolated_start\";",
                 "            write(outputFile, JSON.stringify(result, null, 2) + \"\\n\");",
                 "            result.start = start(root, modules, isolated);",
+                "            result.editorShutdownRaceGuardApplied =",
+                "                global.ClipHubProbe047EditorGuardApplied === true;",
                 "            result.lastCheckpoint = \"after_isolated_start\";",
                 "            write(outputFile, JSON.stringify(result, null, 2) + \"\\n\");"
             ].join("\n"),
@@ -188,11 +312,12 @@
                 "                result.newItemId > 0 &&"
             ].join("\n"),
             [
+                "                result.editorShutdownRaceGuardApplied === true &&",
                 "                result.newEditorTextSet === true &&",
                 "                result.newEditorSave === true &&",
                 "                result.newItemId > 0 &&"
             ].join("\n"),
-            "new record assertion");
+            "guarded new record assertion");
 
         source = replaceOnce(source,
             [
@@ -208,7 +333,7 @@
                 "            result.hide = global.ClipHub.App.executeControlCommand(\"hide\");",
                 "            result.lastCheckpoint = \"after_isolated_hide\";",
                 "            write(outputFile, JSON.stringify(result, null, 2) + \"\\n\");",
-                "            Thread.sleep(350);",
+                "            Thread.sleep(500);",
                 "            result.lastCheckpoint = \"before_isolated_stop\";",
                 "            write(outputFile, JSON.stringify(result, null, 2) + \"\\n\");",
                 "            result.stop = global.ClipHub.App.stop(",
@@ -251,16 +376,16 @@
             ].join("\n"),
             "formal restore");
 
-        source = source.split("probeVersion: 1").join("probeVersion: 3");
-        if (source.indexOf("probeVersion: 3") < 0 ||
+        source = source.split("probeVersion: 1").join("probeVersion: 4");
+        if (source.indexOf("probeVersion: 4") < 0 ||
+                source.indexOf("patchEditorModuleSource") < 0 ||
+                source.indexOf("editorShutdownRaceGuardApplied") < 0 ||
                 source.indexOf("formalLifecycleMode = \"hide_restore\"") < 0 ||
                 source.indexOf("before_isolated_stop") < 0 ||
-                source.indexOf("newEditorTextSet") < 0 ||
-                source.indexOf("controlFormal(\n                    global.context, formal, \"hide\")") < 0 ||
-                source.indexOf("controlFormal(\n                        global.context, formal, \"show\")") < 0) {
-            throw new Error("Probe 047 v3 safe-lifecycle patch failed");
+                source.indexOf("newEditorTextSet") < 0) {
+            throw new Error("Probe 047 v4 guarded patch failed");
         }
-        eval(source + "\n//# sourceURL=ClipHub/probe_047_impl_v3_safe.js");
+        eval(source + "\n//# sourceURL=ClipHub/probe_047_impl_v4_guarded.js");
     } finally {
         try { if (reader !== null) { reader.close(); } } catch (ignored) {}
         try { if (input !== null) { input.close(); } }
