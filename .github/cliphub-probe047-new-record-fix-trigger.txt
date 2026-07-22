@@ -1,0 +1,1 @@
+Trigger probe 047 new-record text correction from refreshed base.
