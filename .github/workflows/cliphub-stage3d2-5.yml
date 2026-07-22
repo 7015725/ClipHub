@@ -28,44 +28,42 @@ jobs:
           fetch-depth: 0
 
       - name: Apply stage 3D2-5
-        id: apply_stage
         shell: bash
         run: |
           set +e
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path('.github/cliphub-stage3d2-5/apply.py')
           text = path.read_text(encoding='utf-8')
-          old = '''text = replace_once(text,
-          ''' + "'''" + '''            ClipHub.Repository.reorderTags(ids);
-                      uiState.tagReorderCount += 1;
-                      emitTagsChanged("tag_reordered", tagId);
-                      buildPage();
-                      return true;
-          ''' + "'''" + ''',
-          ''' + "'''" + '''            ClipHub.Repository.reorderTags(ids);
-                      uiState.tagReorderCount += 1;
-                      emitTagsChanged("tag_reordered", tagId);
-                      rebuildTagPage();
-                      return true;
-          ''' + "'''" + ''', 'settings reorder rebuild')'''
-          new = '''old_reorder = ''' + "'''" + '''            ClipHub.Repository.reorderTags(ids);
-                      uiState.tagReorderCount += 1;
-                      emitTagsChanged("tag_reordered", tagId);
-                      buildPage();
-                      return true;
-          ''' + "'''" + '''
-          new_reorder = ''' + "'''" + '''            ClipHub.Repository.reorderTags(ids);
-                      uiState.tagReorderCount += 1;
-                      emitTagsChanged("tag_reordered", tagId);
-                      rebuildTagPage();
-                      return true;
-          ''' + "'''" + '''
-          if old_reorder in text:
-              text = text.replace(old_reorder, new_reorder, 1)
-          elif new_reorder not in text:
-              raise SystemExit('settings reorder rebuild marker missing')'''
+          old = """text = replace_once(text,
+'''            ClipHub.Repository.reorderTags(ids);
+            uiState.tagReorderCount += 1;
+            emitTagsChanged(\"tag_reordered\", tagId);
+            buildPage();
+            return true;
+''',
+'''            ClipHub.Repository.reorderTags(ids);
+            uiState.tagReorderCount += 1;
+            emitTagsChanged(\"tag_reordered\", tagId);
+            rebuildTagPage();
+            return true;
+''', 'settings reorder rebuild')"""
+          new = """old_reorder = '''            ClipHub.Repository.reorderTags(ids);
+            uiState.tagReorderCount += 1;
+            emitTagsChanged(\"tag_reordered\", tagId);
+            buildPage();
+            return true;
+'''
+new_reorder = '''            ClipHub.Repository.reorderTags(ids);
+            uiState.tagReorderCount += 1;
+            emitTagsChanged(\"tag_reordered\", tagId);
+            rebuildTagPage();
+            return true;
+'''
+if old_reorder in text:
+    text = text.replace(old_reorder, new_reorder, 1)
+elif new_reorder not in text:
+    raise SystemExit('settings reorder rebuild marker missing')"""
           if text.count(old) != 1:
               raise SystemExit('runtime compatibility patch marker mismatch')
           path.write_text(text.replace(old, new, 1), encoding='utf-8')
@@ -85,22 +83,21 @@ jobs:
           gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments \
             --method POST --raw-field body="$body"
 
-      - name: Validate and publish
+      - name: Validate stage 3D2-5
         if: success()
         shell: bash
         run: |
-          set -euo pipefail
-          for file in \
-            src/ch_10_editor.js \
-            src/ch_11_filter.js \
-            src/ch_13_settings.js; do
-            node --check "$file"
-          done
-
-          python3 - <<'PY'
+          set +e
+          {
+            for file in \
+              src/ch_10_editor.js \
+              src/ch_11_filter.js \
+              src/ch_13_settings.js; do
+              node --check "$file" || exit $?
+            done
+            python3 - <<'PY'
           from pathlib import Path
           import re
-
           files = [
               'src/ch_10_editor.js',
               'src/ch_11_filter.js',
@@ -119,22 +116,18 @@ jobs:
                   forbidden.append('class')
               if forbidden:
                   raise SystemExit(name + ': forbidden ES6: ' + ', '.join(forbidden))
-
           checks = {
               'src/ch_10_editor.js': [
-                  'MODULE_VERSION: 10',
-                  'reference_tag_selector_v1',
+                  'MODULE_VERSION: 10', 'reference_tag_selector_v1',
                   'performTagSelectionSaveClick',
                   'ClipHub.Repository.setItemTags(id, editorDraftTagIds)'
               ],
               'src/ch_11_filter.js': [
-                  'MODULE_VERSION: 14',
-                  'reference_search_v7',
+                  'MODULE_VERSION: 14', 'reference_search_v7',
                   'tagColorPreviewCount'
               ],
               'src/ch_13_settings.js': [
-                  'MODULE_VERSION: 6',
-                  'reference_settings_v2',
+                  'MODULE_VERSION: 6', 'reference_settings_v2',
                   'dragReorderEnabled: true',
                   'deleteRequiresConfirmation: true'
               ]
@@ -145,8 +138,29 @@ jobs:
                   if marker not in text:
                       raise SystemExit(name + ': missing marker ' + marker)
           PY
+            git diff --check
+          } > /tmp/cliphub_stage3d25_validate.log 2>&1
+          code=$?
+          cat /tmp/cliphub_stage3d25_validate.log
+          exit "$code"
 
-          git diff --check
+      - name: Report validation failure
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -f /tmp/cliphub_stage3d25_validate.log ]; then
+            body="$(printf 'Stage 3D2-5 validation failed:\n\n```text\n%s\n```' "$(tail -n 120 /tmp/cliphub_stage3d25_validate.log)")"
+            gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments \
+              --method POST --raw-field body="$body"
+          fi
+
+      - name: Publish stage 3D2-5
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
           git config user.name "ClipHub Automation"
           git config user.email "actions@github.com"
           git add \
