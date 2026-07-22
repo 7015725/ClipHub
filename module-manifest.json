@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260722.26",
+  "moduleSetVersion": "20260722.27",
   "entryMinVersion": 4,
   "sourceRef": "agent/initialize-project-skeleton",
   "modules": [
@@ -12,7 +12,7 @@
     {"name":"ch_06_repository.js","path":"src/ch_06_repository.js","sha":"d9050715d061f3058de983104330283080ec55f2"},
     {"name":"ch_07_theme.js","path":"src/ch_07_theme.js","sha":"bcdb99700fffbb54d6315b773e051aa78294de1b"},
     {"name":"ch_08_window.js","path":"src/ch_08_window.js","sha":"abc37b0a008ccaecac0a0d4a46ef7c76ee40f1db"},
-    {"name":"ch_09_list.js","path":"src/ch_09_list.js","sha":"01ea0c91d1e1cadda64aa3a43cc5bb00c2ea54b5"},
+    {"name":"ch_09_list.js","path":"src/ch_09_list.js","sha":"08170700c935fc01242f3080e603290856b927e9"},
     {"name":"ch_10_editor.js","path":"src/ch_10_editor.js","sha":"e2afe5ff6f8d8802d8aca7669b5f8b2033064895"},
     {"name":"ch_11_filter.js","path":"src/ch_11_filter.js","sha":"5070c06efef172b64e09233798d02204eb47ddf4"},
     {"name":"ch_12_translation.js","path":"src/ch_12_translation.js","sha":"d521a3010371f77171bd6338a69197b5e8639d1c"},
