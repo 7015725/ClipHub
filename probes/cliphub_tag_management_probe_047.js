@@ -36,7 +36,8 @@
         if (end < 0) {
             throw new Error("Probe 047 section end missing: " + label);
         }
-        return text.substring(0, start) + replacement + text.substring(end);
+        return text.substring(0, start) + replacement +
+            text.substring(end + endMarker.length);
     }
 
     try {
@@ -130,17 +131,23 @@
             ].join("\n"),
             [
                 "            result.formalLifecycleMode = \"hide_restore\";",
-                "            result.lastCheckpoint = \"before_formal_hide\";",
-                "            write(outputFile, JSON.stringify(result, null, 2) + \"\\n\");",
-                "            result.formalControl = controlFormal(global.context, formal, \"hide\");",
-                "            result.lastCheckpoint = \"after_formal_hide\";",
-                "            write(outputFile, JSON.stringify(result, null, 2) + \"\\n\");",
-                "            if (!result.formalControl.ok ||",
-                "                    !result.formalControl.ack ||",
-                "                    !result.formalControl.ack.status ||",
-                "                    result.formalControl.ack.status.uiVisible !== false) {",
-                "                throw new Error(result.formalControl.error ||",
-                "                    \"Formal UI hide failed\");",
+                "            if (formalWasRunning) {",
+                "                result.lastCheckpoint = \"before_formal_hide\";",
+                "                write(outputFile, JSON.stringify(result, null, 2) + \"\\n\");",
+                "                result.formalControl = controlFormal(",
+                "                    global.context, formal, \"hide\");",
+                "                result.lastCheckpoint = \"after_formal_hide\";",
+                "                write(outputFile, JSON.stringify(result, null, 2) + \"\\n\");",
+                "                if (!result.formalControl.ok ||",
+                "                        !result.formalControl.ack ||",
+                "                        !result.formalControl.ack.status ||",
+                "                        result.formalControl.ack.status.uiVisible !== false) {",
+                "                    throw new Error(result.formalControl.error ||",
+                "                        \"Formal UI hide failed\");",
+                "                }",
+                "            } else {",
+                "                result.formalControl = { ok: true, skipped: true,",
+                "                    reason: \"formal_was_not_running\" };",
                 "            }",
                 "            removeTree(isolated);",
                 "            result.lastCheckpoint = \"before_isolated_start\";",
@@ -249,7 +256,7 @@
                 source.indexOf("formalLifecycleMode = \"hide_restore\"") < 0 ||
                 source.indexOf("before_isolated_stop") < 0 ||
                 source.indexOf("newEditorTextSet") < 0 ||
-                source.indexOf("controlFormal(global.context, formal, \"hide\")") < 0 ||
+                source.indexOf("controlFormal(\n                    global.context, formal, \"hide\")") < 0 ||
                 source.indexOf("controlFormal(\n                        global.context, formal, \"show\")") < 0) {
             throw new Error("Probe 047 v3 safe-lifecycle patch failed");
         }
