@@ -45,6 +45,11 @@ jobs:
           if text.count(old_version) != 1:
               raise SystemExit('clipboard version patch marker mismatch')
           text = text.replace(old_version, new_version, 1)
+          old_tag_map = "s = replace_once(s, '            resultCardViews = [];\\n            toolbarActionViews = {};\\n',\n                 '            resultCardViews = [];\\n            toolbarActionViews = {};\\n            resultTagMap = {};\\n',\n                 'filter init tag map')"
+          new_tag_map = "old_filter_map = '            resultCardViews = [];\\n            toolbarActionViews = {};\\n'\nnew_filter_map = '            resultCardViews = [];\\n            toolbarActionViews = {};\\n            resultTagMap = {};\\n'\nif s.count(old_filter_map) != 2:\n    raise SystemExit('filter tag map reset marker mismatch')\ns = s.replace(old_filter_map, new_filter_map, 2)"
+          if text.count(old_tag_map) != 1:
+              raise SystemExit('filter tag map patch marker mismatch')
+          text = text.replace(old_tag_map, new_tag_map, 1)
           path.write_text(text, encoding='utf-8')
           PY
           set +e
