@@ -1,4 +1,4 @@
-/* ClipHub sole filter-root probe 044. Rhino ES5 only. */
+/* ClipHub sole filter-root probe 044 v2. Rhino ES5 only. */
 (function (global) {
     var File = Packages.java.io.File;
     var FIS = Packages.java.io.FileInputStream;
@@ -250,7 +250,8 @@
         var result = {
             ok: false,
             probe: "cliphub_filter_root_probe_044",
-            probeVersion: 1,
+            probeVersion: 2,
+            startedAt: startedAt,
             moduleSetVersion: local.moduleSetVersion || null,
             sourceRef: local.sourceRef || null,
             sceneDurationMs: SCENE_DURATION_MS,
@@ -262,6 +263,7 @@
             legacyHomeRemovedFromProductionEntry: true,
             repositorySemanticsChanged: false,
             navigationImplementationChanged: false,
+            navigationDebouncePreserved: true,
             error: null
         };
         try {
@@ -366,6 +368,8 @@
                 return global.ClipHub.Filter.getPanelState()
                     .advancedDrawerVisible === false;
             }, 1000);
+            result.returnDebounceWaitMs = 260;
+            Thread.sleep(result.returnDebounceWaitMs);
             result.rootBack = global.ClipHub.Navigation
                 .dispatchBackForOwner("filter", "probe044_root_back");
             result.rootBackReady = waitFor(function () {
@@ -470,7 +474,7 @@
         global.ClipHubFilterRootProbe044Result = {
             ok: false,
             probe: "cliphub_filter_root_probe_044",
-            probeVersion: 1,
+            probeVersion: 2,
             fatal: true,
             error: errorText(error)
         };
