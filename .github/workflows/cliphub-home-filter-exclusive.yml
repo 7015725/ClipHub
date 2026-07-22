@@ -31,6 +31,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/cliphub-home-filter-exclusive/apply.sh')
+          text = path.read_text(encoding='utf-8')
+          old = "re.search(r'\\b(?:let|const)\\s+', text)"
+          new = "re.search(r'(?m)^\\s*(?:let|const)\\s+', text)"
+          if old not in text:
+              raise SystemExit('ES5 check patch marker missing')
+          path.write_text(text.replace(old, new), encoding='utf-8')
+          PY
           set +e
           bash -x .github/cliphub-home-filter-exclusive/apply.sh > /tmp/cliphub_apply.log 2>&1
           code=$?
