@@ -165,6 +165,18 @@
         }));
     }
 
+    function buildLongDetailContent() {
+        var paragraph =
+            "系统手势返回与后台退出探测长文本。该段内容用于稳定触发主列表的长文本详情入口，验证详情窗口注册系统返回回调、侧滑返回后关闭详情并恢复首页，同时确认不同页面在很短时间内连续返回不会被错误去重。" +
+            "测试内容还覆盖统一隐藏链、WindowManager View 清理、OnBackInvokedCallback 注销、焦点监听释放以及后台实例继续运行等边界。";
+        var output = "";
+        var index;
+        for (index = 0; index < 12; index += 1) {
+            output += "第" + String(index + 1) + "段：" + paragraph + "\n";
+        }
+        return output;
+    }
+
     function allUiClosed() {
         return global.ClipHub.Window.getState().attachedToWindow !== true &&
             global.ClipHub.List.getDetailState().attachedToWindow !== true &&
@@ -184,10 +196,12 @@
         var local = localManifest(formal);
         var itemId;
         var nav;
+        var detailContent;
+        var listState;
         var result = {
             ok: false,
             probe: "cliphub_system_navigation_probe_030",
-            probeVersion: 3,
+            probeVersion: 4,
             startedAt: startedAt,
             moduleSetVersion: local.moduleSetVersion || null,
             sourceRef: local.sourceRef || null,
@@ -223,20 +237,30 @@
             result.navigationModuleVersion =
                 Number(global.ClipHub.Navigation.MODULE_VERSION);
 
-            itemId = add(
-                "系统手势返回与后台退出探测。该记录故意使用长文本，用于打开内容详情窗口并验证详情页侧滑返回后恢复主列表。" +
-                "探测还会连续验证编辑窗口、筛选窗口和首页的统一返回顺序，专门覆盖不同页面在一百八十毫秒内连续返回不应被错误去重的问题。" +
-                "最后执行合成的最近任务隐藏流程，检查所有 WindowManager View 与返回回调均被幂等清理，且后台实例继续运行。",
-                startedAt);
+            detailContent = buildLongDetailContent();
+            result.detailFixtureLength = Number(detailContent.length);
+            itemId = add(detailContent, startedAt);
             result.itemId = itemId;
 
             result.listShow = global.ClipHub.List.show({
                 limit: 20, widthDp: 340, heightDp: 500
             });
             waitFor(function () {
+                listState = global.ClipHub.List.getState();
                 return global.ClipHub.Window.getState().attachedToWindow === true &&
-                    global.ClipHub.Navigation.getState().registeredRootCount >= 1;
-            }, 1500);
+                    global.ClipHub.Navigation.getState().registeredRootCount >= 1 &&
+                    Number(listState.longItemCount || 0) >= 1 &&
+                    Number(listState.detailButtonCount || 0) >= 1;
+            }, 1800);
+            listState = global.ClipHub.List.getState();
+            result.detailFixtureEligible =
+                Number(listState.longItemCount || 0) >= 1 &&
+                Number(listState.detailButtonCount || 0) >= 1;
+            result.detailFixtureLongItemCount =
+                Number(listState.longItemCount || 0);
+            result.detailFixtureButtonCount =
+                Number(listState.detailButtonCount || 0);
+
             nav = global.ClipHub.Navigation.getState();
             result.navigationAfterHome = nav;
             result.homeCallbackRegistered = nav.registeredRootCount >= 1 &&
@@ -247,7 +271,7 @@
                 nav.mainFocusableUpgradeCount >= 1 || nav.sdkInt < 33;
             result.baselineCaptured = String(nav.baselinePackage || "").length > 0;
 
-            result.detailOpen =
+            result.detailOpen = result.detailFixtureEligible &&
                 global.ClipHub.List.openDetail(itemId) !== false;
             waitFor(function () {
                 return global.ClipHub.List.getDetailState()
@@ -255,7 +279,7 @@
                     global.ClipHub.Navigation.getState()
                     .registeredOwners.indexOf("detail") >= 0;
             }, 1500);
-            result.detailBackHandled =
+            result.detailBackHandled = result.detailOpen &&
                 global.ClipHub.Navigation.dispatchBackForOwner(
                     "detail", "probe_detail_back") === true;
             waitFor(function () {
@@ -264,10 +288,10 @@
                     global.ClipHub.Window.getState()
                     .attachedToWindow === true;
             }, 1000);
-            result.detailClosedAfterBack =
+            result.detailClosedAfterBack = result.detailOpen &&
                 global.ClipHub.List.getDetailState()
                     .attachedToWindow !== true;
-            result.homeRemainedAfterDetailBack =
+            result.homeRemainedAfterDetailBack = result.detailOpen &&
                 global.ClipHub.Window.getState().attachedToWindow === true;
 
             result.editorOpen =
@@ -350,6 +374,7 @@
             result.ok = result.navigationPresent &&
                 result.translationModuleVersion >= 3 &&
                 result.navigationModuleVersion >= 2 &&
+                result.detailFixtureEligible &&
                 result.homeCallbackRegistered &&
                 result.mainWindowFocusableUpgraded &&
                 result.baselineCaptured &&
@@ -371,7 +396,7 @@
         } catch (error) {
             result.error = String(error);
         } finally {
-            try { global.ClipHub.App.stop("probe_030_v3"); }
+            try { global.ClipHub.App.stop("probe_030_v4"); }
             catch (ignoredStop) {}
             result.lockReleased = lockFree(isolated);
             removeTree(isolated);
