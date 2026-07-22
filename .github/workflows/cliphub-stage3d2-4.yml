@@ -9,6 +9,8 @@ on:
 
 permissions:
   contents: write
+  issues: write
+  pull-requests: write
 
 concurrency:
   group: cliphub-stage3d2-4
@@ -26,9 +28,20 @@ jobs:
           fetch-depth: 0
       - name: Apply stage 3D2-4
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set +e
           bash -x .github/cliphub-stage3d2-4/apply.sh > /tmp/cliphub_stage4.log 2>&1
           code=$?
           tail -n 200 /tmp/cliphub_stage4.log
+          if [ "$code" -ne 0 ]; then
+            {
+              echo '```text'
+              tail -n 160 /tmp/cliphub_stage4.log
+              echo '```'
+            } > /tmp/cliphub_stage4_comment.md
+            gh api repos/${{ github.repository }}/issues/13/comments \
+              --method POST --field body=@/tmp/cliphub_stage4_comment.md || true
+          fi
           exit "$code"
