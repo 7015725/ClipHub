@@ -1,4 +1,4 @@
-/* ClipHub new and edit visual probe 040 loader. Rhino ES5 only. */
+/* ClipHub editor keyboard and long-text probe 040 loader. Rhino ES5 only. */
 (function (global) {
     var URL = Packages.java.net.URL;
     var BR = Packages.java.io.BufferedReader;
@@ -12,7 +12,7 @@
     var line;
     var source;
     var implementationCommit =
-        "05a7db5ec2aa7822d59417750df97ad0f034c1c9";
+        "80c338e2bc45d4a74b86cca8fb4ad11260e6d0b3";
     var target = "https://raw.githubusercontent.com/7015725/ClipHub/" +
         implementationCommit + "/probes/" +
         "cliphub_editor_keyboard_probe_040_impl.js" +
@@ -39,7 +39,7 @@
                 source.indexOf("REQUIRED_SET = \"20260722.33\"") < 0 ||
                 source.indexOf("editorModuleVersion === 6") < 0 ||
                 source.indexOf("navigationModuleVersion === 3") < 0 ||
-                source.indexOf("cliphub_editor_ui_probe_040") < 0 ||
+                source.indexOf("cliphub_editor_keyboard_probe_040") < 0 ||
                 source.indexOf("reference_editor_v2") < 0 ||
                 source.indexOf("firstBackHidKeyboard") < 0 ||
                 source.indexOf("secondBackClosedEditor") < 0 ||
