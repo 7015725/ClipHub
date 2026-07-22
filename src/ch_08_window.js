@@ -36,6 +36,7 @@
     var density = 1;
     var rootView = null;
     var titleBar = null;
+    var dragHandle = null;
     var contentView = null;
     var statusView = null;
     var closeView = null;
@@ -45,6 +46,7 @@
     var normalHeightPx = 0;
     var collapsedHeightPx = 0;
     var touchSlopPx = 0;
+    var metrics = {};
     var drag = {
         downRawX: 0,
         downRawY: 0,
@@ -61,7 +63,7 @@
         width: 0,
         height: 0,
         safeBounds: { left: 0, top: 0, right: 0, bottom: 0 },
-        positionRatios: { xRatio: 1, yRatio: 0 },
+        positionRatios: { xRatio: 0.5, yRatio: 1 },
         savedPosition: null,
         windowType: null,
         openCount: 0,
@@ -85,6 +87,10 @@
         removeThreadName: null,
         statusText: "",
         lastBoundsReason: "",
+        sheetStyle: "bottom_sheet",
+        dragHandlePresent: false,
+        dimAmount: 0.38,
+        contentTopInsetDp: 24,
         lastError: null
     };
 
@@ -101,7 +107,8 @@
         var runnable;
         var posted;
         var completed;
-        if (mainLooper !== null && currentLooper !== null && currentLooper === mainLooper) {
+        if (mainLooper !== null && currentLooper !== null &&
+                currentLooper === mainLooper) {
             return { ok: true, value: callback(), direct: true };
         }
         box = { ok: false, value: null, error: null };
@@ -142,6 +149,44 @@
         return Math.max(1, Math.floor(Number(value) * density + 0.5));
     }
 
+    function palette() {
+        if (ClipHub.Theme && typeof ClipHub.Theme.getPalette === "function") {
+            return ClipHub.Theme.getPalette(appContext || androidContext);
+        }
+        return {
+            dark: false,
+            sheet: "#FFF9F8FF",
+            surfaceMuted: "#FFF5F3FB",
+            stroke: "#FFE5E0EF",
+            textSecondary: "#FF6F697A"
+        };
+    }
+
+    function themeMetrics() {
+        if (ClipHub.Theme && typeof ClipHub.Theme.getMetrics === "function") {
+            return ClipHub.Theme.getMetrics();
+        }
+        return {
+            sheetRadiusDp: 26,
+            dragHandleWidthDp: 42,
+            dragHandleHeightDp: 4,
+            dragHandleTopDp: 8,
+            dragHandleBottomDp: 7,
+            screenPaddingDp: 12
+        };
+    }
+
+    function roundedBackground(fill, stroke, radiusDp) {
+        var drawable = new GradientDrawable();
+        drawable.setShape(GradientDrawable.RECTANGLE);
+        drawable.setColor(Color.parseColor(String(fill)));
+        drawable.setCornerRadius(dp(radiusDp));
+        if (stroke !== null && stroke !== undefined) {
+            drawable.setStroke(dp(1), Color.parseColor(String(stroke)));
+        }
+        return drawable;
+    }
+
     function resourceDimension(name) {
         var resources;
         var id;
@@ -155,7 +200,7 @@
 
     function safeBounds() {
         var result = { left: 0, top: 0, right: 0, bottom: 0 };
-        var metrics;
+        var currentMetrics;
         var bounds;
         var insets;
         var types;
@@ -163,11 +208,12 @@
         if (windowManager === null) { return result; }
         if (Build.VERSION.SDK_INT >= 30) {
             try {
-                metrics = windowManager.getCurrentWindowMetrics();
-                bounds = metrics.getBounds();
+                currentMetrics = windowManager.getCurrentWindowMetrics();
+                bounds = currentMetrics.getBounds();
                 types = Number(WindowInsets.Type.systemBars()) |
                     Number(WindowInsets.Type.displayCutout());
-                insets = metrics.getWindowInsets().getInsetsIgnoringVisibility(types);
+                insets = currentMetrics.getWindowInsets()
+                    .getInsetsIgnoringVisibility(types);
                 result.left = Number(bounds.left) + Number(insets.left);
                 result.top = Number(bounds.top) + Number(insets.top);
                 result.right = Number(bounds.right) - Number(insets.right);
@@ -216,8 +262,10 @@
         var travelX = Math.max(0, Number(bounds.right) - Number(bounds.left) - width);
         var travelY = Math.max(0, Number(bounds.bottom) - Number(bounds.top) - height);
         return {
-            xRatio: travelX > 0 ? clamp01((Number(x) - Number(bounds.left)) / travelX) : 0,
-            yRatio: travelY > 0 ? clamp01((Number(y) - Number(bounds.top)) / travelY) : 0
+            xRatio: travelX > 0 ?
+                clamp01((Number(x) - Number(bounds.left)) / travelX) : 0.5,
+            yRatio: travelY > 0 ?
+                clamp01((Number(y) - Number(bounds.top)) / travelY) : 1
         };
     }
 
@@ -270,39 +318,11 @@
         }
     }
 
-    function isDarkMode() {
-        var mode = "system";
-        var config;
-        try {
-            if (ClipHub.Settings && typeof ClipHub.Settings.get === "function") {
-                mode = String(ClipHub.Settings.get("themeMode", "system"));
-            }
-        } catch (ignoredSetting) {}
-        if (mode === "dark") { return true; }
-        if (mode === "light") { return false; }
-        try {
-            config = androidContext.getResources().getConfiguration();
-            return (Number(config.uiMode) &
-                Number(Packages.android.content.res.Configuration.UI_MODE_NIGHT_MASK)) ===
-                Number(Packages.android.content.res.Configuration.UI_MODE_NIGHT_YES);
-        } catch (ignoredConfig) { return false; }
-    }
-
-    function makeBackground(dark) {
-        var drawable = new GradientDrawable();
-        drawable.setShape(GradientDrawable.RECTANGLE);
-        drawable.setColor(Color.parseColor(dark ? "#EE17191D" : "#F7FFFFFF"));
-        drawable.setCornerRadius(dp(18));
-        drawable.setStroke(dp(1), Color.parseColor(dark ? "#33FFFFFF" : "#19000000"));
-        return drawable;
-    }
-
     function makeText(text, sizeSp, color, bold) {
-        var view = new TextView(androidContext);
+        var view = new TextView(appContext || androidContext);
         view.setText(String(text));
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, Number(sizeSp));
         view.setTextColor(Color.parseColor(String(color)));
-        view.setGravity(Gravity.CENTER_VERTICAL);
         view.setIncludeFontPadding(false);
         if (bold) {
             view.setTypeface(Packages.android.graphics.Typeface.DEFAULT,
@@ -311,14 +331,16 @@
         return view;
     }
 
-    function currentHeight() { return state.collapsed ? collapsedHeightPx : normalHeightPx; }
+    function currentHeight() {
+        return state.collapsed ? collapsedHeightPx : normalHeightPx;
+    }
 
     function fitDimensions(bounds) {
         var safeWidth = Math.max(1, bounds.right - bounds.left);
         var safeHeight = Math.max(1, bounds.bottom - bounds.top);
         state.width = Math.min(Math.max(1, desiredWidthPx), safeWidth);
         normalHeightPx = Math.min(Math.max(1, desiredHeightPx), safeHeight);
-        collapsedHeightPx = Math.min(dp(58), normalHeightPx);
+        collapsedHeightPx = Math.min(dp(28), normalHeightPx);
         state.height = currentHeight();
     }
 
@@ -438,7 +460,8 @@
             }
             return true;
         }
-        if (action === MotionEvent.ACTION_UP || action === MotionEvent.ACTION_CANCEL) {
+        if (action === MotionEvent.ACTION_UP ||
+                action === MotionEvent.ACTION_CANCEL) {
             completedDrag = drag.active;
             drag.active = false;
             if (completedDrag) { persistCurrentPosition(); }
@@ -448,18 +471,16 @@
     }
 
     function showStatusOnMain(text) {
-        var spacer;
+        var colors = palette();
         if (contentView === null) { return false; }
         contentView.removeAllViews();
-        statusView = makeText(text, 14,
-            isDarkMode() ? "#FFB4B4BC" : "#FF5C5C66", false);
+        statusView = makeText(text, 13, colors.textSecondary, false);
         statusView.setGravity(Gravity.TOP | Gravity.START);
         statusView.setLineSpacing(0, 1.12);
+        statusView.setPadding(dp(4), dp(8), dp(4), dp(4));
         contentView.addView(statusView, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT));
-        spacer = new View(androidContext);
-        contentView.addView(spacer, new LinearLayout.LayoutParams(1, dp(6)));
         state.statusText = String(text);
         state.contentMode = "status";
         state.contentReplaceCount += 1;
@@ -481,96 +502,79 @@
     }
 
     function buildView(options) {
-        var dark = isDarkMode();
-        var textPrimary = dark ? "#FFF4F4F5" : "#FF171717";
-        var textSecondary = dark ? "#FFB4B4BC" : "#FF5C5C66";
-        var divider = dark ? "#24FFFFFF" : "#12000000";
-        var row;
-        var title;
-        var line;
-        var titleParams;
+        var colors = palette();
+        var handleHost;
+        var handleParams;
         var contentParams;
-        var closeParams;
 
-        rootView = new FrameLayout(androidContext);
-        rootView.setBackground(makeBackground(dark));
-        rootView.setPadding(dp(14), dp(10), dp(14), dp(12));
-        if (Build.VERSION.SDK_INT >= 21) { rootView.setElevation(dp(12)); }
+        metrics = themeMetrics();
+        rootView = new FrameLayout(appContext || androidContext);
+        rootView.setBackground(roundedBackground(colors.sheet,
+            colors.stroke, Number(metrics.sheetRadiusDp || 26)));
+        if (Build.VERSION.SDK_INT >= 21) { rootView.setElevation(dp(20)); }
 
-        row = new LinearLayout(androidContext);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(2), 0, 0, 0);
-        titleBar = row;
-        title = makeText("ClipHub", 16, textPrimary, true);
-        titleParams = new LinearLayout.LayoutParams(0,
-            LinearLayout.LayoutParams.MATCH_PARENT, 1);
-        row.addView(title, titleParams);
+        handleHost = new FrameLayout(appContext || androidContext);
+        titleBar = handleHost;
+        dragHandle = new View(appContext || androidContext);
+        dragHandle.setBackground(roundedBackground(colors.strokeStrong,
+            null, 3));
+        handleParams = new FrameLayout.LayoutParams(
+            dp(Number(metrics.dragHandleWidthDp || 42)),
+            dp(Number(metrics.dragHandleHeightDp || 4)));
+        handleParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+        handleParams.topMargin = dp(Number(metrics.dragHandleTopDp || 8));
+        handleHost.addView(dragHandle, handleParams);
+        rootView.addView(handleHost, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, collapsedHeightPx));
 
-        closeView = makeText("×", 25, textSecondary, false);
-        closeView.setGravity(Gravity.CENTER);
-        closeView.setClickable(true);
-        closeView.setFocusable(false);
-        closeView.setContentDescription("关闭 ClipHub");
-        closeParams = new LinearLayout.LayoutParams(dp(38), dp(38));
-        row.addView(closeView, closeParams);
-
-        rootView.addView(row, new FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT, collapsedHeightPx - dp(18)));
-
-        line = new View(androidContext);
-        line.setBackgroundColor(Color.parseColor(divider));
-        contentParams = new FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT, dp(1));
-        contentParams.topMargin = collapsedHeightPx - dp(8);
-        rootView.addView(line, contentParams);
-
-        contentView = new LinearLayout(androidContext);
+        contentView = new LinearLayout(appContext || androidContext);
         contentView.setOrientation(LinearLayout.VERTICAL);
-        contentView.setPadding(dp(2), dp(12), dp(2), 0);
+        contentView.setPadding(dp(12), 0, dp(12), dp(10));
         contentParams = new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT);
-        contentParams.topMargin = collapsedHeightPx - dp(2);
+        contentParams.topMargin = collapsedHeightPx;
         rootView.addView(contentView, contentParams);
-        showStatusOnMain(options.statusText ||
-            "WindowManager 骨架已运行\n拖动标题栏可移动窗口");
 
         titleBar.setOnTouchListener(new JavaAdapter(View.OnTouchListener, {
             onTouch: handleTitleTouch
         }));
         state.dragListenerInstalled = true;
-        closeView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
-            onClick: function () { ClipHub.Window.close(); }
-        }));
+        state.dragHandlePresent = true;
+        showStatusOnMain(options.statusText || "正在加载剪贴板历史");
     }
 
     function createLayoutParams(options) {
-        var widthDp = Number(options.widthDp || 320);
-        var heightDp = Number(options.heightDp || 180);
+        var widthDp = Number(options.widthDp || 340);
+        var heightDp = Number(options.heightDp || 500);
         var bounds = safeBounds();
         var saved;
         var position;
-        var type = Build.VERSION.SDK_INT >= 26
-            ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            : WindowManager.LayoutParams.TYPE_SYSTEM_ALERT;
-        desiredWidthPx = dp(Math.max(220, widthDp));
-        desiredHeightPx = dp(Math.max(120, heightDp));
+        var type = Build.VERSION.SDK_INT >= 26 ?
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY :
+            WindowManager.LayoutParams.TYPE_SYSTEM_ALERT;
+        var margin = dp(Number(themeMetrics().screenPaddingDp || 12));
+        desiredWidthPx = dp(Math.max(240, widthDp));
+        desiredHeightPx = dp(Math.max(180, heightDp));
         fitDimensions(bounds);
         state.safeBounds = bounds;
         saved = readSavedPosition();
         if (options.x !== undefined || options.y !== undefined) {
             position = clampPosition(
-                options.x === undefined ? bounds.right - state.width - dp(18) : Number(options.x),
-                options.y === undefined ? bounds.top + dp(72) : Number(options.y),
+                options.x === undefined ?
+                    bounds.left + (bounds.right - bounds.left - state.width) / 2 :
+                    Number(options.x),
+                options.y === undefined ?
+                    bounds.bottom - state.height - margin : Number(options.y),
                 state.width, state.height, bounds
             );
         } else if (saved !== null) {
             position = positionForRatios(saved, state.width, state.height, bounds);
         } else {
             position = clampPosition(
-                bounds.right - state.width - dp(18),
-                bounds.top + dp(72), state.width, state.height, bounds
+                bounds.left + (bounds.right - bounds.left - state.width) / 2,
+                bounds.bottom - state.height - margin,
+                state.width, state.height, bounds
             );
         }
         state.x = position.x;
@@ -586,13 +590,17 @@
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE |
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL |
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
-                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED |
+                WindowManager.LayoutParams.FLAG_DIM_BEHIND,
             PixelFormat.TRANSLUCENT
         );
         layoutParams.gravity = Gravity.TOP | Gravity.START;
         layoutParams.x = state.x;
         layoutParams.y = state.y;
-        layoutParams.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING;
+        layoutParams.dimAmount = Number(options.dimAmount || state.dimAmount);
+        state.dimAmount = Number(layoutParams.dimAmount);
+        layoutParams.softInputMode =
+            WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING;
         try { layoutParams.setTitle("ClipHub Window"); } catch (ignoredTitle) {}
         if (Build.VERSION.SDK_INT >= 28) {
             layoutParams.layoutInDisplayCutoutMode =
@@ -621,12 +629,14 @@
                 thread = nowThread();
                 state.addThreadId = thread.id;
                 state.addThreadName = thread.name;
-                return { ok: true, attached: true, reused: false, state: getState() };
+                return { ok: true, attached: true, reused: false,
+                    state: getState() };
             } catch (error) {
                 state.lastError = String(error);
                 state.attached = false;
                 rootView = null;
                 titleBar = null;
+                dragHandle = null;
                 contentView = null;
                 statusView = null;
                 closeView = null;
@@ -640,7 +650,8 @@
     function close() {
         var result;
         if (!state.attached && rootView === null) {
-            return { ok: true, attached: false, alreadyClosed: true, state: getState() };
+            return { ok: true, attached: false, alreadyClosed: true,
+                state: getState() };
         }
         result = runOnMainSync(function () {
             var thread = nowThread();
@@ -663,16 +674,19 @@
             } finally {
                 rootView = null;
                 titleBar = null;
+                dragHandle = null;
                 contentView = null;
                 statusView = null;
                 closeView = null;
                 layoutParams = null;
                 drag.active = false;
                 state.contentMode = "status";
+                state.dragHandlePresent = false;
             }
         }, 3000);
         requireMainResult(result);
-        return { ok: true, attached: false, alreadyClosed: false, state: getState() };
+        return { ok: true, attached: false, alreadyClosed: false,
+            state: getState() };
     }
 
     function setCollapsed(value) {
@@ -710,7 +724,8 @@
     }
 
     function moveBy(dx, dy, options) {
-        return moveTo(state.x + Number(dx || 0), state.y + Number(dy || 0), options);
+        return moveTo(state.x + Number(dx || 0),
+            state.y + Number(dy || 0), options);
     }
 
     function refreshBounds(reason) {
@@ -744,8 +759,9 @@
     function getState() {
         var bounds = state.safeBounds || {};
         var attachedToWindow = false;
-        try { attachedToWindow = rootView !== null && rootView.isAttachedToWindow(); }
-        catch (ignored) {}
+        try {
+            attachedToWindow = rootView !== null && rootView.isAttachedToWindow();
+        } catch (ignored) {}
         return {
             attached: state.attached,
             attachedToWindow: attachedToWindow,
@@ -779,6 +795,10 @@
             contentReplaceCount: Number(state.contentReplaceCount),
             contentMode: state.contentMode,
             dragListenerInstalled: state.dragListenerInstalled,
+            dragHandlePresent: state.dragHandlePresent,
+            sheetStyle: state.sheetStyle,
+            dimAmount: Number(state.dimAmount),
+            contentTopInsetDp: Number(state.contentTopInsetDp),
             componentCallbacksRegistered: state.componentCallbacksRegistered,
             displayListenerRegistered: state.displayListenerRegistered,
             addThreadId: state.addThreadId,
@@ -829,7 +849,8 @@
             state.displayListenerRegistered = false;
             state.lastError = String(displayError);
         }
-        return state.componentCallbacksRegistered || state.displayListenerRegistered;
+        return state.componentCallbacksRegistered ||
+            state.displayListenerRegistered;
     }
 
     function unregisterObservers() {
@@ -854,10 +875,10 @@
 
     ClipHub.Window = {
         MODULE_NAME: "ch_08_window",
-        MODULE_VERSION: 4,
+        MODULE_VERSION: 5,
         init: function (context) {
-            androidContext = context && context.androidContext
-                ? context.androidContext : global.context;
+            androidContext = context && context.androidContext ?
+                context.androidContext : global.context;
             if (androidContext === null || androidContext === undefined) {
                 throw new Error("Android context unavailable for WindowManager");
             }
@@ -868,17 +889,23 @@
                 throw new Error("WindowManager service unavailable");
             }
             mainHandler = new Handler(Looper.getMainLooper());
-            density = Number(appContext.getResources().getDisplayMetrics().density || 1);
-            touchSlopPx = Number(ViewConfiguration.get(appContext).getScaledTouchSlop());
+            density = Number(appContext.getResources()
+                .getDisplayMetrics().density || 1);
+            touchSlopPx = Number(ViewConfiguration.get(appContext)
+                .getScaledTouchSlop());
+            metrics = themeMetrics();
+            state.contentTopInsetDp = 28;
             state.safeBounds = safeBounds();
             readSavedPosition();
             registerObservers();
             return {
                 ok: true,
                 initialized: true,
-                componentCallbacksRegistered: state.componentCallbacksRegistered,
+                componentCallbacksRegistered:
+                    state.componentCallbacksRegistered,
                 displayListenerRegistered: state.displayListenerRegistered,
-                savedPosition: copyPosition(state.savedPosition)
+                savedPosition: copyPosition(state.savedPosition),
+                sheetStyle: state.sheetStyle
             };
         },
         open: open,
@@ -896,7 +923,8 @@
             if (typeof callback !== "function") {
                 throw new Error("Window main callback must be a function");
             }
-            return requireMainResult(runOnMainSync(callback, timeoutMs || 2500));
+            return requireMainResult(runOnMainSync(callback,
+                timeoutMs || 2500));
         },
         getAndroidContext: function () { return appContext; },
         getState: getState,
