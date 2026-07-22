@@ -1,0 +1,50 @@
+    ClipHub.Translation = {
+        MODULE_NAME: "ch_12_translation",
+        MODULE_VERSION: 5,
+        init: function (context) {
+            translationConfig = { enabled: true, provider: "settings" };
+            navigationInit(context || {});
+            translationState.attached = false;
+            translationState.itemId = null;
+            translationState.provider = "none";
+            translationState.sourceText = "";
+            translationState.translatedText = "";
+            translationState.running = false;
+            translationState.lastError = null;
+            return true;
+        },
+        configure: function (provider, enabled) {
+            translationConfig.provider = String(provider || "settings");
+            translationConfig.enabled = enabled !== false;
+            return translationConfig;
+        },
+        translate: function (text, callback, provider) {
+            if (typeof callback === "function") {
+                return translateConfiguredAsync(text, callback, provider);
+            }
+            return translateConfiguredSync(text, provider);
+        },
+        testConfigured: function (text, callback) {
+            return translateConfiguredAsync(text || "ClipHub 翻译测试",
+                callback);
+        },
+        openForItem: openTranslationForItem,
+        close: closeTranslationPanel,
+        isAttached: function () {
+            return translationState.attached === true;
+        },
+        getState: getTranslationState,
+        performCopyClick: copyTranslatedText,
+        performReplaceClick: replaceOriginalText,
+        performSaveNewClick: saveTranslationAsNew,
+        performRetryClick: beginTranslation,
+        shutdown: function () {
+            try { closeTranslationPanel("shutdown"); }
+            catch (ignoredTranslationClose) {}
+            try { navigationShutdown(); }
+            catch (ignoredNavigation) {}
+            translationConfig.enabled = false;
+            translationGeneration += 1;
+            return true;
+        }
+    };
