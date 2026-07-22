@@ -51,6 +51,15 @@ jobs:
               raise SystemExit('filter tag map patch marker mismatch')
           text = text.replace(old_tag_map, new_tag_map, 1)
           path.write_text(text, encoding='utf-8')
+
+          apply_path = Path('.github/cliphub-stage3d2-4/apply.sh')
+          apply_text = apply_path.read_text(encoding='utf-8')
+          old_cleanup = 'git rm -r "$HELPER_DIR" "$WORKFLOW_PATH"'
+          new_cleanup = 'git rm -rf "$HELPER_DIR" "$WORKFLOW_PATH"\ngit rm -f .github/cliphub-stage3d2-4-failure.log || true'
+          if apply_text.count(old_cleanup) != 1:
+              raise SystemExit('stage cleanup patch marker mismatch')
+          apply_path.write_text(apply_text.replace(old_cleanup, new_cleanup, 1),
+                                encoding='utf-8')
           PY
           set +e
           bash -x .github/cliphub-stage3d2-4/apply.sh > /tmp/cliphub_stage4.log 2>&1
