@@ -14,7 +14,7 @@
     var SDF = Packages.java.text.SimpleDateFormat;
     var Locale = Packages.java.util.Locale;
 
-    var REQUIRED_SET = "20260722.23";
+    var REQUIRED_SET = "20260722.24";
     var RUNTIME_NAME = "ClipHubProbe030";
     var MODULES = [
         "ch_01_base.js", "ch_02_log.js", "ch_03_database.js",
@@ -25,21 +25,26 @@
     ];
 
     function now() { return Number(System.currentTimeMillis()); }
+
     function stamp(value) {
         return String(new SDF("yyyyMMdd-HHmmss-SSS", Locale.US)
             .format(new Packages.java.util.Date(value)));
     }
+
     function close(value) {
         if (value !== null && value !== undefined) {
             try { value.close(); } catch (ignored) {}
         }
     }
+
     function ensureDir(file) {
         if (!file.exists() && !file.mkdirs() && !file.isDirectory()) {
-            throw new Error("Cannot create directory: " + file.getAbsolutePath());
+            throw new Error("Cannot create directory: " +
+                file.getAbsolutePath());
         }
         return file;
     }
+
     function read(file) {
         var reader = null;
         var builder = new SB();
@@ -52,6 +57,7 @@
             return String(builder.toString());
         } finally { close(reader); }
     }
+
     function write(file, text) {
         var writer = null;
         try {
@@ -60,6 +66,7 @@
             writer.flush();
         } finally { close(writer); }
     }
+
     function removeTree(file) {
         var children;
         var index;
@@ -76,6 +83,7 @@
         if (file.exists() && !file.delete()) { ok = false; }
         return ok;
     }
+
     function waitFor(callback, timeoutMs) {
         var started = now();
         while (now() - started < Number(timeoutMs || 0)) {
@@ -84,6 +92,7 @@
         }
         return callback();
     }
+
     function lockFree(runtimeDir) {
         var dataDir = ensureDir(new File(runtimeDir, "data"));
         var raf = null;
@@ -95,7 +104,8 @@
             lock = channel.tryLock();
             return lock !== null;
         } catch (error) {
-            if (String(error).indexOf("OverlappingFileLockException") >= 0) {
+            if (String(error).indexOf(
+                    "OverlappingFileLockException") >= 0) {
                 return false;
             }
             throw error;
@@ -107,6 +117,7 @@
             close(raf);
         }
     }
+
     function localManifest(runtimeDir) {
         var file = new File(new File(runtimeDir, "cache"),
             "module-manifest.local.json");
@@ -119,6 +130,7 @@
             sourceRef: String(data.sourceRef || "")
         };
     }
+
     function start(root, moduleDir, runtimeDir) {
         var index;
         var file;
@@ -126,7 +138,8 @@
         for (index = 0; index < MODULES.length; index += 1) {
             file = new File(moduleDir, MODULES[index]);
             if (!file.isFile()) {
-                throw new Error("Missing module: " + file.getAbsolutePath());
+                throw new Error("Missing module: " +
+                    file.getAbsolutePath());
             }
             eval(read(file));
         }
@@ -137,6 +150,7 @@
             androidContext: global.context
         });
     }
+
     function add(content, createdAt) {
         return Number(global.ClipHub.Repository.insertItem({
             content: String(content),
@@ -151,6 +165,13 @@
         }));
     }
 
+    function allUiClosed() {
+        return global.ClipHub.Window.getState().attachedToWindow !== true &&
+            global.ClipHub.List.getDetailState().attachedToWindow !== true &&
+            global.ClipHub.Editor.getState().attachedToWindow !== true &&
+            global.ClipHub.Filter.getPanelState().attachedToWindow !== true;
+    }
+
     function main() {
         var startedAt = now();
         var root = String(shortx.getShortXDir());
@@ -158,14 +179,15 @@
         var modules = new File(formal, "modules");
         var isolated = new File(root, RUNTIME_NAME);
         var outputFile = new File(ensureDir(new File(formal, "probes")),
-            "cliphub_system_navigation_probe_030_" + stamp(startedAt) + ".json");
+            "cliphub_system_navigation_probe_030_" +
+                stamp(startedAt) + ".json");
         var local = localManifest(formal);
         var itemId;
         var nav;
         var result = {
             ok: false,
             probe: "cliphub_system_navigation_probe_030",
-            probeVersion: 2,
+            probeVersion: 3,
             startedAt: startedAt,
             moduleSetVersion: local.moduleSetVersion || null,
             sourceRef: local.sourceRef || null,
@@ -173,7 +195,7 @@
             manualSystemGestureRequired: true,
             manualChecks: [
                 "首页侧滑返回后全部 ClipHub UI 消失",
-                "详情、编辑、筛选页侧滑返回首页",
+                "详情、编辑、筛选和标签页侧滑返回首页",
                 "首页三键返回行为与侧滑返回一致",
                 "底部上拉进入最近任务后全部 UI 消失",
                 "再次打开时从首页开始",
@@ -188,7 +210,8 @@
                 throw new Error("Installed module set must be " + REQUIRED_SET);
             }
             if (!lockFree(formal)) {
-                throw new Error("正式 ClipHub 正在运行，请先执行 probes/cliphub_stop_formal.js");
+                throw new Error("正式 ClipHub 正在运行，请先执行 " +
+                    "probes/cliphub_stop_formal.js");
             }
             removeTree(isolated);
             result.start = start(root, modules, isolated);
@@ -202,102 +225,134 @@
 
             itemId = add(
                 "系统手势返回与后台退出探测。该记录故意使用长文本，用于打开内容详情窗口并验证详情页侧滑返回后恢复主列表。" +
-                "探测还会依次验证编辑窗口、筛选窗口和首页的统一返回顺序，确认首页退出只关闭 ClipHub UI，不停止后台实例、数据库和控制入口。" +
-                "最后执行一次合成的最近任务隐藏流程，检查所有 WindowManager View 都被幂等移除，且不会残留透明遮罩或不可触摸区域。",
+                "探测还会连续验证编辑窗口、筛选窗口和首页的统一返回顺序，专门覆盖不同页面在一百八十毫秒内连续返回不应被错误去重的问题。" +
+                "最后执行合成的最近任务隐藏流程，检查所有 WindowManager View 与返回回调均被幂等清理，且后台实例继续运行。",
                 startedAt);
             result.itemId = itemId;
+
             result.listShow = global.ClipHub.List.show({
                 limit: 20, widthDp: 340, heightDp: 500
             });
             waitFor(function () {
-                return global.ClipHub.Navigation.getState().registeredRootCount >= 1;
-            }, 1200);
+                return global.ClipHub.Window.getState().attachedToWindow === true &&
+                    global.ClipHub.Navigation.getState().registeredRootCount >= 1;
+            }, 1500);
             nav = global.ClipHub.Navigation.getState();
             result.navigationAfterHome = nav;
             result.homeCallbackRegistered = nav.registeredRootCount >= 1 &&
                 (nav.callbackMode === "OnBackAnimationCallback" ||
-                    nav.callbackMode === "OnBackInvokedCallback" || nav.sdkInt < 33);
+                    nav.callbackMode === "OnBackInvokedCallback" ||
+                    nav.sdkInt < 33);
             result.mainWindowFocusableUpgraded =
                 nav.mainFocusableUpgradeCount >= 1 || nav.sdkInt < 33;
+            result.baselineCaptured = String(nav.baselinePackage || "").length > 0;
 
-            result.detailOpen = global.ClipHub.List.openDetail(itemId) !== false;
+            result.detailOpen =
+                global.ClipHub.List.openDetail(itemId) !== false;
             waitFor(function () {
-                return global.ClipHub.List.getDetailState().attachedToWindow === true;
-            }, 800);
-            waitFor(function () {
-                return global.ClipHub.Navigation.getState()
+                return global.ClipHub.List.getDetailState()
+                    .attachedToWindow === true &&
+                    global.ClipHub.Navigation.getState()
                     .registeredOwners.indexOf("detail") >= 0;
-            }, 1200);
+            }, 1500);
             result.detailBackHandled =
                 global.ClipHub.Navigation.dispatchBackForOwner(
                     "detail", "probe_detail_back") === true;
             waitFor(function () {
-                return global.ClipHub.List.getDetailState().attachedToWindow !== true;
-            }, 800);
+                return global.ClipHub.List.getDetailState()
+                    .attachedToWindow !== true &&
+                    global.ClipHub.Window.getState()
+                    .attachedToWindow === true;
+            }, 1000);
             result.detailClosedAfterBack =
-                global.ClipHub.List.getDetailState().attachedToWindow !== true;
+                global.ClipHub.List.getDetailState()
+                    .attachedToWindow !== true;
             result.homeRemainedAfterDetailBack =
                 global.ClipHub.Window.getState().attachedToWindow === true;
 
-            result.editorOpen = global.ClipHub.Editor.openItem(itemId).ok === true;
+            result.editorOpen =
+                global.ClipHub.Editor.openItem(itemId).ok === true;
             waitFor(function () {
-                return global.ClipHub.Editor.getState().attachedToWindow === true;
-            }, 800);
+                return global.ClipHub.Editor.getState()
+                    .attachedToWindow === true;
+            }, 1000);
             result.editorBackHandled =
                 global.ClipHub.Navigation.dispatchBackForOwner(
                     "editor", "probe_editor_back") === true;
             waitFor(function () {
-                return global.ClipHub.Editor.getState().attachedToWindow !== true;
-            }, 800);
+                return global.ClipHub.Editor.getState()
+                    .attachedToWindow !== true;
+            }, 1000);
             result.editorClosedAfterBack =
-                global.ClipHub.Editor.getState().attachedToWindow !== true;
+                global.ClipHub.Editor.getState()
+                    .attachedToWindow !== true;
 
-            result.filterOpen = global.ClipHub.Filter.showPanel().ok === true;
+            result.filterOpen =
+                global.ClipHub.Filter.showPanel().ok === true;
             waitFor(function () {
-                return global.ClipHub.Filter.getPanelState().attachedToWindow === true;
-            }, 800);
+                return global.ClipHub.Filter.getPanelState()
+                    .attachedToWindow === true;
+            }, 1000);
             result.filterBackHandled =
                 global.ClipHub.Navigation.dispatchBackForOwner(
                     "filter", "probe_filter_back") === true;
             waitFor(function () {
-                return global.ClipHub.Filter.getPanelState().attachedToWindow !== true;
-            }, 800);
+                return global.ClipHub.Filter.getPanelState()
+                    .attachedToWindow !== true;
+            }, 1000);
             result.filterClosedAfterBack =
-                global.ClipHub.Filter.getPanelState().attachedToWindow !== true;
+                global.ClipHub.Filter.getPanelState()
+                    .attachedToWindow !== true;
 
             result.homeBackHandled =
                 global.ClipHub.Navigation.dispatchBackForOwner(
                     "home", "probe_home_back") === true;
             waitFor(function () {
-                return global.ClipHub.Window.getState().attachedToWindow !== true;
-            }, 800);
-            result.homeClosedAfterBack =
-                global.ClipHub.Window.getState().attachedToWindow !== true;
-            result.appStillRunningAfterBack = global.ClipHub.App.isStarted() === true;
+                return allUiClosed() &&
+                    global.ClipHub.Navigation.getState()
+                    .registeredRootCount === 0;
+            }, 1200);
+            result.homeClosedAfterBack = allUiClosed();
+            result.callbacksClearedAfterHomeBack =
+                global.ClipHub.Navigation.getState()
+                    .registeredRootCount === 0;
+            result.appStillRunningAfterBack =
+                global.ClipHub.App.isStarted() === true;
 
-            global.ClipHub.List.show({ limit: 20, widthDp: 340, heightDp: 500 });
+            global.ClipHub.List.show({
+                limit: 20, widthDp: 340, heightDp: 500
+            });
             waitFor(function () {
-                return global.ClipHub.Window.getState().attachedToWindow === true;
-            }, 800);
+                return global.ClipHub.Window.getState()
+                    .attachedToWindow === true &&
+                    global.ClipHub.Navigation.getState()
+                    .registeredRootCount >= 1;
+            }, 1500);
             result.syntheticRecentsHide =
-                global.ClipHub.Navigation.hideUi("probe_recent_tasks").hidden === true;
+                global.ClipHub.Navigation.hideUi(
+                    "probe_recent_tasks").hidden === true;
             waitFor(function () {
-                return global.ClipHub.Window.getState().attachedToWindow !== true;
-            }, 800);
-            result.allUiClosedAfterSyntheticRecents =
-                global.ClipHub.Window.getState().attachedToWindow !== true &&
-                global.ClipHub.List.getDetailState().attachedToWindow !== true &&
-                global.ClipHub.Editor.getState().attachedToWindow !== true &&
-                global.ClipHub.Filter.getPanelState().attachedToWindow !== true;
+                return allUiClosed() &&
+                    global.ClipHub.Navigation.getState()
+                    .registeredRootCount === 0;
+            }, 1200);
+            result.allUiClosedAfterSyntheticRecents = allUiClosed();
+            result.callbacksClearedAfterSyntheticRecents =
+                global.ClipHub.Navigation.getState()
+                    .registeredRootCount === 0;
             result.appStillRunningAfterSyntheticRecents =
                 global.ClipHub.App.isStarted() === true;
-            result.navigationFinal = global.ClipHub.Navigation.getState();
+            result.navigationFinal =
+                global.ClipHub.Navigation.getState();
+            result.allFourBackActionsInvoked =
+                Number(result.navigationFinal.backInvokedCount) >= 4;
 
             result.ok = result.navigationPresent &&
-                result.translationModuleVersion >= 2 &&
-                result.navigationModuleVersion >= 1 &&
+                result.translationModuleVersion >= 3 &&
+                result.navigationModuleVersion >= 2 &&
                 result.homeCallbackRegistered &&
                 result.mainWindowFocusableUpgraded &&
+                result.baselineCaptured &&
                 result.detailOpen && result.detailBackHandled &&
                 result.detailClosedAfterBack &&
                 result.homeRemainedAfterDetailBack &&
@@ -306,14 +361,17 @@
                 result.filterOpen && result.filterBackHandled &&
                 result.filterClosedAfterBack &&
                 result.homeBackHandled && result.homeClosedAfterBack &&
+                result.callbacksClearedAfterHomeBack &&
                 result.appStillRunningAfterBack &&
                 result.syntheticRecentsHide &&
                 result.allUiClosedAfterSyntheticRecents &&
-                result.appStillRunningAfterSyntheticRecents;
+                result.callbacksClearedAfterSyntheticRecents &&
+                result.appStillRunningAfterSyntheticRecents &&
+                result.allFourBackActionsInvoked;
         } catch (error) {
             result.error = String(error);
         } finally {
-            try { global.ClipHub.App.stop("probe_030"); }
+            try { global.ClipHub.App.stop("probe_030_v3"); }
             catch (ignoredStop) {}
             result.lockReleased = lockFree(isolated);
             removeTree(isolated);
