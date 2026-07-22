@@ -1,0 +1,29 @@
+name: Apply ClipHub new and edit UI
+
+on:
+  pull_request:
+    branches:
+      - agent/initialize-project-skeleton
+    paths:
+      - .github/cliphub-stage3d2-3-editor-trigger.txt
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cliphub-stage3d2-3-editor
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.repository == '7015725/ClipHub'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/initialize-project-skeleton
+          fetch-depth: 0
+      - name: Apply new and edit UI
+        shell: bash
+        run: bash .github/cliphub-stage3d2-3-editor/apply.sh
