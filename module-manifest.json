@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "moduleSetVersion": "20260723.14",
   "entryMinVersion": 5,
-  "sourceRef": "agent/initialize-project-skeleton",
+  "sourceRef": "main",
   "modules": [
     {
       "name": "ch_01_base.js",

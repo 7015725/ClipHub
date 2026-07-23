@@ -20,7 +20,7 @@
     var ENTRY_VERSION = 5;
     var OWNER = "7015725";
     var REPO = "ClipHub";
-    var DEFAULT_REF = "agent/initialize-project-skeleton";
+    var DEFAULT_REF = "main";
     var MANIFEST_PATH = "module-manifest.json";
     var NAMES = [
         "ch_01_base.js", "ch_02_log.js", "ch_03_database.js",
