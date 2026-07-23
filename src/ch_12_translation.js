@@ -1126,9 +1126,9 @@
     function translationRounded(fill, stroke, radiusDp) {
         var drawable = new GradientDrawable();
         drawable.setShape(GradientDrawable.RECTANGLE);
-        drawable.setColor(Color.parseColor(String(fill)));
+        ClipHub.Theme.applyGradientColor(drawable, fill);
         drawable.setCornerRadius(dp(radiusDp));
-        if (stroke) { drawable.setStroke(dp(1), Color.parseColor(String(stroke))); }
+        if (stroke) { ClipHub.Theme.applyGradientStroke(drawable, dp(1), stroke); }
         return drawable;
     }
 
@@ -1151,7 +1151,7 @@
         var view = new TextView(appContext);
         view.setText(String(text));
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, Number(size));
-        view.setTextColor(Color.parseColor(String(color)));
+        ClipHub.Theme.applyTextColor(view, color);
         view.setIncludeFontPadding(false);
         if (bold) {
             view.setTypeface(Packages.android.graphics.Typeface.DEFAULT,
@@ -1845,7 +1845,7 @@
     }
     ClipHub.Translation = {
         MODULE_NAME: "ch_12_translation",
-        MODULE_VERSION: 6,
+        MODULE_VERSION: 7,
         init: function (context) {
             translationConfig = { enabled: true, provider: "settings" };
             navigationInit(context || {});

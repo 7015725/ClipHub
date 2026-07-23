@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260723.12",
+  "moduleSetVersion": "20260723.13",
   "entryMinVersion": 5,
   "sourceRef": "agent/initialize-project-skeleton",
   "modules": [
@@ -37,37 +37,37 @@
     {
       "name": "ch_07_theme.js",
       "path": "src/ch_07_theme.js",
-      "sha": "bcdb99700fffbb54d6315b773e051aa78294de1b"
+      "sha": "a293c6bc8b97947cdd79ab1bfb0a3380fec9deb9"
     },
     {
       "name": "ch_08_window.js",
       "path": "src/ch_08_window.js",
-      "sha": "abc37b0a008ccaecac0a0d4a46ef7c76ee40f1db"
+      "sha": "bfe57e991c256c98545b7aac30523f347454ec4c"
     },
     {
       "name": "ch_09_list.js",
       "path": "src/ch_09_list.js",
-      "sha": "8060dd75f23147e3fbc2c231f8138e7051cd159f"
+      "sha": "e3bb4a3319b294309a79634c2e133db8c5d3d1ba"
     },
     {
       "name": "ch_10_editor.js",
       "path": "src/ch_10_editor.js",
-      "sha": "1432888a1662092ea0bd129c726379966e8271f3"
+      "sha": "16f12f947e327e5f9f7e4d47733c93e024a17061"
     },
     {
       "name": "ch_11_filter.js",
       "path": "src/ch_11_filter.js",
-      "sha": "00071ce7b23f504c69fdd621b668892671b413c5"
+      "sha": "a7c7e91508e1592942f3454ced21cdc501ec5f9c"
     },
     {
       "name": "ch_12_translation.js",
       "path": "src/ch_12_translation.js",
-      "sha": "6e379d8a7cb5363ed56ba1f6af05b844c10d40e5"
+      "sha": "05fc430b473ae58b680af9ba9a0e168246c53af7"
     },
     {
       "name": "ch_13_settings.js",
       "path": "src/ch_13_settings.js",
-      "sha": "57b302fc36f1975dae95a0d66352a9660586125f"
+      "sha": "00681670265fcb29a3e6432a27e3e25d0bd73ace"
     },
     {
       "name": "ch_14_event_bus.js",

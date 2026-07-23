@@ -1,6 +1,12 @@
 (function (global) {
     var ClipHub = global.ClipHub || (global.ClipHub = {});
     var Configuration = Packages.android.content.res.Configuration;
+    var ColorStateList = Packages.android.content.res.ColorStateList;
+    var Color = Packages.android.graphics.Color;
+    var GradientDrawable = Packages.android.graphics.drawable.GradientDrawable;
+    var JavaArray = Packages.java.lang.reflect.Array;
+    var JavaClass = Packages.java.lang.Class;
+    var JavaInteger = Packages.java.lang.Integer;
     var mode = "system";
 
     var LIGHT = {
@@ -107,6 +113,115 @@
         minTouchDp: 40
     };
 
+
+    function colorInt(value, fallback) {
+        var source = value;
+        var text;
+        var number;
+        if (source === null || source === undefined || source === "") {
+            source = fallback;
+        }
+        if (typeof source === "string") {
+            text = String(source).replace(/^\s+|\s+$/g, "");
+            if (text.length > 0) {
+                try { return Number(Color.parseColor(text)) | 0; }
+                catch (ignoredParse) {}
+            }
+        }
+        number = Number(source);
+        if (!isFinite(number)) {
+            try { number = Number(Color.parseColor(String(fallback || "#00000000"))); }
+            catch (ignoredFallback) { number = 0; }
+        }
+        return number | 0;
+    }
+
+    function jintArray(values) {
+        var source = values || [];
+        var output = JavaArray.newInstance(JavaInteger.TYPE, source.length);
+        var index;
+        for (index = 0; index < source.length; index += 1) {
+            output[index] = colorInt(source[index], 0);
+        }
+        return output;
+    }
+
+    function jint2Array(rows) {
+        var source = rows || [];
+        var output = JavaArray.newInstance(JavaClass.forName("[I"), source.length);
+        var index;
+        for (index = 0; index < source.length; index += 1) {
+            output[index] = jintArray(source[index]);
+        }
+        return output;
+    }
+
+    function safeColorStateList(colorValue) {
+        return new ColorStateList(jint2Array([[]]), jintArray([
+            colorInt(colorValue, 0)
+        ]));
+    }
+
+    function safeSetTextColor(viewObj, colorValue) {
+        if (viewObj === null || viewObj === undefined) { return false; }
+        viewObj.setTextColor(safeColorStateList(colorValue));
+        return true;
+    }
+
+    function safeSetHintTextColor(viewObj, colorValue) {
+        if (viewObj === null || viewObj === undefined) { return false; }
+        viewObj.setHintTextColor(safeColorStateList(colorValue));
+        return true;
+    }
+
+    function safeSetLinkTextColor(viewObj, colorValue) {
+        if (viewObj === null || viewObj === undefined) { return false; }
+        viewObj.setLinkTextColor(safeColorStateList(colorValue));
+        return true;
+    }
+
+    function safeSetGradientColor(drawableObj, colorValue) {
+        if (drawableObj === null || drawableObj === undefined) { return false; }
+        drawableObj.setColor(safeColorStateList(colorValue));
+        return true;
+    }
+
+    function safeSetGradientStroke(drawableObj, widthPx, colorValue) {
+        if (drawableObj === null || drawableObj === undefined) { return false; }
+        drawableObj.setStroke(Math.max(0, Math.round(Number(widthPx) || 0)),
+            safeColorStateList(colorValue));
+        return true;
+    }
+
+    function safeSetBackgroundColor(viewObj, colorValue) {
+        var background;
+        if (viewObj === null || viewObj === undefined) { return false; }
+        background = new GradientDrawable();
+        background.setShape(GradientDrawable.RECTANGLE);
+        safeSetGradientColor(background, colorValue);
+        viewObj.setBackground(background);
+        return true;
+    }
+
+    function safeSetTintColor(drawableObj, colorValue) {
+        if (drawableObj === null || drawableObj === undefined) { return false; }
+        drawableObj.setTintList(safeColorStateList(colorValue));
+        return true;
+    }
+
+    function safeSetPaintColor(paintObj, colorValue) {
+        var color;
+        if (paintObj === null || paintObj === undefined) { return false; }
+        color = colorInt(colorValue, 0);
+        paintObj.setARGB(
+            (color >>> 24) & 255,
+            (color >>> 16) & 255,
+            (color >>> 8) & 255,
+            color & 255
+        );
+        return true;
+    }
+
     function copy(value) {
         var out = {};
         var key;
@@ -145,7 +260,7 @@
 
     ClipHub.Theme = {
         MODULE_NAME: "ch_07_theme",
-        MODULE_VERSION: 2,
+        MODULE_VERSION: 3,
         init: function () { mode = "system"; return true; },
         setMode: function (value) {
             value = String(value || "system");
@@ -156,6 +271,16 @@
             return mode;
         },
         getMode: function () { return configuredMode(); },
+        toColorInt: colorInt,
+        safeColorStateList: safeColorStateList,
+        applyTextColor: safeSetTextColor,
+        applyHintTextColor: safeSetHintTextColor,
+        applyLinkTextColor: safeSetLinkTextColor,
+        applyGradientColor: safeSetGradientColor,
+        applyGradientStroke: safeSetGradientStroke,
+        applyBackgroundColor: safeSetBackgroundColor,
+        applyTintColor: safeSetTintColor,
+        applyPaintColor: safeSetPaintColor,
         isDark: isDark,
         getPalette: palette,
         getMetrics: function () { return copy(METRICS); },

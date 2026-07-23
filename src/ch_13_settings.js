@@ -1214,10 +1214,10 @@
     function roundedBackground(fill, stroke, radiusDp) {
         var drawable = new GradientDrawable();
         drawable.setShape(GradientDrawable.RECTANGLE);
-        drawable.setColor(Color.parseColor(String(fill)));
+        ClipHub.Theme.applyGradientColor(drawable, fill);
         drawable.setCornerRadius(dp(radiusDp));
         if (stroke !== null && stroke !== undefined) {
-            drawable.setStroke(dp(1), Color.parseColor(String(stroke)));
+            ClipHub.Theme.applyGradientStroke(drawable, dp(1), stroke);
         }
         return drawable;
     }
@@ -1226,7 +1226,7 @@
         var view = new TextView(appContext);
         view.setText(String(text));
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, Number(size));
-        view.setTextColor(Color.parseColor(String(color)));
+        ClipHub.Theme.applyTextColor(view, color);
         view.setIncludeFontPadding(false);
         if (bold) {
             view.setTypeface(Packages.android.graphics.Typeface.DEFAULT,
@@ -1256,8 +1256,8 @@
         input.setHint(String(hint));
         input.setText(String(value || ""));
         input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-        input.setTextColor(Color.parseColor(colors.textPrimary));
-        input.setHintTextColor(Color.parseColor(colors.textTertiary));
+        ClipHub.Theme.applyTextColor(input, colors.textPrimary);
+        ClipHub.Theme.applyHintTextColor(input, colors.textTertiary);
         input.setPadding(dp(10), dp(5), dp(10), dp(5));
         input.setBackground(roundedBackground(colors.surfaceMuted,
             colors.stroke, 11));
@@ -1340,15 +1340,13 @@
             engineBaiduView.setBackground(roundedBackground(
                 baidu ? colors.accentStrong : colors.accentSoft,
                 colors.accentBorder, 11));
-            engineBaiduView.setTextColor(Color.parseColor(
-                baidu ? "#FFFFFFFF" : colors.accentStrong));
+            ClipHub.Theme.applyTextColor(engineBaiduView, baidu ? "#FFFFFFFF" : colors.accentStrong);
         }
         if (engineYoudaoView !== null) {
             engineYoudaoView.setBackground(roundedBackground(
                 baidu ? colors.accentSoft : colors.accentStrong,
                 colors.accentBorder, 11));
-            engineYoudaoView.setTextColor(Color.parseColor(
-                baidu ? colors.accentStrong : "#FFFFFFFF"));
+            ClipHub.Theme.applyTextColor(engineYoudaoView, baidu ? colors.accentStrong : "#FFFFFFFF");
         }
     }
 
@@ -2016,7 +2014,7 @@
         section.addView(infoText, params);
 
         divider = new View(appContext);
-        divider.setBackgroundColor(Color.parseColor(String(colors.stroke)));
+        ClipHub.Theme.applyBackgroundColor(divider, colors.stroke);
         params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(1));
         params.topMargin = dp(2);
@@ -2510,7 +2508,7 @@
 
     ClipHub.Settings = {
         MODULE_NAME: "ch_13_settings",
-        MODULE_VERSION: 13,
+        MODULE_VERSION: 14,
         DEFAULTS: defaultsCopy(),
         init: function (context) {
             if (!ClipHub.Database || !ClipHub.Database.isOpen()) {

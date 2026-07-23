@@ -370,10 +370,10 @@
     function roundedBackground(fill, stroke, radiusDp) {
         var drawable = new GradientDrawable();
         drawable.setShape(GradientDrawable.RECTANGLE);
-        drawable.setColor(Color.parseColor(String(fill)));
+        ClipHub.Theme.applyGradientColor(drawable, fill);
         drawable.setCornerRadius(dp(radiusDp));
         if (stroke !== null) {
-            drawable.setStroke(dp(1), Color.parseColor(String(stroke)));
+            ClipHub.Theme.applyGradientStroke(drawable, dp(1), stroke);
         }
         return drawable;
     }
@@ -382,7 +382,7 @@
         var view = new TextView(appContext);
         view.setText(String(text));
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, Number(sizeSp));
-        view.setTextColor(Color.parseColor(String(color)));
+        ClipHub.Theme.applyTextColor(view, color);
         view.setIncludeFontPadding(false);
         if (bold) {
             view.setTypeface(Packages.android.graphics.Typeface.DEFAULT,
@@ -1677,8 +1677,8 @@
         contentInput = new EditText(appContext);
         contentInput.setText(String(initialText || ""));
         contentInput.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-        contentInput.setTextColor(Color.parseColor(colors.textPrimary));
-        contentInput.setHintTextColor(Color.parseColor(colors.textTertiary));
+        ClipHub.Theme.applyTextColor(contentInput, colors.textPrimary);
+        ClipHub.Theme.applyHintTextColor(contentInput, colors.textTertiary);
         contentInput.setHint("输入剪贴板内容");
         contentInput.setGravity(Gravity.TOP | Gravity.START);
         contentInput.setInputType(InputType.TYPE_CLASS_TEXT |
@@ -1826,8 +1826,8 @@
         tagNameInput.setSingleLine(true);
         tagNameInput.setHint("新标签名称");
         tagNameInput.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        tagNameInput.setTextColor(Color.parseColor(colors.textPrimary));
-        tagNameInput.setHintTextColor(Color.parseColor(colors.textTertiary));
+        ClipHub.Theme.applyTextColor(tagNameInput, colors.textPrimary);
+        ClipHub.Theme.applyHintTextColor(tagNameInput, colors.textTertiary);
         tagNameInput.setInputType(InputType.TYPE_CLASS_TEXT |
             InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         tagNameInput.setPadding(dp(10), dp(7), dp(10), dp(7));
@@ -2313,7 +2313,7 @@
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 12,
+        MODULE_VERSION: 13,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;

@@ -217,10 +217,10 @@
     function roundedBackground(fill, stroke, radiusDp) {
         var drawable = new GradientDrawable();
         drawable.setShape(GradientDrawable.RECTANGLE);
-        drawable.setColor(Color.parseColor(String(fill)));
+        ClipHub.Theme.applyGradientColor(drawable, fill);
         drawable.setCornerRadius(dp(radiusDp));
         if (stroke !== null && stroke !== undefined) {
-            drawable.setStroke(dp(1), Color.parseColor(String(stroke)));
+            ClipHub.Theme.applyGradientStroke(drawable, dp(1), stroke);
         }
         return drawable;
     }
@@ -228,9 +228,9 @@
     function circleBackground(fill, stroke) {
         var drawable = new GradientDrawable();
         drawable.setShape(GradientDrawable.OVAL);
-        drawable.setColor(Color.parseColor(String(fill)));
+        ClipHub.Theme.applyGradientColor(drawable, fill);
         if (stroke !== null && stroke !== undefined) {
-            drawable.setStroke(dp(1), Color.parseColor(String(stroke)));
+            ClipHub.Theme.applyGradientStroke(drawable, dp(1), stroke);
         }
         return drawable;
     }
@@ -239,7 +239,7 @@
         var view = new TextView(androidContext);
         view.setText(String(text));
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, Number(sizeSp));
-        view.setTextColor(Color.parseColor(String(color)));
+        ClipHub.Theme.applyTextColor(view, color);
         view.setIncludeFontPadding(false);
         if (bold) {
             view.setTypeface(Packages.android.graphics.Typeface.DEFAULT,
@@ -2517,7 +2517,7 @@
 
     ClipHub.List = {
         MODULE_NAME: "ch_09_list",
-        MODULE_VERSION: 13,
+        MODULE_VERSION: 14,
         LONG_TEXT_THRESHOLD: LONG_TEXT_THRESHOLD,
 
         init: function (context) {

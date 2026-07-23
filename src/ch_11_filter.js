@@ -538,10 +538,10 @@
     function roundedBackground(fill, stroke, radiusDp) {
         var drawable = new GradientDrawable();
         drawable.setShape(GradientDrawable.RECTANGLE);
-        drawable.setColor(Color.parseColor(String(fill)));
+        ClipHub.Theme.applyGradientColor(drawable, fill);
         drawable.setCornerRadius(dp(radiusDp));
         if (stroke !== null && stroke !== undefined) {
-            drawable.setStroke(dp(1), Color.parseColor(String(stroke)));
+            ClipHub.Theme.applyGradientStroke(drawable, dp(1), stroke);
         }
         return drawable;
     }
@@ -549,9 +549,9 @@
     function circleBackground(fill, stroke) {
         var drawable = new GradientDrawable();
         drawable.setShape(GradientDrawable.OVAL);
-        drawable.setColor(Color.parseColor(String(fill)));
+        ClipHub.Theme.applyGradientColor(drawable, fill);
         if (stroke !== null && stroke !== undefined) {
-            drawable.setStroke(dp(1), Color.parseColor(String(stroke)));
+            ClipHub.Theme.applyGradientStroke(drawable, dp(1), stroke);
         }
         return drawable;
     }
@@ -560,7 +560,7 @@
         var view = new TextView(appContext);
         view.setText(String(text));
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, Number(sizeSp));
-        view.setTextColor(Color.parseColor(String(color)));
+        ClipHub.Theme.applyTextColor(view, color);
         view.setIncludeFontPadding(false);
         if (bold) {
             view.setTypeface(Packages.android.graphics.Typeface.DEFAULT,
@@ -1879,8 +1879,8 @@
         suppressTextWatcher = false;
         keywordInput.setHint("搜索剪切板内容");
         keywordInput.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        keywordInput.setTextColor(Color.parseColor(colors.textPrimary));
-        keywordInput.setHintTextColor(Color.parseColor(colors.textSecondary));
+        ClipHub.Theme.applyTextColor(keywordInput, colors.textPrimary);
+        ClipHub.Theme.applyHintTextColor(keywordInput, colors.textSecondary);
         keywordInput.setInputType(InputType.TYPE_CLASS_TEXT |
             InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         keywordInput.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
@@ -2038,8 +2038,8 @@
         suppressTextWatcher = false;
         input.setHint("在筛选结果中搜索");
         input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-        input.setTextColor(Color.parseColor(colors.textPrimary));
-        input.setHintTextColor(Color.parseColor(colors.textSecondary));
+        ClipHub.Theme.applyTextColor(input, colors.textPrimary);
+        ClipHub.Theme.applyHintTextColor(input, colors.textSecondary);
         input.setInputType(InputType.TYPE_CLASS_TEXT |
             InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         input.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
@@ -2863,7 +2863,7 @@
 
     ClipHub.Filter = {
         MODULE_NAME: "ch_11_filter",
-        MODULE_VERSION: 14,
+        MODULE_VERSION: 15,
 
         init: function (context) {
             androidContext = context && context.androidContext ?
