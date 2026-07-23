@@ -2566,14 +2566,34 @@
             return result;
         } catch (error) {
             try {
-                if (rootMode && ClipHub.Window &&
+                if (panelWindowRoot !== null && ClipHub.Window &&
+                        typeof ClipHub.Window.detachWindow === "function") {
+                    ClipHub.Window.detachWindow(panelWindowRoot);
+                } else if (rootMode && ClipHub.Window &&
                         typeof ClipHub.Window.detachPrimaryWindow === "function") {
                     ClipHub.Window.detachPrimaryWindow();
                 }
             } catch (ignoredDetach) {}
+            try {
+                if (panelWindowRoot !== null &&
+                        panelWindowRoot.isAttachedToWindow()) {
+                    windowManager.removeViewImmediate(panelWindowRoot);
+                } else if (panelRoot !== null &&
+                        panelRoot.isAttachedToWindow()) {
+                    windowManager.removeViewImmediate(panelRoot);
+                }
+            } catch (ignoredRemove) {}
+            state.panelAttached = false;
+            panelRoot = null;
+            panelWindowRoot = null;
+            panelManagedFrame = null;
+            panelParams = null;
+            primaryDragView = null;
+            primaryResizeView = null;
             rootMode = false;
             state.rootMode = false;
             state.primarySurface = "filter_overlay";
+            state.primaryGeometryManaged = false;
             throw error;
         }
     }
@@ -2598,7 +2618,7 @@
         }
         result = requireMain(runOnMainSync(function () {
             var thread = nowThread();
-            var targetRoot = wasRootMode && panelWindowRoot !== null ?
+            var targetRoot = panelWindowRoot !== null ?
                 panelWindowRoot : panelRoot;
             try {
                 hideKeyboardOnMain();
@@ -2705,9 +2725,9 @@
         var attachedToWindow = false;
         var notFocusable = false;
         try {
-            attachedToWindow = (rootMode && panelWindowRoot !== null ?
+            attachedToWindow = (panelWindowRoot !== null ?
                 panelWindowRoot : panelRoot) !== null &&
-                (rootMode && panelWindowRoot !== null ?
+                (panelWindowRoot !== null ?
                     panelWindowRoot : panelRoot).isAttachedToWindow();
         } catch (ignored) {}
         try {
@@ -2964,7 +2984,7 @@
 
     ClipHub.Filter = {
         MODULE_NAME: "ch_11_filter",
-        MODULE_VERSION: 18,
+        MODULE_VERSION: 19,
 
         init: function (context) {
             androidContext = context && context.androidContext ?
