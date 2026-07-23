@@ -22,7 +22,7 @@ jobs:
           fetch-depth: 0
 
       - name: Apply frame coalescing patch
-        run: python3 scripts/patch_window_frame_coalescing.py
+        run: python3 scripts/run_window_frame_coalescing_patch.py
 
       - name: Validate Rhino ES5
         run: python3 scripts/validate_es5.py .
@@ -67,6 +67,7 @@ jobs:
       - name: Remove temporary tooling
         run: |
           rm -f scripts/patch_window_frame_coalescing.py
+          rm -f scripts/run_window_frame_coalescing_patch.py
           rm -f .github/workflows/temporary-window-frame-coalescing.yml
 
       - name: Commit validated optimization
