@@ -23,7 +23,7 @@ if text.count(old_replace) != 1:
     raise RuntimeError("replace_once definition expected once, found {}".format(text.count(old_replace)))
 text = text.replace(old_replace, new_replace, 1)
 
-old_init = '''text = replace_once(text,
+init_block = '''text = replace_once(text,
 ''' + "'''" + '''            resultScrollView = null;
             loadMoreView = null;
             resetResultPaging();''' + "'''" + ''',
@@ -31,27 +31,12 @@ old_init = '''text = replace_once(text,
             loadMoreView = null;
             activeSwipeCard = null;
             resetResultPaging();''' + "'''" + ''',
-"init active swipe")'''
-new_init = '''text = replace_once(text,
-''' + "'''" + '''            selectedItemId = null;
-            resultCardViews = [];
-            toolbarActionViews = {};
-            resultTagMap = {};
-            resultScrollView = null;
-            loadMoreView = null;
-            resetResultPaging();''' + "'''" + ''',
-''' + "'''" + '''            selectedItemId = null;
-            resultCardViews = [];
-            toolbarActionViews = {};
-            resultTagMap = {};
-            resultScrollView = null;
-            loadMoreView = null;
-            activeSwipeCard = null;
-            resetResultPaging();''' + "'''" + ''',
-"init active swipe")'''
-if text.count(old_init) != 1:
-    raise RuntimeError("init active swipe patch block expected once, found {}".format(text.count(old_init)))
-text = text.replace(old_init, new_init, 1)
+"init active swipe")
+
+'''
+if text.count(init_block) != 1:
+    raise RuntimeError("init active swipe patch block expected once, found {}".format(text.count(init_block)))
+text = text.replace(init_block, "", 1)
 
 close_block = '''text = replace_once(text,
 ''' + "'''" + '''                state.primaryResizeViewPresent = false;
