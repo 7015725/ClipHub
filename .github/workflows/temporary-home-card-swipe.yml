@@ -25,7 +25,21 @@ jobs:
         run: python3 scripts/fix_patch_home_card_swipe.py
 
       - name: Apply home card swipe patch
+        id: apply_patch
+        continue-on-error: true
         run: python3 scripts/patch_home_card_swipe.py
+
+      - name: Upload patch diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: home-card-swipe-patch-diagnostic
+          path: swipe_patch_error.txt
+          if-no-files-found: ignore
+
+      - name: Stop on patch failure
+        if: steps.apply_patch.outcome == 'failure'
+        run: exit 1
 
       - name: Validate Rhino ES5
         run: python3 scripts/validate_es5.py .
@@ -75,6 +89,7 @@ jobs:
 
       - name: Remove temporary tooling
         run: |
+          rm -f swipe_patch_error.txt
           rm -f scripts/fix_patch_home_card_swipe.py
           rm -f scripts/patch_home_card_swipe.py
           rm -f .github/workflows/temporary-home-card-swipe.yml
