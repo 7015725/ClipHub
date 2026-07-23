@@ -4,6 +4,25 @@ from pathlib import Path
 path = Path(__file__).with_name("patch_home_card_swipe.py")
 text = path.read_text(encoding="utf-8")
 
+old_replace = '''def replace_once(text, old, new, label):
+    count = text.count(old)
+    if count != 1:
+        raise RuntimeError("{} expected once, found {}".format(label, count))
+    return text.replace(old, new, 1)
+'''
+new_replace = '''def replace_once(text, old, new, label):
+    count = text.count(old)
+    if count != 1:
+        Path("swipe_patch_error.txt").write_text(
+            "{} expected once, found {}".format(label, count),
+            encoding="utf-8")
+        raise RuntimeError("{} expected once, found {}".format(label, count))
+    return text.replace(old, new, 1)
+'''
+if text.count(old_replace) != 1:
+    raise RuntimeError("replace_once definition expected once, found {}".format(text.count(old_replace)))
+text = text.replace(old_replace, new_replace, 1)
+
 old_init = '''text = replace_once(text,
 ''' + "'''" + '''            resultScrollView = null;
             loadMoreView = null;
