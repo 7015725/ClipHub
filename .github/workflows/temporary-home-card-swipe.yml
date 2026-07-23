@@ -21,6 +21,9 @@ jobs:
           ref: agent/unify-window-geometry
           fetch-depth: 0
 
+      - name: Repair patch matcher
+        run: python3 scripts/fix_patch_home_card_swipe.py
+
       - name: Apply home card swipe patch
         run: python3 scripts/patch_home_card_swipe.py
 
@@ -72,6 +75,7 @@ jobs:
 
       - name: Remove temporary tooling
         run: |
+          rm -f scripts/fix_patch_home_card_swipe.py
           rm -f scripts/patch_home_card_swipe.py
           rm -f .github/workflows/temporary-home-card-swipe.yml
 
