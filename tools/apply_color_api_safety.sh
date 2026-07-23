@@ -38,7 +38,7 @@ fi
 
 mkdir -p "$AUDIT_DIR"
 PATCH_STARTED=1
-python tools/apply_color_api_safety.py
+python tools/apply_color_api_safety_v2.py
 python scripts/validate_es5.py .
 python scripts/audit_color_api.py \
   --strict \
@@ -49,8 +49,8 @@ git diff --check
 
 printf '\n===== Color bridge markers =====\n'
 grep -n 'function safeColorStateList' src/ch_07_theme.js
-grep -n 'setGradientStroke: safeSetGradientStroke' src/ch_07_theme.js
-grep -n 'setPaintColor: safeSetPaintColor' src/ch_07_theme.js
+grep -n 'applyGradientStroke: safeSetGradientStroke' src/ch_07_theme.js
+grep -n 'applyPaintColor: safeSetPaintColor' src/ch_07_theme.js
 
 printf '\n===== Unsafe direct-call check =====\n'
 if grep '^\[HIGH\]' "$AUDIT_TEXT"; then
@@ -68,6 +68,8 @@ grep -n 'MODULE_VERSION' \
   src/ch_11_filter.js \
   src/ch_12_translation.js \
   src/ch_13_settings.js
+grep -n 'MODULE_NAME: "ch_14_navigation_embedded"' -A1 src/ch_12_translation.js
+grep -n 'MODULE_NAME: "ch_12_translation"' -A1 src/ch_12_translation.js
 grep -n '"moduleSetVersion": "20260723.13"' module-manifest.json
 
 printf '\n===== Target diff summary =====\n'
