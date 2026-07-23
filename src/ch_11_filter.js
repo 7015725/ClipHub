@@ -2647,11 +2647,8 @@
         panelRoot.addView(bodyFrame, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
 
-        params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(64));
-        params.topMargin = dp(4);
-        params.rightMargin = rootMode ? dp(40) : 0;
-        panelRoot.addView(buildBottomToolbar(colors), params);
+        toolbarActionViews = {};
+        state.toolbarEnabledCount = 0;
 
         state.sourceChipCount = Object.keys(sourceViews).length;
         state.typeChipCount = Object.keys(typeViews).length;
@@ -3248,7 +3245,7 @@
 
     ClipHub.Filter = {
         MODULE_NAME: "ch_11_filter",
-        MODULE_VERSION: 21,
+        MODULE_VERSION: 22,
 
         init: function (context) {
             androidContext = context && context.androidContext ?
