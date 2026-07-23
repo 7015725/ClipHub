@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260723.06",
+  "moduleSetVersion": "20260723.07",
   "entryMinVersion": 4,
   "sourceRef": "agent/initialize-project-skeleton",
   "modules": [
@@ -67,7 +67,7 @@
     {
       "name": "ch_13_settings.js",
       "path": "src/ch_13_settings.js",
-      "sha": "5c6d91dd32eb12c43161d61883674afae757d42a"
+      "sha": "47a1b31a27fcff454cb9d3a243805c05f596dd00"
     },
     {
       "name": "ch_14_event_bus.js",

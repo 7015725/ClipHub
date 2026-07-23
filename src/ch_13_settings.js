@@ -40,6 +40,8 @@
     var panelRoot = null;
     var panelParams = null;
     var scrollRoot = null;
+    var contentRoot = null;
+    var sectionAnchorSpacer = null;
     var translationStatusView = null;
     var engineBaiduView = null;
     var engineYoudaoView = null;
@@ -93,6 +95,10 @@
         currentScrollYDp: 0,
         lastScrollSection: null,
         lastSectionViewportTopDp: null,
+        sectionAnchorAdjustmentCount: 0,
+        sectionAnchorSpacerHeightDp: 0,
+        lastRequestedScrollYDp: 0,
+        lastMaxScrollYDp: 0,
         lastTestResult: "",
         lastError: null
     };
@@ -1234,6 +1240,10 @@
         addSection(content, tagsSectionView);
         dataSectionView = makeDataSection(colors);
         addSection(content, dataSectionView);
+        sectionAnchorSpacer = new View(appContext);
+        content.addView(sectionAnchorSpacer, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0));
+        contentRoot = content;
         scrollRoot.removeAllViews();
         scrollRoot.addView(content, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
@@ -1243,6 +1253,9 @@
         uiState.currentScrollYDp = 0;
         uiState.lastScrollSection = null;
         uiState.lastSectionViewportTopDp = null;
+        uiState.sectionAnchorSpacerHeightDp = 0;
+        uiState.lastRequestedScrollYDp = 0;
+        uiState.lastMaxScrollYDp = 0;
         uiState.renderCount += 1;
         return true;
     }
@@ -1326,6 +1339,8 @@
                 panelRoot = null;
                 panelParams = null;
                 scrollRoot = null;
+                contentRoot = null;
+                sectionAnchorSpacer = null;
                 translationStatusView = null;
                 engineBaiduView = null;
                 engineYoudaoView = null;
@@ -1358,19 +1373,59 @@
         return null;
     }
 
+    function ensureSectionAnchorSpace(name, expectedRoot) {
+        var target = sectionView(name);
+        var params;
+        var currentSpacer;
+        var baseContentHeight;
+        var targetY;
+        var viewportHeight;
+        var requiredSpacer;
+        if (!uiState.attached || expectedRoot === null ||
+                expectedRoot !== scrollRoot || target === null ||
+                contentRoot === null || sectionAnchorSpacer === null) {
+            uiState.sectionScrollCancelCount += 1;
+            return false;
+        }
+        params = sectionAnchorSpacer.getLayoutParams();
+        currentSpacer = Math.max(0, Number(params.height || 0));
+        baseContentHeight = Math.max(0,
+            Number(contentRoot.getHeight()) - currentSpacer);
+        targetY = Math.max(0, Number(target.getTop()) - dp(8));
+        viewportHeight = Math.max(0, Number(expectedRoot.getHeight()));
+        requiredSpacer = Math.max(0,
+            Math.ceil(targetY + viewportHeight - baseContentHeight));
+        uiState.lastRequestedScrollYDp = Math.round(targetY / density);
+        if (Number(params.height) !== requiredSpacer) {
+            params.height = requiredSpacer;
+            sectionAnchorSpacer.setLayoutParams(params);
+            sectionAnchorSpacer.requestLayout();
+            contentRoot.requestLayout();
+            uiState.sectionAnchorAdjustmentCount += 1;
+        }
+        uiState.sectionAnchorSpacerHeightDp = Math.round(
+            requiredSpacer / density);
+        return true;
+    }
+
     function applySectionScroll(name, expectedRoot) {
         var target = sectionView(name);
         var y;
+        var maxScroll;
         if (!uiState.attached || scrollRoot === null ||
                 expectedRoot !== scrollRoot || target === null) {
             uiState.sectionScrollCancelCount += 1;
             return false;
         }
         y = Math.max(0, Number(target.getTop()) - dp(8));
+        maxScroll = Math.max(0,
+            Number(contentRoot === null ? 0 : contentRoot.getHeight()) -
+                Number(expectedRoot.getHeight()));
         expectedRoot.scrollTo(0, y);
         uiState.sectionScrollAppliedCount += 1;
         uiState.currentScrollYDp = Math.round(
             Number(expectedRoot.getScrollY()) / density);
+        uiState.lastMaxScrollYDp = Math.round(maxScroll / density);
         uiState.lastScrollSection = String(name);
         uiState.lastSectionViewportTopDp = Math.round(
             (Number(target.getTop()) - Number(expectedRoot.getScrollY())) /
@@ -1385,10 +1440,7 @@
         uiState.sectionScrollRequestCount += 1;
         first = new Packages.java.lang.Runnable({
             run: function () {
-                if (!uiState.attached || expectedRoot !== scrollRoot) {
-                    uiState.sectionScrollCancelCount += 1;
-                    return;
-                }
+                if (!ensureSectionAnchorSpace(name, expectedRoot)) { return; }
                 expectedRoot.post(new Packages.java.lang.Runnable({
                     run: function () {
                         applySectionScroll(name, expectedRoot);
@@ -1467,6 +1519,13 @@
             lastSectionViewportTopDp:
                 uiState.lastSectionViewportTopDp === null ? null :
                     Number(uiState.lastSectionViewportTopDp),
+            sectionAnchorAdjustmentCount:
+                Number(uiState.sectionAnchorAdjustmentCount),
+            sectionAnchorSpacerHeightDp:
+                Number(uiState.sectionAnchorSpacerHeightDp),
+            lastRequestedScrollYDp:
+                Number(uiState.lastRequestedScrollYDp),
+            lastMaxScrollYDp: Number(uiState.lastMaxScrollYDp),
             lastTestResult: uiState.lastTestResult,
             lastError: uiState.lastError
         };
@@ -1474,7 +1533,7 @@
 
     ClipHub.Settings = {
         MODULE_NAME: "ch_13_settings",
-        MODULE_VERSION: 8,
+        MODULE_VERSION: 9,
         DEFAULTS: defaultsCopy(),
         init: function (context) {
             if (!ClipHub.Database || !ClipHub.Database.isOpen()) {
