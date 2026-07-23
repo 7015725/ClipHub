@@ -10,7 +10,6 @@ if [ "$(git branch --show-current)" != "agent/initialize-project-skeleton" ]; th
 fi
 
 python3 tools/apply_settings_top_clip_fix.py
-python3 tools/apply_settings_top_clip_fix.py
 
 echo
 echo "===== Target diff summary ====="
