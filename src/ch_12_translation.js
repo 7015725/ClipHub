@@ -1574,13 +1574,16 @@
     }
 
     function translationPanelSize() {
-        var metrics = appContext.getResources().getDisplayMetrics();
-        var widthDp = Math.min(390, Math.max(300,
-            Number(metrics.widthPixels) / density - 20));
-        var heightDp = Math.min(650, Math.max(520,
-            Number(metrics.heightPixels) / density - 220));
-        return { width: dp(widthDp), height: dp(heightDp),
-            widthDp: widthDp, heightDp: heightDp };
+        var geometry;
+        if (ClipHub.Window &&
+                typeof ClipHub.Window.computeGeometry === "function") {
+            geometry = ClipHub.Window.computeGeometry("translation", {
+                useSaved: false
+            });
+            return geometry;
+        }
+        return { width: dp(390), height: dp(650),
+            widthDp: 390, heightDp: 650 };
     }
 
     function buildTranslationPanel() {
@@ -1845,7 +1848,7 @@
     }
     ClipHub.Translation = {
         MODULE_NAME: "ch_12_translation",
-        MODULE_VERSION: 7,
+        MODULE_VERSION: 8,
         init: function (context) {
             translationConfig = { enabled: true, provider: "settings" };
             navigationInit(context || {});

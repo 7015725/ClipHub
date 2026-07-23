@@ -11,16 +11,9 @@
     var View = Packages.android.view.View;
     var MotionEvent = Packages.android.view.MotionEvent;
     var Gravity = Packages.android.view.Gravity;
-    var WindowManager = Packages.android.view.WindowManager;
     var WindowInsets = Packages.android.view.WindowInsets;
     var ViewConfiguration = Packages.android.view.ViewConfiguration;
-    var PixelFormat = Packages.android.graphics.PixelFormat;
-    var Color = Packages.android.graphics.Color;
-    var GradientDrawable = Packages.android.graphics.drawable.GradientDrawable;
-    var FrameLayout = Packages.android.widget.FrameLayout;
-    var LinearLayout = Packages.android.widget.LinearLayout;
-    var TextView = Packages.android.widget.TextView;
-    var TypedValue = Packages.android.util.TypedValue;
+    var HapticFeedbackConstants = Packages.android.view.HapticFeedbackConstants;
     var DisplayMetrics = Packages.android.util.DisplayMetrics;
     var DisplayManager = Packages.android.hardware.display.DisplayManager;
 
@@ -34,19 +27,22 @@
     var refreshRunnable = null;
     var pendingRefreshReason = "";
     var density = 1;
-    var rootView = null;
-    var titleBar = null;
-    var dragHandle = null;
-    var contentView = null;
-    var statusView = null;
-    var closeView = null;
-    var layoutParams = null;
-    var desiredWidthPx = 0;
-    var desiredHeightPx = 0;
-    var normalHeightPx = 0;
-    var collapsedHeightPx = 0;
     var touchSlopPx = 0;
-    var metrics = {};
+    var longPressTimeoutMs = 500;
+
+    var primary = {
+        attached: false,
+        rootView: null,
+        layoutParams: null,
+        manager: null,
+        dragView: null,
+        resizeView: null,
+        onGeometryChanged: null,
+        onRequestClose: null,
+        geometry: null,
+        pinned: false
+    };
+
     var drag = {
         downRawX: 0,
         downRawY: 0,
@@ -54,43 +50,43 @@
         startY: 0,
         active: false
     };
+
+    var resize = {
+        downRawX: 0,
+        downRawY: 0,
+        startWidth: 0,
+        startHeight: 0,
+        pending: false,
+        active: false,
+        longPressRunnable: null
+    };
+
     var state = {
-        attached: false,
-        collapsed: false,
-        pinned: false,
-        x: 0,
-        y: 0,
-        width: 0,
-        height: 0,
+        geometryService: true,
+        legacyHomeRemoved: true,
+        primaryAttached: false,
+        primaryPinned: false,
+        primaryX: 0,
+        primaryY: 0,
+        primaryWidth: 0,
+        primaryHeight: 0,
         safeBounds: { left: 0, top: 0, right: 0, bottom: 0 },
-        positionRatios: { xRatio: 0.5, yRatio: 1 },
-        savedPosition: null,
-        windowType: null,
-        openCount: 0,
-        closeCount: 0,
-        updateCount: 0,
+        orientation: "portrait",
+        dragActive: false,
+        resizePending: false,
+        resizeActive: false,
         dragMoveCount: 0,
-        persistenceWriteCount: 0,
+        resizeActivateCount: 0,
+        resizeMoveCount: 0,
+        geometryComputeCount: 0,
+        geometryPersistCount: 0,
         boundsRefreshCount: 0,
         configurationChangeCount: 0,
         displayChangeCount: 0,
-        contentReplaceCount: 0,
-        contentMode: "status",
-        dragListenerInstalled: false,
         componentCallbacksRegistered: false,
         displayListenerRegistered: false,
-        addThreadId: null,
-        addThreadName: null,
-        updateThreadId: null,
-        updateThreadName: null,
-        removeThreadId: null,
-        removeThreadName: null,
-        statusText: "",
         lastBoundsReason: "",
-        sheetStyle: "bottom_sheet",
-        dragHandlePresent: false,
-        dimAmount: 0.38,
-        contentTopInsetDp: 24,
+        lastPersistedGeometry: null,
         lastError: null
     };
 
@@ -127,12 +123,15 @@
         });
         posted = mainHandler.post(runnable);
         if (!posted) {
-            return { ok: false, error: new Error("Window main handler post failed") };
+            return { ok: false,
+                error: new Error("Window geometry main handler post failed") };
         }
-        completed = latch.await(Number(timeoutMs || 2500), TimeUnit.MILLISECONDS);
+        completed = latch.await(Number(timeoutMs || 2500),
+            TimeUnit.MILLISECONDS);
         if (!completed) {
             try { mainHandler.removeCallbacks(runnable); } catch (ignored) {}
-            return { ok: false, error: new Error("Window main handler timeout") };
+            return { ok: false,
+                error: new Error("Window geometry main handler timeout") };
         }
         return box;
     }
@@ -140,7 +139,7 @@
     function requireMainResult(result) {
         if (!result || result.ok !== true) {
             throw result && result.error ? result.error :
-                new Error("Window main-thread operation failed");
+                new Error("Window geometry main-thread operation failed");
         }
         return result.value;
     }
@@ -149,50 +148,67 @@
         return Math.max(1, Math.floor(Number(value) * density + 0.5));
     }
 
-    function palette() {
-        if (ClipHub.Theme && typeof ClipHub.Theme.getPalette === "function") {
-            return ClipHub.Theme.getPalette(appContext || androidContext);
-        }
+    function pxToDp(value) {
+        return density > 0 ? Number(value) / density : Number(value);
+    }
+
+    function clamp(value, minimum, maximum) {
+        value = Number(value);
+        minimum = Number(minimum);
+        maximum = Number(maximum);
+        if (!isFinite(value)) { value = minimum; }
+        if (!isFinite(minimum)) { minimum = 0; }
+        if (!isFinite(maximum) || maximum < minimum) { maximum = minimum; }
+        if (value < minimum) { return minimum; }
+        if (value > maximum) { return maximum; }
+        return value;
+    }
+
+    function clamp01(value) {
+        return clamp(Number(value), 0, 1);
+    }
+
+    function copyBounds(bounds) {
+        bounds = bounds || {};
         return {
-            dark: false,
-            sheet: "#FFF9F8FF",
-            surfaceMuted: "#FFF5F3FB",
-            stroke: "#FFE5E0EF",
-            textSecondary: "#FF6F697A"
+            left: Number(bounds.left || 0),
+            top: Number(bounds.top || 0),
+            right: Number(bounds.right || 0),
+            bottom: Number(bounds.bottom || 0)
         };
     }
 
-    function themeMetrics() {
-        if (ClipHub.Theme && typeof ClipHub.Theme.getMetrics === "function") {
-            return ClipHub.Theme.getMetrics();
-        }
+    function copyGeometry(value) {
+        if (!value || typeof value !== "object") { return null; }
         return {
-            sheetRadiusDp: 26,
-            dragHandleWidthDp: 42,
-            dragHandleHeightDp: 4,
-            dragHandleTopDp: 8,
-            dragHandleBottomDp: 7,
-            screenPaddingDp: 12
+            role: String(value.role || "primary"),
+            orientation: String(value.orientation || "portrait"),
+            x: Number(value.x || 0),
+            y: Number(value.y || 0),
+            width: Number(value.width || 0),
+            height: Number(value.height || 0),
+            widthDp: Number(value.widthDp || 0),
+            heightDp: Number(value.heightDp || 0),
+            minWidth: Number(value.minWidth || 0),
+            minHeight: Number(value.minHeight || 0),
+            maxWidth: Number(value.maxWidth || 0),
+            maxHeight: Number(value.maxHeight || 0),
+            xRatio: clamp01(value.xRatio === undefined ? 0.5 : value.xRatio),
+            yRatio: clamp01(value.yRatio === undefined ? 1 : value.yRatio),
+            widthRatio: clamp01(value.widthRatio === undefined ? 1 :
+                value.widthRatio),
+            heightRatio: clamp01(value.heightRatio === undefined ? 1 :
+                value.heightRatio),
+            bounds: copyBounds(value.bounds)
         };
-    }
-
-    function roundedBackground(fill, stroke, radiusDp) {
-        var drawable = new GradientDrawable();
-        drawable.setShape(GradientDrawable.RECTANGLE);
-        ClipHub.Theme.applyGradientColor(drawable, fill);
-        drawable.setCornerRadius(dp(radiusDp));
-        if (stroke !== null && stroke !== undefined) {
-            ClipHub.Theme.applyGradientStroke(drawable, dp(1), stroke);
-        }
-        return drawable;
     }
 
     function resourceDimension(name) {
         var resources;
         var id;
-        if (androidContext === null) { return 0; }
+        if (appContext === null) { return 0; }
         try {
-            resources = androidContext.getResources();
+            resources = appContext.getResources();
             id = Number(resources.getIdentifier(String(name), "dimen", "android"));
             return id > 0 ? Number(resources.getDimensionPixelSize(id)) : 0;
         } catch (ignored) { return 0; }
@@ -226,7 +242,7 @@
         displayMetrics = new DisplayMetrics();
         try { windowManager.getDefaultDisplay().getRealMetrics(displayMetrics); }
         catch (ignoredDisplay) {
-            displayMetrics = androidContext.getResources().getDisplayMetrics();
+            displayMetrics = appContext.getResources().getDisplayMetrics();
         }
         result.left = 0;
         result.top = resourceDimension("status_bar_height");
@@ -240,77 +256,305 @@
         return result;
     }
 
-    function clamp(value, minimum, maximum) {
-        value = Number(value);
-        if (!isFinite(value)) { value = minimum; }
-        if (maximum < minimum) { return minimum; }
-        if (value < minimum) { return minimum; }
-        if (value > maximum) { return maximum; }
-        return value;
+    function orientationForBounds(bounds) {
+        return Number(bounds.right) - Number(bounds.left) >
+            Number(bounds.bottom) - Number(bounds.top) ?
+            "landscape" : "portrait";
     }
 
-    function clamp01(value) { return clamp(Number(value), 0, 1); }
-
-    function clampPosition(x, y, width, height, bounds) {
-        return {
-            x: Math.floor(clamp(x, bounds.left, bounds.right - width)),
-            y: Math.floor(clamp(y, bounds.top, bounds.bottom - height))
-        };
+    function rolePolicy(role) {
+        role = String(role || "primary");
+        if (role === "detail") {
+            return { widthRatio: 0.94, heightRatio: 0.76,
+                minWidthDp: 300, minHeightDp: 320,
+                maxWidthDp: 420, maxHeightDp: 650, bottomMarginDp: 10 };
+        }
+        if (role === "editor") {
+            return { widthRatio: 0.94, heightRatio: 0.76,
+                minWidthDp: 300, minHeightDp: 300,
+                maxWidthDp: 390, maxHeightDp: 590, bottomMarginDp: 10 };
+        }
+        if (role === "tag_selector") {
+            return { widthRatio: 0.94, heightRatio: 0.72,
+                minWidthDp: 300, minHeightDp: 360,
+                maxWidthDp: 390, maxHeightDp: 590, bottomMarginDp: 10 };
+        }
+        if (role === "translation") {
+            return { widthRatio: 0.94, heightRatio: 0.72,
+                minWidthDp: 300, minHeightDp: 340,
+                maxWidthDp: 390, maxHeightDp: 650, bottomMarginDp: 10 };
+        }
+        if (role === "settings") {
+            return { widthRatio: 0.94, heightRatio: 0.84,
+                minWidthDp: 300, minHeightDp: 360,
+                maxWidthDp: 390, maxHeightDp: 720, bottomMarginDp: 10 };
+        }
+        if (role === "filter_overlay") {
+            return { widthRatio: 0.94, heightRatio: 0.82,
+                minWidthDp: 300, minHeightDp: 360,
+                maxWidthDp: 390, maxHeightDp: 720, bottomMarginDp: 10 };
+        }
+        return { widthRatio: 0.94, heightRatio: 0.82,
+            minWidthDp: 300, minHeightDp: 420,
+            maxWidthDp: 420, maxHeightDp: 720, bottomMarginDp: 10 };
     }
 
-    function ratiosForPosition(x, y, width, height, bounds) {
-        var travelX = Math.max(0, Number(bounds.right) - Number(bounds.left) - width);
-        var travelY = Math.max(0, Number(bounds.bottom) - Number(bounds.top) - height);
-        return {
-            xRatio: travelX > 0 ?
-                clamp01((Number(x) - Number(bounds.left)) / travelX) : 0.5,
-            yRatio: travelY > 0 ?
-                clamp01((Number(y) - Number(bounds.top)) / travelY) : 1
-        };
-    }
-
-    function positionForRatios(ratios, width, height, bounds) {
-        var travelX = Math.max(0, Number(bounds.right) - Number(bounds.left) - width);
-        var travelY = Math.max(0, Number(bounds.bottom) - Number(bounds.top) - height);
-        return clampPosition(
-            Number(bounds.left) + travelX * clamp01(ratios.xRatio),
-            Number(bounds.top) + travelY * clamp01(ratios.yRatio),
-            width, height, bounds
-        );
-    }
-
-    function copyPosition(value) {
+    function normalizeStoredBucket(value) {
         if (!value || typeof value !== "object") { return null; }
-        return { xRatio: clamp01(value.xRatio), yRatio: clamp01(value.yRatio) };
+        return {
+            xRatio: clamp01(value.xRatio === undefined ? 0.5 : value.xRatio),
+            yRatio: clamp01(value.yRatio === undefined ? 1 : value.yRatio),
+            widthRatio: clamp01(value.widthRatio === undefined ? 0.94 :
+                value.widthRatio),
+            heightRatio: clamp01(value.heightRatio === undefined ? 0.82 :
+                value.heightRatio)
+        };
     }
 
-    function readSavedPosition() {
+    function readStoredGeometry() {
         var value = null;
         try {
             if (ClipHub.Settings && typeof ClipHub.Settings.get === "function") {
-                value = ClipHub.Settings.get("windowPosition", null);
+                value = ClipHub.Settings.get("windowGeometry", null);
             }
         } catch (ignored) {}
-        state.savedPosition = copyPosition(value);
-        return copyPosition(state.savedPosition);
+        if (!value || typeof value !== "object") { return null; }
+        return {
+            version: Number(value.version || 1),
+            portrait: normalizeStoredBucket(value.portrait),
+            landscape: normalizeStoredBucket(value.landscape)
+        };
     }
 
-    function persistCurrentPosition() {
-        var ratios;
-        if (!state.attached || !ClipHub.Settings ||
+    function usableDimensionDp(safeDp, marginDp) {
+        return Math.max(1, Number(safeDp) - Number(marginDp || 0) * 2);
+    }
+
+    function computeGeometry(role, options) {
+        var bounds = safeBounds();
+        var orientation = orientationForBounds(bounds);
+        var policy = rolePolicy(role);
+        var safeWidthDp = pxToDp(Number(bounds.right) - Number(bounds.left));
+        var safeHeightDp = pxToDp(Number(bounds.bottom) - Number(bounds.top));
+        var marginDp = Math.max(0, Number(options && options.marginDp !== undefined ?
+            options.marginDp : 10));
+        var usableWidthDp = usableDimensionDp(safeWidthDp, marginDp);
+        var usableHeightDp = usableDimensionDp(safeHeightDp, marginDp);
+        var minWidthDp = Math.min(Number(policy.minWidthDp), usableWidthDp);
+        var minHeightDp = Math.min(Number(policy.minHeightDp), usableHeightDp);
+        var maxWidthDp = Math.min(Number(policy.maxWidthDp), usableWidthDp);
+        var maxHeightDp = Math.min(Number(policy.maxHeightDp), usableHeightDp);
+        var widthRatio = Number(policy.widthRatio);
+        var heightRatio = Number(policy.heightRatio);
+        var xRatio = 0.5;
+        var yRatio = 1;
+        var stored;
+        var bucket;
+        var widthDp;
+        var heightDp;
+        var width;
+        var height;
+        var travelX;
+        var travelY;
+        var x;
+        var y;
+        options = options || {};
+        if (role === "primary" && options.useSaved !== false) {
+            stored = readStoredGeometry();
+            bucket = stored ? stored[orientation] : null;
+            if (bucket) {
+                widthRatio = bucket.widthRatio;
+                heightRatio = bucket.heightRatio;
+                xRatio = bucket.xRatio;
+                yRatio = bucket.yRatio;
+            }
+        }
+        if (options.widthRatio !== undefined) {
+            widthRatio = clamp01(options.widthRatio);
+        }
+        if (options.heightRatio !== undefined) {
+            heightRatio = clamp01(options.heightRatio);
+        }
+        if (options.preferredWidthDp !== undefined) {
+            widthDp = Number(options.preferredWidthDp);
+        } else {
+            widthDp = safeWidthDp * widthRatio;
+        }
+        if (options.preferredHeightDp !== undefined) {
+            heightDp = Number(options.preferredHeightDp);
+        } else {
+            heightDp = safeHeightDp * heightRatio;
+        }
+        widthDp = clamp(widthDp, minWidthDp, maxWidthDp);
+        heightDp = clamp(heightDp, minHeightDp, maxHeightDp);
+        width = dp(widthDp);
+        height = dp(heightDp);
+        travelX = Math.max(0,
+            Number(bounds.right) - Number(bounds.left) - width);
+        travelY = Math.max(0,
+            Number(bounds.bottom) - Number(bounds.top) - height);
+        if (options.xRatio !== undefined) { xRatio = clamp01(options.xRatio); }
+        if (options.yRatio !== undefined) { yRatio = clamp01(options.yRatio); }
+        x = Math.floor(Number(bounds.left) + travelX * xRatio);
+        y = Math.floor(Number(bounds.top) + travelY * yRatio);
+        if (role !== "primary" && options.centerVertically === true) {
+            yRatio = 0.5;
+            y = Math.floor(Number(bounds.top) + travelY * 0.5);
+        }
+        state.geometryComputeCount += 1;
+        state.safeBounds = copyBounds(bounds);
+        state.orientation = orientation;
+        return {
+            role: String(role || "primary"),
+            orientation: orientation,
+            bounds: copyBounds(bounds),
+            x: x,
+            y: y,
+            width: width,
+            height: height,
+            widthDp: pxToDp(width),
+            heightDp: pxToDp(height),
+            minWidth: dp(minWidthDp),
+            minHeight: dp(minHeightDp),
+            maxWidth: dp(maxWidthDp),
+            maxHeight: dp(maxHeightDp),
+            xRatio: xRatio,
+            yRatio: yRatio,
+            widthRatio: safeWidthDp > 0 ? widthDp / safeWidthDp : 1,
+            heightRatio: safeHeightDp > 0 ? heightDp / safeHeightDp : 1
+        };
+    }
+
+    function currentPrimaryGeometry() {
+        var bounds;
+        var width;
+        var height;
+        var travelX;
+        var travelY;
+        var safeWidth;
+        var safeHeight;
+        var geometry;
+        if (!primary.attached || primary.layoutParams === null) {
+            return copyGeometry(primary.geometry);
+        }
+        bounds = safeBounds();
+        width = Number(primary.layoutParams.width);
+        height = Number(primary.layoutParams.height);
+        travelX = Math.max(0,
+            Number(bounds.right) - Number(bounds.left) - width);
+        travelY = Math.max(0,
+            Number(bounds.bottom) - Number(bounds.top) - height);
+        safeWidth = Math.max(1, Number(bounds.right) - Number(bounds.left));
+        safeHeight = Math.max(1, Number(bounds.bottom) - Number(bounds.top));
+        geometry = primary.geometry || computeGeometry("primary", {
+            useSaved: false
+        });
+        geometry = copyGeometry(geometry);
+        geometry.bounds = copyBounds(bounds);
+        geometry.orientation = orientationForBounds(bounds);
+        geometry.x = Number(primary.layoutParams.x);
+        geometry.y = Number(primary.layoutParams.y);
+        geometry.width = width;
+        geometry.height = height;
+        geometry.widthDp = pxToDp(width);
+        geometry.heightDp = pxToDp(height);
+        geometry.xRatio = travelX > 0 ? clamp01(
+            (geometry.x - Number(bounds.left)) / travelX) : 0.5;
+        geometry.yRatio = travelY > 0 ? clamp01(
+            (geometry.y - Number(bounds.top)) / travelY) : 1;
+        geometry.widthRatio = clamp01(width / safeWidth);
+        geometry.heightRatio = clamp01(height / safeHeight);
+        return geometry;
+    }
+
+    function notifyGeometryChanged(reason) {
+        var geometry = currentPrimaryGeometry();
+        primary.geometry = copyGeometry(geometry);
+        state.primaryX = geometry ? Number(geometry.x) : 0;
+        state.primaryY = geometry ? Number(geometry.y) : 0;
+        state.primaryWidth = geometry ? Number(geometry.width) : 0;
+        state.primaryHeight = geometry ? Number(geometry.height) : 0;
+        state.safeBounds = geometry ? copyBounds(geometry.bounds) : safeBounds();
+        state.orientation = geometry ? String(geometry.orientation) :
+            orientationForBounds(state.safeBounds);
+        if (typeof primary.onGeometryChanged === "function") {
+            try {
+                primary.onGeometryChanged(copyGeometry(geometry),
+                    String(reason || "update"));
+            } catch (error) {
+                state.lastError = String(error);
+            }
+        }
+        return geometry;
+    }
+
+    function updatePrimaryLayout(x, y, width, height, reason) {
+        var bounds;
+        var maxX;
+        var maxY;
+        if (!primary.attached || primary.rootView === null ||
+                primary.layoutParams === null || primary.manager === null) {
+            return false;
+        }
+        bounds = safeBounds();
+        width = clamp(Number(width),
+            Number(primary.geometry.minWidth),
+            Math.min(Number(primary.geometry.maxWidth),
+                Number(bounds.right) - Number(bounds.left)));
+        height = clamp(Number(height),
+            Number(primary.geometry.minHeight),
+            Math.min(Number(primary.geometry.maxHeight),
+                Number(bounds.bottom) - Number(bounds.top)));
+        maxX = Math.max(Number(bounds.left), Number(bounds.right) - width);
+        maxY = Math.max(Number(bounds.top), Number(bounds.bottom) - height);
+        x = clamp(Number(x), Number(bounds.left), maxX);
+        y = clamp(Number(y), Number(bounds.top), maxY);
+        primary.layoutParams.gravity = Gravity.TOP | Gravity.START;
+        primary.layoutParams.width = Math.floor(width);
+        primary.layoutParams.height = Math.floor(height);
+        primary.layoutParams.x = Math.floor(x);
+        primary.layoutParams.y = Math.floor(y);
+        primary.manager.updateViewLayout(primary.rootView,
+            primary.layoutParams);
+        notifyGeometryChanged(reason);
+        return true;
+    }
+
+    function persistPrimaryGeometry() {
+        var geometry;
+        var stored;
+        var bucket;
+        if (!primary.attached || !ClipHub.Settings ||
                 typeof ClipHub.Settings.set !== "function" ||
                 typeof ClipHub.Settings.isReady !== "function" ||
                 !ClipHub.Settings.isReady()) {
             return false;
         }
-        ratios = ratiosForPosition(
-            state.x, state.y, state.width, currentHeight(), state.safeBounds
-        );
+        geometry = currentPrimaryGeometry();
+        if (!geometry) { return false; }
+        stored = readStoredGeometry() || {
+            version: 1,
+            portrait: null,
+            landscape: null
+        };
+        bucket = {
+            xRatio: clamp01(geometry.xRatio),
+            yRatio: clamp01(geometry.yRatio),
+            widthRatio: clamp01(geometry.widthRatio),
+            heightRatio: clamp01(geometry.heightRatio)
+        };
+        stored.version = 1;
+        stored[geometry.orientation] = bucket;
         try {
-            ClipHub.Settings.set("windowPosition", ratios, { cleanup: false });
-            state.savedPosition = copyPosition(ratios);
-            state.positionRatios = copyPosition(ratios);
-            state.persistenceWriteCount += 1;
+            ClipHub.Settings.set("windowGeometry", stored, {
+                cleanup: false
+            });
+            state.geometryPersistCount += 1;
+            state.lastPersistedGeometry = {
+                version: 1,
+                portrait: stored.portrait,
+                landscape: stored.landscape
+            };
             return true;
         } catch (error) {
             state.lastError = String(error);
@@ -318,100 +562,306 @@
         }
     }
 
-    function makeText(text, sizeSp, color, bold) {
-        var view = new TextView(appContext || androidContext);
-        view.setText(String(text));
-        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, Number(sizeSp));
-        ClipHub.Theme.applyTextColor(view, color);
-        view.setIncludeFontPadding(false);
-        if (bold) {
-            view.setTypeface(Packages.android.graphics.Typeface.DEFAULT,
-                Packages.android.graphics.Typeface.BOLD);
+    function performHaptic(view, kind) {
+        var constant = Number(HapticFeedbackConstants.LONG_PRESS);
+        if (view === null || view === undefined) { return false; }
+        try {
+            if (String(kind || "") === "confirm" &&
+                    Build.VERSION.SDK_INT >= 30) {
+                constant = Number(HapticFeedbackConstants.CONFIRM);
+            } else if (String(kind || "") === "resize_activate" &&
+                    Build.VERSION.SDK_INT >= 34) {
+                constant = Number(
+                    HapticFeedbackConstants.GESTURE_THRESHOLD_ACTIVATE);
+            }
+        } catch (ignoredConstant) {
+            constant = Number(HapticFeedbackConstants.LONG_PRESS);
         }
-        return view;
+        try { return view.performHapticFeedback(constant) === true; }
+        catch (ignoredHaptic) { return false; }
     }
 
-    function currentHeight() {
-        return state.collapsed ? collapsedHeightPx : normalHeightPx;
-    }
-
-    function fitDimensions(bounds) {
-        var safeWidth = Math.max(1, bounds.right - bounds.left);
-        var safeHeight = Math.max(1, bounds.bottom - bounds.top);
-        state.width = Math.min(Math.max(1, desiredWidthPx), safeWidth);
-        normalHeightPx = Math.min(Math.max(1, desiredHeightPx), safeHeight);
-        collapsedHeightPx = Math.min(dp(28), normalHeightPx);
-        state.height = currentHeight();
-    }
-
-    function updatePositionOnMain(x, y, countDrag) {
-        var bounds;
-        var position;
-        var thread;
-        if (!state.attached || layoutParams === null || rootView === null) {
-            state.x = Math.floor(Number(x || 0));
-            state.y = Math.floor(Number(y || 0));
-            return getState();
+    function imeVisible() {
+        var insets;
+        var mask;
+        if (!primary.attached || primary.rootView === null ||
+                Build.VERSION.SDK_INT < 30) {
+            return false;
         }
-        bounds = safeBounds();
-        fitDimensions(bounds);
-        position = clampPosition(x, y, state.width, currentHeight(), bounds);
-        layoutParams.width = state.width;
-        layoutParams.height = currentHeight();
-        layoutParams.x = position.x;
-        layoutParams.y = position.y;
-        windowManager.updateViewLayout(rootView, layoutParams);
-        state.safeBounds = bounds;
-        state.x = position.x;
-        state.y = position.y;
-        state.height = currentHeight();
-        state.positionRatios = ratiosForPosition(
-            state.x, state.y, state.width, state.height, bounds
-        );
-        state.updateCount += 1;
-        if (countDrag) { state.dragMoveCount += 1; }
-        thread = nowThread();
-        state.updateThreadId = thread.id;
-        state.updateThreadName = thread.name;
+        try {
+            insets = primary.rootView.getRootWindowInsets();
+            if (insets === null) { return false; }
+            mask = WindowInsets.Type.ime();
+            return insets.isVisible(mask) === true;
+        } catch (ignored) { return false; }
+    }
+
+    function handleDragTouch(view, event) {
+        var action = Number(event.getActionMasked());
+        var rawX = Number(event.getRawX());
+        var rawY = Number(event.getRawY());
+        var deltaX;
+        var deltaY;
+        var completed;
+        if (!primary.attached || primary.pinned || resize.pending ||
+                resize.active) {
+            return true;
+        }
+        if (action === MotionEvent.ACTION_DOWN) {
+            drag.downRawX = rawX;
+            drag.downRawY = rawY;
+            drag.startX = Number(primary.layoutParams.x);
+            drag.startY = Number(primary.layoutParams.y);
+            drag.active = false;
+            state.dragActive = false;
+            return true;
+        }
+        if (action === MotionEvent.ACTION_MOVE) {
+            deltaX = rawX - drag.downRawX;
+            deltaY = rawY - drag.downRawY;
+            if (!drag.active && Math.abs(deltaX) + Math.abs(deltaY) >=
+                    touchSlopPx) {
+                drag.active = true;
+                state.dragActive = true;
+            }
+            if (drag.active) {
+                updatePrimaryLayout(drag.startX + deltaX,
+                    drag.startY + deltaY,
+                    Number(primary.layoutParams.width),
+                    Number(primary.layoutParams.height), "drag");
+                state.dragMoveCount += 1;
+            }
+            return true;
+        }
+        if (action === MotionEvent.ACTION_UP ||
+                action === MotionEvent.ACTION_CANCEL) {
+            completed = drag.active;
+            drag.active = false;
+            state.dragActive = false;
+            if (completed && action === MotionEvent.ACTION_UP) {
+                persistPrimaryGeometry();
+            }
+            return true;
+        }
+        return true;
+    }
+
+    function cancelResizeActivation() {
+        if (mainHandler !== null && resize.longPressRunnable !== null) {
+            try { mainHandler.removeCallbacks(resize.longPressRunnable); }
+            catch (ignored) {}
+        }
+        resize.longPressRunnable = null;
+        resize.pending = false;
+        state.resizePending = false;
+    }
+
+    function scheduleResizeActivation(view) {
+        cancelResizeActivation();
+        resize.pending = true;
+        state.resizePending = true;
+        resize.longPressRunnable = new Packages.java.lang.Runnable({
+            run: function () {
+                if (!primary.attached || !resize.pending ||
+                        primary.pinned || imeVisible()) {
+                    cancelResizeActivation();
+                    return;
+                }
+                resize.pending = false;
+                resize.active = true;
+                state.resizePending = false;
+                state.resizeActive = true;
+                state.resizeActivateCount += 1;
+                performHaptic(view, "resize_activate");
+            }
+        });
+        mainHandler.postDelayed(resize.longPressRunnable,
+            longPressTimeoutMs);
+    }
+
+    function handleResizeTouch(view, event) {
+        var action = Number(event.getActionMasked());
+        var rawX = Number(event.getRawX());
+        var rawY = Number(event.getRawY());
+        var deltaX;
+        var deltaY;
+        var width;
+        var height;
+        var completed;
+        if (!primary.attached || primary.pinned || drag.active) {
+            return true;
+        }
+        if (action === MotionEvent.ACTION_DOWN) {
+            if (imeVisible()) { return true; }
+            resize.downRawX = rawX;
+            resize.downRawY = rawY;
+            resize.startWidth = Number(primary.layoutParams.width);
+            resize.startHeight = Number(primary.layoutParams.height);
+            resize.active = false;
+            state.resizeActive = false;
+            scheduleResizeActivation(view);
+            return true;
+        }
+        if (action === MotionEvent.ACTION_MOVE) {
+            deltaX = rawX - resize.downRawX;
+            deltaY = rawY - resize.downRawY;
+            if (resize.pending && Math.abs(deltaX) + Math.abs(deltaY) >
+                    touchSlopPx) {
+                cancelResizeActivation();
+                return true;
+            }
+            if (resize.active) {
+                width = resize.startWidth + deltaX;
+                height = resize.startHeight + deltaY;
+                updatePrimaryLayout(Number(primary.layoutParams.x),
+                    Number(primary.layoutParams.y), width, height,
+                    "resize_bottom_right");
+                state.resizeMoveCount += 1;
+            }
+            return true;
+        }
+        if (action === MotionEvent.ACTION_UP ||
+                action === MotionEvent.ACTION_CANCEL) {
+            completed = resize.active;
+            cancelResizeActivation();
+            resize.active = false;
+            state.resizeActive = false;
+            if (completed && action === MotionEvent.ACTION_UP) {
+                persistPrimaryGeometry();
+            }
+            return true;
+        }
+        return true;
+    }
+
+    function bindDragView(view) {
+        primary.dragView = view || null;
+        if (primary.dragView !== null) {
+            primary.dragView.setOnTouchListener(new JavaAdapter(
+                View.OnTouchListener, { onTouch: handleDragTouch }));
+        }
+        return primary.dragView !== null;
+    }
+
+    function bindResizeView(view) {
+        primary.resizeView = view || null;
+        if (primary.resizeView !== null) {
+            primary.resizeView.setOnTouchListener(new JavaAdapter(
+                View.OnTouchListener, { onTouch: handleResizeTouch }));
+        }
+        return primary.resizeView !== null;
+    }
+
+    function installPrimaryWindow(options) {
+        var geometry;
+        options = options || {};
+        if (options.rootView === null || options.rootView === undefined ||
+                options.layoutParams === null ||
+                options.layoutParams === undefined ||
+                options.windowManager === null ||
+                options.windowManager === undefined) {
+            throw new Error("Primary window binding is incomplete");
+        }
+        detachPrimaryWindow();
+        primary.rootView = options.rootView;
+        primary.layoutParams = options.layoutParams;
+        primary.manager = options.windowManager;
+        primary.onGeometryChanged = options.onGeometryChanged || null;
+        primary.onRequestClose = options.onRequestClose || null;
+        primary.pinned = options.pinned === true;
+        geometry = options.geometry || computeGeometry("primary", {
+            useSaved: true
+        });
+        primary.geometry = copyGeometry(geometry);
+        primary.attached = true;
+        state.primaryAttached = true;
+        state.primaryPinned = primary.pinned;
+        bindDragView(options.dragView || null);
+        bindResizeView(options.resizeView || null);
+        updatePrimaryLayout(Number(geometry.x), Number(geometry.y),
+            Number(geometry.width), Number(geometry.height), "install");
         return getState();
     }
 
-    function refreshBoundsOnMain(reason) {
-        var oldBounds = state.safeBounds;
-        var ratios;
+    function detachPrimaryWindow() {
+        cancelResizeActivation();
+        drag.active = false;
+        resize.active = false;
+        state.dragActive = false;
+        state.resizeActive = false;
+        primary.attached = false;
+        primary.rootView = null;
+        primary.layoutParams = null;
+        primary.manager = null;
+        primary.dragView = null;
+        primary.resizeView = null;
+        primary.onGeometryChanged = null;
+        primary.onRequestClose = null;
+        primary.geometry = null;
+        primary.pinned = false;
+        state.primaryAttached = false;
+        state.primaryPinned = false;
+        return true;
+    }
+
+    function setPrimaryDragView(view) {
+        if (!primary.attached) { return false; }
+        return bindDragView(view);
+    }
+
+    function setPrimaryResizeView(view) {
+        if (!primary.attached) { return false; }
+        return bindResizeView(view);
+    }
+
+    function setPrimaryPinned(value) {
+        primary.pinned = value === true;
+        state.primaryPinned = primary.pinned;
+        return primary.pinned;
+    }
+
+    function refreshPrimaryBounds(reason) {
+        var before;
         var bounds;
-        var position;
-        var thread;
-        if (!state.attached || layoutParams === null || rootView === null) {
+        var orientation;
+        var safeWidth;
+        var safeHeight;
+        var policy;
+        var width;
+        var height;
+        var x;
+        var y;
+        if (!primary.attached || primary.layoutParams === null) {
             state.safeBounds = safeBounds();
+            state.orientation = orientationForBounds(state.safeBounds);
             state.lastBoundsReason = String(reason || "refresh");
-            return getState();
+            return false;
         }
-        ratios = ratiosForPosition(
-            state.x, state.y, state.width, currentHeight(), oldBounds
-        );
+        before = currentPrimaryGeometry();
         bounds = safeBounds();
-        fitDimensions(bounds);
-        position = positionForRatios(ratios, state.width, currentHeight(), bounds);
-        layoutParams.width = state.width;
-        layoutParams.height = currentHeight();
-        layoutParams.x = position.x;
-        layoutParams.y = position.y;
-        windowManager.updateViewLayout(rootView, layoutParams);
-        state.safeBounds = bounds;
-        state.x = position.x;
-        state.y = position.y;
-        state.height = currentHeight();
-        state.positionRatios = ratiosForPosition(
-            state.x, state.y, state.width, state.height, bounds
-        );
+        orientation = orientationForBounds(bounds);
+        safeWidth = Math.max(1, Number(bounds.right) - Number(bounds.left));
+        safeHeight = Math.max(1, Number(bounds.bottom) - Number(bounds.top));
+        policy = rolePolicy("primary");
+        primary.geometry.bounds = copyBounds(bounds);
+        primary.geometry.orientation = orientation;
+        primary.geometry.minWidth = Math.min(dp(policy.minWidthDp), safeWidth);
+        primary.geometry.minHeight = Math.min(dp(policy.minHeightDp), safeHeight);
+        primary.geometry.maxWidth = Math.min(dp(policy.maxWidthDp), safeWidth);
+        primary.geometry.maxHeight = Math.min(dp(policy.maxHeightDp), safeHeight);
+        width = clamp(safeWidth * before.widthRatio,
+            primary.geometry.minWidth, primary.geometry.maxWidth);
+        height = clamp(safeHeight * before.heightRatio,
+            primary.geometry.minHeight, primary.geometry.maxHeight);
+        x = Number(bounds.left) + Math.max(0, safeWidth - width) *
+            before.xRatio;
+        y = Number(bounds.top) + Math.max(0, safeHeight - height) *
+            before.yRatio;
+        updatePrimaryLayout(x, y, width, height,
+            String(reason || "bounds_refresh"));
         state.boundsRefreshCount += 1;
-        state.updateCount += 1;
         state.lastBoundsReason = String(reason || "refresh");
-        thread = nowThread();
-        state.updateThreadId = thread.id;
-        state.updateThreadName = thread.name;
-        return getState();
+        return true;
     }
 
     function scheduleBoundsRefresh(reason) {
@@ -422,395 +872,13 @@
                 run: function () {
                     var reasonValue = pendingRefreshReason;
                     pendingRefreshReason = "";
-                    if (!state.attached) { return; }
-                    try { refreshBoundsOnMain(reasonValue); }
+                    try { refreshPrimaryBounds(reasonValue); }
                     catch (error) { state.lastError = String(error); }
                 }
             });
         }
         try { mainHandler.removeCallbacks(refreshRunnable); } catch (ignored) {}
         return mainHandler.postDelayed(refreshRunnable, 180);
-    }
-
-    function handleTitleTouch(view, event) {
-        var action = Number(event.getActionMasked());
-        var rawX = Number(event.getRawX());
-        var rawY = Number(event.getRawY());
-        var deltaX;
-        var deltaY;
-        var completedDrag;
-        if (state.pinned) { return true; }
-        if (action === MotionEvent.ACTION_DOWN) {
-            drag.downRawX = rawX;
-            drag.downRawY = rawY;
-            drag.startX = state.x;
-            drag.startY = state.y;
-            drag.active = false;
-            return true;
-        }
-        if (action === MotionEvent.ACTION_MOVE) {
-            deltaX = rawX - drag.downRawX;
-            deltaY = rawY - drag.downRawY;
-            if (!drag.active && Math.abs(deltaX) + Math.abs(deltaY) >= touchSlopPx) {
-                drag.active = true;
-            }
-            if (drag.active) {
-                updatePositionOnMain(drag.startX + deltaX,
-                    drag.startY + deltaY, true);
-            }
-            return true;
-        }
-        if (action === MotionEvent.ACTION_UP ||
-                action === MotionEvent.ACTION_CANCEL) {
-            completedDrag = drag.active;
-            drag.active = false;
-            if (completedDrag) { persistCurrentPosition(); }
-            return true;
-        }
-        return true;
-    }
-
-    function showStatusOnMain(text) {
-        var colors = palette();
-        if (contentView === null) { return false; }
-        contentView.removeAllViews();
-        statusView = makeText(text, 13, colors.textSecondary, false);
-        statusView.setGravity(Gravity.TOP | Gravity.START);
-        statusView.setLineSpacing(0, 1.12);
-        statusView.setPadding(dp(4), dp(8), dp(4), dp(4));
-        contentView.addView(statusView, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT));
-        state.statusText = String(text);
-        state.contentMode = "status";
-        state.contentReplaceCount += 1;
-        return true;
-    }
-
-    function replaceContentOnMain(view) {
-        if (contentView === null || view === null || view === undefined) {
-            throw new Error("Window content host is unavailable");
-        }
-        contentView.removeAllViews();
-        statusView = null;
-        contentView.addView(view, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.MATCH_PARENT));
-        state.contentMode = "custom";
-        state.contentReplaceCount += 1;
-        return true;
-    }
-
-    function buildView(options) {
-        var colors = palette();
-        var handleHost;
-        var handleParams;
-        var contentParams;
-
-        metrics = themeMetrics();
-        rootView = new FrameLayout(appContext || androidContext);
-        rootView.setBackground(roundedBackground(colors.sheet,
-            colors.stroke, Number(metrics.sheetRadiusDp || 26)));
-        if (Build.VERSION.SDK_INT >= 21) { rootView.setElevation(dp(20)); }
-
-        handleHost = new FrameLayout(appContext || androidContext);
-        titleBar = handleHost;
-        dragHandle = new View(appContext || androidContext);
-        dragHandle.setBackground(roundedBackground(colors.strokeStrong,
-            null, 3));
-        handleParams = new FrameLayout.LayoutParams(
-            dp(Number(metrics.dragHandleWidthDp || 42)),
-            dp(Number(metrics.dragHandleHeightDp || 4)));
-        handleParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
-        handleParams.topMargin = dp(Number(metrics.dragHandleTopDp || 8));
-        handleHost.addView(dragHandle, handleParams);
-        rootView.addView(handleHost, new FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT, collapsedHeightPx));
-
-        contentView = new LinearLayout(appContext || androidContext);
-        contentView.setOrientation(LinearLayout.VERTICAL);
-        contentView.setPadding(dp(12), 0, dp(12), dp(10));
-        contentParams = new FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT);
-        contentParams.topMargin = collapsedHeightPx;
-        rootView.addView(contentView, contentParams);
-
-        titleBar.setOnTouchListener(new JavaAdapter(View.OnTouchListener, {
-            onTouch: handleTitleTouch
-        }));
-        state.dragListenerInstalled = true;
-        state.dragHandlePresent = true;
-        showStatusOnMain(options.statusText || "正在加载剪贴板历史");
-    }
-
-    function createLayoutParams(options) {
-        var widthDp = Number(options.widthDp || 340);
-        var heightDp = Number(options.heightDp || 500);
-        var bounds = safeBounds();
-        var saved;
-        var position;
-        var type = Build.VERSION.SDK_INT >= 26 ?
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY :
-            WindowManager.LayoutParams.TYPE_SYSTEM_ALERT;
-        var margin = dp(Number(themeMetrics().screenPaddingDp || 12));
-        desiredWidthPx = dp(Math.max(240, widthDp));
-        desiredHeightPx = dp(Math.max(180, heightDp));
-        fitDimensions(bounds);
-        state.safeBounds = bounds;
-        saved = readSavedPosition();
-        if (options.x !== undefined || options.y !== undefined) {
-            position = clampPosition(
-                options.x === undefined ?
-                    bounds.left + (bounds.right - bounds.left - state.width) / 2 :
-                    Number(options.x),
-                options.y === undefined ?
-                    bounds.bottom - state.height - margin : Number(options.y),
-                state.width, state.height, bounds
-            );
-        } else if (saved !== null) {
-            position = positionForRatios(saved, state.width, state.height, bounds);
-        } else {
-            position = clampPosition(
-                bounds.left + (bounds.right - bounds.left - state.width) / 2,
-                bounds.bottom - state.height - margin,
-                state.width, state.height, bounds
-            );
-        }
-        state.x = position.x;
-        state.y = position.y;
-        state.positionRatios = ratiosForPosition(
-            state.x, state.y, state.width, state.height, bounds
-        );
-        state.windowType = Number(type);
-        layoutParams = new WindowManager.LayoutParams(
-            state.width,
-            state.height,
-            type,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE |
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL |
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
-                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED |
-                WindowManager.LayoutParams.FLAG_DIM_BEHIND,
-            PixelFormat.TRANSLUCENT
-        );
-        layoutParams.gravity = Gravity.TOP | Gravity.START;
-        layoutParams.x = state.x;
-        layoutParams.y = state.y;
-        layoutParams.dimAmount = Number(options.dimAmount || state.dimAmount);
-        state.dimAmount = Number(layoutParams.dimAmount);
-        layoutParams.softInputMode =
-            WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING;
-        try { layoutParams.setTitle("ClipHub Window"); } catch (ignoredTitle) {}
-        if (Build.VERSION.SDK_INT >= 28) {
-            layoutParams.layoutInDisplayCutoutMode =
-                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER;
-        }
-    }
-
-    function open(options) {
-        var result;
-        options = options || {};
-        if (state.attached) {
-            return { ok: true, attached: true, reused: true, state: getState() };
-        }
-        result = runOnMainSync(function () {
-            var thread;
-            try {
-                createLayoutParams(options);
-                buildView(options);
-                if (state.collapsed && contentView !== null) {
-                    contentView.setVisibility(View.GONE);
-                }
-                windowManager.addView(rootView, layoutParams);
-                state.attached = true;
-                state.openCount += 1;
-                state.lastError = null;
-                thread = nowThread();
-                state.addThreadId = thread.id;
-                state.addThreadName = thread.name;
-                return { ok: true, attached: true, reused: false,
-                    state: getState() };
-            } catch (error) {
-                state.lastError = String(error);
-                state.attached = false;
-                rootView = null;
-                titleBar = null;
-                dragHandle = null;
-                contentView = null;
-                statusView = null;
-                closeView = null;
-                layoutParams = null;
-                throw error;
-            }
-        }, 3000);
-        return requireMainResult(result);
-    }
-
-    function close() {
-        var result;
-        if (!state.attached && rootView === null) {
-            return { ok: true, attached: false, alreadyClosed: true,
-                state: getState() };
-        }
-        result = runOnMainSync(function () {
-            var thread = nowThread();
-            var removed = false;
-            try {
-                if (rootView !== null) {
-                    try {
-                        windowManager.removeViewImmediate(rootView);
-                        removed = true;
-                    } catch (error) {
-                        if (rootView.isAttachedToWindow()) { throw error; }
-                    }
-                }
-                if (removed || state.attached) { state.closeCount += 1; }
-                state.attached = false;
-                state.removeThreadId = thread.id;
-                state.removeThreadName = thread.name;
-                state.lastError = null;
-                return { ok: true, attached: false, alreadyClosed: false };
-            } finally {
-                rootView = null;
-                titleBar = null;
-                dragHandle = null;
-                contentView = null;
-                statusView = null;
-                closeView = null;
-                layoutParams = null;
-                drag.active = false;
-                state.contentMode = "status";
-                state.dragHandlePresent = false;
-            }
-        }, 3000);
-        requireMainResult(result);
-        return { ok: true, attached: false, alreadyClosed: false,
-            state: getState() };
-    }
-
-    function setCollapsed(value) {
-        var collapsed = value === true;
-        state.collapsed = collapsed;
-        if (!state.attached) { return collapsed; }
-        requireMainResult(runOnMainSync(function () {
-            if (contentView !== null) {
-                contentView.setVisibility(collapsed ? View.GONE : View.VISIBLE);
-            }
-            updatePositionOnMain(state.x, state.y, false);
-            return true;
-        }, 2500));
-        return collapsed;
-    }
-
-    function setPinned(value) {
-        state.pinned = value === true;
-        return state.pinned;
-    }
-
-    function moveTo(x, y, options) {
-        var result;
-        options = options || {};
-        if (!state.attached) {
-            state.x = Math.floor(Number(x || 0));
-            state.y = Math.floor(Number(y || 0));
-            return getState();
-        }
-        result = requireMainResult(runOnMainSync(function () {
-            return updatePositionOnMain(x, y, false);
-        }, 2500));
-        if (options.persist === true) { persistCurrentPosition(); }
-        return result;
-    }
-
-    function moveBy(dx, dy, options) {
-        return moveTo(state.x + Number(dx || 0),
-            state.y + Number(dy || 0), options);
-    }
-
-    function refreshBounds(reason) {
-        return requireMainResult(runOnMainSync(function () {
-            return refreshBoundsOnMain(reason || "manual");
-        }, 2500));
-    }
-
-    function setStatusText(value) {
-        var text = String(value === null || value === undefined ? "" : value);
-        state.statusText = text;
-        if (state.attached && contentView !== null) {
-            requireMainResult(runOnMainSync(function () {
-                if (state.contentMode === "status" && statusView !== null) {
-                    statusView.setText(text);
-                    return true;
-                }
-                return showStatusOnMain(text);
-            }, 2500));
-        }
-        return text;
-    }
-
-    function setContentView(view) {
-        if (!state.attached) { throw new Error("Window is not open"); }
-        return requireMainResult(runOnMainSync(function () {
-            return replaceContentOnMain(view);
-        }, 2500));
-    }
-
-    function getState() {
-        var bounds = state.safeBounds || {};
-        var attachedToWindow = false;
-        try {
-            attachedToWindow = rootView !== null && rootView.isAttachedToWindow();
-        } catch (ignored) {}
-        return {
-            attached: state.attached,
-            attachedToWindow: attachedToWindow,
-            collapsed: state.collapsed,
-            pinned: state.pinned,
-            x: Number(state.x),
-            y: Number(state.y),
-            width: Number(state.width),
-            height: Number(state.height),
-            desiredWidth: Number(desiredWidthPx),
-            desiredHeight: Number(desiredHeightPx),
-            normalHeight: Number(normalHeightPx),
-            collapsedHeight: Number(collapsedHeightPx),
-            safeBounds: {
-                left: Number(bounds.left || 0),
-                top: Number(bounds.top || 0),
-                right: Number(bounds.right || 0),
-                bottom: Number(bounds.bottom || 0)
-            },
-            positionRatios: copyPosition(state.positionRatios),
-            savedPosition: copyPosition(state.savedPosition),
-            windowType: state.windowType,
-            openCount: Number(state.openCount),
-            closeCount: Number(state.closeCount),
-            updateCount: Number(state.updateCount),
-            dragMoveCount: Number(state.dragMoveCount),
-            persistenceWriteCount: Number(state.persistenceWriteCount),
-            boundsRefreshCount: Number(state.boundsRefreshCount),
-            configurationChangeCount: Number(state.configurationChangeCount),
-            displayChangeCount: Number(state.displayChangeCount),
-            contentReplaceCount: Number(state.contentReplaceCount),
-            contentMode: state.contentMode,
-            dragListenerInstalled: state.dragListenerInstalled,
-            dragHandlePresent: state.dragHandlePresent,
-            sheetStyle: state.sheetStyle,
-            dimAmount: Number(state.dimAmount),
-            contentTopInsetDp: Number(state.contentTopInsetDp),
-            componentCallbacksRegistered: state.componentCallbacksRegistered,
-            displayListenerRegistered: state.displayListenerRegistered,
-            addThreadId: state.addThreadId,
-            addThreadName: state.addThreadName,
-            updateThreadId: state.updateThreadId,
-            updateThreadName: state.updateThreadName,
-            removeThreadId: state.removeThreadId,
-            removeThreadName: state.removeThreadName,
-            statusText: state.statusText,
-            lastBoundsReason: state.lastBoundsReason,
-            lastError: state.lastError
-        };
     }
 
     function registerObservers() {
@@ -833,15 +901,17 @@
         try {
             displayManager = appContext.getSystemService(Context.DISPLAY_SERVICE);
             if (displayManager !== null) {
-                displayListener = new JavaAdapter(DisplayManager.DisplayListener, {
-                    onDisplayAdded: function () {},
-                    onDisplayRemoved: function () {},
-                    onDisplayChanged: function () {
-                        state.displayChangeCount += 1;
-                        scheduleBoundsRefresh("display");
-                    }
-                });
-                displayManager.registerDisplayListener(displayListener, mainHandler);
+                displayListener = new JavaAdapter(
+                    DisplayManager.DisplayListener, {
+                        onDisplayAdded: function () {},
+                        onDisplayRemoved: function () {},
+                        onDisplayChanged: function () {
+                            state.displayChangeCount += 1;
+                            scheduleBoundsRefresh("display");
+                        }
+                    });
+                displayManager.registerDisplayListener(displayListener,
+                    mainHandler);
                 state.displayListenerRegistered = true;
             }
         } catch (displayError) {
@@ -855,7 +925,8 @@
 
     function unregisterObservers() {
         if (mainHandler !== null && refreshRunnable !== null) {
-            try { mainHandler.removeCallbacks(refreshRunnable); } catch (ignored) {}
+            try { mainHandler.removeCallbacks(refreshRunnable); }
+            catch (ignored) {}
         }
         if (appContext !== null && componentCallbacks !== null) {
             try { appContext.unregisterComponentCallbacks(componentCallbacks); }
@@ -873,14 +944,82 @@
         return true;
     }
 
+    function moveTo(x, y, options) {
+        options = options || {};
+        if (!primary.attached || primary.layoutParams === null) {
+            return false;
+        }
+        updatePrimaryLayout(x, y,
+            Number(primary.layoutParams.width),
+            Number(primary.layoutParams.height), "api_move");
+        if (options.persist === true) { persistPrimaryGeometry(); }
+        return true;
+    }
+
+    function moveBy(dx, dy, options) {
+        if (!primary.attached || primary.layoutParams === null) {
+            return false;
+        }
+        return moveTo(Number(primary.layoutParams.x) + Number(dx || 0),
+            Number(primary.layoutParams.y) + Number(dy || 0), options);
+    }
+
+    function requestClose(reason) {
+        if (typeof primary.onRequestClose !== "function") { return false; }
+        try { return primary.onRequestClose(String(reason || "window_service")); }
+        catch (error) {
+            state.lastError = String(error);
+            return false;
+        }
+    }
+
+    function getState() {
+        var geometry = currentPrimaryGeometry();
+        var thread = nowThread();
+        return {
+            geometryService: true,
+            legacyHomeRemoved: true,
+            attached: primary.attached,
+            attachedToWindow: primary.attached && primary.rootView !== null ?
+                primary.rootView.isAttachedToWindow() : false,
+            primaryAttached: primary.attached,
+            primaryPinned: primary.pinned,
+            moving: drag.active,
+            resizing: resize.active,
+            resizePending: resize.pending,
+            resizeCorner: "bottom_right",
+            geometry: copyGeometry(geometry),
+            safeBounds: copyBounds(state.safeBounds),
+            orientation: state.orientation,
+            dragMoveCount: Number(state.dragMoveCount),
+            resizeActivateCount: Number(state.resizeActivateCount),
+            resizeMoveCount: Number(state.resizeMoveCount),
+            geometryComputeCount: Number(state.geometryComputeCount),
+            geometryPersistCount: Number(state.geometryPersistCount),
+            boundsRefreshCount: Number(state.boundsRefreshCount),
+            configurationChangeCount:
+                Number(state.configurationChangeCount),
+            displayChangeCount: Number(state.displayChangeCount),
+            componentCallbacksRegistered:
+                state.componentCallbacksRegistered === true,
+            displayListenerRegistered:
+                state.displayListenerRegistered === true,
+            lastBoundsReason: state.lastBoundsReason,
+            lastPersistedGeometry: state.lastPersistedGeometry,
+            stateThreadId: thread.id,
+            stateThreadName: thread.name,
+            lastError: state.lastError
+        };
+    }
+
     ClipHub.Window = {
         MODULE_NAME: "ch_08_window",
-        MODULE_VERSION: 6,
+        MODULE_VERSION: 7,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
             if (androidContext === null || androidContext === undefined) {
-                throw new Error("Android context unavailable for WindowManager");
+                throw new Error("Android context unavailable for window geometry");
             }
             appContext = androidContext.getApplicationContext();
             if (appContext === null) { appContext = androidContext; }
@@ -893,32 +1032,48 @@
                 .getDisplayMetrics().density || 1);
             touchSlopPx = Number(ViewConfiguration.get(appContext)
                 .getScaledTouchSlop());
-            metrics = themeMetrics();
-            state.contentTopInsetDp = 28;
+            longPressTimeoutMs = Number(ViewConfiguration.getLongPressTimeout());
             state.safeBounds = safeBounds();
-            readSavedPosition();
+            state.orientation = orientationForBounds(state.safeBounds);
             registerObservers();
             return {
                 ok: true,
                 initialized: true,
-                componentCallbacksRegistered:
-                    state.componentCallbacksRegistered,
-                displayListenerRegistered: state.displayListenerRegistered,
-                savedPosition: copyPosition(state.savedPosition),
-                sheetStyle: state.sheetStyle
+                geometryService: true,
+                legacyHomeRemoved: true,
+                safeBounds: copyBounds(state.safeBounds),
+                orientation: state.orientation
             };
         },
-        open: open,
-        close: close,
-        setCollapsed: setCollapsed,
-        setPinned: setPinned,
-        isAttached: function () { return state.attached; },
+        getEnvironment: function () {
+            var bounds = safeBounds();
+            return {
+                density: density,
+                bounds: copyBounds(bounds),
+                widthPx: Number(bounds.right) - Number(bounds.left),
+                heightPx: Number(bounds.bottom) - Number(bounds.top),
+                widthDp: pxToDp(Number(bounds.right) - Number(bounds.left)),
+                heightDp: pxToDp(Number(bounds.bottom) - Number(bounds.top)),
+                orientation: orientationForBounds(bounds)
+            };
+        },
+        computeGeometry: computeGeometry,
+        installPrimaryWindow: installPrimaryWindow,
+        detachPrimaryWindow: detachPrimaryWindow,
+        setPrimaryDragView: setPrimaryDragView,
+        setPrimaryResizeView: setPrimaryResizeView,
+        setPrimaryPinned: setPrimaryPinned,
+        refreshPrimaryBounds: refreshPrimaryBounds,
+        persistPrimaryGeometry: persistPrimaryGeometry,
+        performHaptic: performHaptic,
+        isMoving: function () { return drag.active === true; },
+        isResizing: function () { return resize.active === true; },
+        isAttached: function () { return primary.attached === true; },
         moveTo: moveTo,
         moveBy: moveBy,
-        refreshBounds: refreshBounds,
-        persistPosition: persistCurrentPosition,
-        setStatusText: setStatusText,
-        setContentView: setContentView,
+        refreshBounds: refreshPrimaryBounds,
+        persistPosition: persistPrimaryGeometry,
+        close: requestClose,
         runOnMain: function (callback, timeoutMs) {
             if (typeof callback !== "function") {
                 throw new Error("Window main callback must be a function");
@@ -929,7 +1084,7 @@
         getAndroidContext: function () { return appContext; },
         getState: getState,
         shutdown: function () {
-            try { close(); } catch (ignoredClose) {}
+            detachPrimaryWindow();
             unregisterObservers();
             androidContext = null;
             appContext = null;

@@ -76,7 +76,8 @@
         if (moduleAttached(ClipHub.Filter, "getPanelState") ||
                 moduleAttached(ClipHub.Editor, "getState") ||
                 moduleAttached(ClipHub.List, "getDetailState") ||
-                moduleAttached(ClipHub.Window, "getState")) {
+                moduleAttached(ClipHub.Settings, "getState") ||
+                moduleAttached(ClipHub.Translation, "getState")) {
             return true;
         }
         try {
@@ -333,9 +334,6 @@
     }
 
     function installWatchWrappers() {
-        wrap(ClipHub.Window, "open", "Window");
-        wrap(ClipHub.Window, "setContentView", "Window");
-        wrap(ClipHub.List, "show", "List");
         wrap(ClipHub.List, "openDetail", "List");
         wrap(ClipHub.Editor, "openNew", "Editor");
         wrap(ClipHub.Editor, "openItem", "Editor");
@@ -406,7 +404,7 @@
 
     ClipHub.EventBus = {
         MODULE_NAME: "ch_14_event_bus",
-        MODULE_VERSION: 2,
+        MODULE_VERSION: 3,
         init: function (context) {
             listeners = {};
             androidContext = context && context.androidContext ?

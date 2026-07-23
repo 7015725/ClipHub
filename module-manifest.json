@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260723.14",
+  "moduleSetVersion": "20260723.15",
   "entryMinVersion": 5,
-  "sourceRef": "main",
+  "sourceRef": "agent/unify-window-geometry",
   "modules": [
     {
       "name": "ch_01_base.js",
@@ -42,42 +42,42 @@
     {
       "name": "ch_08_window.js",
       "path": "src/ch_08_window.js",
-      "sha": "bfe57e991c256c98545b7aac30523f347454ec4c"
+      "sha": "d70b79e5a37934a0d4430c880e7d030a83caa9a9"
     },
     {
       "name": "ch_09_list.js",
       "path": "src/ch_09_list.js",
-      "sha": "e3bb4a3319b294309a79634c2e133db8c5d3d1ba"
+      "sha": "457991a55f708891180e0dd271455eff9c32e6ba"
     },
     {
       "name": "ch_10_editor.js",
       "path": "src/ch_10_editor.js",
-      "sha": "16f12f947e327e5f9f7e4d47733c93e024a17061"
+      "sha": "c973ee3f9aa6eb4634cebe0d45a3cc580ebfe4b7"
     },
     {
       "name": "ch_11_filter.js",
       "path": "src/ch_11_filter.js",
-      "sha": "a7c7e91508e1592942f3454ced21cdc501ec5f9c"
+      "sha": "20ba7ea47688e9395a02e6927730fe99fa02b033"
     },
     {
       "name": "ch_12_translation.js",
       "path": "src/ch_12_translation.js",
-      "sha": "05fc430b473ae58b680af9ba9a0e168246c53af7"
+      "sha": "8537d53cec9ccc7d7c68f92b21d40bb606453fa7"
     },
     {
       "name": "ch_13_settings.js",
       "path": "src/ch_13_settings.js",
-      "sha": "00681670265fcb29a3e6432a27e3e25d0bd73ace"
+      "sha": "14878cd9d8af09abf3356a969f19284628979e50"
     },
     {
       "name": "ch_14_event_bus.js",
       "path": "src/ch_14_event_bus.js",
-      "sha": "1340517a82be26bb0bbf71454c246067344ce019"
+      "sha": "755d9cc7a1740b48606009d293aac8c1fbcf484e"
     },
     {
       "name": "ch_15_app.js",
       "path": "src/ch_15_app.js",
-      "sha": "2837a308cc67a51d8284c7f37c7eb2206a524667"
+      "sha": "4b2585c331686729f641f0b91e5bb06e52371b1c"
     }
   ]
 }

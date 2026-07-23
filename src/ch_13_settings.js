@@ -183,6 +183,7 @@
         sensitivePolicy: "skip",
         ignorePackages: [],
         windowPosition: null,
+        windowGeometry: null,
         filterSearchHistory: [],
         searchHistoryEnabled: true,
         "translation.engine": "baidu",
@@ -894,10 +895,33 @@
         return { xRatio: Number(input.xRatio), yRatio: Number(input.yRatio) };
     }
 
+    function copyWindowGeometry(input) {
+        function copyBucket(bucket) {
+            if (!bucket || typeof bucket !== "object") { return null; }
+            return {
+                xRatio: Number(bucket.xRatio),
+                yRatio: Number(bucket.yRatio),
+                widthRatio: Number(bucket.widthRatio),
+                heightRatio: Number(bucket.heightRatio)
+            };
+        }
+        if (!input || typeof input !== "object") { return null; }
+        return {
+            version: Number(input.version || 1),
+            portrait: copyBucket(input.portrait),
+            landscape: copyBucket(input.landscape)
+        };
+    }
+
     function copyValue(value) {
         if (value && typeof value === "object" &&
                 Object.prototype.toString.call(value) === "[object Array]") {
             return copyArray(value);
+        }
+        if (value && typeof value === "object" &&
+                (Object.prototype.hasOwnProperty.call(value, "portrait") ||
+                    Object.prototype.hasOwnProperty.call(value, "landscape"))) {
+            return copyWindowGeometry(value);
         }
         if (value && typeof value === "object" &&
                 Object.prototype.hasOwnProperty.call(value, "xRatio") &&
@@ -941,6 +965,27 @@
             throw new Error("windowPosition must be null or an object");
         }
         return { xRatio: ratio(input.xRatio, 1), yRatio: ratio(input.yRatio, 0) };
+    }
+
+    function normalizeWindowGeometry(input) {
+        function bucket(value, fallbackWidth, fallbackHeight) {
+            if (!value || typeof value !== "object") { return null; }
+            return {
+                xRatio: ratio(value.xRatio, 0.5),
+                yRatio: ratio(value.yRatio, 1),
+                widthRatio: ratio(value.widthRatio, fallbackWidth),
+                heightRatio: ratio(value.heightRatio, fallbackHeight)
+            };
+        }
+        if (input === null || input === undefined) { return null; }
+        if (typeof input !== "object") {
+            throw new Error("windowGeometry must be null or an object");
+        }
+        return {
+            version: 1,
+            portrait: bucket(input.portrait, 0.94, 0.82),
+            landscape: bucket(input.landscape, 0.68, 0.90)
+        };
     }
 
     function normalizePackages(input) {
@@ -1028,6 +1073,9 @@
         }
         if (key === "ignorePackages") { return normalizePackages(value); }
         if (key === "windowPosition") { return normalizePosition(value); }
+        if (key === "windowGeometry") {
+            return normalizeWindowGeometry(value);
+        }
         if (key === "filterSearchHistory") {
             return normalizeSearchHistory(value);
         }
@@ -2151,13 +2199,16 @@
     }
 
     function panelSize() {
-        var metrics = appContext.getResources().getDisplayMetrics();
-        var widthDp = Math.min(390, Math.max(300,
-            Number(metrics.widthPixels) / density - 20));
-        var heightDp = Math.min(720, Math.max(560,
-            Number(metrics.heightPixels) / density - 170));
-        return { width: dp(widthDp), height: dp(heightDp),
-            widthDp: widthDp, heightDp: heightDp };
+        var geometry;
+        if (ClipHub.Window &&
+                typeof ClipHub.Window.computeGeometry === "function") {
+            geometry = ClipHub.Window.computeGeometry("settings", {
+                useSaved: false
+            });
+            return geometry;
+        }
+        return { width: dp(390), height: dp(720),
+            widthDp: 390, heightDp: 720 };
     }
 
     function openPage() {
@@ -2508,7 +2559,7 @@
 
     ClipHub.Settings = {
         MODULE_NAME: "ch_13_settings",
-        MODULE_VERSION: 14,
+        MODULE_VERSION: 15,
         DEFAULTS: defaultsCopy(),
         init: function (context) {
             if (!ClipHub.Database || !ClipHub.Database.isOpen()) {

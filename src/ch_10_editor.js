@@ -1042,31 +1042,30 @@
     }
 
     function panelDimensions(mode) {
-        var metrics = displayMetrics();
         var tagsMode = String(mode) === "tags";
-        var maxWidthDp = 390;
-        var minWidthDp = 300;
-        var width = Math.min(dp(maxWidthDp), Math.max(dp(minWidthDp),
-            Number(metrics.widthPixels) - dp(20)));
-        var availableHeight = Math.max(dp(300),
-            Number(metrics.heightPixels) - dp(86));
-        var heightDp;
-        var count;
+        var preferredHeightDp = 590;
+        var count = 0;
+        var geometry;
         if (tagsMode) {
-            count = 0;
             try { count = ClipHub.Repository.listTags().length; }
             catch (ignoredCount) {}
-            heightDp = 274 + Math.min(5, Math.max(1, count)) * 52;
-            heightDp = Math.max(430, Math.min(590, heightDp));
-        } else {
-            heightDp = 590;
+            preferredHeightDp = 274 + Math.min(5,
+                Math.max(1, count)) * 52;
+            preferredHeightDp = Math.max(430,
+                Math.min(590, preferredHeightDp));
         }
-        return {
-            width: width,
-            height: Math.min(dp(heightDp), availableHeight),
-            widthDp: pxToDp(width),
-            heightDp: Math.min(heightDp, pxToDp(availableHeight))
-        };
+        if (ClipHub.Window &&
+                typeof ClipHub.Window.computeGeometry === "function") {
+            geometry = ClipHub.Window.computeGeometry(
+                tagsMode ? "tag_selector" : "editor", {
+                    useSaved: false,
+                    preferredHeightDp: preferredHeightDp,
+                    centerVertically: tagsMode
+                });
+            return geometry;
+        }
+        return { width: dp(390), height: dp(preferredHeightDp),
+            widthDp: 390, heightDp: preferredHeightDp };
     }
 
     function activeInput() {
@@ -2313,7 +2312,7 @@
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 13,
+        MODULE_VERSION: 14,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
