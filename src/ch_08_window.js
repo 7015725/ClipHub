@@ -412,7 +412,7 @@
         var view;
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeCap(Paint.Cap.ROUND);
-        paint.setColor(parseColor(colorText, "#7C5CFC"));
+        paint["setColor(int)"](parseColor(colorText, "#7C5CFC"));
         drawable = new JavaAdapter(Drawable, {
             draw: function (canvas) {
                 var width = Number(canvas.getWidth());
@@ -1336,7 +1336,7 @@
 
     ClipHub.Window = {
         MODULE_NAME: "ch_08_window",
-        MODULE_VERSION: 8,
+        MODULE_VERSION: 9,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
