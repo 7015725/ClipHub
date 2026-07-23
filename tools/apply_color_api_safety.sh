@@ -85,7 +85,8 @@ if [ "$COMMIT_MODE" = "--commit" ]; then
   git push origin agent/initialize-project-skeleton
   echo 'Committed and pushed Rhino color API safety update.'
 else
-  echo 'Dry application complete. Re-run with --commit after reviewing the diff.'
+  git restore -- "${TARGETS[@]}"
+  echo 'Dry preview complete; target files restored. Re-run with --commit to apply.'
 fi
 
 PATCH_STARTED=0
