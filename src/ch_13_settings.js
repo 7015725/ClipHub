@@ -3,6 +3,9 @@
     var Context = Packages.android.content.Context;
     var Intent = Packages.android.content.Intent;
     var Uri = Packages.android.net.Uri;
+    var PackageManager = Packages.android.content.pm.PackageManager;
+    var ActivityManager = Packages.android.app.ActivityManager;
+    var UserHandle = Packages.android.os.UserHandle;
     var Build = Packages.android.os.Build;
     var Looper = Packages.android.os.Looper;
     var Handler = Packages.android.os.Handler;
@@ -163,7 +166,10 @@
         lastDelayedCallbackError: null,
         blogOpenCount: 0,
         blogOpenSuccessCount: 0,
+        blogOpenFailureCount: 0,
         lastOpenedUrl: null,
+        lastBlogLaunchMethod: null,
+        lastBlogLaunchUserId: -1,
         lastTestResult: "",
         lastError: null
     };
@@ -1891,23 +1897,83 @@
         return section;
     }
 
+    function currentForegroundUserId() {
+        var userId = 0;
+        try { userId = Number(ActivityManager.getCurrentUser()); }
+        catch (ignoredCurrentUser) { userId = 0; }
+        if (!isFinite(userId) || userId < 0) { userId = 0; }
+        return Math.floor(userId);
+    }
+
+    function resolveBlogActivity(intent, userId) {
+        var packageManager;
+        var resolved = null;
+        if (appContext === null) { return null; }
+        try { packageManager = appContext.getPackageManager(); }
+        catch (ignoredPackageManager) { packageManager = null; }
+        if (packageManager === null) { return null; }
+        try {
+            resolved = packageManager.resolveActivityAsUser(intent,
+                PackageManager.MATCH_DEFAULT_ONLY, Number(userId));
+        } catch (ignoredAsUserResolve) {
+            try {
+                resolved = packageManager.resolveActivity(intent,
+                    PackageManager.MATCH_DEFAULT_ONLY);
+            } catch (ignoredResolve) { resolved = null; }
+        }
+        return resolved;
+    }
+
     function openAuthorBlog() {
         var url = "https://xin-blog.com";
         var intent;
+        var resolved;
+        var activityInfo;
+        var userId = currentForegroundUserId();
+        var launchMethod = "none";
+        var asUserError = null;
         uiState.blogOpenCount += 1;
         uiState.lastOpenedUrl = url;
+        uiState.lastBlogLaunchUserId = userId;
+        uiState.lastBlogLaunchMethod = launchMethod;
         try {
             if (appContext === null) {
                 throw new Error("Android context unavailable");
             }
             intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            appContext.startActivity(intent);
+            intent.addCategory(Intent.CATEGORY_BROWSABLE);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK |
+                Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            resolved = resolveBlogActivity(intent, userId);
+            if (resolved === null || resolved.activityInfo === null) {
+                throw new Error("No browser activity can handle the URL");
+            }
+            activityInfo = resolved.activityInfo;
+            if (activityInfo.packageName !== null &&
+                    activityInfo.name !== null) {
+                intent.setClassName(String(activityInfo.packageName),
+                    String(activityInfo.name));
+            }
+            try {
+                appContext.startActivityAsUser(intent, UserHandle.of(userId));
+                launchMethod = "startActivityAsUser";
+            } catch (errorAsUser) {
+                asUserError = errorAsUser;
+                appContext.startActivity(intent);
+                launchMethod = "startActivity";
+            }
+            uiState.lastBlogLaunchMethod = launchMethod;
             uiState.blogOpenSuccessCount += 1;
             uiState.lastError = null;
+            try { closePage("author_blog"); }
+            catch (ignoredCloseAfterLaunch) {}
             return true;
         } catch (error) {
-            uiState.lastError = "无法打开博客链接：" + String(error);
+            uiState.blogOpenFailureCount += 1;
+            uiState.lastBlogLaunchMethod = launchMethod;
+            uiState.lastError = "无法打开博客链接：" + String(error) +
+                (asUserError === null ? "" :
+                    "；startActivityAsUser=" + String(asUserError));
             return false;
         }
     }
@@ -2431,7 +2497,12 @@
             blogOpenCount: Number(uiState.blogOpenCount),
             blogOpenSuccessCount:
                 Number(uiState.blogOpenSuccessCount),
+            blogOpenFailureCount:
+                Number(uiState.blogOpenFailureCount),
             lastOpenedUrl: uiState.lastOpenedUrl,
+            lastBlogLaunchMethod: uiState.lastBlogLaunchMethod,
+            lastBlogLaunchUserId:
+                Number(uiState.lastBlogLaunchUserId),
             lastTestResult: uiState.lastTestResult,
             lastError: uiState.lastError
         };
@@ -2439,7 +2510,7 @@
 
     ClipHub.Settings = {
         MODULE_NAME: "ch_13_settings",
-        MODULE_VERSION: 12,
+        MODULE_VERSION: 13,
         DEFAULTS: defaultsCopy(),
         init: function (context) {
             if (!ClipHub.Database || !ClipHub.Database.isOpen()) {
