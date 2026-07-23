@@ -36,6 +36,7 @@
     var HISTORY_KEY = "filterSearchHistory";
     var HISTORY_LIMIT = 6;
     var RESULT_PAGE_SIZE = 20;
+    var SELECTION_ENABLED = false;
 
     var androidContext = null;
     var appContext = null;
@@ -1443,10 +1444,10 @@
     }
 
     function setSelectedResult(row) {
-        selectedItemId = row === null || row === undefined ?
-            null : Number(row.id);
+        selectedItemId = SELECTION_ENABLED && row !== null &&
+            row !== undefined ? Number(row.id) : null;
         state.selectedItemId = selectedItemId;
-        state.selectionMode = selectedItemId !== null;
+        state.selectionMode = SELECTION_ENABLED && selectedItemId !== null;
         return selectedItemId;
     }
 
@@ -1492,13 +1493,8 @@
     }
 
     function selectResultRow(row) {
-        if (row === null || row === undefined) { return false; }
-        state.resultCardLongPressCount += 1;
-        setSelectedResult(row);
-        if (state.panelAttached) {
-            buildPanelContent(false);
-        }
-        return true;
+        clearSelectedResult();
+        return false;
     }
 
     function toggleResultPinned(row) {
@@ -1783,7 +1779,7 @@
     }
 
     function makeResultCard(row, colors) {
-        var selected = selectedItemId !== null &&
+        var selected = SELECTION_ENABLED && selectedItemId !== null &&
             Number(selectedItemId) === Number(row.id);
         var wrapper = new FrameLayout(appContext);
         var actionLayer = new FrameLayout(appContext);
@@ -1841,17 +1837,11 @@
         card.setClickable(true);
         card.setFocusable(true);
         card.setContentDescription(
-            "剪贴板记录，点击复制，长按选择，左滑置顶，右滑删除");
+            "剪贴板记录，点击复制，左滑置顶，右滑删除");
         (function (target, view) {
             view.setOnClickListener(new JavaAdapter(
                 View.OnClickListener, {
                     onClick: function () { copyResultRow(target); }
-                }));
-            view.setOnLongClickListener(new JavaAdapter(
-                View.OnLongClickListener, {
-                    onLongClick: function () {
-                        return selectResultRow(target);
-                    }
                 }));
         }(row, card));
 
@@ -3072,7 +3062,8 @@
             rootMode: rootMode === true,
             primarySurface: state.primarySurface,
             selectedItemId: selectedItemId,
-            selectionMode: selectedItemId !== null,
+            selectionEnabled: SELECTION_ENABLED === true,
+            selectionMode: SELECTION_ENABLED && selectedItemId !== null,
             resultCardClickCount:
                 Number(state.resultCardClickCount),
             resultCardLongPressCount:
@@ -3257,7 +3248,7 @@
 
     ClipHub.Filter = {
         MODULE_NAME: "ch_11_filter",
-        MODULE_VERSION: 20,
+        MODULE_VERSION: 21,
 
         init: function (context) {
             androidContext = context && context.androidContext ?
