@@ -16,9 +16,10 @@
     var Toast = Packages.android.widget.Toast;
 
     var PROBE = "cliphub_shared_window_geometry_probe_051";
-    var PROBE_VERSION = 4;
+    var PROBE_VERSION = 5;
     var SCENE_DURATION_MS = 9000;
     var HOME_GESTURE_TIMEOUT_MS = 35000;
+    var GESTURE_SAMPLE_MS = 120;
     var EXPECTED_MODULE_SET = "20260724.07";
     var EXPECTED_SOURCE_REF = "agent/unify-window-geometry";
     var NAMES = [
@@ -220,36 +221,148 @@
             "\n" + String(instruction));
     }
 
+    function copyPlain(value) {
+        try { return JSON.parse(JSON.stringify(value)); }
+        catch (ignoredCopy) { return value; }
+    }
+
+    function geometrySample(windowState) {
+        var geometry = windowState && windowState.geometry ?
+            windowState.geometry : null;
+        if (!geometry) { return null; }
+        return {
+            x: Number(geometry.x || 0),
+            y: Number(geometry.y || 0),
+            width: Number(geometry.width || 0),
+            height: Number(geometry.height || 0),
+            widthDp: Number(geometry.widthDp || 0),
+            heightDp: Number(geometry.heightDp || 0)
+        };
+    }
+
+    function positionDistance(left, right) {
+        var dx;
+        var dy;
+        if (!left || !right) { return 0; }
+        dx = Number(right.x) - Number(left.x);
+        dy = Number(right.y) - Number(left.y);
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function sizeDistance(left, right) {
+        var dw;
+        var dh;
+        if (!left || !right) { return 0; }
+        dw = Number(right.width) - Number(left.width);
+        dh = Number(right.height) - Number(left.height);
+        return Math.sqrt(dw * dw + dh * dh);
+    }
+
     function waitForHomeGestures(baseline) {
         var deadline = Number(System.currentTimeMillis()) +
             HOME_GESTURE_TIMEOUT_MS;
+        var environment = ClipHub.Window.getEnvironment();
+        var thresholdPx = Math.max(8,
+            Math.round(Number(environment.density || 1) * 6));
         var current = ClipHub.Window.getState();
+        var baselineGeometry = geometrySample(baseline);
+        var previousAttachedGeometry = baseline && baseline.attached === true ?
+            baselineGeometry : null;
+        var previousPersistedGeometry = baselineGeometry;
+        var baselinePersistCount = Number(
+            baseline.geometryPersistCount || 0);
+        var previousPersistCount = baselinePersistCount;
+        var currentPersistCount = baselinePersistCount;
+        var dragCounterSeen = false;
+        var resizeCounterSeen = false;
+        var dragGeometrySeen = false;
+        var resizeGeometrySeen = false;
         var dragSeen = false;
         var resizeSeen = false;
         var persisted = false;
         var announcedDrag = false;
         var announcedResize = false;
+        var currentGeometry;
+        var positionStep;
+        var sizeStep;
+        var persistedPositionStep;
+        var persistedSizeStep;
+        var maxPositionStepPx = 0;
+        var maxSizeStepPx = 0;
+        var lastAttachedWindow = baseline && baseline.attached === true ?
+            copyPlain(baseline) : null;
+        var persistedSamples = [];
         while (Number(System.currentTimeMillis()) < deadline) {
-            dragSeen = Number(current.dragActivateCount || 0) >
+            currentGeometry = geometrySample(current);
+            if (current && current.attached === true) {
+                lastAttachedWindow = copyPlain(current);
+                if (previousAttachedGeometry && currentGeometry) {
+                    positionStep = positionDistance(previousAttachedGeometry,
+                        currentGeometry);
+                    sizeStep = sizeDistance(previousAttachedGeometry,
+                        currentGeometry);
+                    maxPositionStepPx = Math.max(maxPositionStepPx,
+                        positionStep);
+                    maxSizeStepPx = Math.max(maxSizeStepPx, sizeStep);
+                    if (positionStep >= thresholdPx &&
+                            sizeStep < thresholdPx) {
+                        dragGeometrySeen = true;
+                    }
+                    if (sizeStep >= thresholdPx) {
+                        resizeGeometrySeen = true;
+                    }
+                }
+                previousAttachedGeometry = currentGeometry;
+            }
+
+            dragCounterSeen = Number(current.dragActivateCount || 0) >
                 Number(baseline.dragActivateCount || 0);
-            resizeSeen = Number(current.resizeActivateCount || 0) >
+            resizeCounterSeen = Number(current.resizeActivateCount || 0) >
                 Number(baseline.resizeActivateCount || 0);
-            persisted = Number(current.geometryPersistCount || 0) >
-                Number(baseline.geometryPersistCount || 0);
+            currentPersistCount = Number(
+                current.geometryPersistCount || 0);
+            persisted = currentPersistCount > baselinePersistCount;
+
+            if (currentPersistCount > previousPersistCount &&
+                    currentGeometry) {
+                persistedPositionStep = positionDistance(
+                    previousPersistedGeometry, currentGeometry);
+                persistedSizeStep = sizeDistance(
+                    previousPersistedGeometry, currentGeometry);
+                persistedSamples.push({
+                    count: currentPersistCount,
+                    at: Number(System.currentTimeMillis()),
+                    positionDeltaPx: persistedPositionStep,
+                    sizeDeltaPx: persistedSizeStep,
+                    geometry: copyPlain(currentGeometry)
+                });
+                if (persistedPositionStep >= thresholdPx &&
+                        persistedSizeStep < thresholdPx) {
+                    dragGeometrySeen = true;
+                }
+                if (persistedSizeStep >= thresholdPx) {
+                    resizeGeometrySeen = true;
+                }
+                previousPersistedGeometry = currentGeometry;
+                previousPersistCount = currentPersistCount;
+            }
+
+            dragSeen = dragCounterSeen || dragGeometrySeen;
+            resizeSeen = resizeCounterSeen || resizeGeometrySeen;
             if (dragSeen && !announcedDrag) {
                 announcedDrag = true;
                 scene(1, "顶部拖动已识别",
-                    resizeSeen ? "等待几何保存。" :
-                        "继续按住右下角双弧线，震动后再拖动。" );
+                    dragCounterSeen ? "已收到拖动事件计数。" :
+                        "已根据窗口位置变化识别拖动。" );
             }
             if (resizeSeen && !announcedResize) {
                 announcedResize = true;
                 scene(1, "右下角缩放已识别",
-                    dragSeen ? "等待几何保存。" :
-                        "继续按住顶部手柄，震动后再拖动。" );
+                    resizeCounterSeen ? "已收到缩放事件计数。" :
+                        "已根据窗口尺寸变化识别缩放。" );
             }
             if (dragSeen && resizeSeen && persisted) { break; }
-            sleep(250);
+            sleep(GESTURE_SAMPLE_MS);
             current = ClipHub.Window.getState();
         }
         return {
@@ -258,6 +371,15 @@
             dragSeen: dragSeen,
             resizeSeen: resizeSeen,
             persisted: persisted,
+            dragCounterSeen: dragCounterSeen,
+            resizeCounterSeen: resizeCounterSeen,
+            dragGeometrySeen: dragGeometrySeen,
+            resizeGeometrySeen: resizeGeometrySeen,
+            maxPositionStepPx: maxPositionStepPx,
+            maxSizeStepPx: maxSizeStepPx,
+            thresholdPx: thresholdPx,
+            persistedSamples: persistedSamples,
+            lastAttachedWindow: lastAttachedWindow,
             waitedMs: HOME_GESTURE_TIMEOUT_MS - Math.max(0,
                 deadline - Number(System.currentTimeMillis()))
         };
@@ -376,6 +498,8 @@
         var s4 = result.scenes.settingsShared || {};
         var s5 = result.scenes.detailShared || {};
         var s6 = result.scenes.translationShared || {};
+        var gestureEvidence = result.homeGestureWait || {};
+        var homeWindow = gestureEvidence.lastAttachedWindow || s1.window || {};
         var g3 = s3.window && s3.window.geometry ? s3.window.geometry : {};
         var g4 = s4.window && s4.window.geometry ? s4.window.geometry : {};
         var g5 = s5.window && s5.window.geometry ? s5.window.geometry : {};
@@ -386,14 +510,19 @@
             sourceRefExpected:
                 result.sourceRef === EXPECTED_SOURCE_REF,
             manualDragObserved:
-                Number(s1.window && s1.window.dragActivateCount || 0) >
-                    Number(baseline.dragActivateCount || 0),
+                gestureEvidence.dragSeen === true,
             manualResizeObserved:
-                Number(s1.window && s1.window.resizeActivateCount || 0) >
-                    Number(baseline.resizeActivateCount || 0),
+                gestureEvidence.resizeSeen === true,
             geometryPersisted:
-                Number(s1.window && s1.window.geometryPersistCount || 0) >
-                    Number(baseline.geometryPersistCount || 0),
+                gestureEvidence.persisted === true,
+            manualDragCounterObserved:
+                gestureEvidence.dragCounterSeen === true,
+            manualDragGeometryObserved:
+                gestureEvidence.dragGeometrySeen === true,
+            manualResizeCounterObserved:
+                gestureEvidence.resizeCounterSeen === true,
+            manualResizeGeometryObserved:
+                gestureEvidence.resizeGeometrySeen === true,
             compactWidthApplied:
                 Number(s2.filter && s2.filter.panelWidthDp || 0) <= 340,
             compactPanelAttached:
@@ -437,7 +566,7 @@
                 result.homeGestureWait &&
                 result.homeGestureWait.timedOut === true,
             allScenesErrorFree:
-                !(s1.window && s1.window.lastError) &&
+                !(homeWindow && homeWindow.lastError) &&
                 !(s2.window && s2.window.lastError) &&
                 !(s3.window && s3.window.lastError) &&
                 !(s4.window && s4.window.lastError) &&
@@ -520,6 +649,8 @@
                 "未检测到完整拖动和缩放，3秒后仍会继续探测。");
         sleep(3000);
         snapshot("homeGesture");
+        result.scenes.homeGesture.observedWindow =
+            result.homeGestureWait.lastAttachedWindow;
 
         ClipHub.Filter.closePanel({
             restoreList: false,
