@@ -378,6 +378,26 @@
         return updateItem(id, { deleted_at: intValue(deletedAt, ClipHub.Base.now()) });
     }
 
+    function softDeleteItemsByTag(tagId, deletedAt) {
+        var now = intValue(deletedAt, ClipHub.Base.now());
+        requireReady();
+        return ClipHub.Database.executeUpdateDelete(
+            "UPDATE clipboard_items SET deleted_at = ?, updated_at = ? " +
+            "WHERE deleted_at IS NULL AND id IN (" +
+            "SELECT item_id FROM clipboard_item_tags WHERE tag_id = ?)",
+            [now, now, intValue(tagId, -1)]
+        );
+    }
+
+    function softDeleteAllItems(deletedAt) {
+        var now = intValue(deletedAt, ClipHub.Base.now());
+        requireReady();
+        return ClipHub.Database.executeUpdateDelete(
+            "UPDATE clipboard_items SET deleted_at = ?, updated_at = ? " +
+            "WHERE deleted_at IS NULL", [now, now]
+        );
+    }
+
     function restoreItem(id) {
         return updateItem(id, { deleted_at: null });
     }
@@ -628,7 +648,7 @@
 
     ClipHub.Repository = {
         MODULE_NAME: "ch_06_repository",
-        MODULE_VERSION: 8,
+        MODULE_VERSION: 9,
         init: function () {
             ready = !!(ClipHub.Database && ClipHub.Database.isOpen());
             if (!ready) { throw new Error("Database is unavailable"); }
@@ -647,6 +667,8 @@
         reorderItem: reorderItem,
         getManualOrderState: getManualOrderState,
         softDeleteItem: softDeleteItem,
+        softDeleteItemsByTag: softDeleteItemsByTag,
+        softDeleteAllItems: softDeleteAllItems,
         restoreItem: restoreItem,
         countItems: countItems,
         purgeExpired: purgeExpired,

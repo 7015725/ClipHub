@@ -83,7 +83,10 @@
     var tagsSectionView = null;
     var dataSectionView = null;
     var blogLinkView = null;
+    var clearAllItemsView = null;
     var pendingDeleteTagId = null;
+    var pendingClearTagId = null;
+    var pendingClearAll = false;
     var uiState = {
         attached: false,
         openCount: 0,
@@ -100,8 +103,17 @@
         tagDragCommitCount: 0,
         tagColorPreviewCount: 0,
         tagDeleteConfirmCount: 0,
+        tagItemsClearConfirmCount: 0,
+        tagItemsClearCount: 0,
+        clearAllConfirmCount: 0,
+        clearAllCount: 0,
         lastDraggedTagId: null,
+        lastClearedTagId: null,
+        lastClearedItemCount: 0,
+        lastClearAllCount: 0,
         pendingDeleteTagId: null,
+        pendingClearTagId: null,
+        pendingClearAll: false,
         clearHistoryCount: 0,
         settingsStyle: "reference_settings_v2",
         sectionCount: 4,
@@ -1529,6 +1541,10 @@
 
     function requestDeleteTag(tagId, itemCount, deleteView) {
         tagId = Number(tagId);
+        pendingClearTagId = null;
+        uiState.pendingClearTagId = null;
+        pendingClearAll = false;
+        uiState.pendingClearAll = false;
         if (pendingDeleteTagId !== tagId) {
             pendingDeleteTagId = tagId;
             uiState.pendingDeleteTagId = tagId;
@@ -1591,6 +1607,108 @@
                 });
             }
         } catch (ignored) {}
+    }
+
+    function emitClipboardBatchDeleted(scope, count, tagId, deletedAt) {
+        try {
+            if (ClipHub.EventBus && typeof ClipHub.EventBus.emit === "function") {
+                ClipHub.EventBus.emit("clipboard_deleted", {
+                    id: 0,
+                    batch: true,
+                    scope: String(scope || "all"),
+                    count: Number(count || 0),
+                    tagId: tagId === null || tagId === undefined ? null :
+                        Number(tagId),
+                    deletedAt: Number(deletedAt || ClipHub.Base.now()),
+                    at: ClipHub.Base.now()
+                });
+            }
+        } catch (ignored) {}
+    }
+
+    function clearTagItems(tagId) {
+        var deletedAt = ClipHub.Base.now();
+        var changed;
+        try {
+            changed = Number(ClipHub.Repository.softDeleteItemsByTag(
+                Number(tagId), deletedAt));
+            pendingClearTagId = null;
+            uiState.pendingClearTagId = null;
+            if (changed < 1) { return false; }
+            uiState.tagItemsClearCount += 1;
+            uiState.lastClearedTagId = Number(tagId);
+            uiState.lastClearedItemCount = changed;
+            emitClipboardBatchDeleted("tag", changed, tagId, deletedAt);
+            emitTagsChanged("tag_items_cleared", tagId);
+            rebuildTagPage();
+            return true;
+        } catch (error) {
+            uiState.lastError = String(error);
+            return false;
+        }
+    }
+
+    function requestClearTagItems(tagId, itemCount, clearView) {
+        tagId = Number(tagId);
+        pendingDeleteTagId = null;
+        uiState.pendingDeleteTagId = null;
+        pendingClearAll = false;
+        uiState.pendingClearAll = false;
+        if (Number(itemCount || 0) < 1) { return false; }
+        if (pendingClearTagId !== tagId) {
+            pendingClearTagId = tagId;
+            uiState.pendingClearTagId = tagId;
+            uiState.tagItemsClearConfirmCount += 1;
+            clearView.setText("确认清理");
+            clearView.setContentDescription("再次点击，软删除该标签关联的 " +
+                String(Number(itemCount || 0)) + " 条记录，标签会保留");
+            return false;
+        }
+        return clearTagItems(tagId);
+    }
+
+    function rebuildDataPage() {
+        buildPage();
+        postScrollToSection("data");
+        return true;
+    }
+
+    function clearAllItems() {
+        var deletedAt = ClipHub.Base.now();
+        var changed;
+        try {
+            changed = Number(ClipHub.Repository.softDeleteAllItems(deletedAt));
+            pendingClearAll = false;
+            uiState.pendingClearAll = false;
+            if (changed < 1) { return false; }
+            uiState.clearAllCount += 1;
+            uiState.lastClearAllCount = changed;
+            uiState.lastClearedItemCount = changed;
+            emitClipboardBatchDeleted("all", changed, null, deletedAt);
+            rebuildDataPage();
+            return true;
+        } catch (error) {
+            uiState.lastError = String(error);
+            return false;
+        }
+    }
+
+    function requestClearAllItems(clearView, itemCount) {
+        pendingDeleteTagId = null;
+        uiState.pendingDeleteTagId = null;
+        pendingClearTagId = null;
+        uiState.pendingClearTagId = null;
+        if (Number(itemCount || 0) < 1) { return false; }
+        if (!pendingClearAll) {
+            pendingClearAll = true;
+            uiState.pendingClearAll = true;
+            uiState.clearAllConfirmCount += 1;
+            clearView.setText("再次点击确认清空");
+            clearView.setContentDescription("再次点击，软删除全部 " +
+                String(Number(itemCount || 0)) + " 条剪贴板记录");
+            return false;
+        }
+        return clearAllItems();
     }
 
     function createTagFromSettings() {
@@ -1841,8 +1959,14 @@
         var count = makeText(String(Number(tag.item_count || 0)) + " 条记录",
             9, colors.textSecondary, false);
         var save = makeButton("保存", colors, false, false);
-        var del = makeButton("删除", colors, false, true);
+        var clearItems = makeButton("清理记录", colors, false, true);
+        var del = makeButton("删标签", colors, false, true);
         var params;
+        if (Number(tag.item_count || 0) < 1) {
+            clearItems.setEnabled(false);
+            clearItems.setClickable(false);
+            clearItems.setAlpha(0.42);
+        }
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(8), dp(8), dp(8), dp(8));
         root.setBackground(roundedBackground(colors.surfaceMuted,
@@ -1873,18 +1997,29 @@
                 onClick: function () {
                     pendingDeleteTagId = null;
                     uiState.pendingDeleteTagId = null;
+                    pendingClearTagId = null;
+                    uiState.pendingClearTagId = null;
                     saveTagRow(tagId, nameInput, colorInput);
                 }
             }));
+            clearItems.setOnClickListener(new JavaAdapter(
+                View.OnClickListener, { onClick: function () {
+                    requestClearTagItems(tagId, itemCount, clearItems);
+                }}));
             del.setOnClickListener(new JavaAdapter(View.OnClickListener, {
                 onClick: function () {
+                    pendingClearTagId = null;
+                    uiState.pendingClearTagId = null;
                     requestDeleteTag(tagId, itemCount, del);
                 }
             }));
             bindTagDrag(handle, root, tagId);
         }(Number(tag.id), Number(tag.item_count || 0)));
-        actions.addView(save, new LinearLayout.LayoutParams(dp(58), dp(34)));
-        params = new LinearLayout.LayoutParams(dp(68), dp(34));
+        actions.addView(save, new LinearLayout.LayoutParams(dp(52), dp(34)));
+        params = new LinearLayout.LayoutParams(dp(72), dp(34));
+        params.leftMargin = dp(5);
+        actions.addView(clearItems, params);
+        params = new LinearLayout.LayoutParams(dp(64), dp(34));
         params.leftMargin = dp(5);
         actions.addView(del, params);
         params = new LinearLayout.LayoutParams(
@@ -1895,7 +2030,8 @@
             Number(tag.color_value || Color.parseColor("#7C5CFC")), colors);
         tagRowViews[String(tag.id)] = {
             root: root, name: nameInput, color: colorInput,
-            handle: handle, swatch: swatch, save: save, deleteView: del
+            handle: handle, swatch: swatch, save: save,
+            clearItemsView: clearItems, deleteView: del
         };
         return root;
     }
@@ -1910,7 +2046,7 @@
         var params;
         var empty;
         makeSectionTitle(section, "标签管理",
-            "拖动排序 · 颜色预览 · 删除只解除关联", colors);
+            "清理记录会保留标签 · 删除标签只解除关联", colors);
         createRow.setOrientation(LinearLayout.HORIZONTAL);
         createRow.setGravity(Gravity.CENTER_VERTICAL);
         preview = makeColorSwatch(Number(Color.parseColor("#7C5CFC")), colors);
@@ -2044,8 +2180,11 @@
         var section = makeSection(colors);
         var path = initContext && initContext.runtimeDir ?
             String(initContext.runtimeDir) + "/data/cliphub.db" : "";
+        var activeCount = Number(ClipHub.Repository.countItems(false));
         var infoTitle;
         var infoText;
+        var dangerTitle;
+        var dangerText;
         var divider;
         var authorTitle;
         var authorName;
@@ -2054,7 +2193,7 @@
         var blogValue;
         var params;
         makeSectionTitle(section, "数据与关于",
-            "当前数据库、模块和项目相关信息", colors);
+            "当前数据库、批量清理与项目相关信息", colors);
 
         infoTitle = makeText("运行信息", 10, colors.textPrimary, true);
         section.addView(infoTitle, new LinearLayout.LayoutParams(
@@ -2062,7 +2201,7 @@
             LinearLayout.LayoutParams.WRAP_CONTENT));
 
         infoText = makeText(
-            "剪贴板记录：" + String(ClipHub.Repository.countItems(false)) +
+            "剪贴板记录：" + String(activeCount) +
             "\n标签数量：" + String(ClipHub.Repository.listTags().length) +
             "\n数据库：" + path +
             "\nSchema：v" + String(ClipHub.Database.getVersion()) +
@@ -2076,6 +2215,39 @@
         params.topMargin = dp(5);
         params.bottomMargin = dp(10);
         section.addView(infoText, params);
+
+        dangerTitle = makeText("危险操作", 10, colors.textPrimary, true);
+        section.addView(dangerTitle, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT));
+        dangerText = makeText(
+            "软删除全部剪贴板记录；标签、设置与搜索历史会保留",
+            9, colors.textSecondary, false);
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.topMargin = dp(4);
+        params.bottomMargin = dp(7);
+        section.addView(dangerText, params);
+        clearAllItemsView = makeButton(
+            "清空全部记录（" + String(activeCount) + " 条）",
+            colors, false, true);
+        if (activeCount < 1) {
+            clearAllItemsView.setEnabled(false);
+            clearAllItemsView.setClickable(false);
+            clearAllItemsView.setAlpha(0.42);
+        } else {
+            (function (count, view) {
+                view.setOnClickListener(new JavaAdapter(
+                    View.OnClickListener, { onClick: function () {
+                        requestClearAllItems(view, count);
+                    }}));
+            }(activeCount, clearAllItemsView));
+        }
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(42));
+        params.bottomMargin = dp(10);
+        section.addView(clearAllItemsView, params);
 
         divider = new View(appContext);
         ClipHub.Theme.applyBackgroundColor(divider, colors.stroke);
@@ -2376,8 +2548,13 @@
                 tagsSectionView = null;
                 dataSectionView = null;
                 blogLinkView = null;
+                clearAllItemsView = null;
                 pendingDeleteTagId = null;
+                pendingClearTagId = null;
+                pendingClearAll = false;
                 uiState.pendingDeleteTagId = null;
+                uiState.pendingClearTagId = null;
+                uiState.pendingClearAll = false;
             }
         }, 3000);
     }
@@ -2495,10 +2672,21 @@
             tagDragCommitCount: Number(uiState.tagDragCommitCount),
             tagColorPreviewCount: Number(uiState.tagColorPreviewCount),
             tagDeleteConfirmCount: Number(uiState.tagDeleteConfirmCount),
+            tagItemsClearConfirmCount:
+                Number(uiState.tagItemsClearConfirmCount),
+            tagItemsClearCount: Number(uiState.tagItemsClearCount),
+            clearAllConfirmCount: Number(uiState.clearAllConfirmCount),
+            clearAllCount: Number(uiState.clearAllCount),
             lastDraggedTagId: uiState.lastDraggedTagId,
+            lastClearedTagId: uiState.lastClearedTagId,
+            lastClearedItemCount: Number(uiState.lastClearedItemCount),
+            lastClearAllCount: Number(uiState.lastClearAllCount),
             pendingDeleteTagId: uiState.pendingDeleteTagId,
+            pendingClearTagId: uiState.pendingClearTagId,
+            pendingClearAll: uiState.pendingClearAll === true,
             dragReorderEnabled: true,
             deleteRequiresConfirmation: true,
+            bulkClearRequiresConfirmation: true,
             clearHistoryCount: Number(uiState.clearHistoryCount),
             settingsStyle: uiState.settingsStyle,
             sectionCount: Number(uiState.sectionCount),
@@ -2611,7 +2799,7 @@
 
     ClipHub.Settings = {
         MODULE_NAME: "ch_13_settings",
-        MODULE_VERSION: 16,
+        MODULE_VERSION: 17,
         DEFAULTS: defaultsCopy(),
         init: function (context) {
             if (!ClipHub.Database || !ClipHub.Database.isOpen()) {
@@ -2705,6 +2893,24 @@
                 if (!row) { return false; }
                 row.deleteView.performClick();
                 return row.deleteView.performClick();
+            }, 3000);
+        },
+        performClearTagItemsConfirm: function (tagId) {
+            tagId = String(Number(tagId));
+            return runOnMainSync(function () {
+                var row = tagRowViews[tagId];
+                if (!row || !row.clearItemsView ||
+                        !row.clearItemsView.isEnabled()) { return false; }
+                row.clearItemsView.performClick();
+                return row.clearItemsView.performClick();
+            }, 3000);
+        },
+        performClearAllItemsConfirm: function () {
+            return runOnMainSync(function () {
+                if (clearAllItemsView === null ||
+                        !clearAllItemsView.isEnabled()) { return false; }
+                clearAllItemsView.performClick();
+                return clearAllItemsView.performClick();
             }, 3000);
         },
         getTagOrder: function () {
