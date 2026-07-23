@@ -35,6 +35,8 @@
     var mainHandler = null;
     var density = 1;
     var panelRoot = null;
+    var panelWindowRoot = null;
+    var panelManagedFrame = null;
     var panelParams = null;
     var contentInput = null;
     var tagNameInput = null;
@@ -626,6 +628,18 @@
                 state.mode === "tags") {
             return false;
         }
+        if ((!ime.visible || Number(ime.bottomPx) < dp(120)) &&
+                panelWindowRoot !== null && ClipHub.Window &&
+                typeof ClipHub.Window.refreshWindow === "function") {
+            state.keyboardAvoidanceApplied = false;
+            state.panelGravity = "shared";
+            state.panelBottomMarginDp = 0;
+            ClipHub.Window.refreshWindow(panelWindowRoot,
+                "editor_ime_restore");
+            state.currentPanelHeightDp = Number(state.normalPanelHeightDp ||
+                state.panelHeightDp || 0);
+            return true;
+        }
         metrics = displayMetrics();
         normalHeightPx = dp(Math.max(300,
             Number(state.normalPanelHeightDp || state.panelHeightDp || 590)));
@@ -639,7 +653,7 @@
             targetHeightPx = Math.min(normalHeightPx, availablePx);
             targetTopPx = Math.max(topSafePx,
                 keyboardTopPx - dp(6) - targetHeightPx);
-            targetGravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+            targetGravity = Gravity.TOP | Gravity.START;
             targetY = targetTopPx;
             state.availableAboveImeDp = pxToDp(availablePx);
             state.keyboardAvoidanceApplied = true;
@@ -673,7 +687,9 @@
         state.currentPanelHeightDp = pxToDp(targetHeightPx);
         state.currentPanelTopDp = pxToDp(targetTopPx);
         if (changed && state.attached && panelRoot.isAttachedToWindow()) {
-            windowManager.updateViewLayout(panelRoot, panelParams);
+            windowManager.updateViewLayout(
+                panelWindowRoot !== null ? panelWindowRoot : panelRoot,
+                panelParams);
             state.windowLayoutUpdateCount += 1;
         }
         return changed;
@@ -1042,30 +1058,15 @@
     }
 
     function panelDimensions(mode) {
-        var tagsMode = String(mode) === "tags";
-        var preferredHeightDp = 590;
-        var count = 0;
-        var geometry;
-        if (tagsMode) {
-            try { count = ClipHub.Repository.listTags().length; }
-            catch (ignoredCount) {}
-            preferredHeightDp = 274 + Math.min(5,
-                Math.max(1, count)) * 52;
-            preferredHeightDp = Math.max(430,
-                Math.min(590, preferredHeightDp));
-        }
         if (ClipHub.Window &&
                 typeof ClipHub.Window.computeGeometry === "function") {
-            geometry = ClipHub.Window.computeGeometry(
-                tagsMode ? "tag_selector" : "editor", {
-                    useSaved: false,
-                    preferredHeightDp: preferredHeightDp,
-                    centerVertically: tagsMode
+            return ClipHub.Window.computeGeometry(
+                String(mode) === "tags" ? "tag_selector" : "editor", {
+                    useSaved: true
                 });
-            return geometry;
         }
-        return { width: dp(390), height: dp(preferredHeightDp),
-            widthDp: 390, heightDp: preferredHeightDp };
+        return { x: 0, y: 0, width: dp(390), height: dp(590),
+            widthDp: 390, heightDp: 590 };
     }
 
     function activeInput() {
@@ -1111,6 +1112,8 @@
         layoutListener = null;
         contentScrollView = null;
         panelRoot = null;
+        panelWindowRoot = null;
+        panelManagedFrame = null;
         panelParams = null;
         contentInput = null;
         tagNameInput = null;
@@ -1197,10 +1200,19 @@
             var thread = nowThread();
             try {
                 hideKeyboardOnMain();
+                if (panelWindowRoot !== null && ClipHub.Window &&
+                        typeof ClipHub.Window.detachWindow === "function") {
+                    try { ClipHub.Window.detachWindow(panelWindowRoot); }
+                    catch (ignoredDetach) {}
+                }
                 if (panelRoot !== null) {
-                    try { windowManager.removeViewImmediate(panelRoot); }
-                    catch (error) {
-                        if (panelRoot.isAttachedToWindow()) { throw error; }
+                    try {
+                        windowManager.removeViewImmediate(
+                            panelWindowRoot !== null ? panelWindowRoot : panelRoot);
+                    } catch (error) {
+                        if (panelWindowRoot !== null ?
+                                panelWindowRoot.isAttachedToWindow() :
+                                panelRoot.isAttachedToWindow()) { throw error; }
                     }
                 }
                 state.closeCount += 1;
@@ -1336,11 +1348,12 @@
     function updatePanelSizeForMode() {
         var size;
         if (panelRoot === null || panelParams === null) { return false; }
-        size = panelDimensions(state.mode);
-        if (Number(panelParams.width) === Number(size.width) &&
-                Number(panelParams.height) === Number(size.height)) {
-            return false;
+        if (panelWindowRoot !== null && ClipHub.Window &&
+                typeof ClipHub.Window.refreshWindow === "function") {
+            return ClipHub.Window.refreshWindow(panelWindowRoot,
+                "editor_mode_changed");
         }
+        size = panelDimensions(state.mode);
         panelParams.width = size.width;
         panelParams.height = size.height;
         state.panelWidthPx = size.width;
@@ -2009,28 +2022,25 @@
                     colors.surface, colors.stroke, 24));
             }
             if (Build.VERSION.SDK_INT >= 21) {
-                panelRoot.setElevation(dp(20));
+                panelRoot.setElevation(0);
+                panelRoot.setClipToOutline(true);
             }
+            panelManagedFrame = ClipHub.Window.createManagedFrame(panelRoot, {
+                accentColor: colors.accentStrong
+            });
+            panelWindowRoot = panelManagedFrame.rootView;
             panelParams = new WindowManager.LayoutParams(
                 size.width, size.height, type,
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
                     WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED |
                     WindowManager.LayoutParams.FLAG_DIM_BEHIND,
                 PixelFormat.TRANSLUCENT);
-            if (state.mode === "tags") {
-                panelParams.gravity = Gravity.CENTER;
-                panelParams.y = 0;
-                panelParams.dimAmount = 0.72;
-                state.panelGravity = "center";
-                state.panelBottomMarginDp = 0;
-            } else {
-                panelParams.gravity = Gravity.BOTTOM |
-                    Gravity.CENTER_HORIZONTAL;
-                panelParams.y = dp(10);
-                panelParams.dimAmount = 0.44;
-                state.panelGravity = "bottom";
-                state.panelBottomMarginDp = 10;
-            }
+            panelParams.gravity = Gravity.TOP | Gravity.START;
+            panelParams.x = Number(size.x || 0);
+            panelParams.y = Number(size.y || 0);
+            panelParams.dimAmount = state.mode === "tags" ? 0.72 : 0.44;
+            state.panelGravity = "shared";
+            state.panelBottomMarginDp = 0;
             panelParams.softInputMode =
                 WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE |
                 (requestKeyboard ?
@@ -2042,7 +2052,31 @@
                     Number(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)) !== 0;
             try { panelParams.setTitle("ClipHub Editor Panel"); }
             catch (ignoredTitle) {}
-            windowManager.addView(panelRoot, panelParams);
+            windowManager.addView(panelWindowRoot, panelParams);
+            ClipHub.Window.attachWindow({
+                role: state.mode === "tags" ? "tag_selector" : "editor",
+                rootView: panelWindowRoot,
+                contentView: panelRoot,
+                layoutParams: panelParams,
+                windowManager: windowManager,
+                dragView: panelManagedFrame.dragView,
+                resizeView: panelManagedFrame.resizeView,
+                resizeVisual: panelManagedFrame.resizeVisual,
+                geometry: size,
+                onGeometryChanged: function (geometry) {
+                    state.panelWidthPx = Number(geometry.width || 0);
+                    state.panelHeightPx = Number(geometry.height || 0);
+                    state.panelWidthDp = Number(geometry.widthDp || 0);
+                    state.panelHeightDp = Number(geometry.heightDp || 0);
+                    if (!state.keyboardVisible) {
+                        state.normalPanelHeightDp = state.panelHeightDp;
+                        state.currentPanelHeightDp = state.panelHeightDp;
+                    }
+                },
+                onRequestClose: function () {
+                    return closePanel("managed_close").ok === true;
+                }
+            });
             state.open = true;
             state.attached = true;
             state.openCount += 1;
@@ -2054,9 +2088,7 @@
             state.panelHeightDp = size.heightDp;
             state.normalPanelHeightDp = size.heightDp;
             state.currentPanelHeightDp = size.heightDp;
-            state.currentPanelTopDp = state.mode === "tags" ? 0 :
-                Math.max(0, pxToDp(Number(displayMetrics().heightPixels) -
-                    Number(size.height) - dp(10)));
+            state.currentPanelTopDp = pxToDp(Number(size.y || 0));
             state.dimAmount = Number(panelParams.dimAmount);
             state.modalWindow = true;
             state.opaqueBackground = true;
@@ -2312,7 +2344,7 @@
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 14,
+        MODULE_VERSION: 15,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;

@@ -1090,6 +1090,8 @@
     };
 
     var translationRoot = null;
+    var translationWindowRoot = null;
+    var translationManagedFrame = null;
     var translationParams = null;
     var translationOriginalView = null;
     var translationResultView = null;
@@ -1521,6 +1523,10 @@
             label: "ClipHub 翻译", sensitive: false
         });
         if (result && result.ok === true) {
+            if (ClipHub.Window && translationCopyView !== null &&
+                    typeof ClipHub.Window.performHaptic === "function") {
+                ClipHub.Window.performHaptic(translationCopyView, "confirm");
+            }
             translationState.copyCount += 1;
             translationSetRunning(false, "译文已复制");
             return true;
@@ -1578,7 +1584,7 @@
         if (ClipHub.Window &&
                 typeof ClipHub.Window.computeGeometry === "function") {
             geometry = ClipHub.Window.computeGeometry("translation", {
-                useSaved: false
+                useSaved: true
             });
             return geometry;
         }
@@ -1747,23 +1753,49 @@
                 WindowManager.LayoutParams.TYPE_SYSTEM_ALERT;
             translationRoot = buildTranslationPanel();
             if (Build.VERSION.SDK_INT >= 21) {
-                translationRoot.setElevation(dp(20));
+                translationRoot.setElevation(0);
+                translationRoot.setClipToOutline(true);
             }
+            translationManagedFrame = ClipHub.Window.createManagedFrame(
+                translationRoot, {
+                    accentColor: translationPalette().accentStrong
+                });
+            translationWindowRoot = translationManagedFrame.rootView;
             translationParams = new WindowManager.LayoutParams(
                 size.width, size.height, type,
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
                     WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED |
                     WindowManager.LayoutParams.FLAG_DIM_BEHIND,
                 PixelFormat.TRANSLUCENT);
-            translationParams.gravity = Gravity.BOTTOM |
-                Gravity.CENTER_HORIZONTAL;
-            translationParams.y = dp(10);
+            translationParams.gravity = Gravity.TOP | Gravity.START;
+            translationParams.x = Number(size.x || 0);
+            translationParams.y = Number(size.y || 0);
             translationParams.dimAmount = 0.44;
             try {
                 translationParams.setTitle(
                     "ClipHub Detail Translation Result Panel");
             } catch (ignoredTitle) {}
-            windowManager.addView(translationRoot, translationParams);
+            windowManager.addView(translationWindowRoot, translationParams);
+            ClipHub.Window.attachWindow({
+                role: "translation",
+                rootView: translationWindowRoot,
+                contentView: translationRoot,
+                layoutParams: translationParams,
+                windowManager: windowManager,
+                dragView: translationManagedFrame.dragView,
+                resizeView: translationManagedFrame.resizeView,
+                resizeVisual: translationManagedFrame.resizeVisual,
+                geometry: size,
+                onGeometryChanged: function (geometry) {
+                    translationState.panelWidthDp = Number(
+                        geometry.widthDp || 0);
+                    translationState.panelHeightDp = Number(
+                        geometry.heightDp || 0);
+                },
+                onRequestClose: function () {
+                    return closeTranslationPanel("managed_close");
+                }
+            });
             translationState.attached = true;
             translationState.panelWidthDp = size.widthDp;
             translationState.panelHeightDp = size.heightDp;
@@ -1785,10 +1817,22 @@
         }
         return runOnMainSync(function () {
             try {
+                if (translationWindowRoot !== null && ClipHub.Window &&
+                        typeof ClipHub.Window.detachWindow === "function") {
+                    try { ClipHub.Window.detachWindow(translationWindowRoot); }
+                    catch (ignoredDetach) {}
+                }
                 if (translationRoot !== null) {
-                    try { windowManager.removeViewImmediate(translationRoot); }
-                    catch (error) {
-                        if (translationRoot.isAttachedToWindow()) { throw error; }
+                    try {
+                        windowManager.removeViewImmediate(
+                            translationWindowRoot !== null ?
+                                translationWindowRoot : translationRoot);
+                    } catch (error) {
+                        if (translationWindowRoot !== null ?
+                                translationWindowRoot.isAttachedToWindow() :
+                                translationRoot.isAttachedToWindow()) {
+                            throw error;
+                        }
                     }
                 }
                 translationState.closeCount += 1;
@@ -1797,6 +1841,8 @@
                 translationState.attached = false;
                 translationState.running = false;
                 translationRoot = null;
+                translationWindowRoot = null;
+                translationManagedFrame = null;
                 translationParams = null;
                 translationOriginalView = null;
                 translationResultView = null;
@@ -1848,7 +1894,7 @@
     }
     ClipHub.Translation = {
         MODULE_NAME: "ch_12_translation",
-        MODULE_VERSION: 8,
+        MODULE_VERSION: 9,
         init: function (context) {
             translationConfig = { enabled: true, provider: "settings" };
             navigationInit(context || {});

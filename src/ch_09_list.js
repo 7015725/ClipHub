@@ -66,6 +66,8 @@
 
     var detailWindowManager = null;
     var detailRoot = null;
+    var detailWindowRoot = null;
+    var detailManagedFrame = null;
     var detailParams = null;
     var detailRow = null;
     var detailCopyView = null;
@@ -724,16 +726,13 @@
     }
 
     function detailDimensions() {
-        var geometry;
         if (ClipHub.Window &&
                 typeof ClipHub.Window.computeGeometry === "function") {
-            geometry = ClipHub.Window.computeGeometry("detail", {
-                useSaved: false,
-                centerVertically: true
+            return ClipHub.Window.computeGeometry("detail", {
+                useSaved: true
             });
-            return geometry;
         }
-        return { width: dp(390), height: dp(650),
+        return { x: 0, y: 0, width: dp(390), height: dp(650),
             widthDp: 390, heightDp: 650 };
     }
 
@@ -763,9 +762,18 @@
             var thread = Thread.currentThread();
             try {
                 try {
-                    detailWindowManager.removeViewImmediate(detailRoot);
+                    if (ClipHub.Window && detailWindowRoot !== null &&
+                            typeof ClipHub.Window.detachWindow === "function") {
+                        ClipHub.Window.detachWindow(detailWindowRoot);
+                    }
+                } catch (ignoredDetach) {}
+                try {
+                    detailWindowManager.removeViewImmediate(
+                        detailWindowRoot !== null ? detailWindowRoot : detailRoot);
                 } catch (error) {
-                    if (detailRoot.isAttachedToWindow()) {
+                    if (detailWindowRoot !== null ?
+                            detailWindowRoot.isAttachedToWindow() :
+                            detailRoot.isAttachedToWindow()) {
                         throw error;
                     }
                 }
@@ -775,6 +783,8 @@
                 state.lastDetailAction = String(reason || "close");
             } finally {
                 detailRoot = null;
+                detailWindowRoot = null;
+                detailManagedFrame = null;
                 detailParams = null;
                 detailRow = null;
                 detailCopyView = null;
@@ -973,17 +983,41 @@
 
             detailRow = row;
             detailRoot = buildDetailView(row);
+            detailManagedFrame = ClipHub.Window.createManagedFrame(detailRoot, {
+                accentColor: colors().accentStrong
+            });
+            detailWindowRoot = detailManagedFrame.rootView;
             detailWidthPx = Number(size.width);
             detailHeightPx = Number(size.height);
             detailParams = new WindowManager.LayoutParams(
                 size.width, size.height, type, flags,
                 PixelFormat.TRANSLUCENT);
-            detailParams.gravity = Gravity.CENTER;
+            detailParams.gravity = Gravity.TOP | Gravity.START;
+            detailParams.x = Number(size.x || 0);
+            detailParams.y = Number(size.y || 0);
             detailParams.dimAmount = DETAIL_DIM_AMOUNT;
             try {
                 detailParams.setTitle("ClipHub Content Detail");
             } catch (ignoredTitle) {}
-            detailWindowManager.addView(detailRoot, detailParams);
+            detailWindowManager.addView(detailWindowRoot, detailParams);
+            ClipHub.Window.attachWindow({
+                role: "detail",
+                rootView: detailWindowRoot,
+                contentView: detailRoot,
+                layoutParams: detailParams,
+                windowManager: detailWindowManager,
+                dragView: detailManagedFrame.dragView,
+                resizeView: detailManagedFrame.resizeView,
+                resizeVisual: detailManagedFrame.resizeVisual,
+                geometry: size,
+                onGeometryChanged: function (geometry) {
+                    detailWidthPx = Number(geometry.width || 0);
+                    detailHeightPx = Number(geometry.height || 0);
+                },
+                onRequestClose: function () {
+                    return closeDetail("managed_close").ok === true;
+                }
+            });
             state.detailOpenCount += 1;
             state.cardOpenDetailCount += 1;
             state.lastDetailItemId = Number(row.id);
@@ -1701,7 +1735,7 @@
 
     ClipHub.List = {
         MODULE_NAME: "ch_09_list",
-        MODULE_VERSION: 15,
+        MODULE_VERSION: 16,
         LONG_TEXT_THRESHOLD: LONG_TEXT_THRESHOLD,
 
         init: function (context) {
@@ -1761,6 +1795,8 @@
             filterPanelSuspended = false;
             eventBindings = [];
             detailRoot = null;
+            detailWindowRoot = null;
+            detailManagedFrame = null;
             detailParams = null;
             detailRow = null;
             detailRestoreList = false;

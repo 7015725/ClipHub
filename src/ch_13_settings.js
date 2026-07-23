@@ -56,6 +56,8 @@
     var focusedVisibilityScheduled = false;
     var density = 1;
     var panelRoot = null;
+    var panelWindowRoot = null;
+    var panelManagedFrame = null;
     var panelParams = null;
     var scrollRoot = null;
     var contentRoot = null;
@@ -431,6 +433,18 @@
         var changed = false;
         var wasApplied;
         if (panelRoot === null || panelParams === null) { return false; }
+        if ((!ime.visible || Number(ime.bottomPx) < dp(120)) &&
+                panelWindowRoot !== null && ClipHub.Window &&
+                typeof ClipHub.Window.refreshWindow === "function") {
+            uiState.keyboardAvoidanceApplied = false;
+            uiState.panelGravity = "shared";
+            uiState.panelBottomMarginDp = 0;
+            ClipHub.Window.refreshWindow(panelWindowRoot,
+                "settings_ime_restore");
+            uiState.currentPanelHeightDp = Number(
+                uiState.normalPanelHeightDp || uiState.panelHeightDp || 0);
+            return true;
+        }
         metrics = displayMetrics();
         normalHeightPx = dp(Math.max(300,
             Number(uiState.normalPanelHeightDp || uiState.panelHeightDp || 590)));
@@ -444,7 +458,7 @@
             targetHeightPx = Math.min(normalHeightPx, availablePx);
             targetTopPx = Math.max(topSafePx,
                 keyboardTopPx - dp(6) - targetHeightPx);
-            targetGravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+            targetGravity = Gravity.TOP | Gravity.START;
             targetY = targetTopPx;
             uiState.availableAboveImeDp = pxToDp(availablePx);
             uiState.keyboardAvoidanceApplied = true;
@@ -478,7 +492,9 @@
         uiState.currentPanelHeightDp = pxToDp(targetHeightPx);
         uiState.currentPanelTopDp = pxToDp(targetTopPx);
         if (changed && uiState.attached && panelRoot.isAttachedToWindow()) {
-            windowManager.updateViewLayout(panelRoot, panelParams);
+            windowManager.updateViewLayout(
+                panelWindowRoot !== null ? panelWindowRoot : panelRoot,
+                panelParams);
             uiState.windowLayoutUpdateCount += 1;
         }
         return changed;
@@ -2203,7 +2219,7 @@
         if (ClipHub.Window &&
                 typeof ClipHub.Window.computeGeometry === "function") {
             geometry = ClipHub.Window.computeGeometry("settings", {
-                useSaved: false
+                useSaved: true
             });
             return geometry;
         }
@@ -2226,9 +2242,13 @@
             panelRoot.setBackground(roundedBackground(palette().surface,
                 palette().stroke, 24));
             if (Build.VERSION.SDK_INT >= 21) {
-                panelRoot.setElevation(dp(20));
+                panelRoot.setElevation(0);
                 panelRoot.setClipToOutline(true);
             }
+            panelManagedFrame = ClipHub.Window.createManagedFrame(panelRoot, {
+                accentColor: palette().accentStrong
+            });
+            panelWindowRoot = panelManagedFrame.rootView;
             uiState.panelClipToOutline = Build.VERSION.SDK_INT >= 21 &&
                 panelRoot.getClipToOutline();
             scrollRoot = new ScrollView(appContext);
@@ -2242,8 +2262,9 @@
                     WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED |
                     WindowManager.LayoutParams.FLAG_DIM_BEHIND,
                 PixelFormat.TRANSLUCENT);
-            panelParams.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
-            panelParams.y = dp(10);
+            panelParams.gravity = Gravity.TOP | Gravity.START;
+            panelParams.x = Number(size.x || 0);
+            panelParams.y = Number(size.y || 0);
             panelParams.dimAmount = 0.44;
             panelParams.softInputMode =
                 WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE |
@@ -2254,18 +2275,38 @@
                     Number(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)) !== 0;
             try { panelParams.setTitle("ClipHub Detail Settings Panel"); }
             catch (ignoredTitle) {}
-            windowManager.addView(panelRoot, panelParams);
+            windowManager.addView(panelWindowRoot, panelParams);
+            ClipHub.Window.attachWindow({
+                role: "settings",
+                rootView: panelWindowRoot,
+                contentView: panelRoot,
+                layoutParams: panelParams,
+                windowManager: windowManager,
+                dragView: panelManagedFrame.dragView,
+                resizeView: panelManagedFrame.resizeView,
+                resizeVisual: panelManagedFrame.resizeVisual,
+                geometry: size,
+                onGeometryChanged: function (geometry) {
+                    uiState.panelWidthDp = Number(geometry.widthDp || 0);
+                    uiState.panelHeightDp = Number(geometry.heightDp || 0);
+                    if (!uiState.keyboardVisible) {
+                        uiState.normalPanelHeightDp = uiState.panelHeightDp;
+                        uiState.currentPanelHeightDp = uiState.panelHeightDp;
+                    }
+                },
+                onRequestClose: function () {
+                    return closePage("managed_close");
+                }
+            });
             uiState.attached = true;
             uiState.openCount += 1;
             uiState.panelWidthDp = size.widthDp;
             uiState.panelHeightDp = size.heightDp;
             uiState.normalPanelHeightDp = size.heightDp;
             uiState.currentPanelHeightDp = size.heightDp;
-            uiState.currentPanelTopDp = Math.max(0,
-                pxToDp(Number(displayMetrics().heightPixels) -
-                    Number(size.height) - dp(10)));
-            uiState.panelGravity = "bottom";
-            uiState.panelBottomMarginDp = 10;
+            uiState.currentPanelTopDp = pxToDp(Number(size.y || 0));
+            uiState.panelGravity = "shared";
+            uiState.panelBottomMarginDp = 0;
             uiState.lastError = null;
             buildPage();
             startSettingsImeMonitoring();
@@ -2285,10 +2326,19 @@
             stopSettingsImeMonitoring();
             hideSettingsKeyboardOnMain();
             try {
+                if (panelWindowRoot !== null && ClipHub.Window &&
+                        typeof ClipHub.Window.detachWindow === "function") {
+                    try { ClipHub.Window.detachWindow(panelWindowRoot); }
+                    catch (ignoredDetach) {}
+                }
                 if (panelRoot !== null) {
-                    try { windowManager.removeViewImmediate(panelRoot); }
-                    catch (error) {
-                        if (panelRoot.isAttachedToWindow()) { throw error; }
+                    try {
+                        windowManager.removeViewImmediate(
+                            panelWindowRoot !== null ? panelWindowRoot : panelRoot);
+                    } catch (error) {
+                        if (panelWindowRoot !== null ?
+                                panelWindowRoot.isAttachedToWindow() :
+                                panelRoot.isAttachedToWindow()) { throw error; }
                     }
                 }
                 uiState.closeCount += 1;
@@ -2297,6 +2347,8 @@
             } finally {
                 uiState.attached = false;
                 panelRoot = null;
+                panelWindowRoot = null;
+                panelManagedFrame = null;
                 panelParams = null;
                 scrollRoot = null;
                 contentRoot = null;
@@ -2559,7 +2611,7 @@
 
     ClipHub.Settings = {
         MODULE_NAME: "ch_13_settings",
-        MODULE_VERSION: 15,
+        MODULE_VERSION: 16,
         DEFAULTS: defaultsCopy(),
         init: function (context) {
             if (!ClipHub.Database || !ClipHub.Database.isOpen()) {

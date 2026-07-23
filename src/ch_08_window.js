@@ -16,6 +16,11 @@
     var HapticFeedbackConstants = Packages.android.view.HapticFeedbackConstants;
     var DisplayMetrics = Packages.android.util.DisplayMetrics;
     var DisplayManager = Packages.android.hardware.display.DisplayManager;
+    var FrameLayout = Packages.android.widget.FrameLayout;
+    var Paint = Packages.android.graphics.Paint;
+    var Color = Packages.android.graphics.Color;
+    var PixelFormat = Packages.android.graphics.PixelFormat;
+    var Drawable = Packages.android.graphics.drawable.Drawable;
 
     var androidContext = null;
     var appContext = null;
@@ -29,29 +34,23 @@
     var density = 1;
     var touchSlopPx = 0;
     var longPressTimeoutMs = 500;
-
-    var primary = {
-        attached: false,
-        rootView: null,
-        layoutParams: null,
-        manager: null,
-        dragView: null,
-        resizeView: null,
-        onGeometryChanged: null,
-        onRequestClose: null,
-        geometry: null,
-        pinned: false
-    };
+    var managedWindows = [];
+    var nextManagedId = 1;
+    var activeBinding = null;
 
     var drag = {
+        binding: null,
         downRawX: 0,
         downRawY: 0,
         startX: 0,
         startY: 0,
-        active: false
+        pending: false,
+        active: false,
+        longPressRunnable: null
     };
 
     var resize = {
+        binding: null,
         downRawX: 0,
         downRawY: 0,
         startWidth: 0,
@@ -63,6 +62,7 @@
 
     var state = {
         geometryService: true,
+        sharedGeometryService: true,
         legacyHomeRemoved: true,
         primaryAttached: false,
         primaryPinned: false,
@@ -72,14 +72,17 @@
         primaryHeight: 0,
         safeBounds: { left: 0, top: 0, right: 0, bottom: 0 },
         orientation: "portrait",
+        dragPending: false,
         dragActive: false,
         resizePending: false,
         resizeActive: false,
+        dragActivateCount: 0,
         dragMoveCount: 0,
         resizeActivateCount: 0,
         resizeMoveCount: 0,
         geometryComputeCount: 0,
         geometryPersistCount: 0,
+        geometryBroadcastCount: 0,
         boundsRefreshCount: 0,
         configurationChangeCount: 0,
         displayChangeCount: 0,
@@ -181,7 +184,7 @@
     function copyGeometry(value) {
         if (!value || typeof value !== "object") { return null; }
         return {
-            role: String(value.role || "primary"),
+            role: String(value.role || "shared"),
             orientation: String(value.orientation || "portrait"),
             x: Number(value.x || 0),
             y: Number(value.y || 0),
@@ -262,41 +265,15 @@
             "landscape" : "portrait";
     }
 
-    function rolePolicy(role) {
-        role = String(role || "primary");
-        if (role === "detail") {
-            return { widthRatio: 0.94, heightRatio: 0.76,
-                minWidthDp: 300, minHeightDp: 320,
-                maxWidthDp: 420, maxHeightDp: 650, bottomMarginDp: 10 };
-        }
-        if (role === "editor") {
-            return { widthRatio: 0.94, heightRatio: 0.76,
-                minWidthDp: 300, minHeightDp: 300,
-                maxWidthDp: 390, maxHeightDp: 590, bottomMarginDp: 10 };
-        }
-        if (role === "tag_selector") {
-            return { widthRatio: 0.94, heightRatio: 0.72,
-                minWidthDp: 300, minHeightDp: 360,
-                maxWidthDp: 390, maxHeightDp: 590, bottomMarginDp: 10 };
-        }
-        if (role === "translation") {
-            return { widthRatio: 0.94, heightRatio: 0.72,
-                minWidthDp: 300, minHeightDp: 340,
-                maxWidthDp: 390, maxHeightDp: 650, bottomMarginDp: 10 };
-        }
-        if (role === "settings") {
-            return { widthRatio: 0.94, heightRatio: 0.84,
-                minWidthDp: 300, minHeightDp: 360,
-                maxWidthDp: 390, maxHeightDp: 720, bottomMarginDp: 10 };
-        }
-        if (role === "filter_overlay") {
-            return { widthRatio: 0.94, heightRatio: 0.82,
-                minWidthDp: 300, minHeightDp: 360,
-                maxWidthDp: 390, maxHeightDp: 720, bottomMarginDp: 10 };
-        }
-        return { widthRatio: 0.94, heightRatio: 0.82,
-            minWidthDp: 300, minHeightDp: 420,
-            maxWidthDp: 420, maxHeightDp: 720, bottomMarginDp: 10 };
+    function sharedPolicy() {
+        return {
+            widthRatio: 0.94,
+            heightRatio: 0.82,
+            minWidthDp: 280,
+            minHeightDp: 320,
+            maxWidthDp: 420,
+            maxHeightDp: 720
+        };
     }
 
     function normalizeStoredBucket(value) {
@@ -326,26 +303,25 @@
         };
     }
 
-    function usableDimensionDp(safeDp, marginDp) {
-        return Math.max(1, Number(safeDp) - Number(marginDp || 0) * 2);
-    }
-
     function computeGeometry(role, options) {
         var bounds = safeBounds();
         var orientation = orientationForBounds(bounds);
-        var policy = rolePolicy(role);
-        var safeWidthDp = pxToDp(Number(bounds.right) - Number(bounds.left));
-        var safeHeightDp = pxToDp(Number(bounds.bottom) - Number(bounds.top));
-        var marginDp = Math.max(0, Number(options && options.marginDp !== undefined ?
-            options.marginDp : 10));
-        var usableWidthDp = usableDimensionDp(safeWidthDp, marginDp);
-        var usableHeightDp = usableDimensionDp(safeHeightDp, marginDp);
-        var minWidthDp = Math.min(Number(policy.minWidthDp), usableWidthDp);
-        var minHeightDp = Math.min(Number(policy.minHeightDp), usableHeightDp);
-        var maxWidthDp = Math.min(Number(policy.maxWidthDp), usableWidthDp);
-        var maxHeightDp = Math.min(Number(policy.maxHeightDp), usableHeightDp);
-        var widthRatio = Number(policy.widthRatio);
-        var heightRatio = Number(policy.heightRatio);
+        var policy = sharedPolicy();
+        var safeWidth = Math.max(1,
+            Number(bounds.right) - Number(bounds.left));
+        var safeHeight = Math.max(1,
+            Number(bounds.bottom) - Number(bounds.top));
+        var safeWidthDp = pxToDp(safeWidth);
+        var safeHeightDp = pxToDp(safeHeight);
+        var marginDp;
+        var usableWidthDp;
+        var usableHeightDp;
+        var minWidthDp;
+        var minHeightDp;
+        var maxWidthDp;
+        var maxHeightDp;
+        var widthRatio = policy.widthRatio;
+        var heightRatio = policy.heightRatio;
         var xRatio = 0.5;
         var yRatio = 1;
         var stored;
@@ -359,7 +335,15 @@
         var x;
         var y;
         options = options || {};
-        if (role === "primary" && options.useSaved !== false) {
+        marginDp = Math.max(0, Number(options.marginDp !== undefined ?
+            options.marginDp : 10));
+        usableWidthDp = Math.max(1, safeWidthDp - marginDp * 2);
+        usableHeightDp = Math.max(1, safeHeightDp - marginDp * 2);
+        minWidthDp = Math.min(policy.minWidthDp, usableWidthDp);
+        minHeightDp = Math.min(policy.minHeightDp, usableHeightDp);
+        maxWidthDp = Math.min(policy.maxWidthDp, usableWidthDp);
+        maxHeightDp = Math.min(policy.maxHeightDp, usableHeightDp);
+        if (options.useSaved !== false) {
             stored = readStoredGeometry();
             bucket = stored ? stored[orientation] : null;
             if (bucket) {
@@ -375,37 +359,25 @@
         if (options.heightRatio !== undefined) {
             heightRatio = clamp01(options.heightRatio);
         }
-        if (options.preferredWidthDp !== undefined) {
-            widthDp = Number(options.preferredWidthDp);
-        } else {
-            widthDp = safeWidthDp * widthRatio;
-        }
-        if (options.preferredHeightDp !== undefined) {
-            heightDp = Number(options.preferredHeightDp);
-        } else {
-            heightDp = safeHeightDp * heightRatio;
-        }
+        widthDp = options.preferredWidthDp !== undefined ?
+            Number(options.preferredWidthDp) : safeWidthDp * widthRatio;
+        heightDp = options.preferredHeightDp !== undefined ?
+            Number(options.preferredHeightDp) : safeHeightDp * heightRatio;
         widthDp = clamp(widthDp, minWidthDp, maxWidthDp);
         heightDp = clamp(heightDp, minHeightDp, maxHeightDp);
         width = dp(widthDp);
         height = dp(heightDp);
-        travelX = Math.max(0,
-            Number(bounds.right) - Number(bounds.left) - width);
-        travelY = Math.max(0,
-            Number(bounds.bottom) - Number(bounds.top) - height);
+        travelX = Math.max(0, safeWidth - width);
+        travelY = Math.max(0, safeHeight - height);
         if (options.xRatio !== undefined) { xRatio = clamp01(options.xRatio); }
         if (options.yRatio !== undefined) { yRatio = clamp01(options.yRatio); }
         x = Math.floor(Number(bounds.left) + travelX * xRatio);
         y = Math.floor(Number(bounds.top) + travelY * yRatio);
-        if (role !== "primary" && options.centerVertically === true) {
-            yRatio = 0.5;
-            y = Math.floor(Number(bounds.top) + travelY * 0.5);
-        }
         state.geometryComputeCount += 1;
         state.safeBounds = copyBounds(bounds);
         state.orientation = orientation;
         return {
-            role: String(role || "primary"),
+            role: String(role || "shared"),
             orientation: orientation,
             bounds: copyBounds(bounds),
             x: x,
@@ -425,35 +397,173 @@
         };
     }
 
-    function currentPrimaryGeometry() {
+    function parseColor(value, fallback) {
+        try { return Number(Color.parseColor(String(value))); }
+        catch (ignored) {
+            try { return Number(Color.parseColor(String(fallback))); }
+            catch (ignoredFallback) { return Number(Color.WHITE); }
+        }
+    }
+
+    function createResizeVisual(colorText) {
+        var visual = { active: false, alpha: 1 };
+        var paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        var drawable;
+        var view;
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setColor(parseColor(colorText, "#7C5CFC"));
+        drawable = new JavaAdapter(Drawable, {
+            draw: function (canvas) {
+                var width = Number(canvas.getWidth());
+                var height = Number(canvas.getHeight());
+                var right = width - dp(6);
+                var bottom = height - dp(6);
+                var index;
+                var length;
+                var offset;
+                paint.setStrokeWidth(dp(visual.active ? 2.2 : 1.5));
+                paint.setAlpha(Math.floor((visual.active ? 205 : 78) *
+                    Number(visual.alpha || 1)));
+                for (index = 0; index < 3; index += 1) {
+                    length = dp(7 + index * 5);
+                    offset = dp(index * 4);
+                    canvas.drawLine(right - length, bottom - offset,
+                        right - offset, bottom - length, paint);
+                }
+            },
+            setAlpha: function (alpha) {
+                visual.alpha = clamp(Number(alpha) / 255, 0, 1);
+            },
+            setColorFilter: function (filter) {
+                paint.setColorFilter(filter);
+            },
+            getOpacity: function () {
+                return PixelFormat.TRANSLUCENT;
+            }
+        });
+        view = new View(appContext);
+        view.setBackground(drawable);
+        view.setClickable(true);
+        view.setFocusable(true);
+        view.setContentDescription("长按并拖动调整窗口大小");
+        return {
+            view: view,
+            setActive: function (active) {
+                visual.active = active === true;
+                try { view.invalidate(); } catch (ignored) {}
+            }
+        };
+    }
+
+    function createManagedFrame(contentView, options) {
+        var root;
+        var contentParams;
+        var dragView;
+        var dragParams;
+        var resizeVisual;
+        var resizeParams;
+        options = options || {};
+        if (contentView === null || contentView === undefined) {
+            throw new Error("Managed window content view is required");
+        }
+        root = new FrameLayout(appContext);
+        root.setClipChildren(false);
+        root.setClipToPadding(false);
+        contentParams = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT);
+        root.addView(contentView, contentParams);
+        if (Build.VERSION.SDK_INT >= 21) {
+            try { contentView.setElevation(0); } catch (ignoredElevation) {}
+            try { contentView.setClipToOutline(true); } catch (ignoredClip) {}
+        }
+        dragView = new View(appContext);
+        dragView.setClickable(true);
+        dragView.setFocusable(true);
+        dragView.setContentDescription("长按并拖动移动窗口");
+        dragParams = new FrameLayout.LayoutParams(dp(86), dp(24));
+        dragParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+        root.addView(dragView, dragParams);
+        resizeVisual = createResizeVisual(options.accentColor || "#7C5CFC");
+        resizeParams = new FrameLayout.LayoutParams(dp(40), dp(40));
+        resizeParams.gravity = Gravity.END | Gravity.BOTTOM;
+        root.addView(resizeVisual.view, resizeParams);
+        return {
+            rootView: root,
+            contentView: contentView,
+            dragView: dragView,
+            resizeView: resizeVisual.view,
+            resizeVisual: resizeVisual
+        };
+    }
+
+    function bindingImeVisible(binding) {
+        var insets;
+        if (!binding || !binding.rootView || Build.VERSION.SDK_INT < 30) {
+            return false;
+        }
+        try {
+            insets = binding.rootView.getRootWindowInsets();
+            return insets !== null &&
+                insets.isVisible(WindowInsets.Type.ime()) === true;
+        } catch (ignored) { return false; }
+    }
+
+    function findBinding(rootView) {
+        var index;
+        for (index = 0; index < managedWindows.length; index += 1) {
+            if (managedWindows[index].rootView === rootView) {
+                return managedWindows[index];
+            }
+        }
+        return null;
+    }
+
+    function findPrimaryBinding() {
+        var index;
+        for (index = managedWindows.length - 1; index >= 0; index -= 1) {
+            if (managedWindows[index].role === "primary") {
+                return managedWindows[index];
+            }
+        }
+        return managedWindows.length > 0 ?
+            managedWindows[managedWindows.length - 1] : null;
+    }
+
+    function activateBinding(binding) {
+        if (!binding) { return false; }
+        activeBinding = binding;
+        state.primaryAttached = true;
+        state.primaryPinned = binding.pinned === true;
+        return true;
+    }
+
+    function geometryFromBinding(binding) {
         var bounds;
         var width;
         var height;
-        var travelX;
-        var travelY;
         var safeWidth;
         var safeHeight;
+        var travelX;
+        var travelY;
         var geometry;
-        if (!primary.attached || primary.layoutParams === null) {
-            return copyGeometry(primary.geometry);
-        }
+        if (!binding || !binding.layoutParams) { return null; }
         bounds = safeBounds();
-        width = Number(primary.layoutParams.width);
-        height = Number(primary.layoutParams.height);
-        travelX = Math.max(0,
-            Number(bounds.right) - Number(bounds.left) - width);
-        travelY = Math.max(0,
-            Number(bounds.bottom) - Number(bounds.top) - height);
+        width = Number(binding.layoutParams.width);
+        height = Number(binding.layoutParams.height);
         safeWidth = Math.max(1, Number(bounds.right) - Number(bounds.left));
         safeHeight = Math.max(1, Number(bounds.bottom) - Number(bounds.top));
-        geometry = primary.geometry || computeGeometry("primary", {
+        travelX = Math.max(0, safeWidth - width);
+        travelY = Math.max(0, safeHeight - height);
+        geometry = copyGeometry(binding.geometry || computeGeometry("shared", {
             useSaved: false
-        });
-        geometry = copyGeometry(geometry);
+        }));
+        geometry.role = String(binding.role || "shared");
         geometry.bounds = copyBounds(bounds);
         geometry.orientation = orientationForBounds(bounds);
-        geometry.x = Number(primary.layoutParams.x);
-        geometry.y = Number(primary.layoutParams.y);
+        geometry.x = Number(binding.layoutParams.x);
+        geometry.y = Number(binding.layoutParams.y);
         geometry.width = width;
         geometry.height = height;
         geometry.widthDp = pxToDp(width);
@@ -467,70 +577,135 @@
         return geometry;
     }
 
-    function notifyGeometryChanged(reason) {
-        var geometry = currentPrimaryGeometry();
-        primary.geometry = copyGeometry(geometry);
-        state.primaryX = geometry ? Number(geometry.x) : 0;
-        state.primaryY = geometry ? Number(geometry.y) : 0;
-        state.primaryWidth = geometry ? Number(geometry.width) : 0;
-        state.primaryHeight = geometry ? Number(geometry.height) : 0;
-        state.safeBounds = geometry ? copyBounds(geometry.bounds) : safeBounds();
-        state.orientation = geometry ? String(geometry.orientation) :
-            orientationForBounds(state.safeBounds);
-        if (typeof primary.onGeometryChanged === "function") {
+    function notifyBinding(binding, geometry, reason) {
+        binding.geometry = copyGeometry(geometry);
+        if (typeof binding.onGeometryChanged === "function") {
             try {
-                primary.onGeometryChanged(copyGeometry(geometry),
+                binding.onGeometryChanged(copyGeometry(geometry),
                     String(reason || "update"));
             } catch (error) {
                 state.lastError = String(error);
             }
         }
-        return geometry;
     }
 
-    function updatePrimaryLayout(x, y, width, height, reason) {
-        var bounds;
-        var maxX;
-        var maxY;
-        if (!primary.attached || primary.rootView === null ||
-                primary.layoutParams === null || primary.manager === null) {
+    function applyGeometryToBinding(binding, geometry, reason, force) {
+        if (!binding || !binding.rootView || !binding.layoutParams ||
+                !binding.manager) {
             return false;
         }
+        if (!force && binding !== activeBinding && bindingImeVisible(binding)) {
+            binding.pendingSharedGeometry = copyGeometry(geometry);
+            return false;
+        }
+        binding.layoutParams.gravity = Gravity.TOP | Gravity.START;
+        binding.layoutParams.width = Math.floor(Number(geometry.width));
+        binding.layoutParams.height = Math.floor(Number(geometry.height));
+        binding.layoutParams.x = Math.floor(Number(geometry.x));
+        binding.layoutParams.y = Math.floor(Number(geometry.y));
+        try {
+            if (binding.rootView.isAttachedToWindow()) {
+                binding.manager.updateViewLayout(binding.rootView,
+                    binding.layoutParams);
+            }
+        } catch (error) {
+            state.lastError = String(error);
+            return false;
+        }
+        binding.pendingSharedGeometry = null;
+        notifyBinding(binding, geometry, reason);
+        return true;
+    }
+
+    function updateSharedLayout(sourceBinding, x, y, width, height, reason) {
+        var bounds;
+        var policy = sharedPolicy();
+        var safeWidth;
+        var safeHeight;
+        var minWidth;
+        var minHeight;
+        var maxWidth;
+        var maxHeight;
+        var maxX;
+        var maxY;
+        var geometry;
+        var index;
+        var applied = 0;
+        if (!sourceBinding || !sourceBinding.layoutParams) { return false; }
+        activateBinding(sourceBinding);
         bounds = safeBounds();
-        width = clamp(Number(width),
-            Number(primary.geometry.minWidth),
-            Math.min(Number(primary.geometry.maxWidth),
-                Number(bounds.right) - Number(bounds.left)));
-        height = clamp(Number(height),
-            Number(primary.geometry.minHeight),
-            Math.min(Number(primary.geometry.maxHeight),
-                Number(bounds.bottom) - Number(bounds.top)));
+        safeWidth = Math.max(1, Number(bounds.right) - Number(bounds.left));
+        safeHeight = Math.max(1, Number(bounds.bottom) - Number(bounds.top));
+        minWidth = Math.min(dp(policy.minWidthDp), safeWidth);
+        minHeight = Math.min(dp(policy.minHeightDp), safeHeight);
+        maxWidth = Math.min(dp(policy.maxWidthDp), safeWidth);
+        maxHeight = Math.min(dp(policy.maxHeightDp), safeHeight);
+        width = clamp(Number(width), minWidth, maxWidth);
+        height = clamp(Number(height), minHeight, maxHeight);
         maxX = Math.max(Number(bounds.left), Number(bounds.right) - width);
         maxY = Math.max(Number(bounds.top), Number(bounds.bottom) - height);
         x = clamp(Number(x), Number(bounds.left), maxX);
         y = clamp(Number(y), Number(bounds.top), maxY);
-        primary.layoutParams.gravity = Gravity.TOP | Gravity.START;
-        primary.layoutParams.width = Math.floor(width);
-        primary.layoutParams.height = Math.floor(height);
-        primary.layoutParams.x = Math.floor(x);
-        primary.layoutParams.y = Math.floor(y);
-        primary.manager.updateViewLayout(primary.rootView,
-            primary.layoutParams);
-        notifyGeometryChanged(reason);
-        return true;
+        geometry = {
+            role: "shared",
+            orientation: orientationForBounds(bounds),
+            bounds: copyBounds(bounds),
+            x: Math.floor(x),
+            y: Math.floor(y),
+            width: Math.floor(width),
+            height: Math.floor(height),
+            widthDp: pxToDp(width),
+            heightDp: pxToDp(height),
+            minWidth: minWidth,
+            minHeight: minHeight,
+            maxWidth: maxWidth,
+            maxHeight: maxHeight,
+            xRatio: maxX > Number(bounds.left) ?
+                clamp01((x - Number(bounds.left)) /
+                    (maxX - Number(bounds.left))) : 0.5,
+            yRatio: maxY > Number(bounds.top) ?
+                clamp01((y - Number(bounds.top)) /
+                    (maxY - Number(bounds.top))) : 1,
+            widthRatio: clamp01(width / safeWidth),
+            heightRatio: clamp01(height / safeHeight)
+        };
+        for (index = 0; index < managedWindows.length; index += 1) {
+            if (applyGeometryToBinding(managedWindows[index], geometry,
+                    reason, managedWindows[index] === sourceBinding)) {
+                applied += 1;
+            }
+        }
+        sourceBinding.geometry = copyGeometry(geometry);
+        state.primaryX = geometry.x;
+        state.primaryY = geometry.y;
+        state.primaryWidth = geometry.width;
+        state.primaryHeight = geometry.height;
+        state.safeBounds = copyBounds(bounds);
+        state.orientation = geometry.orientation;
+        state.geometryBroadcastCount += applied;
+        return applied > 0;
     }
 
-    function persistPrimaryGeometry() {
+    function currentSharedGeometry() {
+        if (activeBinding) { return geometryFromBinding(activeBinding); }
+        if (managedWindows.length > 0) {
+            return geometryFromBinding(managedWindows[managedWindows.length - 1]);
+        }
+        return computeGeometry("shared", { useSaved: true });
+    }
+
+    function persistSharedGeometry(binding) {
         var geometry;
         var stored;
         var bucket;
-        if (!primary.attached || !ClipHub.Settings ||
+        binding = binding || activeBinding;
+        if (!binding || !ClipHub.Settings ||
                 typeof ClipHub.Settings.set !== "function" ||
                 typeof ClipHub.Settings.isReady !== "function" ||
                 !ClipHub.Settings.isReady()) {
             return false;
         }
-        geometry = currentPrimaryGeometry();
+        geometry = geometryFromBinding(binding);
         if (!geometry) { return false; }
         stored = readStoredGeometry() || {
             version: 1,
@@ -543,15 +718,13 @@
             widthRatio: clamp01(geometry.widthRatio),
             heightRatio: clamp01(geometry.heightRatio)
         };
-        stored.version = 1;
+        stored.version = 2;
         stored[geometry.orientation] = bucket;
         try {
-            ClipHub.Settings.set("windowGeometry", stored, {
-                cleanup: false
-            });
+            ClipHub.Settings.set("windowGeometry", stored, { cleanup: false });
             state.geometryPersistCount += 1;
             state.lastPersistedGeometry = {
-                version: 1,
+                version: 2,
                 portrait: stored.portrait,
                 landscape: stored.landscape
             };
@@ -573,6 +746,9 @@
                     Build.VERSION.SDK_INT >= 34) {
                 constant = Number(
                     HapticFeedbackConstants.GESTURE_THRESHOLD_ACTIVATE);
+            } else if (String(kind || "") === "drag_activate" &&
+                    Build.VERSION.SDK_INT >= 30) {
+                constant = Number(HapticFeedbackConstants.GESTURE_START);
             }
         } catch (ignoredConstant) {
             constant = Number(HapticFeedbackConstants.LONG_PRESS);
@@ -581,65 +757,89 @@
         catch (ignoredHaptic) { return false; }
     }
 
-    function imeVisible() {
-        var insets;
-        var mask;
-        if (!primary.attached || primary.rootView === null ||
-                Build.VERSION.SDK_INT < 30) {
-            return false;
+    function cancelDragActivation() {
+        if (mainHandler !== null && drag.longPressRunnable !== null) {
+            try { mainHandler.removeCallbacks(drag.longPressRunnable); }
+            catch (ignored) {}
         }
-        try {
-            insets = primary.rootView.getRootWindowInsets();
-            if (insets === null) { return false; }
-            mask = WindowInsets.Type.ime();
-            return insets.isVisible(mask) === true;
-        } catch (ignored) { return false; }
+        drag.longPressRunnable = null;
+        drag.pending = false;
+        state.dragPending = false;
     }
 
-    function handleDragTouch(view, event) {
+    function scheduleDragActivation(view, binding) {
+        cancelDragActivation();
+        drag.binding = binding;
+        drag.pending = true;
+        state.dragPending = true;
+        drag.longPressRunnable = new Packages.java.lang.Runnable({
+            run: function () {
+                if (!binding || !binding.attached || !drag.pending ||
+                        binding.pinned || bindingImeVisible(binding)) {
+                    cancelDragActivation();
+                    return;
+                }
+                activateBinding(binding);
+                drag.pending = false;
+                drag.active = true;
+                state.dragPending = false;
+                state.dragActive = true;
+                state.dragActivateCount += 1;
+                performHaptic(view, "drag_activate");
+            }
+        });
+        mainHandler.postDelayed(drag.longPressRunnable, longPressTimeoutMs);
+    }
+
+    function handleDragTouch(binding, view, event) {
         var action = Number(event.getActionMasked());
         var rawX = Number(event.getRawX());
         var rawY = Number(event.getRawY());
         var deltaX;
         var deltaY;
         var completed;
-        if (!primary.attached || primary.pinned || resize.pending ||
+        activateBinding(binding);
+        if (!binding || !binding.attached || binding.pinned || resize.pending ||
                 resize.active) {
             return true;
         }
         if (action === MotionEvent.ACTION_DOWN) {
+            if (bindingImeVisible(binding)) { return true; }
             drag.downRawX = rawX;
             drag.downRawY = rawY;
-            drag.startX = Number(primary.layoutParams.x);
-            drag.startY = Number(primary.layoutParams.y);
+            drag.startX = Number(binding.layoutParams.x);
+            drag.startY = Number(binding.layoutParams.y);
             drag.active = false;
             state.dragActive = false;
+            scheduleDragActivation(view, binding);
             return true;
         }
         if (action === MotionEvent.ACTION_MOVE) {
             deltaX = rawX - drag.downRawX;
             deltaY = rawY - drag.downRawY;
-            if (!drag.active && Math.abs(deltaX) + Math.abs(deltaY) >=
+            if (drag.pending && Math.abs(deltaX) + Math.abs(deltaY) >
                     touchSlopPx) {
-                drag.active = true;
-                state.dragActive = true;
+                cancelDragActivation();
+                return true;
             }
-            if (drag.active) {
-                updatePrimaryLayout(drag.startX + deltaX,
+            if (drag.active && drag.binding === binding) {
+                updateSharedLayout(binding, drag.startX + deltaX,
                     drag.startY + deltaY,
-                    Number(primary.layoutParams.width),
-                    Number(primary.layoutParams.height), "drag");
+                    Number(binding.layoutParams.width),
+                    Number(binding.layoutParams.height), "drag_shared");
                 state.dragMoveCount += 1;
             }
             return true;
         }
         if (action === MotionEvent.ACTION_UP ||
                 action === MotionEvent.ACTION_CANCEL) {
-            completed = drag.active;
+            completed = drag.active && drag.binding === binding;
+            cancelDragActivation();
             drag.active = false;
+            drag.binding = null;
             state.dragActive = false;
             if (completed && action === MotionEvent.ACTION_UP) {
-                persistPrimaryGeometry();
+                persistSharedGeometry(binding);
             }
             return true;
         }
@@ -656,22 +856,32 @@
         state.resizePending = false;
     }
 
-    function scheduleResizeActivation(view) {
+    function setResizeVisual(binding, active) {
+        if (binding && binding.resizeVisual &&
+                typeof binding.resizeVisual.setActive === "function") {
+            binding.resizeVisual.setActive(active === true);
+        }
+    }
+
+    function scheduleResizeActivation(view, binding) {
         cancelResizeActivation();
+        resize.binding = binding;
         resize.pending = true;
         state.resizePending = true;
         resize.longPressRunnable = new Packages.java.lang.Runnable({
             run: function () {
-                if (!primary.attached || !resize.pending ||
-                        primary.pinned || imeVisible()) {
+                if (!binding || !binding.attached || !resize.pending ||
+                        binding.pinned || bindingImeVisible(binding)) {
                     cancelResizeActivation();
                     return;
                 }
+                activateBinding(binding);
                 resize.pending = false;
                 resize.active = true;
                 state.resizePending = false;
                 state.resizeActive = true;
                 state.resizeActivateCount += 1;
+                setResizeVisual(binding, true);
                 performHaptic(view, "resize_activate");
             }
         });
@@ -679,7 +889,7 @@
             longPressTimeoutMs);
     }
 
-    function handleResizeTouch(view, event) {
+    function handleResizeTouch(binding, view, event) {
         var action = Number(event.getActionMasked());
         var rawX = Number(event.getRawX());
         var rawY = Number(event.getRawY());
@@ -688,18 +898,19 @@
         var width;
         var height;
         var completed;
-        if (!primary.attached || primary.pinned || drag.active) {
+        activateBinding(binding);
+        if (!binding || !binding.attached || binding.pinned || drag.active) {
             return true;
         }
         if (action === MotionEvent.ACTION_DOWN) {
-            if (imeVisible()) { return true; }
+            if (bindingImeVisible(binding)) { return true; }
             resize.downRawX = rawX;
             resize.downRawY = rawY;
-            resize.startWidth = Number(primary.layoutParams.width);
-            resize.startHeight = Number(primary.layoutParams.height);
+            resize.startWidth = Number(binding.layoutParams.width);
+            resize.startHeight = Number(binding.layoutParams.height);
             resize.active = false;
             state.resizeActive = false;
-            scheduleResizeActivation(view);
+            scheduleResizeActivation(view, binding);
             return true;
         }
         if (action === MotionEvent.ACTION_MOVE) {
@@ -710,155 +921,251 @@
                 cancelResizeActivation();
                 return true;
             }
-            if (resize.active) {
+            if (resize.active && resize.binding === binding) {
                 width = resize.startWidth + deltaX;
                 height = resize.startHeight + deltaY;
-                updatePrimaryLayout(Number(primary.layoutParams.x),
-                    Number(primary.layoutParams.y), width, height,
-                    "resize_bottom_right");
+                updateSharedLayout(binding, Number(binding.layoutParams.x),
+                    Number(binding.layoutParams.y), width, height,
+                    "resize_bottom_right_shared");
                 state.resizeMoveCount += 1;
             }
             return true;
         }
         if (action === MotionEvent.ACTION_UP ||
                 action === MotionEvent.ACTION_CANCEL) {
-            completed = resize.active;
+            completed = resize.active && resize.binding === binding;
             cancelResizeActivation();
             resize.active = false;
+            resize.binding = null;
             state.resizeActive = false;
+            setResizeVisual(binding, false);
             if (completed && action === MotionEvent.ACTION_UP) {
-                persistPrimaryGeometry();
+                persistSharedGeometry(binding);
             }
             return true;
         }
         return true;
     }
 
-    function bindDragView(view) {
-        primary.dragView = view || null;
-        if (primary.dragView !== null) {
-            primary.dragView.setOnTouchListener(new JavaAdapter(
-                View.OnTouchListener, { onTouch: handleDragTouch }));
+    function bindDragView(binding, view) {
+        binding.dragView = view || null;
+        if (binding.dragView !== null) {
+            binding.dragView.setOnTouchListener(new JavaAdapter(
+                View.OnTouchListener, {
+                    onTouch: function (target, event) {
+                        return handleDragTouch(binding, target, event);
+                    }
+                }));
         }
-        return primary.dragView !== null;
+        return binding.dragView !== null;
     }
 
-    function bindResizeView(view) {
-        primary.resizeView = view || null;
-        if (primary.resizeView !== null) {
-            primary.resizeView.setOnTouchListener(new JavaAdapter(
-                View.OnTouchListener, { onTouch: handleResizeTouch }));
+    function bindResizeView(binding, view) {
+        binding.resizeView = view || null;
+        if (binding.resizeView !== null) {
+            binding.resizeView.setOnTouchListener(new JavaAdapter(
+                View.OnTouchListener, {
+                    onTouch: function (target, event) {
+                        return handleResizeTouch(binding, target, event);
+                    }
+                }));
         }
-        return primary.resizeView !== null;
+        return binding.resizeView !== null;
     }
 
-    function installPrimaryWindow(options) {
+    function installImeObserver(binding) {
+        var observer;
+        if (!binding || !binding.rootView) { return false; }
+        try {
+            observer = binding.rootView.getViewTreeObserver();
+            binding.imeVisible = bindingImeVisible(binding);
+            binding.layoutObserver = observer;
+            binding.layoutListener = new JavaAdapter(
+                Packages.android.view.ViewTreeObserver.OnGlobalLayoutListener, {
+                    onGlobalLayout: function () {
+                        var visible = bindingImeVisible(binding);
+                        var wasVisible = binding.imeVisible === true;
+                        binding.imeVisible = visible;
+                        if (wasVisible && !visible && binding.attached) {
+                            mainHandler.postDelayed(
+                                new Packages.java.lang.Runnable({
+                                    run: function () {
+                                        if (binding.attached) {
+                                            refreshWindow(binding.rootView,
+                                                "ime_hidden_restore");
+                                        }
+                                    }
+                                }), 100);
+                        }
+                    }
+                });
+            observer.addOnGlobalLayoutListener(binding.layoutListener);
+            return true;
+        } catch (error) {
+            state.lastError = String(error);
+            return false;
+        }
+    }
+
+    function removeImeObserver(binding) {
+        try {
+            if (binding && binding.layoutObserver && binding.layoutListener &&
+                    binding.layoutObserver.isAlive()) {
+                binding.layoutObserver.removeOnGlobalLayoutListener(
+                    binding.layoutListener);
+            }
+        } catch (ignored) {}
+        if (binding) {
+            binding.layoutObserver = null;
+            binding.layoutListener = null;
+        }
+    }
+
+    function attachWindow(options) {
         var geometry;
+        var binding;
         options = options || {};
-        if (options.rootView === null || options.rootView === undefined ||
-                options.layoutParams === null ||
-                options.layoutParams === undefined ||
-                options.windowManager === null ||
-                options.windowManager === undefined) {
-            throw new Error("Primary window binding is incomplete");
+        if (!options.rootView || !options.layoutParams ||
+                !options.windowManager) {
+            throw new Error("Managed window binding is incomplete");
         }
-        detachPrimaryWindow();
-        primary.rootView = options.rootView;
-        primary.layoutParams = options.layoutParams;
-        primary.manager = options.windowManager;
-        primary.onGeometryChanged = options.onGeometryChanged || null;
-        primary.onRequestClose = options.onRequestClose || null;
-        primary.pinned = options.pinned === true;
-        geometry = options.geometry || computeGeometry("primary", {
+        detachWindow(options.rootView);
+        geometry = options.geometry || computeGeometry("shared", {
             useSaved: true
         });
-        primary.geometry = copyGeometry(geometry);
-        primary.attached = true;
-        state.primaryAttached = true;
-        state.primaryPinned = primary.pinned;
-        bindDragView(options.dragView || null);
-        bindResizeView(options.resizeView || null);
-        updatePrimaryLayout(Number(geometry.x), Number(geometry.y),
-            Number(geometry.width), Number(geometry.height), "install");
+        binding = {
+            id: nextManagedId,
+            role: String(options.role || "shared"),
+            attached: true,
+            rootView: options.rootView,
+            contentView: options.contentView || null,
+            layoutParams: options.layoutParams,
+            manager: options.windowManager,
+            dragView: null,
+            resizeView: null,
+            resizeVisual: options.resizeVisual || null,
+            onGeometryChanged: options.onGeometryChanged || null,
+            onRequestClose: options.onRequestClose || null,
+            geometry: copyGeometry(geometry),
+            pendingSharedGeometry: null,
+            pinned: options.pinned === true,
+            layoutObserver: null,
+            layoutListener: null,
+            imeVisible: false
+        };
+        nextManagedId += 1;
+        managedWindows.push(binding);
+        activateBinding(binding);
+        bindDragView(binding, options.dragView || null);
+        bindResizeView(binding, options.resizeView || null);
+        installImeObserver(binding);
+        updateSharedLayout(binding, Number(geometry.x), Number(geometry.y),
+            Number(geometry.width), Number(geometry.height), "attach_shared");
         return getState();
     }
 
+    function detachWindow(rootView) {
+        var kept = [];
+        var removed = null;
+        var index;
+        if (!rootView) { return false; }
+        for (index = 0; index < managedWindows.length; index += 1) {
+            if (managedWindows[index].rootView === rootView) {
+                removed = managedWindows[index];
+                removed.attached = false;
+                removeImeObserver(removed);
+                try {
+                    if (removed.dragView) {
+                        removed.dragView.setOnTouchListener(null);
+                    }
+                } catch (ignoredDrag) {}
+                try {
+                    if (removed.resizeView) {
+                        removed.resizeView.setOnTouchListener(null);
+                    }
+                } catch (ignoredResize) {}
+                setResizeVisual(removed, false);
+            } else {
+                kept.push(managedWindows[index]);
+            }
+        }
+        managedWindows = kept;
+        if (activeBinding === removed) {
+            activeBinding = managedWindows.length > 0 ?
+                managedWindows[managedWindows.length - 1] : null;
+        }
+        state.primaryAttached = activeBinding !== null;
+        state.primaryPinned = activeBinding !== null &&
+            activeBinding.pinned === true;
+        return removed !== null;
+    }
+
+    function installPrimaryWindow(options) {
+        options = options || {};
+        options.role = "primary";
+        return attachWindow(options);
+    }
+
     function detachPrimaryWindow() {
-        cancelResizeActivation();
-        drag.active = false;
-        resize.active = false;
-        state.dragActive = false;
-        state.resizeActive = false;
-        primary.attached = false;
-        primary.rootView = null;
-        primary.layoutParams = null;
-        primary.manager = null;
-        primary.dragView = null;
-        primary.resizeView = null;
-        primary.onGeometryChanged = null;
-        primary.onRequestClose = null;
-        primary.geometry = null;
-        primary.pinned = false;
-        state.primaryAttached = false;
-        state.primaryPinned = false;
-        return true;
+        var binding = findPrimaryBinding();
+        return binding ? detachWindow(binding.rootView) : false;
+    }
+
+    function setWindowDragView(rootView, view) {
+        var binding = findBinding(rootView);
+        return binding ? bindDragView(binding, view) : false;
+    }
+
+    function setWindowResizeView(rootView, view, resizeVisual) {
+        var binding = findBinding(rootView);
+        if (!binding) { return false; }
+        if (resizeVisual) { binding.resizeVisual = resizeVisual; }
+        return bindResizeView(binding, view);
     }
 
     function setPrimaryDragView(view) {
-        if (!primary.attached) { return false; }
-        return bindDragView(view);
+        var binding = findPrimaryBinding();
+        return binding ? bindDragView(binding, view) : false;
     }
 
     function setPrimaryResizeView(view) {
-        if (!primary.attached) { return false; }
-        return bindResizeView(view);
+        var binding = findPrimaryBinding();
+        return binding ? bindResizeView(binding, view) : false;
     }
 
     function setPrimaryPinned(value) {
-        primary.pinned = value === true;
-        state.primaryPinned = primary.pinned;
-        return primary.pinned;
+        var binding = findPrimaryBinding();
+        if (!binding) { return false; }
+        binding.pinned = value === true;
+        state.primaryPinned = binding.pinned;
+        return binding.pinned;
+    }
+
+    function refreshWindow(rootView, reason) {
+        var binding = findBinding(rootView);
+        var geometry;
+        if (!binding) { return false; }
+        geometry = currentSharedGeometry();
+        return applyGeometryToBinding(binding, geometry,
+            String(reason || "refresh_window"), true);
     }
 
     function refreshPrimaryBounds(reason) {
-        var before;
-        var bounds;
-        var orientation;
-        var safeWidth;
-        var safeHeight;
-        var policy;
-        var width;
-        var height;
-        var x;
-        var y;
-        if (!primary.attached || primary.layoutParams === null) {
-            state.safeBounds = safeBounds();
-            state.orientation = orientationForBounds(state.safeBounds);
+        var geometry = computeGeometry("shared", { useSaved: true });
+        var source = activeBinding || (managedWindows.length > 0 ?
+            managedWindows[managedWindows.length - 1] : null);
+        var index;
+        if (!source) {
+            state.safeBounds = copyBounds(geometry.bounds);
+            state.orientation = geometry.orientation;
             state.lastBoundsReason = String(reason || "refresh");
             return false;
         }
-        before = currentPrimaryGeometry();
-        bounds = safeBounds();
-        orientation = orientationForBounds(bounds);
-        safeWidth = Math.max(1, Number(bounds.right) - Number(bounds.left));
-        safeHeight = Math.max(1, Number(bounds.bottom) - Number(bounds.top));
-        policy = rolePolicy("primary");
-        primary.geometry.bounds = copyBounds(bounds);
-        primary.geometry.orientation = orientation;
-        primary.geometry.minWidth = Math.min(dp(policy.minWidthDp), safeWidth);
-        primary.geometry.minHeight = Math.min(dp(policy.minHeightDp), safeHeight);
-        primary.geometry.maxWidth = Math.min(dp(policy.maxWidthDp), safeWidth);
-        primary.geometry.maxHeight = Math.min(dp(policy.maxHeightDp), safeHeight);
-        width = clamp(safeWidth * before.widthRatio,
-            primary.geometry.minWidth, primary.geometry.maxWidth);
-        height = clamp(safeHeight * before.heightRatio,
-            primary.geometry.minHeight, primary.geometry.maxHeight);
-        x = Number(bounds.left) + Math.max(0, safeWidth - width) *
-            before.xRatio;
-        y = Number(bounds.top) + Math.max(0, safeHeight - height) *
-            before.yRatio;
-        updatePrimaryLayout(x, y, width, height,
-            String(reason || "bounds_refresh"));
+        for (index = 0; index < managedWindows.length; index += 1) {
+            applyGeometryToBinding(managedWindows[index], geometry,
+                String(reason || "bounds_refresh"), false);
+        }
+        activateBinding(source);
         state.boundsRefreshCount += 1;
         state.lastBoundsReason = String(reason || "refresh");
         return true;
@@ -945,28 +1252,30 @@
     }
 
     function moveTo(x, y, options) {
+        var binding = activeBinding;
         options = options || {};
-        if (!primary.attached || primary.layoutParams === null) {
-            return false;
-        }
-        updatePrimaryLayout(x, y,
-            Number(primary.layoutParams.width),
-            Number(primary.layoutParams.height), "api_move");
-        if (options.persist === true) { persistPrimaryGeometry(); }
+        if (!binding || !binding.layoutParams) { return false; }
+        updateSharedLayout(binding, x, y,
+            Number(binding.layoutParams.width),
+            Number(binding.layoutParams.height), "api_move");
+        if (options.persist === true) { persistSharedGeometry(binding); }
         return true;
     }
 
     function moveBy(dx, dy, options) {
-        if (!primary.attached || primary.layoutParams === null) {
-            return false;
-        }
-        return moveTo(Number(primary.layoutParams.x) + Number(dx || 0),
-            Number(primary.layoutParams.y) + Number(dy || 0), options);
+        var binding = activeBinding;
+        if (!binding || !binding.layoutParams) { return false; }
+        return moveTo(Number(binding.layoutParams.x) + Number(dx || 0),
+            Number(binding.layoutParams.y) + Number(dy || 0), options);
     }
 
     function requestClose(reason) {
-        if (typeof primary.onRequestClose !== "function") { return false; }
-        try { return primary.onRequestClose(String(reason || "window_service")); }
+        var binding = activeBinding || (managedWindows.length > 0 ?
+            managedWindows[managedWindows.length - 1] : null);
+        if (!binding || typeof binding.onRequestClose !== "function") {
+            return false;
+        }
+        try { return binding.onRequestClose(String(reason || "window_service")); }
         catch (error) {
             state.lastError = String(error);
             return false;
@@ -974,28 +1283,41 @@
     }
 
     function getState() {
-        var geometry = currentPrimaryGeometry();
+        var geometry = currentSharedGeometry();
         var thread = nowThread();
+        var roles = [];
+        var index;
+        for (index = 0; index < managedWindows.length; index += 1) {
+            roles.push(String(managedWindows[index].role || "shared"));
+        }
         return {
             geometryService: true,
+            sharedGeometryService: true,
             legacyHomeRemoved: true,
-            attached: primary.attached,
-            attachedToWindow: primary.attached && primary.rootView !== null ?
-                primary.rootView.isAttachedToWindow() : false,
-            primaryAttached: primary.attached,
-            primaryPinned: primary.pinned,
+            attached: managedWindows.length > 0,
+            attachedToWindow: activeBinding !== null &&
+                activeBinding.rootView !== null ?
+                activeBinding.rootView.isAttachedToWindow() : false,
+            primaryAttached: findPrimaryBinding() !== null,
+            primaryPinned: activeBinding !== null && activeBinding.pinned === true,
             moving: drag.active,
+            dragPending: drag.pending,
             resizing: resize.active,
             resizePending: resize.pending,
             resizeCorner: "bottom_right",
             geometry: copyGeometry(geometry),
             safeBounds: copyBounds(state.safeBounds),
             orientation: state.orientation,
+            managedWindowCount: managedWindows.length,
+            managedWindowRoles: roles,
+            activeRole: activeBinding ? String(activeBinding.role) : null,
+            dragActivateCount: Number(state.dragActivateCount),
             dragMoveCount: Number(state.dragMoveCount),
             resizeActivateCount: Number(state.resizeActivateCount),
             resizeMoveCount: Number(state.resizeMoveCount),
             geometryComputeCount: Number(state.geometryComputeCount),
             geometryPersistCount: Number(state.geometryPersistCount),
+            geometryBroadcastCount: Number(state.geometryBroadcastCount),
             boundsRefreshCount: Number(state.boundsRefreshCount),
             configurationChangeCount:
                 Number(state.configurationChangeCount),
@@ -1014,7 +1336,7 @@
 
     ClipHub.Window = {
         MODULE_NAME: "ch_08_window",
-        MODULE_VERSION: 7,
+        MODULE_VERSION: 8,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
@@ -1033,6 +1355,8 @@
             touchSlopPx = Number(ViewConfiguration.get(appContext)
                 .getScaledTouchSlop());
             longPressTimeoutMs = Number(ViewConfiguration.getLongPressTimeout());
+            managedWindows = [];
+            activeBinding = null;
             state.safeBounds = safeBounds();
             state.orientation = orientationForBounds(state.safeBounds);
             registerObservers();
@@ -1040,6 +1364,7 @@
                 ok: true,
                 initialized: true,
                 geometryService: true,
+                sharedGeometryService: true,
                 legacyHomeRemoved: true,
                 safeBounds: copyBounds(state.safeBounds),
                 orientation: state.orientation
@@ -1058,21 +1383,28 @@
             };
         },
         computeGeometry: computeGeometry,
+        createManagedFrame: createManagedFrame,
+        attachWindow: attachWindow,
+        detachWindow: detachWindow,
+        refreshWindow: refreshWindow,
+        setWindowDragView: setWindowDragView,
+        setWindowResizeView: setWindowResizeView,
         installPrimaryWindow: installPrimaryWindow,
         detachPrimaryWindow: detachPrimaryWindow,
         setPrimaryDragView: setPrimaryDragView,
         setPrimaryResizeView: setPrimaryResizeView,
         setPrimaryPinned: setPrimaryPinned,
         refreshPrimaryBounds: refreshPrimaryBounds,
-        persistPrimaryGeometry: persistPrimaryGeometry,
+        persistPrimaryGeometry: persistSharedGeometry,
+        persistSharedGeometry: persistSharedGeometry,
         performHaptic: performHaptic,
         isMoving: function () { return drag.active === true; },
         isResizing: function () { return resize.active === true; },
-        isAttached: function () { return primary.attached === true; },
+        isAttached: function () { return managedWindows.length > 0; },
         moveTo: moveTo,
         moveBy: moveBy,
         refreshBounds: refreshPrimaryBounds,
-        persistPosition: persistPrimaryGeometry,
+        persistPosition: persistSharedGeometry,
         close: requestClose,
         runOnMain: function (callback, timeoutMs) {
             if (typeof callback !== "function") {
@@ -1084,7 +1416,13 @@
         getAndroidContext: function () { return appContext; },
         getState: getState,
         shutdown: function () {
-            detachPrimaryWindow();
+            var snapshot = managedWindows.slice(0);
+            var index;
+            cancelDragActivation();
+            cancelResizeActivation();
+            for (index = 0; index < snapshot.length; index += 1) {
+                detachWindow(snapshot[index].rootView);
+            }
             unregisterObservers();
             androidContext = null;
             appContext = null;

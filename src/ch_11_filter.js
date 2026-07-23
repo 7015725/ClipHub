@@ -47,6 +47,7 @@
 
     var panelRoot = null;
     var panelWindowRoot = null;
+    var panelManagedFrame = null;
     var panelParams = null;
     var primaryDragView = null;
     var primaryResizeView = null;
@@ -1312,7 +1313,7 @@
                 typeof ClipHub.Window.computeGeometry === "function") {
             geometry = ClipHub.Window.computeGeometry(
                 rootMode ? "primary" : "filter_overlay", {
-                    useSaved: rootMode === true
+                    useSaved: true
                 });
             return geometry;
         }
@@ -1333,49 +1334,29 @@
 
     function updatePanelSize() {
         var size;
-        var serviceState;
-        var geometry;
         var targetRoot;
-        if (panelRoot === null || panelParams === null) {
-            return false;
-        }
-        if (rootMode && ClipHub.Window &&
-                typeof ClipHub.Window.isAttached === "function" &&
-                ClipHub.Window.isAttached() &&
-                typeof ClipHub.Window.getState === "function") {
-            serviceState = ClipHub.Window.getState();
-            geometry = serviceState && serviceState.geometry ?
-                serviceState.geometry : null;
-            if (geometry) {
-                state.panelX = Number(geometry.x || 0);
-                state.panelY = Number(geometry.y || 0);
-                state.panelWidthPx = Number(geometry.width || 0);
-                state.panelHeightPx = Number(geometry.height || 0);
-                state.panelWidthDp = Number(geometry.widthDp || 0);
-                state.panelHeightDp = Number(geometry.heightDp || 0);
-                state.primaryGeometryManaged = true;
-            }
+        if (panelRoot === null || panelParams === null) { return false; }
+        if (panelWindowRoot !== null && ClipHub.Window &&
+                typeof ClipHub.Window.refreshWindow === "function") {
+            ClipHub.Window.refreshWindow(panelWindowRoot,
+                "filter_content_changed");
             return true;
         }
         size = panelDimensions();
         panelParams.width = size.width;
         panelParams.height = size.height;
-        if (rootMode) {
-            panelParams.gravity = Gravity.TOP | Gravity.START;
-            panelParams.x = Number(size.x || 0);
-            panelParams.y = Number(size.y || 0);
-        }
+        panelParams.gravity = Gravity.TOP | Gravity.START;
+        panelParams.x = Number(size.x || 0);
+        panelParams.y = Number(size.y || 0);
         state.panelX = Number(size.x || 0);
         state.panelY = Number(size.y || 0);
         state.panelWidthPx = size.width;
         state.panelHeightPx = size.height;
         state.panelWidthDp = size.widthDp;
         state.panelHeightDp = size.heightDp;
-        targetRoot = rootMode && panelWindowRoot !== null ?
-            panelWindowRoot : panelRoot;
-        try {
-            windowManager.updateViewLayout(targetRoot, panelParams);
-        } catch (ignoredUpdate) {}
+        targetRoot = panelWindowRoot !== null ? panelWindowRoot : panelRoot;
+        try { windowManager.updateViewLayout(targetRoot, panelParams); }
+        catch (ignoredUpdate) {}
         return true;
     }
 
@@ -1869,6 +1850,10 @@
         var searchRow = new LinearLayout(appContext);
         var params;
         var addButton;
+        var compact = compactWindowLayout();
+        var controlHeightDp = compact ? 40 : 44;
+        var filterWidthDp = compact ? 58 : 78;
+        var controlGapDp = compact ? 5 : 8;
 
         container.setOrientation(LinearLayout.VERTICAL);
         titleRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -1931,13 +1916,15 @@
         keywordInput.setSelection(keywordInput.getText().length());
         suppressTextWatcher = false;
         keywordInput.setHint("搜索剪切板内容");
-        keywordInput.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        keywordInput.setTextSize(TypedValue.COMPLEX_UNIT_SP,
+            compact ? 11 : 12);
         ClipHub.Theme.applyTextColor(keywordInput, colors.textPrimary);
         ClipHub.Theme.applyHintTextColor(keywordInput, colors.textSecondary);
         keywordInput.setInputType(InputType.TYPE_CLASS_TEXT |
             InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         keywordInput.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
-        keywordInput.setPadding(dp(12), dp(6), dp(10), dp(6));
+        keywordInput.setPadding(dp(compact ? 9 : 12), dp(5),
+            dp(compact ? 7 : 10), dp(5));
         keywordInput.setBackground(roundedBackground(colors.surface,
             colors.stroke, 20));
         keywordInput.setOnEditorActionListener(new JavaAdapter(
@@ -1960,11 +1947,12 @@
             },
             afterTextChanged: function () {}
         }));
-        params = new LinearLayout.LayoutParams(0, dp(44), 1);
-        params.rightMargin = dp(8);
+        params = new LinearLayout.LayoutParams(0, dp(controlHeightDp), 1);
+        params.rightMargin = dp(controlGapDp);
         searchRow.addView(keywordInput, params);
 
-        advancedView = makeText("☷  筛选", 11,
+        advancedView = makeText(compact ? "筛选" : "☷  筛选",
+            compact ? 10 : 11,
             colors.accentStrong, true);
         advancedView.setGravity(Gravity.CENTER);
         advancedView.setBackground(roundedBackground(colors.accentSoft,
@@ -1975,11 +1963,12 @@
             View.OnClickListener, {
                 onClick: function () { toggleAdvanced(); }
             }));
-        params = new LinearLayout.LayoutParams(dp(78), dp(44));
-        params.rightMargin = dp(8);
+        params = new LinearLayout.LayoutParams(dp(filterWidthDp),
+            dp(controlHeightDp));
+        params.rightMargin = dp(controlGapDp);
         searchRow.addView(advancedView, params);
 
-        addButton = makeIcon("+", 24,
+        addButton = makeIcon("+", compact ? 21 : 24,
             colors.accentStrong, "新增剪切板内容");
         addButton.setBackground(circleBackground(colors.accentSoft, null));
         addButton.setOnClickListener(new JavaAdapter(
@@ -1995,7 +1984,8 @@
                 }
             }));
         searchRow.addView(addButton,
-            new LinearLayout.LayoutParams(dp(44), dp(44)));
+            new LinearLayout.LayoutParams(dp(controlHeightDp),
+                dp(controlHeightDp)));
         container.addView(searchRow,
             new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -2142,12 +2132,18 @@
         var pinnedRow;
         var sensitiveRow;
         var sortRow;
+        var compact = compactWindowLayout();
+        var footerButtonHeightDp = compact ? 36 : 40;
+        var footerHeightDp = compact ? 44 : 48;
 
         drawer.setOrientation(LinearLayout.VERTICAL);
         drawer.setPadding(dp(11), dp(9), dp(11), dp(9));
         drawer.setBackground(roundedBackground(colors.surface,
             colors.stroke, 17));
-        if (Build.VERSION.SDK_INT >= 21) { drawer.setElevation(dp(16)); }
+        if (Build.VERSION.SDK_INT >= 21) {
+            drawer.setElevation(0);
+            drawer.setClipToOutline(true);
+        }
         titleRow.setOrientation(LinearLayout.HORIZONTAL);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
         titleRow.addView(title, new LinearLayout.LayoutParams(
@@ -2222,15 +2218,17 @@
             View.OnClickListener, {
                 onClick: function () { applyFromUi(); }
             }));
-        params = new LinearLayout.LayoutParams(0, dp(40), 1);
+        params = new LinearLayout.LayoutParams(0,
+            dp(footerButtonHeightDp), 1);
         params.rightMargin = dp(7);
         footer.addView(resetView, params);
         footer.addView(applyView,
-            new LinearLayout.LayoutParams(0, dp(40), 1));
+            new LinearLayout.LayoutParams(0,
+                dp(footerButtonHeightDp), 1));
         drawer.addView(footer, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(48)));
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(footerHeightDp)));
         state.drawerFooterTopGapDp = 0;
-        state.drawerFooterHeightDp = 48;
+        state.drawerFooterHeightDp = footerHeightDp;
         return drawer;
     }
 
@@ -2305,41 +2303,8 @@
         return toolbar;
     }
 
-    function buildPrimaryResizeHandle(colors) {
-        var host = new FrameLayout(appContext);
-        var line1 = new View(appContext);
-        var line2 = new View(appContext);
-        var line3 = new View(appContext);
-        var params;
-        var lineColor = colors.strokeStrong || colors.accentBorder;
-        host.setContentDescription("长按并拖动调整窗口大小");
-        host.setClickable(true);
-        host.setFocusable(true);
-        host.setPadding(dp(8), dp(8), dp(4), dp(4));
-
-        line1.setBackground(roundedBackground(lineColor, null, 2));
-        params = new FrameLayout.LayoutParams(dp(8), dp(2));
-        params.gravity = Gravity.END | Gravity.BOTTOM;
-        params.rightMargin = dp(2);
-        params.bottomMargin = dp(2);
-        line1.setRotation(-45);
-        host.addView(line1, params);
-
-        line2.setBackground(roundedBackground(lineColor, null, 2));
-        params = new FrameLayout.LayoutParams(dp(13), dp(2));
-        params.gravity = Gravity.END | Gravity.BOTTOM;
-        params.rightMargin = dp(1);
-        params.bottomMargin = dp(5);
-        line2.setRotation(-45);
-        host.addView(line2, params);
-
-        line3.setBackground(roundedBackground(lineColor, null, 2));
-        params = new FrameLayout.LayoutParams(dp(18), dp(2));
-        params.gravity = Gravity.END | Gravity.BOTTOM;
-        params.bottomMargin = dp(8);
-        line3.setRotation(-45);
-        host.addView(line3, params);
-        return host;
+    function compactWindowLayout() {
+        return Number(state.panelWidthDp || 390) <= 340;
     }
 
     function buildPanelContent(requestFocus) {
@@ -2390,19 +2355,12 @@
         state.tagOptionCount = counts.tags.length;
 
         handle = new View(appContext);
-        primaryDragView = rootMode ? handle : null;
         handle.setBackground(roundedBackground(colors.strokeStrong,
             null, 3));
         params = new LinearLayout.LayoutParams(dp(42), dp(4));
         params.gravity = Gravity.CENTER_HORIZONTAL;
         params.bottomMargin = dp(8);
         panelRoot.addView(handle, params);
-        if (rootMode && ClipHub.Window &&
-                typeof ClipHub.Window.setPrimaryDragView === "function" &&
-                ClipHub.Window.isAttached()) {
-            ClipHub.Window.setPrimaryDragView(handle);
-            state.primaryDragViewPresent = true;
-        }
 
         params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
@@ -2428,8 +2386,10 @@
             FrameLayout.LayoutParams.MATCH_PARENT));
         if (advancedVisible) {
             drawerContainer = buildAdvancedDrawer(colors, counts);
-            state.drawerWidthDp = Math.max(196, Math.min(238,
-                Number(state.panelWidthDp || 390) - 24));
+            state.drawerWidthDp = compactWindowLayout() ?
+                Math.max(176, Number(state.panelWidthDp || 320) - 16) :
+                Math.max(196, Math.min(238,
+                    Number(state.panelWidthDp || 390) - 24));
             state.drawerHeightDp = Math.max(180,
                 Number(state.panelHeightDp || 560) - 128);
             params = new FrameLayout.LayoutParams(dp(state.drawerWidthDp),
@@ -2517,38 +2477,21 @@
                 if (Build.VERSION.SDK_INT >= 21) {
                     panelRoot.setElevation(dp(20));
                 }
-                if (rootMode) {
-                    panelWindowRoot = new FrameLayout(appContext);
-                    rootParams = new FrameLayout.LayoutParams(
-                        FrameLayout.LayoutParams.MATCH_PARENT,
-                        FrameLayout.LayoutParams.MATCH_PARENT);
-                    panelWindowRoot.addView(panelRoot, rootParams);
-                    primaryResizeView = buildPrimaryResizeHandle(colors);
-                    resizeParams = new FrameLayout.LayoutParams(
-                        dp(40), dp(40));
-                    resizeParams.gravity = Gravity.END | Gravity.BOTTOM;
-                    panelWindowRoot.addView(primaryResizeView, resizeParams);
-                    windowRoot = panelWindowRoot;
-                } else {
-                    panelWindowRoot = null;
-                    primaryResizeView = null;
-                    windowRoot = panelRoot;
-                }
+                panelManagedFrame = ClipHub.Window.createManagedFrame(
+                    panelRoot, { accentColor: colors.accentStrong });
+                panelWindowRoot = panelManagedFrame.rootView;
+                primaryDragView = panelManagedFrame.dragView;
+                primaryResizeView = panelManagedFrame.resizeView;
+                windowRoot = panelWindowRoot;
                 panelParams = new WindowManager.LayoutParams(
                     size.width, size.height, type,
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
                         WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED |
                         WindowManager.LayoutParams.FLAG_DIM_BEHIND,
                     PixelFormat.TRANSLUCENT);
-                if (rootMode) {
-                    panelParams.gravity = Gravity.TOP | Gravity.START;
-                    panelParams.x = Number(size.x || 0);
-                    panelParams.y = Number(size.y || 0);
-                } else {
-                    panelParams.gravity = Gravity.BOTTOM |
-                        Gravity.CENTER_HORIZONTAL;
-                    panelParams.y = dp(10);
-                }
+                panelParams.gravity = Gravity.TOP | Gravity.START;
+                panelParams.x = Number(size.x || 0);
+                panelParams.y = Number(size.y || 0);
                 panelParams.dimAmount = 0.44;
                 panelParams.softInputMode =
                     WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE |
@@ -2586,34 +2529,33 @@
                     previewRows = [];
                 }
                 buildPanelContent(options.requestKeyboard !== false);
-                if (rootMode && ClipHub.Window &&
-                        typeof ClipHub.Window.installPrimaryWindow === "function") {
-                    ClipHub.Window.installPrimaryWindow({
-                        rootView: panelWindowRoot,
-                        layoutParams: panelParams,
-                        windowManager: windowManager,
-                        dragView: primaryDragView,
-                        resizeView: primaryResizeView,
-                        geometry: size,
-                        onGeometryChanged: function (geometry) {
-                            if (!geometry) { return; }
-                            state.panelX = Number(geometry.x || 0);
-                            state.panelY = Number(geometry.y || 0);
-                            state.panelWidthPx = Number(geometry.width || 0);
-                            state.panelHeightPx = Number(geometry.height || 0);
-                            state.panelWidthDp = Number(geometry.widthDp || 0);
-                            state.panelHeightDp = Number(geometry.heightDp || 0);
-                        },
-                        onRequestClose: function (reason) {
-                            return closePanel({
-                                restoreList: false,
-                                reason: String(reason || "geometry_close")
-                            }).ok === true;
-                        }
-                    });
-                    state.primaryDragViewPresent = primaryDragView !== null;
-                    state.primaryResizeViewPresent = primaryResizeView !== null;
-                }
+                ClipHub.Window.attachWindow({
+                    role: rootMode ? "primary" : "filter_overlay",
+                    rootView: panelWindowRoot,
+                    contentView: panelRoot,
+                    layoutParams: panelParams,
+                    windowManager: windowManager,
+                    dragView: primaryDragView,
+                    resizeView: primaryResizeView,
+                    resizeVisual: panelManagedFrame.resizeVisual,
+                    geometry: size,
+                    onGeometryChanged: function (geometry) {
+                        if (!geometry) { return; }
+                        state.panelX = Number(geometry.x || 0);
+                        state.panelY = Number(geometry.y || 0);
+                        state.panelWidthPx = Number(geometry.width || 0);
+                        state.panelHeightPx = Number(geometry.height || 0);
+                        state.panelWidthDp = Number(geometry.widthDp || 0);
+                        state.panelHeightDp = Number(geometry.heightDp || 0);
+                    },
+                    onRequestClose: function (reason) {
+                        return closePanel({ restoreList: false,
+                            reason: String(reason || "managed_close") }).ok === true;
+                    }
+                });
+                state.primaryGeometryManaged = true;
+                state.primaryDragViewPresent = primaryDragView !== null;
+                state.primaryResizeViewPresent = primaryResizeView !== null;
                 return {
                     ok: true,
                     attached: true,
@@ -2642,10 +2584,6 @@
         options = options || {};
         if (!state.panelAttached && panelRoot === null &&
                 panelWindowRoot === null) {
-            if (wasRootMode && ClipHub.Window &&
-                    typeof ClipHub.Window.detachPrimaryWindow === "function") {
-                ClipHub.Window.detachPrimaryWindow();
-            }
             rootMode = false;
             state.rootMode = false;
             state.primarySurface = "filter_overlay";
@@ -2679,9 +2617,9 @@
                 state.lastError = null;
                 return true;
             } finally {
-                if (wasRootMode && ClipHub.Window &&
-                        typeof ClipHub.Window.detachPrimaryWindow === "function") {
-                    try { ClipHub.Window.detachPrimaryWindow(); }
+                if (panelWindowRoot !== null && ClipHub.Window &&
+                        typeof ClipHub.Window.detachWindow === "function") {
+                    try { ClipHub.Window.detachWindow(panelWindowRoot); }
                     catch (ignoredDetach) {}
                 }
                 searchGeneration += 1;
@@ -2691,6 +2629,7 @@
                 state.advancedDrawerVisible = false;
                 panelRoot = null;
                 panelWindowRoot = null;
+                panelManagedFrame = null;
                 panelParams = null;
                 primaryDragView = null;
                 primaryResizeView = null;
@@ -3025,7 +2964,7 @@
 
     ClipHub.Filter = {
         MODULE_NAME: "ch_11_filter",
-        MODULE_VERSION: 17,
+        MODULE_VERSION: 18,
 
         init: function (context) {
             androidContext = context && context.androidContext ?
