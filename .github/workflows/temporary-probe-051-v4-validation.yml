@@ -1,0 +1,86 @@
+name: temporary-probe-051-v4-validation
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - reopened
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: github.head_ref == 'agent/unify-window-geometry'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout probe branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/unify-window-geometry
+          fetch-depth: 0
+
+      - name: Apply gesture and probe patch
+        run: python3 scripts/patch_probe_051_v4.py
+
+      - name: Validate Rhino ES5
+        run: python3 scripts/validate_es5.py .
+
+      - name: Validate JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check src/ch_08_window.js
+          node --check probes/cliphub_shared_window_geometry_probe_051.js
+
+      - name: Validate module manifest hashes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path('module-manifest.json').read_text(encoding='utf-8'))
+          assert manifest['moduleSetVersion'] == '20260724.07'
+          assert manifest['sourceRef'] == 'agent/unify-window-geometry'
+          for item in manifest['modules']:
+              path = Path(item['path'])
+              data = path.read_bytes()
+              digest = hashlib.sha1(b'blob ' + str(len(data)).encode('ascii') + b'\0' + data).hexdigest()
+              assert item['sha'] == digest, (item['path'], item['sha'], digest)
+          PY
+
+      - name: Validate gesture and probe contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'MODULE_VERSION: 13' src/ch_08_window.js
+          grep -q 'function pendingActivationSlopPx()' src/ch_08_window.js
+          grep -q 'function activateDragGesture(view, binding)' src/ch_08_window.js
+          grep -q 'function activateResizeGesture(view, binding)' src/ch_08_window.js
+          grep -q 'distanceSquared = deltaX \* deltaX + deltaY \* deltaY;' src/ch_08_window.js
+          test "$(grep -c 'elapsed >= longPressTimeoutMs' src/ch_08_window.js)" -eq 2
+          ! grep -q 'Math.abs(deltaX) + Math.abs(deltaY)' src/ch_08_window.js
+          grep -q 'var PROBE_VERSION = 4;' probes/cliphub_shared_window_geometry_probe_051.js
+          grep -q 'var HOME_GESTURE_TIMEOUT_MS = 35000;' probes/cliphub_shared_window_geometry_probe_051.js
+          grep -q 'reason: "probe_compact_reopen"' probes/cliphub_shared_window_geometry_probe_051.js
+          grep -q 'showAdvanced: true' probes/cliphub_shared_window_geometry_probe_051.js
+          grep -q 'compactPanelAttached:' probes/cliphub_shared_window_geometry_probe_051.js
+          grep -q '顶部拖动已识别' probes/cliphub_shared_window_geometry_probe_051.js
+          grep -q '右下角缩放已识别' probes/cliphub_shared_window_geometry_probe_051.js
+
+      - name: Remove temporary patch tooling
+        run: |
+          rm -f scripts/patch_probe_051_v4.py
+          rm -f .github/workflows/temporary-probe-051-v4-validation.yml
+
+      - name: Commit validated repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: improve long-press gestures and probe 051"
+          git push origin HEAD:agent/unify-window-geometry
