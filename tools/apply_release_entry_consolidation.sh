@@ -7,7 +7,7 @@ cd "$ROOT"
 COMMIT_MODE="${1:-}"
 
 python tools/apply_release_entry_consolidation.py
-python scripts/validate_es5.py ClipHub.js src tasks
+python scripts/validate_es5.py .
 
 printf '\n===== Target diff summary =====\n'
 git diff --stat -- \
