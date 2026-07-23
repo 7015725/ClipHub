@@ -18,6 +18,17 @@ TARGETS=(
   src/ch_13_settings.js
   module-manifest.json
 )
+PATCH_STARTED=0
+
+rollback_on_error() {
+  local status=$?
+  if [ "$status" -ne 0 ] && [ "$PATCH_STARTED" -eq 1 ]; then
+    echo 'Color safety validation failed; restoring target files.' >&2
+    git restore -- "${TARGETS[@]}" || true
+  fi
+  exit "$status"
+}
+trap rollback_on_error EXIT
 
 if [ -n "$(git status --short -- "${TARGETS[@]}")" ]; then
   echo 'ERROR: color safety target files have uncommitted changes:' >&2
@@ -26,6 +37,7 @@ if [ -n "$(git status --short -- "${TARGETS[@]}")" ]; then
 fi
 
 mkdir -p "$AUDIT_DIR"
+PATCH_STARTED=1
 python tools/apply_color_api_safety.py
 python scripts/validate_es5.py .
 python scripts/audit_color_api.py \
@@ -75,3 +87,5 @@ if [ "$COMMIT_MODE" = "--commit" ]; then
 else
   echo 'Dry application complete. Re-run with --commit after reviewing the diff.'
 fi
+
+PATCH_STARTED=0
