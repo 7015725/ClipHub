@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "moduleSetVersion": "20260723.14",
+  "entryMinVersion": 5,
+  "sourceRef": "main",
+  "modules": [
+    {
+      "name": "ch_01_base.js",
+      "path": "src/ch_01_base.js",
+      "sha": "563791ff518078bfd57d7b73fc51b9c7482a3ffb"
+    },
+    {
+      "name": "ch_02_log.js",
+      "path": "src/ch_02_log.js",
+      "sha": "581d7a9a0e47bdee2be0341cbfbe6b0308c207bb"
+    },
+    {
+      "name": "ch_03_database.js",
+      "path": "src/ch_03_database.js",
+      "sha": "3c3ea319844cf9470aff385def30cac11bf95e3c"
+    },
+    {
+      "name": "ch_04_clipboard.js",
+      "path": "src/ch_04_clipboard.js",
+      "sha": "9dbb0aa8e3bc7318ab6ddfc39fa9c67c8ed739ae"
+    },
+    {
+      "name": "ch_05_classifier.js",
+      "path": "src/ch_05_classifier.js",
+      "sha": "7f4ea64a79b38eceab0351a6129c0901366aa404"
+    },
+    {
+      "name": "ch_06_repository.js",
+      "path": "src/ch_06_repository.js",
+      "sha": "8442c2eb741ea21e3f713b8470655ee83e57235f"
+    },
+    {
+      "name": "ch_07_theme.js",
+      "path": "src/ch_07_theme.js",
+      "sha": "2d26ee75a5216a8ba58d15010f439596c98d0b30"
+    },
+    {
+      "name": "ch_08_window.js",
+      "path": "src/ch_08_window.js",
+      "sha": "bfe57e991c256c98545b7aac30523f347454ec4c"
+    },
+    {
+      "name": "ch_09_list.js",
+      "path": "src/ch_09_list.js",
+      "sha": "e3bb4a3319b294309a79634c2e133db8c5d3d1ba"
+    },
+    {
+      "name": "ch_10_editor.js",
+      "path": "src/ch_10_editor.js",
+      "sha": "16f12f947e327e5f9f7e4d47733c93e024a17061"
+    },
+    {
+      "name": "ch_11_filter.js",
+      "path": "src/ch_11_filter.js",
+      "sha": "a7c7e91508e1592942f3454ced21cdc501ec5f9c"
+    },
+    {
+      "name": "ch_12_translation.js",
+      "path": "src/ch_12_translation.js",
+      "sha": "05fc430b473ae58b680af9ba9a0e168246c53af7"
+    },
+    {
+      "name": "ch_13_settings.js",
+      "path": "src/ch_13_settings.js",
+      "sha": "00681670265fcb29a3e6432a27e3e25d0bd73ace"
+    },
+    {
+      "name": "ch_14_event_bus.js",
+      "path": "src/ch_14_event_bus.js",
+      "sha": "1340517a82be26bb0bbf71454c246067344ce019"
+    },
+    {
+      "name": "ch_15_app.js",
+      "path": "src/ch_15_app.js",
+      "sha": "2837a308cc67a51d8284c7f37c7eb2206a524667"
+    }
+  ]
+}
