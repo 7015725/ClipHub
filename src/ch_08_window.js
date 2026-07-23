@@ -18,6 +18,7 @@
     var DisplayManager = Packages.android.hardware.display.DisplayManager;
     var FrameLayout = Packages.android.widget.FrameLayout;
     var Paint = Packages.android.graphics.Paint;
+    var Path = Packages.android.graphics.Path;
     var Color = Packages.android.graphics.Color;
     var PixelFormat = Packages.android.graphics.PixelFormat;
     var Drawable = Packages.android.graphics.drawable.Drawable;
@@ -412,25 +413,30 @@
         var view;
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeJoin(Paint.Join.ROUND);
         paint["setColor(int)"](parseColor(colorText, "#7C5CFC"));
         drawable = new JavaAdapter(Drawable, {
             draw: function (canvas) {
                 var width = Number(canvas.getWidth());
                 var height = Number(canvas.getHeight());
-                var right = width - dp(6);
-                var bottom = height - dp(6);
-                var index;
-                var length;
-                var offset;
-                paint.setStrokeWidth(dp(visual.active ? 2.2 : 1.5));
-                paint.setAlpha(Math.floor((visual.active ? 205 : 78) *
+                var right = width - dp(9);
+                var bottom = height - dp(9);
+                var outerPath = new Path();
+                var innerPath = new Path();
+
+                paint.setStrokeWidth(dp(visual.active ? 1.65 : 1.05));
+                paint.setAlpha(Math.floor((visual.active ? 176 : 58) *
                     Number(visual.alpha || 1)));
-                for (index = 0; index < 3; index += 1) {
-                    length = dp(7 + index * 5);
-                    offset = dp(index * 4);
-                    canvas.drawLine(right - length, bottom - offset,
-                        right - offset, bottom - length, paint);
-                }
+
+                outerPath.moveTo(right - dp(15), bottom - dp(4));
+                outerPath.quadTo(right - dp(5.5), bottom - dp(4),
+                    right - dp(4), bottom - dp(15));
+                innerPath.moveTo(right - dp(10), bottom - dp(4));
+                innerPath.quadTo(right - dp(5), bottom - dp(4),
+                    right - dp(4), bottom - dp(10));
+
+                canvas.drawPath(outerPath, paint);
+                canvas.drawPath(innerPath, paint);
             },
             setAlpha: function (alpha) {
                 visual.alpha = clamp(Number(alpha) / 255, 0, 1);
@@ -1336,7 +1342,7 @@
 
     ClipHub.Window = {
         MODULE_NAME: "ch_08_window",
-        MODULE_VERSION: 9,
+        MODULE_VERSION: 10,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
