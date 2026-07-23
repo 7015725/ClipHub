@@ -1,4 +1,10 @@
-/* ClipHub ShortX entry. Rhino ES5 only. Modules are maintained by this file. */
+/*
+ * ShortX 任务名称：ClipHub 剪贴板后台
+ * 作用：启动并维持 ClipHub 后台实例，负责模块同步、完整性校验、
+ * 数据库初始化和系统剪贴板监听；默认不显示悬浮窗。
+ * 显示或隐藏悬浮窗请使用“ClipHub 剪贴板开关”任务。
+ * 运行环境：Rhino ES5。
+ */
 (function (global) {
     var File = Packages.java.io.File;
     var FIS = Packages.java.io.FileInputStream;

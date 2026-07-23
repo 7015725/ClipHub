@@ -1,4 +1,10 @@
-/* ClipHub global clipboard toggle task. Rhino ES5 only. */
+/*
+ * ShortX 任务名称：ClipHub 剪贴板开关
+ * 作用：切换 ClipHub 剪贴板悬浮窗的显示与隐藏。
+ * 本任务不会停止后台实例，也不会关闭数据库或剪贴板监听。
+ * 运行前提：先启动“ClipHub 剪贴板后台”任务。
+ * 运行环境：Rhino ES5。
+ */
 (function (global) {
     var File = Packages.java.io.File;
     var FIS = Packages.java.io.FileInputStream;
