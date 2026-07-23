@@ -1,6 +1,8 @@
 (function (global) {
     var ClipHub = global.ClipHub || (global.ClipHub = {});
     var Context = Packages.android.content.Context;
+    var Intent = Packages.android.content.Intent;
+    var Uri = Packages.android.net.Uri;
     var Build = Packages.android.os.Build;
     var Looper = Packages.android.os.Looper;
     var Handler = Packages.android.os.Handler;
@@ -75,6 +77,7 @@
     var translationSectionView = null;
     var tagsSectionView = null;
     var dataSectionView = null;
+    var blogLinkView = null;
     var pendingDeleteTagId = null;
     var uiState = {
         attached: false,
@@ -158,6 +161,9 @@
         delayedCallbackErrorCount: 0,
         pendingDelayedCallbackCount: 0,
         lastDelayedCallbackError: null,
+        blogOpenCount: 0,
+        blogOpenSuccessCount: 0,
+        lastOpenedUrl: null,
         lastTestResult: "",
         lastError: null
     };
@@ -1885,25 +1891,123 @@
         return section;
     }
 
+    function openAuthorBlog() {
+        var url = "https://xin-blog.com";
+        var intent;
+        uiState.blogOpenCount += 1;
+        uiState.lastOpenedUrl = url;
+        try {
+            if (appContext === null) {
+                throw new Error("Android context unavailable");
+            }
+            intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            appContext.startActivity(intent);
+            uiState.blogOpenSuccessCount += 1;
+            uiState.lastError = null;
+            return true;
+        } catch (error) {
+            uiState.lastError = "无法打开博客链接：" + String(error);
+            return false;
+        }
+    }
+
     function makeDataSection(colors) {
         var section = makeSection(colors);
         var path = initContext && initContext.runtimeDir ?
             String(initContext.runtimeDir) + "/data/cliphub.db" : "";
-        var text;
+        var infoTitle;
+        var infoText;
+        var divider;
+        var authorTitle;
+        var authorName;
+        var blogRow;
+        var blogLabel;
+        var blogValue;
+        var params;
         makeSectionTitle(section, "数据与关于",
-            "当前数据库和模块运行信息", colors);
-        text = makeText(
+            "当前数据库、模块和项目相关信息", colors);
+
+        infoTitle = makeText("运行信息", 10, colors.textPrimary, true);
+        section.addView(infoTitle, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        infoText = makeText(
             "剪贴板记录：" + String(ClipHub.Repository.countItems(false)) +
             "\n标签数量：" + String(ClipHub.Repository.listTags().length) +
             "\n数据库：" + path +
             "\nSchema：v" + String(ClipHub.Database.getVersion()) +
             "\n模块集：" + String(initContext.moduleSetVersion || "运行中"),
             10, colors.textSecondary, false);
-        text.setTextIsSelectable(true);
-        text.setLineSpacing(0, 1.15);
-        section.addView(text, new LinearLayout.LayoutParams(
+        infoText.setTextIsSelectable(true);
+        infoText.setLineSpacing(0, 1.15);
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.topMargin = dp(5);
+        params.bottomMargin = dp(10);
+        section.addView(infoText, params);
+
+        divider = new View(appContext);
+        divider.setBackgroundColor(Color.parseColor(String(colors.stroke)));
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(1));
+        params.topMargin = dp(2);
+        params.bottomMargin = dp(10);
+        section.addView(divider, params);
+
+        authorTitle = makeText("关于作者", 10, colors.textPrimary, true);
+        section.addView(authorTitle, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        authorName = makeText("林深见鹿", 12, colors.textPrimary, true);
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.topMargin = dp(5);
+        params.bottomMargin = dp(8);
+        section.addView(authorName, params);
+
+        blogRow = new LinearLayout(appContext);
+        blogRow.setOrientation(LinearLayout.HORIZONTAL);
+        blogRow.setGravity(Gravity.CENTER_VERTICAL);
+        blogRow.setPadding(dp(11), dp(7), dp(11), dp(7));
+        blogRow.setBackground(roundedBackground(colors.surfaceMuted,
+            colors.stroke, 11));
+        blogRow.setClickable(true);
+        blogRow.setFocusable(true);
+        blogRow.setContentDescription("打开个人博客 xin-blog.com");
+        blogRow.setOnTouchListener(new JavaAdapter(View.OnTouchListener, {
+            onTouch: function (view, event) {
+                var action = Number(event.getActionMasked());
+                if (action === MotionEvent.ACTION_DOWN) {
+                    view.setAlpha(0.72);
+                } else if (action === MotionEvent.ACTION_UP ||
+                        action === MotionEvent.ACTION_CANCEL) {
+                    view.setAlpha(1);
+                }
+                return false;
+            }
+        }));
+        blogRow.setOnClickListener(new JavaAdapter(View.OnClickListener, {
+            onClick: openAuthorBlog
+        }));
+
+        blogLabel = makeText("个人博客", 10, colors.textSecondary, false);
+        blogValue = makeText("xin-blog.com  ↗", 10,
+            colors.accentStrong, true);
+        blogValue.setSingleLine(true);
+        blogValue.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        blogRow.addView(blogLabel, new LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        blogRow.addView(blogValue, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT));
+        section.addView(blogRow, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
+        blogLinkView = blogRow;
         return section;
     }
 
@@ -2104,6 +2208,7 @@
                 translationSectionView = null;
                 tagsSectionView = null;
                 dataSectionView = null;
+                blogLinkView = null;
                 pendingDeleteTagId = null;
                 uiState.pendingDeleteTagId = null;
             }
@@ -2322,6 +2427,11 @@
             pendingDelayedCallbackCount:
                 Number(uiState.pendingDelayedCallbackCount),
             lastDelayedCallbackError: uiState.lastDelayedCallbackError,
+            blogLinkPresent: blogLinkView !== null,
+            blogOpenCount: Number(uiState.blogOpenCount),
+            blogOpenSuccessCount:
+                Number(uiState.blogOpenSuccessCount),
+            lastOpenedUrl: uiState.lastOpenedUrl,
             lastTestResult: uiState.lastTestResult,
             lastError: uiState.lastError
         };
@@ -2329,7 +2439,7 @@
 
     ClipHub.Settings = {
         MODULE_NAME: "ch_13_settings",
-        MODULE_VERSION: 11,
+        MODULE_VERSION: 12,
         DEFAULTS: defaultsCopy(),
         init: function (context) {
             if (!ClipHub.Database || !ClipHub.Database.isOpen()) {
@@ -2377,6 +2487,12 @@
         performSaveTranslationClick: saveTranslationSettings,
         performTestTranslationClick: testTranslationSettings,
         scrollToSection: scrollToSection,
+        performOpenBlogClick: function () {
+            return runOnMainSync(function () {
+                return blogLinkView !== null &&
+                    blogLinkView.performClick();
+            }, 3000);
+        },
         performFocusInput: function (name) {
             return runOnMainSync(function () {
                 return focusSettingsInput(name);
