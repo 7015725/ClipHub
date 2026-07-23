@@ -31,6 +31,9 @@ METHODS = (
     "setTint",
     "setColorFilter",
     "setHighlightColor",
+    "setColors",
+    "drawColor",
+    "setShadowLayer",
 )
 
 SAFE_CSL_MARKERS = (
@@ -235,6 +238,12 @@ def add_method_findings(path: Path, source: str, clean: str) -> list[Finding]:
             reason = "Drawable.setTint(int) 应改为 setTintList(ColorStateList)"
         elif method == "setHighlightColor":
             reason = "TextView.setHighlightColor(int) 为直接数值颜色调用"
+        elif method == "setColors":
+            reason = "GradientDrawable.setColors(int[]) 为直接数值颜色数组调用"
+        elif method == "drawColor":
+            reason = "Canvas.drawColor 的数值颜色重载禁止用于正式 Rhino UI"
+        elif method == "setShadowLayer":
+            reason = "Paint.setShadowLayer 的颜色参数为直接数值颜色"
 
         findings.append(Finding(
             severity, relative, line_number(source, match.start()), method,
@@ -256,6 +265,9 @@ def add_constructor_findings(path: Path, source: str, clean: str) -> list[Findin
         (re.compile(r"new\s+(?:Packages\.android\.graphics\.)?PorterDuffColorFilter\s*\("),
          "PorterDuffColorFilter", "WARN",
          "ColorFilter 构造函数直接接收数值颜色，需实机确认或改为 tintList"),
+        (re.compile(r"new\s+(?:Packages\.android\.graphics\.drawable\.)?PaintDrawable\s*\("),
+         "PaintDrawable", "WARN",
+         "PaintDrawable(int) 直接接收数值颜色，应改为安全 GradientDrawable"),
     )
     for pattern, api, severity, reason in patterns:
         for match in pattern.finditer(clean):
@@ -330,6 +342,8 @@ def main() -> int:
                         help="write machine-readable findings to this path")
     parser.add_argument("--strict", action="store_true",
                         help="exit non-zero when HIGH findings exist")
+    parser.add_argument("--release-strict", action="store_true",
+                        help="exit non-zero when HIGH or WARN findings exist")
     args = parser.parse_args()
 
     paths = list(PRODUCTION_PATHS)
@@ -351,6 +365,9 @@ def main() -> int:
         print("\nJSON: " + str(output_path))
 
     high_count = sum(1 for item in findings if item.severity == "HIGH")
+    warn_count = sum(1 for item in findings if item.severity == "WARN")
+    if args.release_strict and (high_count > 0 or warn_count > 0):
+        return 1
     return 1 if args.strict and high_count > 0 else 0
 
 

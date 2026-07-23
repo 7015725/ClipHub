@@ -156,70 +156,109 @@
         return output;
     }
 
+    var colorSafetyState = {
+        applyCount: 0,
+        failureCount: 0,
+        lastError: null
+    };
+
     function safeColorStateList(colorValue) {
-        return new ColorStateList(jint2Array([[]]), jintArray([
-            colorInt(colorValue, 0)
-        ]));
+        var color = colorInt(colorValue, 0);
+        return new ColorStateList(jint2Array([
+            [Packages.android.R.attr.state_pressed],
+            [Packages.android.R.attr.state_focused],
+            [Packages.android.R.attr.state_selected],
+            []
+        ]), jintArray([color, color, color, color]));
+    }
+
+    function safeApply(callback) {
+        try {
+            callback();
+            colorSafetyState.applyCount += 1;
+            colorSafetyState.lastError = null;
+            return true;
+        } catch (error) {
+            colorSafetyState.failureCount += 1;
+            colorSafetyState.lastError = String(error);
+            return false;
+        }
     }
 
     function safeSetTextColor(viewObj, colorValue) {
         if (viewObj === null || viewObj === undefined) { return false; }
-        viewObj.setTextColor(safeColorStateList(colorValue));
-        return true;
+        return safeApply(function () {
+            viewObj.setTextColor(safeColorStateList(colorValue));
+        });
     }
 
     function safeSetHintTextColor(viewObj, colorValue) {
         if (viewObj === null || viewObj === undefined) { return false; }
-        viewObj.setHintTextColor(safeColorStateList(colorValue));
-        return true;
+        return safeApply(function () {
+            viewObj.setHintTextColor(safeColorStateList(colorValue));
+        });
     }
 
     function safeSetLinkTextColor(viewObj, colorValue) {
         if (viewObj === null || viewObj === undefined) { return false; }
-        viewObj.setLinkTextColor(safeColorStateList(colorValue));
-        return true;
+        return safeApply(function () {
+            viewObj.setLinkTextColor(safeColorStateList(colorValue));
+        });
     }
 
     function safeSetGradientColor(drawableObj, colorValue) {
         if (drawableObj === null || drawableObj === undefined) { return false; }
-        drawableObj.setColor(safeColorStateList(colorValue));
-        return true;
+        return safeApply(function () {
+            drawableObj.setColor(safeColorStateList(colorValue));
+        });
     }
 
     function safeSetGradientStroke(drawableObj, widthPx, colorValue) {
         if (drawableObj === null || drawableObj === undefined) { return false; }
-        drawableObj.setStroke(Math.max(0, Math.round(Number(widthPx) || 0)),
-            safeColorStateList(colorValue));
-        return true;
+        return safeApply(function () {
+            drawableObj.setStroke(
+                Math.max(0, Math.round(Number(widthPx) || 0)),
+                safeColorStateList(colorValue)
+            );
+        });
     }
 
     function safeSetBackgroundColor(viewObj, colorValue) {
-        var background;
         if (viewObj === null || viewObj === undefined) { return false; }
-        background = new GradientDrawable();
-        background.setShape(GradientDrawable.RECTANGLE);
-        safeSetGradientColor(background, colorValue);
-        viewObj.setBackground(background);
-        return true;
+        return safeApply(function () {
+            var background = new GradientDrawable();
+            background.setShape(GradientDrawable.RECTANGLE);
+            background.setColor(safeColorStateList(colorValue));
+            viewObj.setBackground(background);
+        });
     }
 
     function safeSetTintColor(drawableObj, colorValue) {
         if (drawableObj === null || drawableObj === undefined) { return false; }
-        drawableObj.setTintList(safeColorStateList(colorValue));
-        return true;
+        return safeApply(function () {
+            drawableObj.setTintList(safeColorStateList(colorValue));
+        });
     }
 
     function safeSetPaintColor(paintObj, colorValue) {
-        var color;
         if (paintObj === null || paintObj === undefined) { return false; }
-        color = colorInt(colorValue, 0);
-        paintObj.setARGB(
-            (color >>> 24) & 255,
-            (color >>> 16) & 255,
-            (color >>> 8) & 255,
-            color & 255
-        );
-        return true;
+        return safeApply(function () {
+            var color = colorInt(colorValue, 0);
+            paintObj.setARGB(
+                (color >>> 24) & 255,
+                (color >>> 16) & 255,
+                (color >>> 8) & 255,
+                color & 255
+            );
+        });
+    }
+
+    function getColorSafetyState() {
+        return {
+            applyCount: Number(colorSafetyState.applyCount),
+            failureCount: Number(colorSafetyState.failureCount),
+            lastError: colorSafetyState.lastError
+        };
     }
 
     function copy(value) {
@@ -260,7 +299,7 @@
 
     ClipHub.Theme = {
         MODULE_NAME: "ch_07_theme",
-        MODULE_VERSION: 3,
+        MODULE_VERSION: 4,
         init: function () { mode = "system"; return true; },
         setMode: function (value) {
             value = String(value || "system");
@@ -281,6 +320,7 @@
         applyBackgroundColor: safeSetBackgroundColor,
         applyTintColor: safeSetTintColor,
         applyPaintColor: safeSetPaintColor,
+        getColorSafetyState: getColorSafetyState,
         isDark: isDark,
         getPalette: palette,
         getMetrics: function () { return copy(METRICS); },

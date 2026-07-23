@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260723.13",
+  "moduleSetVersion": "20260723.14",
   "entryMinVersion": 5,
   "sourceRef": "agent/initialize-project-skeleton",
   "modules": [
@@ -37,7 +37,7 @@
     {
       "name": "ch_07_theme.js",
       "path": "src/ch_07_theme.js",
-      "sha": "a293c6bc8b97947cdd79ab1bfb0a3380fec9deb9"
+      "sha": "2d26ee75a5216a8ba58d15010f439596c98d0b30"
     },
     {
       "name": "ch_08_window.js",
