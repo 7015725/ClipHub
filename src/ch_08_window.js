@@ -11,6 +11,7 @@
     var View = Packages.android.view.View;
     var MotionEvent = Packages.android.view.MotionEvent;
     var Gravity = Packages.android.view.Gravity;
+    var WindowManager = Packages.android.view.WindowManager;
     var WindowInsets = Packages.android.view.WindowInsets;
     var ViewConfiguration = Packages.android.view.ViewConfiguration;
     var HapticFeedbackConstants = Packages.android.view.HapticFeedbackConstants;
@@ -19,6 +20,7 @@
     var FrameLayout = Packages.android.widget.FrameLayout;
     var Paint = Packages.android.graphics.Paint;
     var Path = Packages.android.graphics.Path;
+    var RectF = Packages.android.graphics.RectF;
     var Color = Packages.android.graphics.Color;
     var PixelFormat = Packages.android.graphics.PixelFormat;
     var Drawable = Packages.android.graphics.drawable.Drawable;
@@ -49,6 +51,16 @@
         bounds: null,
         runnable: null
     };
+    var resizePreview = {
+        attached: false,
+        sourceBinding: null,
+        manager: null,
+        rootView: null,
+        layoutParams: null,
+        visual: null,
+        geometry: null,
+        bounds: null
+    };
 
     var drag = {
         binding: null,
@@ -71,6 +83,7 @@
         startHeight: 0,
         downAt: 0,
         bounds: null,
+        targetGeometry: null,
         pending: false,
         active: false,
         longPressRunnable: null
@@ -96,6 +109,13 @@
         dragMoveCount: 0,
         resizeActivateCount: 0,
         resizeMoveCount: 0,
+        resizePreviewEnabled: true,
+        resizeLiveLayoutEnabled: false,
+        resizePreviewAttached: false,
+        resizePreviewShowCount: 0,
+        resizePreviewUpdateCount: 0,
+        resizePreviewCloseCount: 0,
+        resizeCommitCount: 0,
         geometryComputeCount: 0,
         geometryPersistCount: 0,
         geometryBroadcastCount: 0,
@@ -680,38 +700,27 @@
         return safeBounds();
     }
 
-    function updateSharedLayout(sourceBinding, x, y, width, height, reason,
-            boundsOverride) {
-        var bounds;
+    function buildSharedGeometry(x, y, width, height, boundsOverride) {
+        var bounds = validBounds(boundsOverride) ?
+            copyBounds(boundsOverride) : safeBounds();
         var policy = sharedPolicy();
-        var safeWidth;
-        var safeHeight;
-        var minWidth;
-        var minHeight;
-        var maxWidth;
-        var maxHeight;
+        var safeWidth = Math.max(1,
+            Number(bounds.right) - Number(bounds.left));
+        var safeHeight = Math.max(1,
+            Number(bounds.bottom) - Number(bounds.top));
+        var minWidth = Math.min(dp(policy.minWidthDp), safeWidth);
+        var minHeight = Math.min(dp(policy.minHeightDp), safeHeight);
+        var maxWidth = Math.min(dp(policy.maxWidthDp), safeWidth);
+        var maxHeight = Math.min(dp(policy.maxHeightDp), safeHeight);
         var maxX;
         var maxY;
-        var geometry;
-        var index;
-        var applied = 0;
-        if (!sourceBinding || !sourceBinding.layoutParams) { return false; }
-        activateBinding(sourceBinding);
-        bounds = validBounds(boundsOverride) ?
-            copyBounds(boundsOverride) : safeBounds();
-        safeWidth = Math.max(1, Number(bounds.right) - Number(bounds.left));
-        safeHeight = Math.max(1, Number(bounds.bottom) - Number(bounds.top));
-        minWidth = Math.min(dp(policy.minWidthDp), safeWidth);
-        minHeight = Math.min(dp(policy.minHeightDp), safeHeight);
-        maxWidth = Math.min(dp(policy.maxWidthDp), safeWidth);
-        maxHeight = Math.min(dp(policy.maxHeightDp), safeHeight);
         width = clamp(Number(width), minWidth, maxWidth);
         height = clamp(Number(height), minHeight, maxHeight);
         maxX = Math.max(Number(bounds.left), Number(bounds.right) - width);
         maxY = Math.max(Number(bounds.top), Number(bounds.bottom) - height);
         x = clamp(Number(x), Number(bounds.left), maxX);
         y = clamp(Number(y), Number(bounds.top), maxY);
-        geometry = {
+        return {
             role: "shared",
             orientation: orientationForBounds(bounds),
             bounds: copyBounds(bounds),
@@ -734,6 +743,16 @@
             widthRatio: clamp01(width / safeWidth),
             heightRatio: clamp01(height / safeHeight)
         };
+    }
+
+    function updateSharedLayout(sourceBinding, x, y, width, height, reason,
+            boundsOverride) {
+        var geometry;
+        var index;
+        var applied = 0;
+        if (!sourceBinding || !sourceBinding.layoutParams) { return false; }
+        activateBinding(sourceBinding);
+        geometry = buildSharedGeometry(x, y, width, height, boundsOverride);
         for (index = 0; index < managedWindows.length; index += 1) {
             if (applyGeometryToBinding(managedWindows[index], geometry,
                     reason, managedWindows[index] === sourceBinding)) {
@@ -745,10 +764,173 @@
         state.primaryY = geometry.y;
         state.primaryWidth = geometry.width;
         state.primaryHeight = geometry.height;
-        state.safeBounds = copyBounds(bounds);
+        state.safeBounds = copyBounds(geometry.bounds);
         state.orientation = geometry.orientation;
         state.geometryBroadcastCount += applied;
         return applied > 0;
+    }
+
+    function previewAccentColor() {
+        var colors;
+        try {
+            if (ClipHub.Theme &&
+                    typeof ClipHub.Theme.getPalette === "function") {
+                colors = ClipHub.Theme.getPalette(appContext);
+                return String(colors.accentStrong || colors.accent ||
+                    "#7C5CFC");
+            }
+        } catch (ignoredPalette) {}
+        return "#7C5CFC";
+    }
+
+    function createResizePreviewVisual() {
+        var visual = { geometry: null, bounds: null };
+        var fillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        var strokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        var drawable;
+        var view;
+        fillPaint.setStyle(Paint.Style.FILL);
+        fillPaint["setColor(int)"](parseColor(previewAccentColor(),
+            "#7C5CFC"));
+        fillPaint.setAlpha(18);
+        strokePaint.setStyle(Paint.Style.STROKE);
+        strokePaint.setStrokeCap(Paint.Cap.ROUND);
+        strokePaint.setStrokeJoin(Paint.Join.ROUND);
+        strokePaint.setStrokeWidth(dp(1.4));
+        strokePaint["setColor(int)"](parseColor(previewAccentColor(),
+            "#7C5CFC"));
+        strokePaint.setAlpha(168);
+        drawable = new JavaAdapter(Drawable, {
+            draw: function (canvas) {
+                var geometry = visual.geometry;
+                var bounds = visual.bounds;
+                var inset = dp(1.5);
+                var rect;
+                if (!geometry || !bounds) { return; }
+                rect = new RectF(
+                    Number(geometry.x) - Number(bounds.left) + inset,
+                    Number(geometry.y) - Number(bounds.top) + inset,
+                    Number(geometry.x) - Number(bounds.left) +
+                        Number(geometry.width) - inset,
+                    Number(geometry.y) - Number(bounds.top) +
+                        Number(geometry.height) - inset);
+                canvas.drawRoundRect(rect, dp(24), dp(24), fillPaint);
+                canvas.drawRoundRect(rect, dp(24), dp(24), strokePaint);
+            },
+            setAlpha: function () {},
+            setColorFilter: function (filter) {
+                fillPaint.setColorFilter(filter);
+                strokePaint.setColorFilter(filter);
+            },
+            getOpacity: function () {
+                return PixelFormat.TRANSLUCENT;
+            }
+        });
+        view = new View(appContext);
+        view.setBackground(drawable);
+        return {
+            view: view,
+            setGeometry: function (geometry, bounds) {
+                visual.geometry = copyGeometry(geometry);
+                visual.bounds = copyBounds(bounds);
+                try { view.invalidate(); } catch (ignoredInvalidate) {}
+            }
+        };
+    }
+
+    function clearResizePreviewState() {
+        resizePreview.attached = false;
+        resizePreview.sourceBinding = null;
+        resizePreview.manager = null;
+        resizePreview.rootView = null;
+        resizePreview.layoutParams = null;
+        resizePreview.visual = null;
+        resizePreview.geometry = null;
+        resizePreview.bounds = null;
+        state.resizePreviewAttached = false;
+    }
+
+    function removeResizePreview() {
+        var manager = resizePreview.manager;
+        var root = resizePreview.rootView;
+        var wasAttached = resizePreview.attached === true;
+        if (manager !== null && root !== null) {
+            try { manager.removeViewImmediate(root); }
+            catch (error) {
+                try {
+                    if (root.isAttachedToWindow()) {
+                        state.lastError = String(error);
+                    }
+                } catch (ignoredAttached) {}
+            }
+        }
+        clearResizePreviewState();
+        if (wasAttached) { state.resizePreviewCloseCount += 1; }
+        return wasAttached;
+    }
+
+    function showResizePreview(binding, geometry) {
+        var bounds;
+        var width;
+        var height;
+        var type;
+        var flags;
+        var visual;
+        var params;
+        var manager;
+        if (!binding || !geometry) { return false; }
+        removeResizePreview();
+        bounds = copyBounds(geometry.bounds);
+        width = Math.max(1, Number(bounds.right) - Number(bounds.left));
+        height = Math.max(1, Number(bounds.bottom) - Number(bounds.top));
+        manager = binding.manager || windowManager;
+        type = Number(binding.layoutParams && binding.layoutParams.type ||
+            (Build.VERSION.SDK_INT >= 26 ?
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY :
+                WindowManager.LayoutParams.TYPE_SYSTEM_ALERT));
+        flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE |
+            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE |
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL |
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
+            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED;
+        visual = createResizePreviewVisual();
+        params = new WindowManager.LayoutParams(width, height, type, flags,
+            PixelFormat.TRANSLUCENT);
+        params.gravity = Gravity.TOP | Gravity.START;
+        params.x = Number(bounds.left);
+        params.y = Number(bounds.top);
+        try { params.setTitle("ClipHub Resize Preview"); }
+        catch (ignoredTitle) {}
+        try {
+            manager.addView(visual.view, params);
+        } catch (error) {
+            state.lastError = String(error);
+            return false;
+        }
+        resizePreview.attached = true;
+        resizePreview.sourceBinding = binding;
+        resizePreview.manager = manager;
+        resizePreview.rootView = visual.view;
+        resizePreview.layoutParams = params;
+        resizePreview.visual = visual;
+        resizePreview.geometry = copyGeometry(geometry);
+        resizePreview.bounds = copyBounds(bounds);
+        state.resizePreviewAttached = true;
+        state.resizePreviewShowCount += 1;
+        visual.setGeometry(geometry, bounds);
+        return true;
+    }
+
+    function updateResizePreview(geometry) {
+        if (!geometry) { return false; }
+        if (!resizePreview.attached || !resizePreview.visual) {
+            return showResizePreview(resize.binding, geometry);
+        }
+        resizePreview.geometry = copyGeometry(geometry);
+        resizePreview.bounds = copyBounds(geometry.bounds);
+        resizePreview.visual.setGeometry(geometry, geometry.bounds);
+        state.resizePreviewUpdateCount += 1;
+        return true;
     }
 
     function clearFrameUpdate() {
@@ -1058,6 +1240,14 @@
         state.resizeActive = true;
         state.resizeActivateCount += 1;
         setResizeVisual(binding, true);
+        if (resize.targetGeometry === null) {
+            resize.targetGeometry = buildSharedGeometry(
+                Number(binding.layoutParams.x),
+                Number(binding.layoutParams.y),
+                Number(binding.layoutParams.width),
+                Number(binding.layoutParams.height), resize.bounds);
+        }
+        showResizePreview(binding, resize.targetGeometry);
         performHaptic(view, "resize_activate");
         return true;
     }
@@ -1100,6 +1290,10 @@
             resize.startHeight = Number(binding.layoutParams.height);
             resize.downAt = Number(event.getEventTime());
             resize.bounds = gestureBoundsSnapshot();
+            resize.targetGeometry = buildSharedGeometry(
+                Number(binding.layoutParams.x),
+                Number(binding.layoutParams.y),
+                resize.startWidth, resize.startHeight, resize.bounds);
             resize.active = false;
             state.resizeActive = false;
             scheduleResizeActivation(view, binding);
@@ -1122,9 +1316,11 @@
             if (resize.active && resize.binding === binding) {
                 width = resize.startWidth + deltaX;
                 height = resize.startHeight + deltaY;
-                requestFrameUpdate(binding, Number(binding.layoutParams.x),
+                resize.targetGeometry = buildSharedGeometry(
+                    Number(binding.layoutParams.x),
                     Number(binding.layoutParams.y), width, height,
-                    "resize_bottom_right_shared", resize.bounds);
+                    resize.bounds);
+                updateResizePreview(resize.targetGeometry);
                 state.resizeMoveCount += 1;
             }
             return true;
@@ -1132,11 +1328,23 @@
         if (action === MotionEvent.ACTION_UP ||
                 action === MotionEvent.ACTION_CANCEL) {
             completed = resize.active && resize.binding === binding;
-            if (completed) { flushFrameUpdate(); }
+            if (completed && action === MotionEvent.ACTION_UP &&
+                    resize.targetGeometry !== null) {
+                updateSharedLayout(binding,
+                    Number(resize.targetGeometry.x),
+                    Number(resize.targetGeometry.y),
+                    Number(resize.targetGeometry.width),
+                    Number(resize.targetGeometry.height),
+                    "resize_preview_commit",
+                    resize.targetGeometry.bounds);
+                state.resizeCommitCount += 1;
+            }
+            removeResizePreview();
             cancelResizeActivation();
             resize.active = false;
             resize.binding = null;
             resize.bounds = null;
+            resize.targetGeometry = null;
             state.resizeActive = false;
             setResizeVisual(binding, false);
             if (completed && action === MotionEvent.ACTION_UP) {
@@ -1274,6 +1482,9 @@
                 removed = managedWindows[index];
                 removed.attached = false;
                 cancelFrameUpdateForBinding(removed);
+                if (resizePreview.sourceBinding === removed) {
+                    removeResizePreview();
+                }
                 removeImeObserver(removed);
                 try {
                     if (removed.dragView) {
@@ -1528,6 +1739,13 @@
             dragMoveCount: Number(state.dragMoveCount),
             resizeActivateCount: Number(state.resizeActivateCount),
             resizeMoveCount: Number(state.resizeMoveCount),
+            resizePreviewEnabled: state.resizePreviewEnabled === true,
+            resizeLiveLayoutEnabled: state.resizeLiveLayoutEnabled === true,
+            resizePreviewAttached: state.resizePreviewAttached === true,
+            resizePreviewShowCount: Number(state.resizePreviewShowCount),
+            resizePreviewUpdateCount: Number(state.resizePreviewUpdateCount),
+            resizePreviewCloseCount: Number(state.resizePreviewCloseCount),
+            resizeCommitCount: Number(state.resizeCommitCount),
             geometryComputeCount: Number(state.geometryComputeCount),
             geometryPersistCount: Number(state.geometryPersistCount),
             geometryBroadcastCount: Number(state.geometryBroadcastCount),
@@ -1557,7 +1775,7 @@
 
     ClipHub.Window = {
         MODULE_NAME: "ch_08_window",
-        MODULE_VERSION: 14,
+        MODULE_VERSION: 15,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
@@ -1579,6 +1797,8 @@
             managedWindows = [];
             activeBinding = null;
             clearFrameUpdate();
+            clearResizePreviewState();
+            resize.targetGeometry = null;
             state.frameUpdateRequestCount = 0;
             state.frameUpdateApplyCount = 0;
             state.frameUpdateCoalescedCount = 0;
@@ -1647,6 +1867,7 @@
             var index;
             cancelDragActivation();
             cancelResizeActivation();
+            removeResizePreview();
             clearFrameUpdate();
             for (index = 0; index < snapshot.length; index += 1) {
                 detachWindow(snapshot[index].rootView);
