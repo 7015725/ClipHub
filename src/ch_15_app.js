@@ -15,6 +15,7 @@
     var IntentFilter = Packages.android.content.IntentFilter;
 
     var CONTROL_ACTION_BASE = "com.cliphub.runtime.CONTROL";
+    var CONTROL_ENDPOINT_SCHEMA = 3;
     var CONTROL_COMMANDS = ["show", "hide", "toggle", "status", "stop"];
     var order = [
         "Log", "Database", "Classifier", "Repository",
@@ -32,7 +33,10 @@
         controlReceiver: null,
         controlAction: "",
         controlToken: "",
-        controlEndpointFile: null
+        controlEndpointFile: null,
+        entryVersion: 0,
+        moduleSetVersion: "",
+        sourceRef: ""
     };
 
     function closeQuietly(value) {
@@ -140,11 +144,14 @@
         );
         var file = new File(cacheDir, "control_endpoint.json");
         writeUtf8(file, JSON.stringify({
-            schemaVersion: 2,
+            schemaVersion: CONTROL_ENDPOINT_SCHEMA,
             transport: "dynamic_broadcast_token",
             action: String(action),
             token: String(token),
             runtimeDir: String(context.runtimeDir),
+            entryVersion: Number(state.entryVersion || 0),
+            moduleSetVersion: String(state.moduleSetVersion || ""),
+            sourceRef: String(state.sourceRef || ""),
             commands: CONTROL_COMMANDS,
             createdAt: ClipHub.Base.now()
         }, null, 2) + "\n");
@@ -435,6 +442,10 @@
                     response = executeControlCommand(command);
                     response.runtimeDir = runtimeDir;
                     response.transport = "dynamic_broadcast_token";
+                    response.endpointSchemaVersion = CONTROL_ENDPOINT_SCHEMA;
+                    response.entryVersion = Number(state.entryVersion || 0);
+                    response.moduleSetVersion = String(state.moduleSetVersion || "");
+                    response.sourceRef = String(state.sourceRef || "");
                     response.threadId = Number(callbackThread.getId());
                     response.threadName = String(callbackThread.getName());
                     writeControlAck(runtimeDir, requestId, response);
@@ -482,8 +493,9 @@
 
     ClipHub.App = {
         MODULE_NAME: "ch_15_app",
-        MODULE_VERSION: 8,
+        MODULE_VERSION: 9,
         CONTROL_ACTION_BASE: CONTROL_ACTION_BASE,
+        CONTROL_ENDPOINT_SCHEMA: CONTROL_ENDPOINT_SCHEMA,
         CONTROL_COMMANDS: CONTROL_COMMANDS,
         start: function (context) {
             var index;
@@ -492,6 +504,10 @@
                 return { ok: true, started: true, reused: true };
             }
             state.context = context;
+            state.entryVersion = Number(context && context.entryVersion || 0);
+            state.moduleSetVersion = String(
+                context && context.moduleSetVersion || "");
+            state.sourceRef = String(context && context.sourceRef || "");
             try {
                 ClipHub.Base.init(context);
                 state.initialized.push(ClipHub.Base);
@@ -517,7 +533,11 @@
                     initializedModuleCount: order.length + 1,
                     moduleFileCount: order.length + 2,
                     moduleCount: order.length + 1,
+                    entryVersion: Number(state.entryVersion || 0),
+                    moduleSetVersion: String(state.moduleSetVersion || ""),
+                    sourceRef: String(state.sourceRef || ""),
                     controlTransport: "dynamic_broadcast_token",
+                    controlEndpointSchemaVersion: CONTROL_ENDPOINT_SCHEMA,
                     controlCommands: CONTROL_COMMANDS,
                     controlEndpointPath: String(
                         state.controlEndpointFile.getAbsolutePath()
@@ -528,6 +548,9 @@
                 shutdownModules();
                 releaseLock();
                 state.context = null;
+                state.entryVersion = 0;
+                state.moduleSetVersion = "";
+                state.sourceRef = "";
                 state.started = false;
                 throw error;
             }
@@ -538,6 +561,9 @@
             shutdownModules();
             releaseLock();
             state.context = null;
+            state.entryVersion = 0;
+            state.moduleSetVersion = "";
+            state.sourceRef = "";
             state.started = false;
             return {
                 ok: true,
@@ -554,6 +580,14 @@
         },
         getControlCommands: function () {
             return CONTROL_COMMANDS.slice(0);
+        },
+        getControlMetadata: function () {
+            return {
+                endpointSchemaVersion: CONTROL_ENDPOINT_SCHEMA,
+                entryVersion: Number(state.entryVersion || 0),
+                moduleSetVersion: String(state.moduleSetVersion || ""),
+                sourceRef: String(state.sourceRef || "")
+            };
         },
         getControlEndpointPath: function () {
             return state.controlEndpointFile === null ? null :

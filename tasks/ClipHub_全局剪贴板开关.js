@@ -9,16 +9,18 @@
     var System = Packages.java.lang.System;
     var RAF = Packages.java.io.RandomAccessFile;
     var Intent = Packages.android.content.Intent;
-    var TASK_VERSION = 2;
-    var REQUIRED_ENDPOINT_SCHEMA = 2;
-    var REQUIRED_MODULE_SET = "20260722.22";
+    var TASK_VERSION = 3;
+    var REQUIRED_ENDPOINT_SCHEMA = 3;
+    var MIN_ENTRY_VERSION = 5;
 
     function now() { return Number(System.currentTimeMillis()); }
+
     function close(value) {
         if (value !== null && value !== undefined) {
             try { value.close(); } catch (ignored) {}
         }
     }
+
     function read(file) {
         var reader = null;
         var builder = new SB();
@@ -31,12 +33,22 @@
             return String(builder.toString());
         } finally { close(reader); }
     }
+
     function ensureDir(file) {
         if (!file.exists() && !file.mkdirs() && !file.isDirectory()) {
             throw new Error("Cannot create directory: " + file.getAbsolutePath());
         }
+        if (!file.isDirectory()) {
+            throw new Error("Not a directory: " + file.getAbsolutePath());
+        }
         return file;
     }
+
+    function validRuntimeName(value) {
+        return /^[A-Za-z0-9._-]+$/.test(String(value)) &&
+            String(value) !== "." && String(value) !== "..";
+    }
+
     function lockFree(runtimeDir) {
         var dataDir = ensureDir(new File(runtimeDir, "data"));
         var raf = null;
@@ -60,6 +72,7 @@
             close(raf);
         }
     }
+
     function waitFor(predicate, timeoutMs) {
         var started = now();
         while (now() - started < timeoutMs) {
@@ -68,6 +81,7 @@
         }
         return predicate();
     }
+
     function containsCommand(commands, command) {
         var index;
         if (!commands || typeof commands.length !== "number") { return false; }
@@ -76,7 +90,8 @@
         }
         return false;
     }
-    function oldRuntimeResult(endpoint) {
+
+    function outdatedRuntime(endpoint) {
         return {
             ok: false,
             command: "toggle",
@@ -84,21 +99,40 @@
             running: true,
             updateRequired: true,
             endpointSchemaVersion: Number(endpoint && endpoint.schemaVersion || 0),
+            entryVersion: Number(endpoint && endpoint.entryVersion || 0),
+            moduleSetVersion: String(endpoint && endpoint.moduleSetVersion || ""),
+            sourceRef: String(endpoint && endpoint.sourceRef || ""),
             requiredEndpointSchemaVersion: REQUIRED_ENDPOINT_SCHEMA,
-            requiredModuleSetVersion: REQUIRED_MODULE_SET,
-            error: "ClipHub 后台版本过旧，请先停止正式实例，再运行完整 ClipHub.js 更新到 " + REQUIRED_MODULE_SET
+            minimumEntryVersion: MIN_ENTRY_VERSION,
+            error: "ClipHub 后台入口或控制协议过旧，请停止实例后重新执行完整 ClipHub.js"
         };
     }
+
     function main() {
+        var options = global.ClipHubControlOptions || {};
         var root = String(shortx.getShortXDir());
-        var runtimeDir = new File(root, "ClipHub");
-        var cacheDir = ensureDir(new File(runtimeDir, "cache"));
-        var endpointFile = new File(cacheDir, "control_endpoint.json");
+        var runtimeName = options.runtimeName === undefined ?
+            "ClipHub" : String(options.runtimeName);
+        var runtimeDir;
+        var cacheDir;
+        var endpointFile;
         var endpoint;
         var requestId;
         var ackFile;
         var intent;
         var ack = null;
+        var timeoutMs = Number(options.timeoutMs || 3000);
+
+        if (!validRuntimeName(runtimeName)) {
+            throw new Error("Invalid ClipHub runtime name: " + runtimeName);
+        }
+        if (!isFinite(timeoutMs) || timeoutMs < 500 || timeoutMs > 10000) {
+            timeoutMs = 3000;
+        }
+        runtimeDir = new File(root, runtimeName);
+        cacheDir = ensureDir(new File(runtimeDir, "cache"));
+        endpointFile = new File(cacheDir, "control_endpoint.json");
+
         if (lockFree(runtimeDir)) {
             return {
                 ok: false,
@@ -119,9 +153,13 @@
             throw new Error("Invalid ClipHub control endpoint");
         }
         if (Number(endpoint.schemaVersion || 0) < REQUIRED_ENDPOINT_SCHEMA ||
+                Number(endpoint.entryVersion || 0) < MIN_ENTRY_VERSION ||
+                String(endpoint.moduleSetVersion || "").length === 0 ||
+                String(endpoint.sourceRef || "").length === 0 ||
                 !containsCommand(endpoint.commands, "toggle")) {
-            return oldRuntimeResult(endpoint);
+            return outdatedRuntime(endpoint);
         }
+
         requestId = String(now()) + "-" + Number(Thread.currentThread().getId());
         ackFile = new File(cacheDir, "control_ack_" + requestId + ".json");
         if (ackFile.exists()) { ackFile.delete(); }
@@ -131,7 +169,7 @@
         intent.putExtra("requestId", requestId);
         intent.putExtra("controlToken", String(endpoint.token));
         global.context.sendBroadcast(intent);
-        waitFor(function () { return ackFile.isFile(); }, 3000);
+        waitFor(function () { return ackFile.isFile(); }, timeoutMs);
         if (ackFile.isFile()) {
             try { ack = JSON.parse(read(ackFile)); }
             finally { ackFile.delete(); }
@@ -143,10 +181,17 @@
                 taskVersion: TASK_VERSION,
                 running: true,
                 endpointSchemaVersion: Number(endpoint.schemaVersion || 0),
-                error: "ClipHub 控制回执超时；请确认正式实例已更新到 " + REQUIRED_MODULE_SET
+                entryVersion: Number(endpoint.entryVersion || 0),
+                moduleSetVersion: String(endpoint.moduleSetVersion || ""),
+                sourceRef: String(endpoint.sourceRef || ""),
+                error: "ClipHub 控制回执超时，请重新执行完整 ClipHub.js 后重试"
             };
         }
         ack.taskVersion = TASK_VERSION;
+        ack.endpointSchemaVersion = Number(endpoint.schemaVersion || 0);
+        ack.entryVersion = Number(endpoint.entryVersion || 0);
+        ack.moduleSetVersion = String(endpoint.moduleSetVersion || "");
+        ack.sourceRef = String(endpoint.sourceRef || "");
         return ack;
     }
 

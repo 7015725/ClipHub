@@ -11,7 +11,7 @@
     var URLEncoder = Packages.java.net.URLEncoder;
     var MessageDigest = Packages.java.security.MessageDigest;
     var System = Packages.java.lang.System;
-    var ENTRY_VERSION = 4;
+    var ENTRY_VERSION = 5;
     var OWNER = "7015725";
     var REPO = "ClipHub";
     var DEFAULT_REF = "agent/initialize-project-skeleton";
@@ -468,7 +468,11 @@
             app = global.ClipHub.App.start({
                 shortxRoot: root,
                 runtimeDir: String(runtimeDir.getAbsolutePath()),
-                moduleDir: String(moduleDir.getAbsolutePath())
+                moduleDir: String(moduleDir.getAbsolutePath()),
+                androidContext: global.context,
+                entryVersion: ENTRY_VERSION,
+                moduleSetVersion: String(sync.moduleSetVersion || ""),
+                sourceRef: ref
             });
             commitSync(sync);
             return {

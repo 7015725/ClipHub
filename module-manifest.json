@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260723.09",
-  "entryMinVersion": 4,
+  "moduleSetVersion": "20260723.10",
+  "entryMinVersion": 5,
   "sourceRef": "agent/initialize-project-skeleton",
   "modules": [
     {
@@ -77,7 +77,7 @@
     {
       "name": "ch_15_app.js",
       "path": "src/ch_15_app.js",
-      "sha": "1c9a02037e75ac3fc5b3c0c0e3930daa9aa1d740"
+      "sha": "2837a308cc67a51d8284c7f37c7eb2206a524667"
     }
   ]
 }
