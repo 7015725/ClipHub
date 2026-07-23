@@ -45,6 +45,7 @@
         downRawY: 0,
         startX: 0,
         startY: 0,
+        downAt: 0,
         pending: false,
         active: false,
         longPressRunnable: null
@@ -56,6 +57,7 @@
         downRawY: 0,
         startWidth: 0,
         startHeight: 0,
+        downAt: 0,
         pending: false,
         active: false,
         longPressRunnable: null
@@ -775,6 +777,31 @@
         state.dragPending = false;
     }
 
+    function pendingActivationSlopPx() {
+        return Math.max(dp(12), Math.floor(touchSlopPx * 2));
+    }
+
+    function activateDragGesture(view, binding) {
+        if (!binding || !binding.attached || !drag.pending ||
+                binding.pinned || bindingImeVisible(binding)) {
+            cancelDragActivation();
+            return false;
+        }
+        if (mainHandler !== null && drag.longPressRunnable !== null) {
+            try { mainHandler.removeCallbacks(drag.longPressRunnable); }
+            catch (ignoredRemove) {}
+        }
+        drag.longPressRunnable = null;
+        activateBinding(binding);
+        drag.pending = false;
+        drag.active = true;
+        state.dragPending = false;
+        state.dragActive = true;
+        state.dragActivateCount += 1;
+        performHaptic(view, "drag_activate");
+        return true;
+    }
+
     function scheduleDragActivation(view, binding) {
         cancelDragActivation();
         drag.binding = binding;
@@ -782,18 +809,7 @@
         state.dragPending = true;
         drag.longPressRunnable = new Packages.java.lang.Runnable({
             run: function () {
-                if (!binding || !binding.attached || !drag.pending ||
-                        binding.pinned || bindingImeVisible(binding)) {
-                    cancelDragActivation();
-                    return;
-                }
-                activateBinding(binding);
-                drag.pending = false;
-                drag.active = true;
-                state.dragPending = false;
-                state.dragActive = true;
-                state.dragActivateCount += 1;
-                performHaptic(view, "drag_activate");
+                activateDragGesture(view, binding);
             }
         });
         mainHandler.postDelayed(drag.longPressRunnable, longPressTimeoutMs);
@@ -805,6 +821,9 @@
         var rawY = Number(event.getRawY());
         var deltaX;
         var deltaY;
+        var distanceSquared;
+        var pendingLimit;
+        var elapsed;
         var completed;
         activateBinding(binding);
         if (!binding || !binding.attached || binding.pinned || resize.pending ||
@@ -817,6 +836,7 @@
             drag.downRawY = rawY;
             drag.startX = Number(binding.layoutParams.x);
             drag.startY = Number(binding.layoutParams.y);
+            drag.downAt = Number(event.getEventTime());
             drag.active = false;
             state.dragActive = false;
             scheduleDragActivation(view, binding);
@@ -825,8 +845,14 @@
         if (action === MotionEvent.ACTION_MOVE) {
             deltaX = rawX - drag.downRawX;
             deltaY = rawY - drag.downRawY;
-            if (drag.pending && Math.abs(deltaX) + Math.abs(deltaY) >
-                    touchSlopPx) {
+            elapsed = Number(event.getEventTime()) - Number(drag.downAt || 0);
+            pendingLimit = pendingActivationSlopPx();
+            distanceSquared = deltaX * deltaX + deltaY * deltaY;
+            if (drag.pending && elapsed >= longPressTimeoutMs) {
+                activateDragGesture(view, binding);
+            }
+            if (drag.pending && distanceSquared >
+                    pendingLimit * pendingLimit) {
                 cancelDragActivation();
                 return true;
             }
@@ -871,6 +897,28 @@
         }
     }
 
+    function activateResizeGesture(view, binding) {
+        if (!binding || !binding.attached || !resize.pending ||
+                binding.pinned || bindingImeVisible(binding)) {
+            cancelResizeActivation();
+            return false;
+        }
+        if (mainHandler !== null && resize.longPressRunnable !== null) {
+            try { mainHandler.removeCallbacks(resize.longPressRunnable); }
+            catch (ignoredRemove) {}
+        }
+        resize.longPressRunnable = null;
+        activateBinding(binding);
+        resize.pending = false;
+        resize.active = true;
+        state.resizePending = false;
+        state.resizeActive = true;
+        state.resizeActivateCount += 1;
+        setResizeVisual(binding, true);
+        performHaptic(view, "resize_activate");
+        return true;
+    }
+
     function scheduleResizeActivation(view, binding) {
         cancelResizeActivation();
         resize.binding = binding;
@@ -878,19 +926,7 @@
         state.resizePending = true;
         resize.longPressRunnable = new Packages.java.lang.Runnable({
             run: function () {
-                if (!binding || !binding.attached || !resize.pending ||
-                        binding.pinned || bindingImeVisible(binding)) {
-                    cancelResizeActivation();
-                    return;
-                }
-                activateBinding(binding);
-                resize.pending = false;
-                resize.active = true;
-                state.resizePending = false;
-                state.resizeActive = true;
-                state.resizeActivateCount += 1;
-                setResizeVisual(binding, true);
-                performHaptic(view, "resize_activate");
+                activateResizeGesture(view, binding);
             }
         });
         mainHandler.postDelayed(resize.longPressRunnable,
@@ -905,6 +941,9 @@
         var deltaY;
         var width;
         var height;
+        var distanceSquared;
+        var pendingLimit;
+        var elapsed;
         var completed;
         activateBinding(binding);
         if (!binding || !binding.attached || binding.pinned || drag.active) {
@@ -916,6 +955,7 @@
             resize.downRawY = rawY;
             resize.startWidth = Number(binding.layoutParams.width);
             resize.startHeight = Number(binding.layoutParams.height);
+            resize.downAt = Number(event.getEventTime());
             resize.active = false;
             state.resizeActive = false;
             scheduleResizeActivation(view, binding);
@@ -924,8 +964,14 @@
         if (action === MotionEvent.ACTION_MOVE) {
             deltaX = rawX - resize.downRawX;
             deltaY = rawY - resize.downRawY;
-            if (resize.pending && Math.abs(deltaX) + Math.abs(deltaY) >
-                    touchSlopPx) {
+            elapsed = Number(event.getEventTime()) - Number(resize.downAt || 0);
+            pendingLimit = pendingActivationSlopPx();
+            distanceSquared = deltaX * deltaX + deltaY * deltaY;
+            if (resize.pending && elapsed >= longPressTimeoutMs) {
+                activateResizeGesture(view, binding);
+            }
+            if (resize.pending && distanceSquared >
+                    pendingLimit * pendingLimit) {
                 cancelResizeActivation();
                 return true;
             }
@@ -1356,7 +1402,7 @@
 
     ClipHub.Window = {
         MODULE_NAME: "ch_08_window",
-        MODULE_VERSION: 12,
+        MODULE_VERSION: 13,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;

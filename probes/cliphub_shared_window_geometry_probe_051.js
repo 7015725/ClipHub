@@ -16,10 +16,10 @@
     var Toast = Packages.android.widget.Toast;
 
     var PROBE = "cliphub_shared_window_geometry_probe_051";
-    var PROBE_VERSION = 3;
+    var PROBE_VERSION = 4;
     var SCENE_DURATION_MS = 9000;
-    var HOME_GESTURE_TIMEOUT_MS = 25000;
-    var EXPECTED_MODULE_SET = "20260724.06";
+    var HOME_GESTURE_TIMEOUT_MS = 35000;
+    var EXPECTED_MODULE_SET = "20260724.07";
     var EXPECTED_SOURCE_REF = "agent/unify-window-geometry";
     var NAMES = [
         "ch_01_base.js", "ch_02_log.js", "ch_03_database.js",
@@ -227,6 +227,8 @@
         var dragSeen = false;
         var resizeSeen = false;
         var persisted = false;
+        var announcedDrag = false;
+        var announcedResize = false;
         while (Number(System.currentTimeMillis()) < deadline) {
             dragSeen = Number(current.dragActivateCount || 0) >
                 Number(baseline.dragActivateCount || 0);
@@ -234,6 +236,18 @@
                 Number(baseline.resizeActivateCount || 0);
             persisted = Number(current.geometryPersistCount || 0) >
                 Number(baseline.geometryPersistCount || 0);
+            if (dragSeen && !announcedDrag) {
+                announcedDrag = true;
+                scene(1, "顶部拖动已识别",
+                    resizeSeen ? "等待几何保存。" :
+                        "继续按住右下角双弧线，震动后再拖动。" );
+            }
+            if (resizeSeen && !announcedResize) {
+                announcedResize = true;
+                scene(1, "右下角缩放已识别",
+                    dragSeen ? "等待几何保存。" :
+                        "继续按住顶部手柄，震动后再拖动。" );
+            }
             if (dragSeen && resizeSeen && persisted) { break; }
             sleep(250);
             current = ClipHub.Window.getState();
@@ -382,6 +396,9 @@
                     Number(baseline.geometryPersistCount || 0),
             compactWidthApplied:
                 Number(s2.filter && s2.filter.panelWidthDp || 0) <= 340,
+            compactPanelAttached:
+                s2.window && s2.window.attached === true &&
+                s2.filter && s2.filter.attached === true,
             compactAdvancedVisible:
                 s2.filter && s2.filter.advancedDrawerVisible === true,
             compactFooterVisible:
@@ -494,7 +511,7 @@
         baseline = ClipHub.Window.getState();
 
         scene(1, "首页手势",
-            "长按顶部手柄拖动，再长按右下角双弧线缩放；检测完成后自动进入下一场景。");
+            "先按住顶部手柄不动，震动后再拖动；松手后，再按住右下角双弧线，震动后缩放。" );
         result.homeGestureWait = waitForHomeGestures(baseline);
         scene(1, result.homeGestureWait.completed ?
             "手势已识别" : "手势检测超时",
@@ -504,7 +521,17 @@
         sleep(3000);
         snapshot("homeGesture");
 
+        ClipHub.Filter.closePanel({
+            restoreList: false,
+            reason: "probe_compact_reopen"
+        });
+        sleep(350);
         result.compactGeometry = forceCompactGeometry();
+        ClipHub.Filter.showRoot({
+            requestKeyboard: false,
+            showAdvanced: true
+        });
+        sleep(700);
         result.advancedOpenedInitially = ensureAdvancedVisible();
         scene(2, "窄窗口高级筛选",
             "窗口约320dp宽；确认筛选、重置和应用筛选均未遮挡并截图。");
@@ -557,6 +584,7 @@
             result.checks.geometryPersisted &&
             !result.checks.homeGestureTimedOut &&
             result.checks.compactWidthApplied &&
+            result.checks.compactPanelAttached &&
             result.checks.compactAdvancedVisible &&
             result.checks.compactFooterVisible &&
             result.checks.compactDrawerWithinWindow &&
