@@ -1,0 +1,96 @@
+name: temporary-fix-paint-color-overload
+
+on:
+  push:
+    branches:
+      - agent/unify-window-geometry
+    paths:
+      - .github/workflows/temporary-fix-paint-color-overload.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/unify-window-geometry
+          fetch-depth: 0
+
+      - name: Apply Rhino overload fix
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          import subprocess
+
+          source_path = Path("src/ch_08_window.js")
+          source = source_path.read_text(encoding="utf-8")
+          old_color = 'paint.setColor(parseColor(colorText, "#7C5CFC"));'
+          new_color = 'paint["setColor(int)"](parseColor(colorText, "#7C5CFC"));'
+          if source.count(old_color) != 1:
+              raise SystemExit("Paint.setColor replacement point mismatch")
+          source = source.replace(old_color, new_color, 1)
+
+          old_version = 'MODULE_VERSION: 8,'
+          new_version = 'MODULE_VERSION: 9,'
+          if source.count(old_version) != 1:
+              raise SystemExit("ch_08 module version replacement point mismatch")
+          source = source.replace(old_version, new_version, 1)
+          source_path.write_text(source, encoding="utf-8")
+
+          manifest_path = Path("module-manifest.json")
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          if manifest.get("moduleSetVersion") != "20260724.02":
+              raise SystemExit("Unexpected moduleSetVersion: %r" % manifest.get("moduleSetVersion"))
+          manifest["moduleSetVersion"] = "20260724.03"
+          for module in manifest.get("modules", []):
+              path = module.get("path")
+              if not path:
+                  continue
+              module["sha"] = subprocess.check_output(
+                  ["git", "hash-object", path], text=True
+              ).strip()
+          manifest_path.write_text(
+              json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8"
+          )
+          PY
+
+      - name: Validate Rhino ES5 and syntax
+        shell: bash
+        run: |
+          ! grep -RInE '(^|[^[:alnum:]_$])(let|const|class)[[:space:]]|=>|`' src/*.js
+          node --check src/ch_08_window.js
+          grep -F 'paint["setColor(int)"]' src/ch_08_window.js
+          grep -F 'MODULE_VERSION: 9' src/ch_08_window.js
+          grep -F '"moduleSetVersion": "20260724.03"' module-manifest.json
+
+      - name: Validate manifest blob SHAs
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import subprocess
+          manifest = json.load(open("module-manifest.json", encoding="utf-8"))
+          for module in manifest["modules"]:
+              actual = subprocess.check_output(
+                  ["git", "hash-object", module["path"]], text=True
+              ).strip()
+              if actual != module["sha"]:
+                  raise SystemExit("SHA mismatch: %s" % module["path"])
+          PY
+
+      - name: Remove one-shot workflow and commit
+        shell: bash
+        run: |
+          rm -f .github/workflows/temporary-fix-paint-color-overload.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/ch_08_window.js module-manifest.json .github/workflows/temporary-fix-paint-color-overload.yml
+          git commit -m "fix: 强制 Canvas Paint 使用 int 颜色重载"
+          git push origin HEAD:agent/unify-window-geometry
