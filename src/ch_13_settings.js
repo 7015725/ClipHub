@@ -135,6 +135,9 @@
         keyboardAvoidanceRestoreCount: 0,
         windowLayoutUpdateCount: 0,
         imePollCount: 0,
+        imePollFastCount: 0,
+        imePollIdleCount: 0,
+        imePollIntervalMs: 0,
         layoutMeasureCount: 0,
         rootMeasuredHeightDp: 0,
         scrollViewportHeightDp: 0,
@@ -276,6 +279,52 @@
             }
         });
         try { posted = mainHandler.postDelayed(runnable, Number(delayMs || 0)); }
+        catch (error) {
+            posted = false;
+            uiState.delayedCallbackErrorCount += 1;
+            uiState.lastDelayedCallbackError = String(error);
+            uiState.lastError = String(error);
+        }
+        if (!posted) {
+            uiState.pendingDelayedCallbackCount = Math.max(0,
+                Number(uiState.pendingDelayedCallbackCount) - 1);
+            uiState.delayedCallbackCancelCount += 1;
+        }
+        return posted === true;
+    }
+
+    function postSettingsViewCallback(expectedView, callback,
+            requireAttached) {
+        var generation = settingsLifecycleGeneration;
+        var runnable;
+        var posted;
+        if (expectedView === null || typeof callback !== "function") {
+            return false;
+        }
+        uiState.delayedCallbackPostCount += 1;
+        uiState.pendingDelayedCallbackCount += 1;
+        runnable = new Packages.java.lang.Runnable({
+            run: function () {
+                uiState.pendingDelayedCallbackCount = Math.max(0,
+                    Number(uiState.pendingDelayedCallbackCount) - 1);
+                if (generation !== settingsLifecycleGeneration || !ready ||
+                        appContext === null || windowManager === null ||
+                        (requireAttached && (!uiState.attached ||
+                            panelRoot === null || scrollRoot === null))) {
+                    uiState.delayedCallbackCancelCount += 1;
+                    return;
+                }
+                try {
+                    uiState.delayedCallbackRunCount += 1;
+                    callback();
+                } catch (error) {
+                    uiState.delayedCallbackErrorCount += 1;
+                    uiState.lastDelayedCallbackError = String(error);
+                    uiState.lastError = String(error);
+                }
+            }
+        });
+        try { posted = expectedView.post(runnable); }
         catch (error) {
             posted = false;
             uiState.delayedCallbackErrorCount += 1;
@@ -544,19 +593,13 @@
                 return;
             }
             ensureImeAnchorSpace(expectedInput, expectedRoot);
-            expectedRoot.post(new Packages.java.lang.Runnable({
-                run: function () {
-                    try {
-                        applyFocusedInputScroll(expectedInput, expectedRoot);
-                    } catch (error) {
-                        uiState.delayedCallbackErrorCount += 1;
-                        uiState.lastDelayedCallbackError = String(error);
-                        uiState.lastError = String(error);
-                    } finally {
-                        focusedVisibilityScheduled = false;
-                    }
+            postSettingsViewCallback(expectedRoot, function () {
+                try {
+                    applyFocusedInputScroll(expectedInput, expectedRoot);
+                } finally {
+                    focusedVisibilityScheduled = false;
                 }
-            }));
+            }, true);
         }, 45, true);
     }
 
@@ -603,6 +646,21 @@
             uiState.lastError = String(error);
             return false;
         }
+    }
+
+    function nextSettingsImePollDelay() {
+        var active = uiState.keyboardVisible === true;
+        try {
+            active = active || (focusedInput !== null && focusedInput.hasFocus());
+        } catch (ignoredFocus) {}
+        if (active) {
+            uiState.imePollFastCount += 1;
+            uiState.imePollIntervalMs = 90;
+            return 90;
+        }
+        uiState.imePollIdleCount += 1;
+        uiState.imePollIntervalMs = 420;
+        return 420;
     }
 
     function pollSettingsIme(generation) {
@@ -652,8 +710,19 @@
         imePollRunnable = new Packages.java.lang.Runnable({
             run: function () {
                 if (!pollSettingsIme(generation)) { return; }
+                var delayMs;
+                var posted = false;
                 if (mainHandler !== null && imePollRunnable !== null) {
-                    mainHandler.postDelayed(imePollRunnable, 90);
+                    delayMs = nextSettingsImePollDelay();
+                    try {
+                        posted = mainHandler.postDelayed(
+                            imePollRunnable, delayMs);
+                    } catch (error) {
+                        uiState.delayedCallbackErrorCount += 1;
+                        uiState.lastDelayedCallbackError = String(error);
+                        uiState.lastError = String(error);
+                    }
+                    if (!posted) { imePollRunnable = null; }
                 }
             }
         });
@@ -2111,20 +2180,14 @@
 
     function postScrollToSection(name) {
         var expectedRoot = scrollRoot;
-        var first;
         if (expectedRoot === null || !uiState.attached) { return false; }
         uiState.sectionScrollRequestCount += 1;
-        first = new Packages.java.lang.Runnable({
-            run: function () {
-                if (!ensureSectionAnchorSpace(name, expectedRoot)) { return; }
-                expectedRoot.post(new Packages.java.lang.Runnable({
-                    run: function () {
-                        applySectionScroll(name, expectedRoot);
-                    }
-                }));
-            }
-        });
-        return expectedRoot.post(first);
+        return postSettingsViewCallback(expectedRoot, function () {
+            if (!ensureSectionAnchorSpace(name, expectedRoot)) { return; }
+            postSettingsViewCallback(expectedRoot, function () {
+                applySectionScroll(name, expectedRoot);
+            }, true);
+        }, true);
     }
 
     function scrollToSection(name) {
@@ -2228,6 +2291,9 @@
             windowLayoutUpdateCount:
                 Number(uiState.windowLayoutUpdateCount),
             imePollCount: Number(uiState.imePollCount),
+            imePollFastCount: Number(uiState.imePollFastCount),
+            imePollIdleCount: Number(uiState.imePollIdleCount),
+            imePollIntervalMs: Number(uiState.imePollIntervalMs),
             layoutMeasureCount: Number(uiState.layoutMeasureCount),
             rootMeasuredHeightDp: Number(uiState.rootMeasuredHeightDp),
             scrollViewportHeightDp:
@@ -2263,7 +2329,7 @@
 
     ClipHub.Settings = {
         MODULE_NAME: "ch_13_settings",
-        MODULE_VERSION: 10,
+        MODULE_VERSION: 11,
         DEFAULTS: defaultsCopy(),
         init: function (context) {
             if (!ClipHub.Database || !ClipHub.Database.isOpen()) {

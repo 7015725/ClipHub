@@ -157,6 +157,9 @@
         keyboardAvoidanceRestoreCount: 0,
         windowLayoutUpdateCount: 0,
         imePollCount: 0,
+        imePollFastCount: 0,
+        imePollIdleCount: 0,
+        imePollIntervalMs: 0,
         normalPanelHeightDp: 0,
         currentPanelHeightDp: 0,
         currentPanelTopDp: 0,
@@ -285,6 +288,54 @@
             }
         });
         try { posted = handler.postDelayed(runnable, Number(delayMs || 0)); }
+        catch (postError) {
+            posted = false;
+            state.lastDelayedCallbackError = String(postError);
+        }
+        if (!posted) {
+            state.pendingDelayedCallbackCount = Math.max(0,
+                Number(state.pendingDelayedCallbackCount) - 1);
+            state.delayedCallbackErrorCount += 1;
+            return false;
+        }
+        return true;
+    }
+
+    function postEditorViewCallback(expectedView, callback,
+            requireAttached) {
+        var generation = imePollGeneration;
+        var runnable;
+        var posted;
+        if (expectedView === null || typeof callback !== "function") {
+            return false;
+        }
+        state.delayedCallbackPostCount += 1;
+        state.pendingDelayedCallbackCount += 1;
+        runnable = new Packages.java.lang.Runnable({
+            run: function () {
+                state.pendingDelayedCallbackCount = Math.max(0,
+                    Number(state.pendingDelayedCallbackCount) - 1);
+                if (generation !== imePollGeneration || !ready ||
+                        appContext === null || windowManager === null ||
+                        (requireAttached === true &&
+                            (!state.attached || panelRoot === null))) {
+                    state.delayedCallbackCancelCount += 1;
+                    if (!ready) {
+                        state.postShutdownCallbackAttemptCount += 1;
+                    }
+                    return;
+                }
+                try {
+                    callback();
+                    state.delayedCallbackRunCount += 1;
+                } catch (error) {
+                    state.delayedCallbackErrorCount += 1;
+                    state.lastDelayedCallbackError = String(error);
+                    state.lastError = String(error);
+                }
+            }
+        });
+        try { posted = expectedView.post(runnable); }
         catch (postError) {
             posted = false;
             state.lastDelayedCallbackError = String(postError);
@@ -799,6 +850,23 @@
         }
     }
 
+    function nextEditorImePollDelay() {
+        var target = null;
+        var active = state.keyboardVisible === true;
+        try {
+            target = activeInput();
+            active = active || (target !== null && target.hasFocus());
+        } catch (ignoredFocus) {}
+        if (active) {
+            state.imePollFastCount += 1;
+            state.imePollIntervalMs = 90;
+            return 90;
+        }
+        state.imePollIdleCount += 1;
+        state.imePollIntervalMs = 420;
+        return 420;
+    }
+
     function pollEditorIme(generation) {
         var ime;
         if (generation !== imePollGeneration || !ready ||
@@ -831,8 +899,19 @@
         imePollRunnable = new Packages.java.lang.Runnable({
             run: function () {
                 if (!pollEditorIme(generation)) { return; }
+                var delayMs;
+                var posted = false;
                 if (mainHandler !== null && imePollRunnable !== null) {
-                    mainHandler.postDelayed(imePollRunnable, 90);
+                    delayMs = nextEditorImePollDelay();
+                    try {
+                        posted = mainHandler.postDelayed(
+                            imePollRunnable, delayMs);
+                    } catch (error) {
+                        state.delayedCallbackErrorCount += 1;
+                        state.lastDelayedCallbackError = String(error);
+                        state.lastError = String(error);
+                    }
+                    if (!posted) { imePollRunnable = null; }
                 }
             }
         });
@@ -885,15 +964,18 @@
         contentInput.requestFocus();
         contentInput.setSelection(length);
         if (contentScrollView !== null) {
-            contentScrollView.post(new Packages.java.lang.Runnable({
-                run: function () {
-                    try {
-                        contentScrollView.fullScroll(View.FOCUS_DOWN);
-                        contentInput.setSelection(contentInput.getText().length());
-                        measureEditorLayout();
-                    } catch (ignored) {}
-                }
-            }));
+            (function (expectedScroll, expectedInput) {
+                postEditorViewCallback(expectedScroll, function () {
+                    if (expectedScroll !== contentScrollView ||
+                            expectedInput !== contentInput) {
+                        return;
+                    }
+                    expectedScroll.fullScroll(View.FOCUS_DOWN);
+                    expectedInput.setSelection(
+                        expectedInput.getText().length());
+                    measureEditorLayout();
+                }, true);
+            }(contentScrollView, contentInput));
         }
         postEditorDelayed(function () {
             measureEditorLayout();
@@ -2122,6 +2204,9 @@
             windowLayoutUpdateCount:
                 Number(state.windowLayoutUpdateCount),
             imePollCount: Number(state.imePollCount),
+            imePollFastCount: Number(state.imePollFastCount),
+            imePollIdleCount: Number(state.imePollIdleCount),
+            imePollIntervalMs: Number(state.imePollIntervalMs),
             delayedCallbackPostCount:
                 Number(state.delayedCallbackPostCount),
             delayedCallbackRunCount:
@@ -2202,7 +2287,9 @@
             keyboardAvoidanceApplyCount: 0,
             keyboardAvoidanceRestoreCount: 0,
             windowLayoutUpdateCount: 0, imePollCount: 0,
-            delayedCallbackPostCount: 0, delayedCallbackRunCount: 0,
+            imePollFastCount: 0, imePollIdleCount: 0,
+            imePollIntervalMs: 0, delayedCallbackPostCount: 0,
+            delayedCallbackRunCount: 0,
             delayedCallbackCancelCount: 0, delayedCallbackErrorCount: 0,
             pendingDelayedCallbackCount: 0,
             postShutdownCallbackAttemptCount: 0,
@@ -2226,7 +2313,7 @@
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 11,
+        MODULE_VERSION: 12,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
