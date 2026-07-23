@@ -16,9 +16,10 @@
     var Toast = Packages.android.widget.Toast;
 
     var PROBE = "cliphub_shared_window_geometry_probe_051";
-    var PROBE_VERSION = 2;
+    var PROBE_VERSION = 3;
     var SCENE_DURATION_MS = 9000;
-    var EXPECTED_MODULE_SET = "20260724.05";
+    var HOME_GESTURE_TIMEOUT_MS = 25000;
+    var EXPECTED_MODULE_SET = "20260724.06";
     var EXPECTED_SOURCE_REF = "agent/unify-window-geometry";
     var NAMES = [
         "ch_01_base.js", "ch_02_log.js", "ch_03_database.js",
@@ -219,6 +220,45 @@
             "\n" + String(instruction));
     }
 
+    function waitForHomeGestures(baseline) {
+        var deadline = Number(System.currentTimeMillis()) +
+            HOME_GESTURE_TIMEOUT_MS;
+        var current = ClipHub.Window.getState();
+        var dragSeen = false;
+        var resizeSeen = false;
+        var persisted = false;
+        while (Number(System.currentTimeMillis()) < deadline) {
+            dragSeen = Number(current.dragActivateCount || 0) >
+                Number(baseline.dragActivateCount || 0);
+            resizeSeen = Number(current.resizeActivateCount || 0) >
+                Number(baseline.resizeActivateCount || 0);
+            persisted = Number(current.geometryPersistCount || 0) >
+                Number(baseline.geometryPersistCount || 0);
+            if (dragSeen && resizeSeen && persisted) { break; }
+            sleep(250);
+            current = ClipHub.Window.getState();
+        }
+        return {
+            completed: dragSeen && resizeSeen && persisted,
+            timedOut: !(dragSeen && resizeSeen && persisted),
+            dragSeen: dragSeen,
+            resizeSeen: resizeSeen,
+            persisted: persisted,
+            waitedMs: HOME_GESTURE_TIMEOUT_MS - Math.max(0,
+                deadline - Number(System.currentTimeMillis()))
+        };
+    }
+
+    function ensureAdvancedVisible() {
+        var panel = ClipHub.Filter.getPanelState();
+        if (!panel || panel.advancedDrawerVisible !== true) {
+            ClipHub.Filter.performAdvancedClick();
+            sleep(450);
+            panel = ClipHub.Filter.getPanelState();
+        }
+        return panel && panel.advancedDrawerVisible === true;
+    }
+
     function snapshot(name) {
         var value = {
             at: Number(System.currentTimeMillis()),
@@ -376,8 +416,16 @@
                 s6.translation && s6.translation.attached === true,
             translationBusinessError:
                 s6.translation ? s6.translation.lastError : null,
+            homeGestureTimedOut:
+                result.homeGestureWait &&
+                result.homeGestureWait.timedOut === true,
             allScenesErrorFree:
                 !(s1.window && s1.window.lastError) &&
+                !(s2.window && s2.window.lastError) &&
+                !(s3.window && s3.window.lastError) &&
+                !(s4.window && s4.window.lastError) &&
+                !(s5.window && s5.window.lastError) &&
+                !(s6.window && s6.window.lastError) &&
                 !(s2.filter && s2.filter.lastError) &&
                 !(s3.editor && s3.editor.lastError) &&
                 !(s4.settings && s4.settings.lastError) &&
@@ -446,16 +494,23 @@
         baseline = ClipHub.Window.getState();
 
         scene(1, "首页手势",
-            "长按顶部手柄拖动，再长按右下角双弧线缩放；完成后截图。");
-        sleep(SCENE_DURATION_MS);
+            "长按顶部手柄拖动，再长按右下角双弧线缩放；检测完成后自动进入下一场景。");
+        result.homeGestureWait = waitForHomeGestures(baseline);
+        scene(1, result.homeGestureWait.completed ?
+            "手势已识别" : "手势检测超时",
+            result.homeGestureWait.completed ?
+                "保持当前窗口，3秒后记录场景1。" :
+                "未检测到完整拖动和缩放，3秒后仍会继续探测。");
+        sleep(3000);
         snapshot("homeGesture");
 
         result.compactGeometry = forceCompactGeometry();
-        ClipHub.Filter.performAdvancedClick();
-        sleep(500);
+        result.advancedOpenedInitially = ensureAdvancedVisible();
         scene(2, "窄窗口高级筛选",
             "窗口约320dp宽；确认筛选、重置和应用筛选均未遮挡并截图。");
-        sleep(SCENE_DURATION_MS);
+        sleep(SCENE_DURATION_MS - 900);
+        result.advancedVisibleBeforeSnapshot = ensureAdvancedVisible();
+        sleep(450);
         snapshot("compactAdvanced");
         ClipHub.Filter.handleBack();
         sleep(300);
@@ -497,6 +552,10 @@
         buildChecks(baseline);
         result.ok = result.checks.moduleSetExpected &&
             result.checks.sourceRefExpected &&
+            result.checks.manualDragObserved &&
+            result.checks.manualResizeObserved &&
+            result.checks.geometryPersisted &&
+            !result.checks.homeGestureTimedOut &&
             result.checks.compactWidthApplied &&
             result.checks.compactAdvancedVisible &&
             result.checks.compactFooterVisible &&

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260724.05",
+  "moduleSetVersion": "20260724.06",
   "entryMinVersion": 5,
   "sourceRef": "agent/unify-window-geometry",
   "modules": [
@@ -42,7 +42,7 @@
     {
       "name": "ch_08_window.js",
       "path": "src/ch_08_window.js",
-      "sha": "0484542de9a6435b1de165530b724aeac5aa74bd"
+      "sha": "ec5dc8f0d1a2325d77fa3539a59adc1e18ddb442"
     },
     {
       "name": "ch_09_list.js",

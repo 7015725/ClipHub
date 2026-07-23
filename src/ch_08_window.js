@@ -1167,6 +1167,7 @@
             state.safeBounds = copyBounds(geometry.bounds);
             state.orientation = geometry.orientation;
             state.lastBoundsReason = String(reason || "refresh");
+            state.lastError = null;
             return false;
         }
         for (index = 0; index < managedWindows.length; index += 1) {
@@ -1176,7 +1177,18 @@
         activateBinding(source);
         state.boundsRefreshCount += 1;
         state.lastBoundsReason = String(reason || "refresh");
+        state.lastError = null;
         return true;
+    }
+
+    function refreshPrimaryBoundsSafe(reason) {
+        var currentLooper = Looper.myLooper();
+        if (currentLooper !== null && currentLooper === Looper.getMainLooper()) {
+            return refreshPrimaryBounds(reason);
+        }
+        return requireMainResult(runOnMainSync(function () {
+            return refreshPrimaryBounds(reason);
+        }, 3000));
     }
 
     function scheduleBoundsRefresh(reason) {
@@ -1344,7 +1356,7 @@
 
     ClipHub.Window = {
         MODULE_NAME: "ch_08_window",
-        MODULE_VERSION: 11,
+        MODULE_VERSION: 12,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
@@ -1402,7 +1414,7 @@
         setPrimaryDragView: setPrimaryDragView,
         setPrimaryResizeView: setPrimaryResizeView,
         setPrimaryPinned: setPrimaryPinned,
-        refreshPrimaryBounds: refreshPrimaryBounds,
+        refreshPrimaryBounds: refreshPrimaryBoundsSafe,
         persistPrimaryGeometry: persistSharedGeometry,
         persistSharedGeometry: persistSharedGeometry,
         performHaptic: performHaptic,
@@ -1411,7 +1423,7 @@
         isAttached: function () { return managedWindows.length > 0; },
         moveTo: moveTo,
         moveBy: moveBy,
-        refreshBounds: refreshPrimaryBounds,
+        refreshBounds: refreshPrimaryBoundsSafe,
         persistPosition: persistSharedGeometry,
         close: requestClose,
         runOnMain: function (callback, timeoutMs) {
