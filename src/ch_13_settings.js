@@ -85,6 +85,14 @@
         tagRowCount: 0,
         panelWidthDp: 0,
         panelHeightDp: 0,
+        panelClipToOutline: false,
+        scrollResetCount: 0,
+        sectionScrollRequestCount: 0,
+        sectionScrollAppliedCount: 0,
+        sectionScrollCancelCount: 0,
+        currentScrollYDp: 0,
+        lastScrollSection: null,
+        lastSectionViewportTopDp: null,
         lastTestResult: "",
         lastError: null
     };
@@ -728,11 +736,7 @@
 
     function rebuildTagPage() {
         buildPage();
-        if (mainHandler !== null) {
-            mainHandler.post(new Packages.java.lang.Runnable({
-                run: function () { scrollToSection("tags"); }
-            }));
-        }
+        postScrollToSection("tags");
         return true;
     }
 
@@ -1234,6 +1238,11 @@
         scrollRoot.addView(content, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.WRAP_CONTENT));
+        scrollRoot.scrollTo(0, 0);
+        uiState.scrollResetCount += 1;
+        uiState.currentScrollYDp = 0;
+        uiState.lastScrollSection = null;
+        uiState.lastSectionViewportTopDp = null;
         uiState.renderCount += 1;
         return true;
     }
@@ -1261,7 +1270,12 @@
             panelRoot = new FrameLayout(appContext);
             panelRoot.setBackground(roundedBackground(palette().surface,
                 palette().stroke, 24));
-            if (Build.VERSION.SDK_INT >= 21) { panelRoot.setElevation(dp(20)); }
+            if (Build.VERSION.SDK_INT >= 21) {
+                panelRoot.setElevation(dp(20));
+                panelRoot.setClipToOutline(true);
+            }
+            uiState.panelClipToOutline = Build.VERSION.SDK_INT >= 21 &&
+                panelRoot.getClipToOutline();
             scrollRoot = new ScrollView(appContext);
             scrollRoot.setVerticalScrollBarEnabled(false);
             panelRoot.addView(scrollRoot, new FrameLayout.LayoutParams(
@@ -1336,17 +1350,59 @@
         }, 3000);
     }
 
-    function scrollToSection(name) {
-        var target = null;
+    function sectionView(name) {
         name = String(name || "");
-        if (name === "translation") { target = translationSectionView; }
-        if (name === "tags") { target = tagsSectionView; }
-        if (name === "data") { target = dataSectionView; }
-        if (scrollRoot === null || target === null) { return false; }
+        if (name === "translation") { return translationSectionView; }
+        if (name === "tags") { return tagsSectionView; }
+        if (name === "data") { return dataSectionView; }
+        return null;
+    }
+
+    function applySectionScroll(name, expectedRoot) {
+        var target = sectionView(name);
+        var y;
+        if (!uiState.attached || scrollRoot === null ||
+                expectedRoot !== scrollRoot || target === null) {
+            uiState.sectionScrollCancelCount += 1;
+            return false;
+        }
+        y = Math.max(0, Number(target.getTop()) - dp(8));
+        expectedRoot.scrollTo(0, y);
+        uiState.sectionScrollAppliedCount += 1;
+        uiState.currentScrollYDp = Math.round(
+            Number(expectedRoot.getScrollY()) / density);
+        uiState.lastScrollSection = String(name);
+        uiState.lastSectionViewportTopDp = Math.round(
+            (Number(target.getTop()) - Number(expectedRoot.getScrollY())) /
+                density);
+        return true;
+    }
+
+    function postScrollToSection(name) {
+        var expectedRoot = scrollRoot;
+        var first;
+        if (expectedRoot === null || !uiState.attached) { return false; }
+        uiState.sectionScrollRequestCount += 1;
+        first = new Packages.java.lang.Runnable({
+            run: function () {
+                if (!uiState.attached || expectedRoot !== scrollRoot) {
+                    uiState.sectionScrollCancelCount += 1;
+                    return;
+                }
+                expectedRoot.post(new Packages.java.lang.Runnable({
+                    run: function () {
+                        applySectionScroll(name, expectedRoot);
+                    }
+                }));
+            }
+        });
+        return expectedRoot.post(first);
+    }
+
+    function scrollToSection(name) {
+        name = String(name || "");
         return runOnMainSync(function () {
-            var y = Math.max(0, Number(target.getTop()) - dp(8));
-            scrollRoot.scrollTo(0, y);
-            return true;
+            return applySectionScroll(name, scrollRoot);
         }, 3000);
     }
 
@@ -1398,6 +1454,19 @@
             contentTypeSettingsPresent: false,
             panelWidthDp: Number(uiState.panelWidthDp),
             panelHeightDp: Number(uiState.panelHeightDp),
+            panelClipToOutline: uiState.panelClipToOutline === true,
+            scrollResetCount: Number(uiState.scrollResetCount),
+            sectionScrollRequestCount:
+                Number(uiState.sectionScrollRequestCount),
+            sectionScrollAppliedCount:
+                Number(uiState.sectionScrollAppliedCount),
+            sectionScrollCancelCount:
+                Number(uiState.sectionScrollCancelCount),
+            currentScrollYDp: Number(uiState.currentScrollYDp),
+            lastScrollSection: uiState.lastScrollSection,
+            lastSectionViewportTopDp:
+                uiState.lastSectionViewportTopDp === null ? null :
+                    Number(uiState.lastSectionViewportTopDp),
             lastTestResult: uiState.lastTestResult,
             lastError: uiState.lastError
         };
@@ -1405,7 +1474,7 @@
 
     ClipHub.Settings = {
         MODULE_NAME: "ch_13_settings",
-        MODULE_VERSION: 7,
+        MODULE_VERSION: 8,
         DEFAULTS: defaultsCopy(),
         init: function (context) {
             if (!ClipHub.Database || !ClipHub.Database.isOpen()) {
