@@ -23,7 +23,6 @@ grep -n '20260723.07' module-manifest.json
 if [ "${1:-}" = "--commit" ]; then
   git add src/ch_13_settings.js module-manifest.json
   git commit -m "fix: provide settings section anchor scroll space"
-  git pull --rebase origin agent/initialize-project-skeleton
   git push origin agent/initialize-project-skeleton
   echo "Committed and pushed Settings v9 anchor-space fix."
 fi
