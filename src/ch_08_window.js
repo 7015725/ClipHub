@@ -419,21 +419,23 @@
             draw: function (canvas) {
                 var width = Number(canvas.getWidth());
                 var height = Number(canvas.getHeight());
-                var right = width - dp(9);
-                var bottom = height - dp(9);
+                var right = width - dp(11);
+                var bottom = height - dp(11);
                 var outerPath = new Path();
                 var innerPath = new Path();
 
-                paint.setStrokeWidth(dp(visual.active ? 1.65 : 1.05));
-                paint.setAlpha(Math.floor((visual.active ? 176 : 58) *
+                paint.setStrokeWidth(dp(visual.active ? 1.4 : 0.9));
+                paint.setAlpha(Math.floor((visual.active ? 158 : 48) *
                     Number(visual.alpha || 1)));
 
-                outerPath.moveTo(right - dp(15), bottom - dp(4));
-                outerPath.quadTo(right - dp(5.5), bottom - dp(4),
-                    right - dp(4), bottom - dp(15));
-                innerPath.moveTo(right - dp(10), bottom - dp(4));
-                innerPath.quadTo(right - dp(5), bottom - dp(4),
-                    right - dp(4), bottom - dp(10));
+                outerPath.moveTo(right - dp(14), bottom - dp(3));
+                outerPath.cubicTo(right - dp(10.4), bottom - dp(4.2),
+                    right - dp(4.2), bottom - dp(10.4),
+                    right - dp(3), bottom - dp(14));
+                innerPath.moveTo(right - dp(9.5), bottom - dp(3));
+                innerPath.cubicTo(right - dp(7.1), bottom - dp(3.9),
+                    right - dp(3.9), bottom - dp(7.1),
+                    right - dp(3), bottom - dp(9.5));
 
                 canvas.drawPath(outerPath, paint);
                 canvas.drawPath(innerPath, paint);
@@ -1342,7 +1344,7 @@
 
     ClipHub.Window = {
         MODULE_NAME: "ch_08_window",
-        MODULE_VERSION: 10,
+        MODULE_VERSION: 11,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
