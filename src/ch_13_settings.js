@@ -10,6 +10,10 @@
     var WindowManager = Packages.android.view.WindowManager;
     var PixelFormat = Packages.android.graphics.PixelFormat;
     var Color = Packages.android.graphics.Color;
+    var Rect = Packages.android.graphics.Rect;
+    var DisplayMetrics = Packages.android.util.DisplayMetrics;
+    var WindowInsets = Packages.android.view.WindowInsets;
+    var InputMethodManager = Packages.android.view.inputmethod.InputMethodManager;
     var GradientDrawable = Packages.android.graphics.drawable.GradientDrawable;
     var LinearLayout = Packages.android.widget.LinearLayout;
     var FrameLayout = Packages.android.widget.FrameLayout;
@@ -36,12 +40,22 @@
     var appContext = null;
     var windowManager = null;
     var mainHandler = null;
+    var inputMethodManager = null;
+    var settingsLifecycleGeneration = 0;
+    var imePollGeneration = 0;
+    var imePollRunnable = null;
+    var layoutObserver = null;
+    var layoutListener = null;
+    var focusedInput = null;
+    var focusedInputName = null;
+    var focusedVisibilityScheduled = false;
     var density = 1;
     var panelRoot = null;
     var panelParams = null;
     var scrollRoot = null;
     var contentRoot = null;
     var sectionAnchorSpacer = null;
+    var imeAnchorSpacer = null;
     var translationStatusView = null;
     var engineBaiduView = null;
     var engineYoudaoView = null;
@@ -99,6 +113,48 @@
         sectionAnchorSpacerHeightDp: 0,
         lastRequestedScrollYDp: 0,
         lastMaxScrollYDp: 0,
+        softInputMode: 0,
+        softInputAdjustResize: false,
+        normalPanelHeightDp: 0,
+        currentPanelHeightDp: 0,
+        currentPanelTopDp: 0,
+        panelGravity: "bottom",
+        panelBottomMarginDp: 10,
+        keyboardVisible: false,
+        keyboardInsetDp: 0,
+        keyboardShowCount: 0,
+        keyboardHideCount: 0,
+        keyboardRequestCount: 0,
+        imeInsetsSupported: false,
+        imeInsetSource: "none",
+        imeInsetBottomDp: 0,
+        systemTopInsetDp: 0,
+        availableAboveImeDp: 0,
+        keyboardAvoidanceApplied: false,
+        keyboardAvoidanceApplyCount: 0,
+        keyboardAvoidanceRestoreCount: 0,
+        windowLayoutUpdateCount: 0,
+        imePollCount: 0,
+        layoutMeasureCount: 0,
+        rootMeasuredHeightDp: 0,
+        scrollViewportHeightDp: 0,
+        keyboardTopDp: 0,
+        panelScreenBottomDp: 0,
+        panelAboveKeyboard: false,
+        focusedInputName: null,
+        focusedInputVisible: false,
+        focusedInputTopDp: 0,
+        focusedInputBottomDp: 0,
+        inputFocusCount: 0,
+        inputAutoScrollCount: 0,
+        imeAnchorAdjustmentCount: 0,
+        imeAnchorSpacerHeightDp: 0,
+        delayedCallbackPostCount: 0,
+        delayedCallbackRunCount: 0,
+        delayedCallbackCancelCount: 0,
+        delayedCallbackErrorCount: 0,
+        pendingDelayedCallbackCount: 0,
+        lastDelayedCallbackError: null,
         lastTestResult: "",
         lastError: null
     };
@@ -125,6 +181,587 @@
 
     function dp(value) {
         return Math.max(1, Math.floor(Number(value) * density + 0.5));
+    }
+
+
+    function pxToDp(value) {
+        return density > 0 ? Number(value) / density : Number(value);
+    }
+
+    function displayMetrics() {
+        var metrics = new DisplayMetrics();
+        if (windowManager !== null) {
+            try {
+                windowManager.getDefaultDisplay().getRealMetrics(metrics);
+                if (Number(metrics.widthPixels) > 0 &&
+                        Number(metrics.heightPixels) > 0) {
+                    return metrics;
+                }
+            } catch (ignoredWindow) {}
+        }
+        if (appContext !== null) {
+            try { return appContext.getResources().getDisplayMetrics(); }
+            catch (ignoredContext) {}
+        }
+        return metrics;
+    }
+
+    function statusBarHeightPx() {
+        var resources;
+        var resourceId;
+        if (appContext === null) { return dp(24); }
+        try {
+            resources = appContext.getResources();
+            resourceId = Number(resources.getIdentifier(
+                "status_bar_height", "dimen", "android"));
+            if (resourceId > 0) {
+                return Number(resources.getDimensionPixelSize(resourceId));
+            }
+        } catch (ignored) {}
+        return dp(24);
+    }
+
+    function inputMethodVisibleHeightPx() {
+        var height = 0;
+        var method;
+        var parameterTypes;
+        var argumentsArray;
+        if (inputMethodManager === null) { return 0; }
+        try {
+            height = Number(inputMethodManager
+                .getInputMethodWindowVisibleHeight());
+            if (isFinite(height) && height > 0) { return height; }
+        } catch (ignoredDirect) {}
+        try {
+            parameterTypes = Packages.java.lang.reflect.Array.newInstance(
+                Packages.java.lang.Class, 0);
+            argumentsArray = Packages.java.lang.reflect.Array.newInstance(
+                Packages.java.lang.Object, 0);
+            method = inputMethodManager.getClass().getDeclaredMethod(
+                "getInputMethodWindowVisibleHeight", parameterTypes);
+            method.setAccessible(true);
+            height = Number(method.invoke(inputMethodManager, argumentsArray));
+            return isFinite(height) && height > 0 ? height : 0;
+        } catch (ignoredReflection) { return 0; }
+    }
+
+    function postSettingsDelayed(callback, delayMs, requireAttached) {
+        var generation = settingsLifecycleGeneration;
+        var runnable;
+        var posted;
+        if (mainHandler === null || typeof callback !== "function") {
+            return false;
+        }
+        uiState.delayedCallbackPostCount += 1;
+        uiState.pendingDelayedCallbackCount += 1;
+        runnable = new Packages.java.lang.Runnable({
+            run: function () {
+                uiState.pendingDelayedCallbackCount = Math.max(0,
+                    Number(uiState.pendingDelayedCallbackCount) - 1);
+                if (generation !== settingsLifecycleGeneration || !ready ||
+                        appContext === null || windowManager === null ||
+                        (requireAttached && (!uiState.attached ||
+                            panelRoot === null || scrollRoot === null))) {
+                    uiState.delayedCallbackCancelCount += 1;
+                    return;
+                }
+                try {
+                    uiState.delayedCallbackRunCount += 1;
+                    callback();
+                } catch (error) {
+                    uiState.delayedCallbackErrorCount += 1;
+                    uiState.lastDelayedCallbackError = String(error);
+                    uiState.lastError = String(error);
+                }
+            }
+        });
+        try { posted = mainHandler.postDelayed(runnable, Number(delayMs || 0)); }
+        catch (error) {
+            posted = false;
+            uiState.delayedCallbackErrorCount += 1;
+            uiState.lastDelayedCallbackError = String(error);
+            uiState.lastError = String(error);
+        }
+        if (!posted) {
+            uiState.pendingDelayedCallbackCount = Math.max(0,
+                Number(uiState.pendingDelayedCallbackCount) - 1);
+            uiState.delayedCallbackCancelCount += 1;
+        }
+        return posted === true;
+    }
+
+    function readSettingsImeState() {
+        var metrics = displayMetrics();
+        var output = {
+            visible: false,
+            bottomPx: 0,
+            topInsetPx: statusBarHeightPx(),
+            source: "none",
+            supported: false,
+            screenHeightPx: Number(metrics.heightPixels),
+            visibleBottomPx: Number(metrics.heightPixels)
+        };
+        var rootInsets;
+        var imeMask;
+        var systemMask;
+        var imeInsets;
+        var systemInsets;
+        var immHeight;
+        var frame;
+        var frameGap;
+        if (panelRoot === null) { return output; }
+        if (Build.VERSION.SDK_INT >= 30) {
+            try {
+                rootInsets = panelRoot.getRootWindowInsets();
+                if (rootInsets !== null) {
+                    imeMask = WindowInsets.Type.ime();
+                    systemMask = WindowInsets.Type.systemBars();
+                    imeInsets = rootInsets.getInsets(imeMask);
+                    systemInsets = rootInsets.getInsets(systemMask);
+                    output.bottomPx = Math.max(0,
+                        Number(imeInsets.bottom));
+                    output.topInsetPx = Math.max(output.topInsetPx,
+                        Number(systemInsets.top));
+                    output.visible = rootInsets.isVisible(imeMask) ||
+                        output.bottomPx >= dp(120);
+                    output.source = "root_window_insets";
+                    output.supported = true;
+                }
+            } catch (ignoredInsets) {}
+        }
+        immHeight = inputMethodVisibleHeightPx();
+        if (immHeight > output.bottomPx) {
+            output.bottomPx = immHeight;
+            output.visible = immHeight >= dp(120);
+            output.source = "input_method_visible_height";
+            output.supported = true;
+        }
+        try {
+            frame = new Rect();
+            panelRoot.getWindowVisibleDisplayFrame(frame);
+            output.topInsetPx = Math.max(output.topInsetPx,
+                Number(frame.top));
+            frameGap = Math.max(0,
+                Number(metrics.heightPixels) - Number(frame.bottom));
+            if (frameGap > output.bottomPx && frameGap >= dp(120)) {
+                output.bottomPx = frameGap;
+                output.visible = true;
+                output.source = "visible_display_frame";
+                output.supported = true;
+            }
+        } catch (ignoredFrame) {}
+        if (!output.visible) { output.bottomPx = 0; }
+        output.visibleBottomPx = Number(metrics.heightPixels) -
+            Number(output.bottomPx);
+        return output;
+    }
+
+    function applySettingsImeLayout(ime) {
+        var metrics;
+        var normalHeightPx;
+        var targetHeightPx;
+        var targetTopPx;
+        var targetGravity;
+        var targetY;
+        var keyboardTopPx;
+        var topSafePx;
+        var availablePx;
+        var changed = false;
+        var wasApplied;
+        if (panelRoot === null || panelParams === null) { return false; }
+        metrics = displayMetrics();
+        normalHeightPx = dp(Math.max(300,
+            Number(uiState.normalPanelHeightDp || uiState.panelHeightDp || 590)));
+        wasApplied = uiState.keyboardAvoidanceApplied === true;
+        if (ime.visible && Number(ime.bottomPx) >= dp(120)) {
+            keyboardTopPx = Math.max(0,
+                Number(metrics.heightPixels) - Number(ime.bottomPx));
+            topSafePx = Math.max(dp(6), Number(ime.topInsetPx));
+            availablePx = Math.max(dp(280),
+                keyboardTopPx - topSafePx - dp(6));
+            targetHeightPx = Math.min(normalHeightPx, availablePx);
+            targetTopPx = Math.max(topSafePx,
+                keyboardTopPx - dp(6) - targetHeightPx);
+            targetGravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+            targetY = targetTopPx;
+            uiState.availableAboveImeDp = pxToDp(availablePx);
+            uiState.keyboardAvoidanceApplied = true;
+            if (!wasApplied) { uiState.keyboardAvoidanceApplyCount += 1; }
+            uiState.panelGravity = "ime_top";
+            uiState.panelBottomMarginDp = 6;
+        } else {
+            targetHeightPx = normalHeightPx;
+            targetGravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+            targetY = dp(10);
+            targetTopPx = Math.max(0,
+                Number(metrics.heightPixels) - targetHeightPx - targetY);
+            uiState.availableAboveImeDp = pxToDp(Number(metrics.heightPixels));
+            uiState.keyboardAvoidanceApplied = false;
+            if (wasApplied) { uiState.keyboardAvoidanceRestoreCount += 1; }
+            uiState.panelGravity = "bottom";
+            uiState.panelBottomMarginDp = 10;
+        }
+        if (Number(panelParams.height) !== Number(targetHeightPx)) {
+            panelParams.height = targetHeightPx;
+            changed = true;
+        }
+        if (Number(panelParams.gravity) !== Number(targetGravity)) {
+            panelParams.gravity = targetGravity;
+            changed = true;
+        }
+        if (Number(panelParams.y) !== Number(targetY)) {
+            panelParams.y = targetY;
+            changed = true;
+        }
+        uiState.currentPanelHeightDp = pxToDp(targetHeightPx);
+        uiState.currentPanelTopDp = pxToDp(targetTopPx);
+        if (changed && uiState.attached && panelRoot.isAttachedToWindow()) {
+            windowManager.updateViewLayout(panelRoot, panelParams);
+            uiState.windowLayoutUpdateCount += 1;
+        }
+        return changed;
+    }
+
+    function resetImeAnchorSpacer() {
+        var params;
+        if (imeAnchorSpacer === null) { return false; }
+        params = imeAnchorSpacer.getLayoutParams();
+        if (Number(params.height || 0) !== 0) {
+            params.height = 0;
+            imeAnchorSpacer.setLayoutParams(params);
+            imeAnchorSpacer.requestLayout();
+            if (contentRoot !== null) { contentRoot.requestLayout(); }
+            uiState.imeAnchorAdjustmentCount += 1;
+        }
+        uiState.imeAnchorSpacerHeightDp = 0;
+        return true;
+    }
+
+    function focusedInputRect(expectedInput, expectedRoot) {
+        var rect;
+        if (expectedInput === null || expectedRoot === null) { return null; }
+        rect = new Rect();
+        expectedInput.getDrawingRect(rect);
+        expectedRoot.offsetDescendantRectToMyCoords(expectedInput, rect);
+        return rect;
+    }
+
+    function ensureImeAnchorSpace(expectedInput, expectedRoot) {
+        var rect;
+        var params;
+        var currentSpacer;
+        var baseContentHeight;
+        var viewportHeight;
+        var currentScroll;
+        var desiredScroll;
+        var requiredSpacer;
+        if (!uiState.attached || expectedRoot !== scrollRoot ||
+                expectedInput !== focusedInput || contentRoot === null ||
+                imeAnchorSpacer === null) {
+            return false;
+        }
+        rect = focusedInputRect(expectedInput, expectedRoot);
+        if (rect === null) { return false; }
+        params = imeAnchorSpacer.getLayoutParams();
+        currentSpacer = Math.max(0, Number(params.height || 0));
+        baseContentHeight = Math.max(0,
+            Number(contentRoot.getHeight()) - currentSpacer);
+        viewportHeight = Math.max(dp(120), Number(expectedRoot.getHeight()));
+        currentScroll = Math.max(0, Number(expectedRoot.getScrollY()));
+        desiredScroll = Math.max(0,
+            Number(rect.bottom) - viewportHeight + dp(16));
+        if (Number(rect.top) < currentScroll + dp(12)) {
+            desiredScroll = Math.max(0, Number(rect.top) - dp(12));
+        }
+        requiredSpacer = Math.max(0,
+            Math.ceil(desiredScroll + viewportHeight - baseContentHeight));
+        if (Number(params.height || 0) !== requiredSpacer) {
+            params.height = requiredSpacer;
+            imeAnchorSpacer.setLayoutParams(params);
+            imeAnchorSpacer.requestLayout();
+            contentRoot.requestLayout();
+            uiState.imeAnchorAdjustmentCount += 1;
+        }
+        uiState.imeAnchorSpacerHeightDp = Math.round(requiredSpacer / density);
+        return true;
+    }
+
+    function applyFocusedInputScroll(expectedInput, expectedRoot) {
+        var rect;
+        var viewportHeight;
+        var currentScroll;
+        var desiredScroll;
+        var maxScroll;
+        var visibleTop;
+        var visibleBottom;
+        if (!uiState.attached || expectedRoot !== scrollRoot ||
+                expectedInput !== focusedInput || !expectedInput.hasFocus()) {
+            return false;
+        }
+        rect = focusedInputRect(expectedInput, expectedRoot);
+        if (rect === null) { return false; }
+        viewportHeight = Math.max(dp(120), Number(expectedRoot.getHeight()));
+        currentScroll = Math.max(0, Number(expectedRoot.getScrollY()));
+        desiredScroll = currentScroll;
+        visibleTop = currentScroll + dp(12);
+        visibleBottom = currentScroll + viewportHeight - dp(16);
+        if (Number(rect.bottom) > visibleBottom) {
+            desiredScroll += Number(rect.bottom) - visibleBottom;
+        }
+        if (Number(rect.top) < visibleTop) {
+            desiredScroll -= visibleTop - Number(rect.top);
+        }
+        maxScroll = Math.max(0,
+            Number(contentRoot === null ? 0 : contentRoot.getHeight()) -
+                viewportHeight);
+        desiredScroll = Math.max(0, Math.min(maxScroll, desiredScroll));
+        if (Math.abs(desiredScroll - currentScroll) >= 1) {
+            expectedRoot.scrollTo(0, Math.round(desiredScroll));
+            uiState.inputAutoScrollCount += 1;
+        }
+        currentScroll = Math.max(0, Number(expectedRoot.getScrollY()));
+        uiState.currentScrollYDp = Math.round(currentScroll / density);
+        uiState.focusedInputTopDp = pxToDp(Number(rect.top) - currentScroll);
+        uiState.focusedInputBottomDp = pxToDp(Number(rect.bottom) - currentScroll);
+        uiState.focusedInputVisible =
+            Number(rect.top) >= currentScroll + dp(8) &&
+            Number(rect.bottom) <= currentScroll + viewportHeight - dp(8);
+        return uiState.focusedInputVisible;
+    }
+
+    function scheduleFocusedInputVisibility() {
+        var expectedRoot = scrollRoot;
+        var expectedInput = focusedInput;
+        if (focusedVisibilityScheduled || expectedRoot === null ||
+                expectedInput === null || !uiState.attached) {
+            return false;
+        }
+        focusedVisibilityScheduled = true;
+        return postSettingsDelayed(function () {
+            if (expectedRoot !== scrollRoot || expectedInput !== focusedInput ||
+                    !expectedInput.hasFocus()) {
+                focusedVisibilityScheduled = false;
+                return;
+            }
+            ensureImeAnchorSpace(expectedInput, expectedRoot);
+            expectedRoot.post(new Packages.java.lang.Runnable({
+                run: function () {
+                    try {
+                        applyFocusedInputScroll(expectedInput, expectedRoot);
+                    } catch (error) {
+                        uiState.delayedCallbackErrorCount += 1;
+                        uiState.lastDelayedCallbackError = String(error);
+                        uiState.lastError = String(error);
+                    } finally {
+                        focusedVisibilityScheduled = false;
+                    }
+                }
+            }));
+        }, 45, true);
+    }
+
+    function measureSettingsLayout(imeSnapshot) {
+        var ime = imeSnapshot || readSettingsImeState();
+        var metrics;
+        var rootHeightPx = 0;
+        var viewportHeightPx = 0;
+        var panelLocation;
+        var panelScreenBottomPx = 0;
+        var keyboardTopPx = 0;
+        var keyboardWasVisible = uiState.keyboardVisible === true;
+        if (panelRoot === null) { return false; }
+        try {
+            metrics = displayMetrics();
+            rootHeightPx = Number(panelRoot.getHeight());
+            viewportHeightPx = scrollRoot === null ? 0 :
+                Number(scrollRoot.getHeight());
+            keyboardTopPx = Number(metrics.heightPixels) - Number(ime.bottomPx);
+            panelLocation = Packages.java.lang.reflect.Array.newInstance(
+                Packages.java.lang.Integer.TYPE, 2);
+            panelRoot.getLocationOnScreen(panelLocation);
+            panelScreenBottomPx = Number(panelLocation[1]) + rootHeightPx;
+            if (uiState.layoutMeasureCount > 0 &&
+                    keyboardWasVisible !== ime.visible) {
+                if (ime.visible) { uiState.keyboardShowCount += 1; }
+                else { uiState.keyboardHideCount += 1; }
+            }
+            uiState.keyboardVisible = ime.visible;
+            uiState.keyboardInsetDp = pxToDp(Number(ime.bottomPx));
+            uiState.imeInsetBottomDp = pxToDp(Number(ime.bottomPx));
+            uiState.imeInsetSource = String(ime.source || "none");
+            uiState.imeInsetsSupported = ime.supported === true;
+            uiState.systemTopInsetDp = pxToDp(Number(ime.topInsetPx));
+            uiState.rootMeasuredHeightDp = pxToDp(rootHeightPx);
+            uiState.scrollViewportHeightDp = pxToDp(viewportHeightPx);
+            uiState.keyboardTopDp = pxToDp(keyboardTopPx);
+            uiState.panelScreenBottomDp = pxToDp(panelScreenBottomPx);
+            uiState.panelAboveKeyboard = !ime.visible ||
+                panelScreenBottomPx <= keyboardTopPx + dp(2);
+            uiState.layoutMeasureCount += 1;
+            return true;
+        } catch (error) {
+            uiState.lastError = String(error);
+            return false;
+        }
+    }
+
+    function pollSettingsIme(generation) {
+        var ime;
+        if (generation !== imePollGeneration || !ready ||
+                appContext === null || windowManager === null ||
+                !uiState.attached || panelRoot === null) {
+            return false;
+        }
+        uiState.imePollCount += 1;
+        ime = readSettingsImeState();
+        applySettingsImeLayout(ime);
+        if (ime.visible && focusedInput !== null && focusedInput.hasFocus()) {
+            scheduleFocusedInputVisibility();
+        } else if (!ime.visible) {
+            resetImeAnchorSpacer();
+        }
+        measureSettingsLayout(ime);
+        return true;
+    }
+
+    function stopSettingsImeMonitoring() {
+        imePollGeneration += 1;
+        if (mainHandler !== null && imePollRunnable !== null) {
+            try { mainHandler.removeCallbacks(imePollRunnable); }
+            catch (ignoredRunnable) {}
+        }
+        imePollRunnable = null;
+        if (layoutObserver !== null && layoutListener !== null) {
+            try {
+                if (Build.VERSION.SDK_INT >= 16) {
+                    layoutObserver.removeOnGlobalLayoutListener(layoutListener);
+                } else {
+                    layoutObserver.removeGlobalOnLayoutListener(layoutListener);
+                }
+            } catch (ignoredObserver) {}
+        }
+        layoutObserver = null;
+        layoutListener = null;
+        return true;
+    }
+
+    function startSettingsImeMonitoring() {
+        var generation;
+        stopSettingsImeMonitoring();
+        generation = imePollGeneration;
+        imePollRunnable = new Packages.java.lang.Runnable({
+            run: function () {
+                if (!pollSettingsIme(generation)) { return; }
+                if (mainHandler !== null && imePollRunnable !== null) {
+                    mainHandler.postDelayed(imePollRunnable, 90);
+                }
+            }
+        });
+        mainHandler.post(imePollRunnable);
+        try {
+            layoutObserver = panelRoot.getViewTreeObserver();
+            layoutListener = new JavaAdapter(
+                Packages.android.view.ViewTreeObserver.OnGlobalLayoutListener, {
+                    onGlobalLayout: function () {
+                        var ime;
+                        if (!ready || !uiState.attached || panelRoot === null ||
+                                appContext === null || windowManager === null) {
+                            return;
+                        }
+                        try {
+                            ime = readSettingsImeState();
+                            applySettingsImeLayout(ime);
+                            if (ime.visible && focusedInput !== null &&
+                                    focusedInput.hasFocus()) {
+                                scheduleFocusedInputVisibility();
+                            } else if (!ime.visible) {
+                                resetImeAnchorSpacer();
+                            }
+                            measureSettingsLayout(ime);
+                        } catch (error) {
+                            uiState.delayedCallbackErrorCount += 1;
+                            uiState.lastDelayedCallbackError = String(error);
+                            uiState.lastError = String(error);
+                        }
+                    }
+                });
+            layoutObserver.addOnGlobalLayoutListener(layoutListener);
+        } catch (error) {
+            uiState.lastError = String(error);
+        }
+        postSettingsDelayed(function () {
+            var ime = readSettingsImeState();
+            applySettingsImeLayout(ime);
+            measureSettingsLayout(ime);
+        }, 180, true);
+        return true;
+    }
+
+    function bindSettingsInput(input, inputName) {
+        if (input === null) { return input; }
+        input.setOnFocusChangeListener(new JavaAdapter(
+            View.OnFocusChangeListener, {
+                onFocusChange: function (view, hasFocus) {
+                    if (hasFocus) {
+                        focusedInput = view;
+                        focusedInputName = String(inputName || "input");
+                        uiState.focusedInputName = focusedInputName;
+                        uiState.inputFocusCount += 1;
+                        scheduleFocusedInputVisibility();
+                    } else if (focusedInput === view) {
+                        focusedInput = null;
+                        focusedInputName = null;
+                        uiState.focusedInputName = null;
+                        uiState.focusedInputVisible = false;
+                    }
+                }
+            }));
+        return input;
+    }
+
+    function namedSettingsInput(name) {
+        name = String(name || "");
+        if (name === "translation.baidu.app_id") { return baiduIdInput; }
+        if (name === "translation.baidu.app_secret") { return baiduSecretInput; }
+        if (name === "translation.youdao.app_key") { return youdaoKeyInput; }
+        if (name === "translation.youdao.app_secret") { return youdaoSecretInput; }
+        if (name === "tag.new.name") { return newTagNameInput; }
+        if (name === "tag.new.color") { return newTagColorInput; }
+        return null;
+    }
+
+    function focusSettingsInput(name) {
+        var target = namedSettingsInput(name);
+        if (target === null || inputMethodManager === null) { return false; }
+        focusedInput = target;
+        focusedInputName = String(name);
+        uiState.focusedInputName = focusedInputName;
+        target.requestFocus();
+        uiState.keyboardRequestCount += 1;
+        postSettingsDelayed(function () {
+            if (target === focusedInput && target.hasFocus() &&
+                    inputMethodManager !== null) {
+                inputMethodManager.showSoftInput(
+                    target, InputMethodManager.SHOW_IMPLICIT);
+                scheduleFocusedInputVisibility();
+            }
+        }, 100, true);
+        return target.hasFocus();
+    }
+
+    function hideSettingsKeyboardOnMain() {
+        var token = panelRoot === null ? null : panelRoot.getWindowToken();
+        try {
+            if (focusedInput !== null) { token = focusedInput.getWindowToken(); }
+            if (token !== null && inputMethodManager !== null) {
+                inputMethodManager.hideSoftInputFromWindow(token, 0);
+            }
+            if (focusedInput !== null) { focusedInput.clearFocus(); }
+            return true;
+        } catch (error) {
+            uiState.lastError = String(error);
+            return false;
+        }
     }
 
     function closeQuietly(value) {
@@ -532,7 +1169,7 @@
         return view;
     }
 
-    function makeInput(hint, value, colors, secret) {
+    function makeInput(hint, value, colors, secret, inputName) {
         var input = new EditText(appContext);
         input.setSingleLine(true);
         input.setHint(String(hint));
@@ -549,6 +1186,7 @@
         } else {
             input.setInputType(InputType.TYPE_CLASS_TEXT);
         }
+        bindSettingsInput(input, inputName || hint);
         return input;
     }
 
@@ -998,9 +1636,11 @@
         baiduGroup = new LinearLayout(appContext);
         baiduGroup.setOrientation(LinearLayout.VERTICAL);
         baiduIdInput = makeInput("百度 APP ID",
-            values["translation.baidu.app_id"], colors, false);
+            values["translation.baidu.app_id"], colors, false,
+            "translation.baidu.app_id");
         baiduSecretInput = makeInput("百度密钥",
-            values["translation.baidu.app_secret"], colors, true);
+            values["translation.baidu.app_secret"], colors, true,
+            "translation.baidu.app_secret");
         addField(baiduGroup, "百度 APP ID", baiduIdInput, colors);
         addField(baiduGroup, "百度密钥", baiduSecretInput, colors);
         params = new LinearLayout.LayoutParams(
@@ -1012,9 +1652,11 @@
         youdaoGroup = new LinearLayout(appContext);
         youdaoGroup.setOrientation(LinearLayout.VERTICAL);
         youdaoKeyInput = makeInput("有道 App Key",
-            values["translation.youdao.app_key"], colors, false);
+            values["translation.youdao.app_key"], colors, false,
+            "translation.youdao.app_key");
         youdaoSecretInput = makeInput("有道应用密钥",
-            values["translation.youdao.app_secret"], colors, true);
+            values["translation.youdao.app_secret"], colors, true,
+            "translation.youdao.app_secret");
         addField(youdaoGroup, "有道 App Key", youdaoKeyInput, colors);
         addField(youdaoGroup, "有道应用密钥", youdaoSecretInput, colors);
         section.addView(youdaoGroup, params);
@@ -1132,8 +1774,10 @@
         params = new LinearLayout.LayoutParams(dp(24), dp(24));
         params.rightMargin = dp(6);
         createRow.addView(preview, params);
-        newTagNameInput = makeInput("新标签名称", "", colors, false);
-        newTagColorInput = makeInput("#7C5CFC", "#7C5CFC", colors, false);
+        newTagNameInput = makeInput("新标签名称", "", colors, false,
+            "tag.new.name");
+        newTagColorInput = makeInput("#7C5CFC", "#7C5CFC", colors, false,
+            "tag.new.color");
         createButton = makeButton("新增", colors, true, false);
         createButton.setOnClickListener(new JavaAdapter(
             View.OnClickListener, { onClick: createTagFromSettings }));
@@ -1243,6 +1887,9 @@
         sectionAnchorSpacer = new View(appContext);
         content.addView(sectionAnchorSpacer, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0));
+        imeAnchorSpacer = new View(appContext);
+        content.addView(imeAnchorSpacer, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0));
         contentRoot = content;
         scrollRoot.removeAllViews();
         scrollRoot.addView(content, new FrameLayout.LayoutParams(
@@ -1256,6 +1903,12 @@
         uiState.sectionAnchorSpacerHeightDp = 0;
         uiState.lastRequestedScrollYDp = 0;
         uiState.lastMaxScrollYDp = 0;
+        uiState.imeAnchorSpacerHeightDp = 0;
+        focusedInput = null;
+        focusedInputName = null;
+        focusedVisibilityScheduled = false;
+        uiState.focusedInputName = null;
+        uiState.focusedInputVisible = false;
         uiState.renderCount += 1;
         return true;
     }
@@ -1276,6 +1929,7 @@
         requireReady();
         if (uiState.attached) { return getState(); }
         return runOnMainSync(function () {
+            settingsLifecycleGeneration += 1;
             size = panelSize();
             type = Build.VERSION.SDK_INT >= 26 ?
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY :
@@ -1303,6 +1957,13 @@
             panelParams.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
             panelParams.y = dp(10);
             panelParams.dimAmount = 0.44;
+            panelParams.softInputMode =
+                WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE |
+                WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN;
+            uiState.softInputMode = Number(panelParams.softInputMode);
+            uiState.softInputAdjustResize =
+                (Number(panelParams.softInputMode) &
+                    Number(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)) !== 0;
             try { panelParams.setTitle("ClipHub Detail Settings Panel"); }
             catch (ignoredTitle) {}
             windowManager.addView(panelRoot, panelParams);
@@ -1310,8 +1971,16 @@
             uiState.openCount += 1;
             uiState.panelWidthDp = size.widthDp;
             uiState.panelHeightDp = size.heightDp;
+            uiState.normalPanelHeightDp = size.heightDp;
+            uiState.currentPanelHeightDp = size.heightDp;
+            uiState.currentPanelTopDp = Math.max(0,
+                pxToDp(Number(displayMetrics().heightPixels) -
+                    Number(size.height) - dp(10)));
+            uiState.panelGravity = "bottom";
+            uiState.panelBottomMarginDp = 10;
             uiState.lastError = null;
             buildPage();
+            startSettingsImeMonitoring();
             try {
                 if (ClipHub.Navigation && ClipHub.Navigation.scanNow) {
                     ClipHub.Navigation.scanNow();
@@ -1324,6 +1993,9 @@
     function closePage(reason) {
         if (!uiState.attached && panelRoot === null) { return true; }
         return runOnMainSync(function () {
+            settingsLifecycleGeneration += 1;
+            stopSettingsImeMonitoring();
+            hideSettingsKeyboardOnMain();
             try {
                 if (panelRoot !== null) {
                     try { windowManager.removeViewImmediate(panelRoot); }
@@ -1341,6 +2013,10 @@
                 scrollRoot = null;
                 contentRoot = null;
                 sectionAnchorSpacer = null;
+                imeAnchorSpacer = null;
+                focusedInput = null;
+                focusedInputName = null;
+                focusedVisibilityScheduled = false;
                 translationStatusView = null;
                 engineBaiduView = null;
                 engineYoudaoView = null;
@@ -1526,6 +2202,60 @@
             lastRequestedScrollYDp:
                 Number(uiState.lastRequestedScrollYDp),
             lastMaxScrollYDp: Number(uiState.lastMaxScrollYDp),
+            softInputMode: Number(uiState.softInputMode),
+            softInputAdjustResize: uiState.softInputAdjustResize === true,
+            normalPanelHeightDp: Number(uiState.normalPanelHeightDp),
+            currentPanelHeightDp: Number(uiState.currentPanelHeightDp),
+            currentPanelTopDp: Number(uiState.currentPanelTopDp),
+            panelGravity: uiState.panelGravity,
+            panelBottomMarginDp: Number(uiState.panelBottomMarginDp),
+            keyboardVisible: uiState.keyboardVisible === true,
+            keyboardInsetDp: Number(uiState.keyboardInsetDp),
+            keyboardShowCount: Number(uiState.keyboardShowCount),
+            keyboardHideCount: Number(uiState.keyboardHideCount),
+            keyboardRequestCount: Number(uiState.keyboardRequestCount),
+            imeInsetsSupported: uiState.imeInsetsSupported === true,
+            imeInsetSource: uiState.imeInsetSource,
+            imeInsetBottomDp: Number(uiState.imeInsetBottomDp),
+            systemTopInsetDp: Number(uiState.systemTopInsetDp),
+            availableAboveImeDp: Number(uiState.availableAboveImeDp),
+            keyboardAvoidanceApplied:
+                uiState.keyboardAvoidanceApplied === true,
+            keyboardAvoidanceApplyCount:
+                Number(uiState.keyboardAvoidanceApplyCount),
+            keyboardAvoidanceRestoreCount:
+                Number(uiState.keyboardAvoidanceRestoreCount),
+            windowLayoutUpdateCount:
+                Number(uiState.windowLayoutUpdateCount),
+            imePollCount: Number(uiState.imePollCount),
+            layoutMeasureCount: Number(uiState.layoutMeasureCount),
+            rootMeasuredHeightDp: Number(uiState.rootMeasuredHeightDp),
+            scrollViewportHeightDp:
+                Number(uiState.scrollViewportHeightDp),
+            keyboardTopDp: Number(uiState.keyboardTopDp),
+            panelScreenBottomDp: Number(uiState.panelScreenBottomDp),
+            panelAboveKeyboard: uiState.panelAboveKeyboard === true,
+            focusedInputName: uiState.focusedInputName,
+            focusedInputVisible: uiState.focusedInputVisible === true,
+            focusedInputTopDp: Number(uiState.focusedInputTopDp),
+            focusedInputBottomDp: Number(uiState.focusedInputBottomDp),
+            inputFocusCount: Number(uiState.inputFocusCount),
+            inputAutoScrollCount: Number(uiState.inputAutoScrollCount),
+            imeAnchorAdjustmentCount:
+                Number(uiState.imeAnchorAdjustmentCount),
+            imeAnchorSpacerHeightDp:
+                Number(uiState.imeAnchorSpacerHeightDp),
+            delayedCallbackPostCount:
+                Number(uiState.delayedCallbackPostCount),
+            delayedCallbackRunCount:
+                Number(uiState.delayedCallbackRunCount),
+            delayedCallbackCancelCount:
+                Number(uiState.delayedCallbackCancelCount),
+            delayedCallbackErrorCount:
+                Number(uiState.delayedCallbackErrorCount),
+            pendingDelayedCallbackCount:
+                Number(uiState.pendingDelayedCallbackCount),
+            lastDelayedCallbackError: uiState.lastDelayedCallbackError,
             lastTestResult: uiState.lastTestResult,
             lastError: uiState.lastError
         };
@@ -1533,7 +2263,7 @@
 
     ClipHub.Settings = {
         MODULE_NAME: "ch_13_settings",
-        MODULE_VERSION: 9,
+        MODULE_VERSION: 10,
         DEFAULTS: defaultsCopy(),
         init: function (context) {
             if (!ClipHub.Database || !ClipHub.Database.isOpen()) {
@@ -1545,6 +2275,8 @@
             appContext = appContext.getApplicationContext() || appContext;
             windowManager = appContext.getSystemService(Context.WINDOW_SERVICE);
             mainHandler = new Handler(Looper.getMainLooper());
+            inputMethodManager = appContext.getSystemService(
+                Context.INPUT_METHOD_SERVICE);
             density = Number(appContext.getResources()
                 .getDisplayMetrics().density || 1);
             load();
@@ -1579,6 +2311,14 @@
         performSaveTranslationClick: saveTranslationSettings,
         performTestTranslationClick: testTranslationSettings,
         scrollToSection: scrollToSection,
+        performFocusInput: function (name) {
+            return runOnMainSync(function () {
+                return focusSettingsInput(name);
+            }, 3000);
+        },
+        hideKeyboard: function () {
+            return runOnMainSync(hideSettingsKeyboardOnMain, 3000);
+        },
         performCreateTag: function (name, colorTextValue) {
             return runOnMainSync(function () {
                 if (newTagNameInput === null || newTagColorInput === null) {
@@ -1640,6 +2380,8 @@
             return getAll();
         },
         shutdown: function () {
+            settingsLifecycleGeneration += 1;
+            stopSettingsImeMonitoring();
             try { closePage("shutdown"); } catch (ignoredClose) {}
             values = {};
             lastCleanup = null;
@@ -1647,6 +2389,7 @@
             initContext = null;
             appContext = null;
             windowManager = null;
+            inputMethodManager = null;
             mainHandler = null;
             return true;
         }
