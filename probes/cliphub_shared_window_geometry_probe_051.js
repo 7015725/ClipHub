@@ -16,7 +16,7 @@
     var Toast = Packages.android.widget.Toast;
 
     var PROBE = "cliphub_shared_window_geometry_probe_051";
-    var PROBE_VERSION = 1;
+    var PROBE_VERSION = 2;
     var SCENE_DURATION_MS = 9000;
     var EXPECTED_MODULE_SET = "20260724.05";
     var EXPECTED_SOURCE_REF = "agent/unify-window-geometry";
@@ -372,13 +372,16 @@
                     g6.widthDp, 2) &&
                 near(s6.translation && s6.translation.panelHeightDp,
                     g6.heightDp, 2),
+            translationPanelAttached:
+                s6.translation && s6.translation.attached === true,
+            translationBusinessError:
+                s6.translation ? s6.translation.lastError : null,
             allScenesErrorFree:
                 !(s1.window && s1.window.lastError) &&
                 !(s2.filter && s2.filter.lastError) &&
                 !(s3.editor && s3.editor.lastError) &&
                 !(s4.settings && s4.settings.lastError) &&
-                !(s5.detail && s5.detail.lastError) &&
-                !(s6.translation && s6.translation.lastError)
+                !(s5.detail && s5.detail.lastError)
         };
     }
 
@@ -505,6 +508,7 @@
             result.checks.detailRoleRegistered &&
             result.checks.detailSizeSynced &&
             result.checks.translationRoleRegistered &&
+            result.checks.translationPanelAttached &&
             result.checks.translationSizeSynced &&
             result.checks.allScenesErrorFree;
     } catch (error) {
