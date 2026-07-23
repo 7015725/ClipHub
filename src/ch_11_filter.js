@@ -8,6 +8,8 @@
     var TimeUnit = Packages.java.util.concurrent.TimeUnit;
     var Thread = Packages.java.lang.Thread;
     var View = Packages.android.view.View;
+    var MotionEvent = Packages.android.view.MotionEvent;
+    var ViewConfiguration = Packages.android.view.ViewConfiguration;
     var Gravity = Packages.android.view.Gravity;
     var WindowManager = Packages.android.view.WindowManager;
     var PixelFormat = Packages.android.graphics.PixelFormat;
@@ -41,6 +43,7 @@
     var inputMethodManager = null;
     var mainHandler = null;
     var density = 1;
+    var touchSlop = 8;
     var value = null;
     var ready = false;
     var eventListeners = [];
@@ -88,6 +91,7 @@
     var resultHasMore = false;
     var resultScrollView = null;
     var loadMoreView = null;
+    var activeSwipeCard = null;
 
     var state = {
         applyCount: 0,
@@ -168,6 +172,14 @@
         addActionCount: 0,
         deleteActionCount: 0,
         detailActionCount: 0,
+        swipeEnabled: true,
+        swipeStartCount: 0,
+        swipeMoveCount: 0,
+        swipePinCount: 0,
+        swipeDeleteCount: 0,
+        swipeCancelCount: 0,
+        lastSwipeItemId: null,
+        lastSwipeAction: null,
         settingsOpenCount: 0,
         settingsButtonPresent: false,
         renderedTagLabelCount: 0,
@@ -1524,20 +1536,26 @@
         return true;
     }
 
-    function deleteSelectedResult() {
-        var row = selectedResultRow();
+    function deleteResultRow(row, origin) {
         var changed;
-        if (row === null || !ClipHub.List ||
+        if (row === null || row === undefined || !ClipHub.List ||
                 typeof ClipHub.List.deleteItem !== "function") {
             return false;
         }
         changed = ClipHub.List.deleteItem(Number(row.id));
         if (changed) {
             state.deleteActionCount += 1;
-            clearSelectedResult();
-            refreshPrimaryResults("primary_delete");
+            if (selectedItemId !== null &&
+                    Number(selectedItemId) === Number(row.id)) {
+                clearSelectedResult();
+            }
+            refreshPrimaryResults(String(origin || "primary_delete"));
         }
         return changed === true;
+    }
+
+    function deleteSelectedResult() {
+        return deleteResultRow(selectedResultRow(), "primary_delete");
     }
 
     function openSelectedDetail() {
@@ -1557,9 +1575,223 @@
         }
     }
 
+    function swipeInteractionBlocked() {
+        var windowBusy = false;
+        if (!rootMode || advancedVisible || selectedItemId !== null) {
+            return true;
+        }
+        try {
+            windowBusy = ClipHub.Window &&
+                ((typeof ClipHub.Window.isMoving === "function" &&
+                    ClipHub.Window.isMoving()) ||
+                (typeof ClipHub.Window.isResizing === "function" &&
+                    ClipHub.Window.isResizing()));
+        } catch (ignoredWindowState) {
+            windowBusy = false;
+        }
+        return windowBusy;
+    }
+
+    function makeSwipeAction(label, fill, textColor, gravityValue) {
+        var view = makeText(label, 10, textColor, true);
+        view.setGravity(gravityValue | Gravity.CENTER_VERTICAL);
+        view.setPadding(dp(14), 0, dp(14), 0);
+        view.setBackground(roundedBackground(fill, null, 12));
+        view.setAlpha(0);
+        return view;
+    }
+
+    function setSwipeVisual(foreground, deleteAction, pinAction, offset,
+            revealWidth) {
+        var progress = Math.min(1,
+            Math.abs(Number(offset)) / Math.max(1, Number(revealWidth)));
+        foreground.setTranslationX(Number(offset));
+        deleteAction.setAlpha(offset > 0 ? progress : 0);
+        pinAction.setAlpha(offset < 0 ? progress : 0);
+    }
+
+    function resetSwipeVisual(foreground, deleteAction, pinAction, animated) {
+        if (foreground === null || foreground === undefined) { return false; }
+        try { foreground.animate().cancel(); } catch (ignoredCancel) {}
+        if (animated === true) {
+            try {
+                foreground.animate().translationX(0).setDuration(135).start();
+            } catch (ignoredAnimation) {
+                foreground.setTranslationX(0);
+            }
+        } else {
+            foreground.setTranslationX(0);
+        }
+        deleteAction.setAlpha(0);
+        pinAction.setAlpha(0);
+        if (activeSwipeCard !== null &&
+                activeSwipeCard.foreground === foreground) {
+            activeSwipeCard = null;
+        }
+        return true;
+    }
+
+    function cancelActiveSwipe(animated) {
+        var current = activeSwipeCard;
+        if (current === null) { return false; }
+        resetSwipeVisual(current.foreground, current.deleteAction,
+            current.pinAction, animated === true);
+        activeSwipeCard = null;
+        return true;
+    }
+
+    function performSwipeAction(row, direction, foreground) {
+        var changed = false;
+        state.lastSwipeItemId = Number(row.id);
+        if (direction < 0) {
+            changed = toggleResultPinned(row);
+            if (changed) {
+                state.swipePinCount += 1;
+                state.lastSwipeAction = Number(row.is_pinned || 0) === 1 ?
+                    "unpin" : "pin";
+            }
+        } else {
+            changed = deleteResultRow(row, "swipe_delete");
+            if (changed) {
+                state.swipeDeleteCount += 1;
+                state.lastSwipeAction = "delete";
+            }
+        }
+        if (changed && ClipHub.Window &&
+                typeof ClipHub.Window.performHaptic === "function") {
+            try { ClipHub.Window.performHaptic(foreground, "confirm"); }
+            catch (ignoredHaptic) {}
+        }
+        return changed;
+    }
+
+    function bindSwipeGesture(row, wrapper, foreground, deleteAction,
+            pinAction) {
+        var gesture = {
+            downX: 0,
+            downY: 0,
+            swiping: false,
+            rejected: false,
+            disabled: false,
+            offset: 0
+        };
+        var revealWidth = dp(82);
+        var commitDistance = dp(66);
+        var maxOffset = dp(106);
+        foreground.setOnTouchListener(new JavaAdapter(
+            View.OnTouchListener, {
+                onTouch: function (target, event) {
+                    var action = Number(event.getActionMasked());
+                    var rawX = Number(event.getRawX());
+                    var rawY = Number(event.getRawY());
+                    var deltaX;
+                    var deltaY;
+                    var absX;
+                    var absY;
+                    var offset;
+                    var parent;
+                    var commit;
+                    var direction;
+                    if (action === MotionEvent.ACTION_DOWN) {
+                        gesture.downX = rawX;
+                        gesture.downY = rawY;
+                        gesture.swiping = false;
+                        gesture.rejected = false;
+                        gesture.disabled = swipeInteractionBlocked() ||
+                            Number(event.getX()) >
+                                Math.max(0, Number(target.getWidth()) - dp(58));
+                        gesture.offset = 0;
+                        if (!gesture.disabled) {
+                            cancelActiveSwipe(true);
+                            try { target.animate().cancel(); }
+                            catch (ignoredAnimationCancel) {}
+                        }
+                        return false;
+                    }
+                    if (gesture.disabled) { return false; }
+                    if (action === MotionEvent.ACTION_MOVE) {
+                        deltaX = rawX - gesture.downX;
+                        deltaY = rawY - gesture.downY;
+                        absX = Math.abs(deltaX);
+                        absY = Math.abs(deltaY);
+                        if (!gesture.swiping && !gesture.rejected) {
+                            if (absY > touchSlop && absY >= absX) {
+                                gesture.rejected = true;
+                                return false;
+                            }
+                            if (absX > touchSlop && absX > absY * 1.2) {
+                                gesture.swiping = true;
+                                state.swipeStartCount += 1;
+                                activeSwipeCard = {
+                                    foreground: foreground,
+                                    deleteAction: deleteAction,
+                                    pinAction: pinAction
+                                };
+                                try { target.setPressed(false); }
+                                catch (ignoredPressed) {}
+                                try {
+                                    parent = wrapper.getParent();
+                                    if (parent !== null) {
+                                        parent.requestDisallowInterceptTouchEvent(
+                                            true);
+                                    }
+                                } catch (ignoredParent) {}
+                            }
+                        }
+                        if (!gesture.swiping) { return false; }
+                        offset = deltaX;
+                        if (Math.abs(offset) > revealWidth) {
+                            offset = (offset < 0 ? -1 : 1) *
+                                (revealWidth +
+                                (Math.abs(offset) - revealWidth) * 0.22);
+                        }
+                        offset = Math.max(-maxOffset,
+                            Math.min(maxOffset, offset));
+                        gesture.offset = offset;
+                        setSwipeVisual(foreground, deleteAction, pinAction,
+                            offset, revealWidth);
+                        state.swipeMoveCount += 1;
+                        return true;
+                    }
+                    if (action === MotionEvent.ACTION_UP ||
+                            action === MotionEvent.ACTION_CANCEL) {
+                        if (!gesture.swiping) { return false; }
+                        try {
+                            parent = wrapper.getParent();
+                            if (parent !== null) {
+                                parent.requestDisallowInterceptTouchEvent(false);
+                            }
+                        } catch (ignoredReleaseParent) {}
+                        commit = action === MotionEvent.ACTION_UP &&
+                            Math.abs(gesture.offset) >= commitDistance;
+                        direction = gesture.offset < 0 ? -1 : 1;
+                        resetSwipeVisual(foreground, deleteAction, pinAction,
+                            !commit);
+                        if (commit) {
+                            performSwipeAction(row, direction, foreground);
+                        } else {
+                            state.swipeCancelCount += 1;
+                        }
+                        gesture.swiping = false;
+                        gesture.offset = 0;
+                        return true;
+                    }
+                    return false;
+                }
+            }));
+        return wrapper;
+    }
+
     function makeResultCard(row, colors) {
         var selected = selectedItemId !== null &&
             Number(selectedItemId) === Number(row.id);
+        var wrapper = new FrameLayout(appContext);
+        var actionLayer = new FrameLayout(appContext);
+        var deleteAction = makeSwipeAction("删除", colors.dangerSoft,
+            colors.danger, Gravity.START);
+        var pinAction = makeSwipeAction(
+            Number(row.is_pinned || 0) === 1 ? "取消置顶" : "置顶",
+            colors.accentSoft, colors.accentStrong, Gravity.END);
         var card = new LinearLayout(appContext);
         var icon = makeSourceIcon(row, colors);
         var center = new LinearLayout(appContext);
@@ -1582,6 +1814,24 @@
                 colors.accentStrong : colors.textTertiary, false);
         var params;
 
+        wrapper.setClipChildren(true);
+        wrapper.setClipToPadding(true);
+        wrapper.setBackground(roundedBackground(colors.surfaceMuted,
+            colors.stroke, 12));
+        actionLayer.setClipChildren(true);
+        actionLayer.setClipToPadding(true);
+        params = new FrameLayout.LayoutParams(dp(82),
+            FrameLayout.LayoutParams.MATCH_PARENT);
+        params.gravity = Gravity.START | Gravity.CENTER_VERTICAL;
+        actionLayer.addView(deleteAction, params);
+        params = new FrameLayout.LayoutParams(dp(82),
+            FrameLayout.LayoutParams.MATCH_PARENT);
+        params.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
+        actionLayer.addView(pinAction, params);
+        wrapper.addView(actionLayer, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT));
+
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
         card.setPadding(dp(8), dp(7), dp(7), dp(7));
@@ -1590,7 +1840,8 @@
             selected ? colors.accentBorder : colors.stroke, 12));
         card.setClickable(true);
         card.setFocusable(true);
-        card.setContentDescription("剪贴板记录，点击复制，长按选择");
+        card.setContentDescription(
+            "剪贴板记录，点击复制，长按选择，左滑置顶，右滑删除");
         (function (target, view) {
             view.setOnClickListener(new JavaAdapter(
                 View.OnClickListener, {
@@ -1658,9 +1909,14 @@
             LinearLayout.LayoutParams.MATCH_PARENT, dp(28)));
         card.addView(right, new LinearLayout.LayoutParams(dp(48),
             LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        wrapper.addView(card, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT));
+        bindSwipeGesture(row, wrapper, card, deleteAction, pinAction);
         resultCardViews.push(card);
         state.resultCardCount += 1;
-        return card;
+        return wrapper;
     }
 
     function updateResultScrollState() {
@@ -1697,6 +1953,7 @@
         if (resultContainer === null) {
             return false;
         }
+        cancelActiveSwipe(false);
         resultContainer.removeAllViews();
         state.resultCardCount = 0;
         state.resultSourceIconCount = 0;
@@ -2826,6 +3083,14 @@
             addActionCount: Number(state.addActionCount),
             deleteActionCount: Number(state.deleteActionCount),
             detailActionCount: Number(state.detailActionCount),
+            swipeEnabled: state.swipeEnabled === true,
+            swipeStartCount: Number(state.swipeStartCount),
+            swipeMoveCount: Number(state.swipeMoveCount),
+            swipePinCount: Number(state.swipePinCount),
+            swipeDeleteCount: Number(state.swipeDeleteCount),
+            swipeCancelCount: Number(state.swipeCancelCount),
+            lastSwipeItemId: state.lastSwipeItemId,
+            lastSwipeAction: state.lastSwipeAction,
             toolbarEnabledCount:
                 Number(state.toolbarEnabledCount),
             panelWindowType: state.panelWindowType,
@@ -2948,6 +3213,14 @@
         state.addActionCount = 0;
         state.deleteActionCount = 0;
         state.detailActionCount = 0;
+        state.swipeEnabled = true;
+        state.swipeStartCount = 0;
+        state.swipeMoveCount = 0;
+        state.swipePinCount = 0;
+        state.swipeDeleteCount = 0;
+        state.swipeCancelCount = 0;
+        state.lastSwipeItemId = null;
+        state.lastSwipeAction = null;
         state.settingsOpenCount = 0;
         state.settingsButtonPresent = false;
         state.renderedTagLabelCount = 0;
@@ -2984,7 +3257,7 @@
 
     ClipHub.Filter = {
         MODULE_NAME: "ch_11_filter",
-        MODULE_VERSION: 19,
+        MODULE_VERSION: 20,
 
         init: function (context) {
             androidContext = context && context.androidContext ?
@@ -3005,6 +3278,8 @@
             mainHandler = new Handler(Looper.getMainLooper());
             density = Number(appContext.getResources()
                 .getDisplayMetrics().density || 1);
+            touchSlop = Number(ViewConfiguration.get(appContext)
+                .getScaledTouchSlop());
             value = emptyValue();
             ready = true;
             eventListeners = [];
@@ -3293,6 +3568,8 @@
             resultTagMap = {};
             resultScrollView = null;
             loadMoreView = null;
+            cancelActiveSwipe(false);
+            activeSwipeCard = null;
             resetResultPaging();
             value = null;
             ready = false;
