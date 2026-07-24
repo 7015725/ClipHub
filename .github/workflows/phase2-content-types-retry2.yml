@@ -41,6 +41,7 @@ jobs:
 
           if ! python3 - <<'PY' 2>&1 | tee /tmp/phase2-retry2.log
           from pathlib import Path
+          import re
 
           text = Path(
               '.github/workflows/phase2-retire-content-types.yml'
@@ -52,22 +53,19 @@ jobs:
               line[10:] if line.startswith('          ') else line
               for line in text[start:end].splitlines()
           )
-          replacements = [
-              (
-                  'if "contentTypeOptionCount:" in line:',
-                  'if line.strip() == "contentTypeOptionCount:":'
-              ),
-              (
-                  '                  "counts.types": 1,\n',
-                  ''
-              )
-          ]
-          for old, new in replacements:
-              if script.count(old) != 1:
-                  raise SystemExit(
-                      'embedded patch replacement mismatch: ' + old
-                  )
-              script = script.replace(old, new, 1)
+          old_condition = 'if "contentTypeOptionCount:" in line:'
+          new_condition = 'if line.strip() == "contentTypeOptionCount:":'
+          if script.count(old_condition) != 1:
+              raise SystemExit('contentTypeOptionCount condition mismatch')
+          script = script.replace(old_condition, new_condition, 1)
+          script, count = re.subn(
+              r'(?m)^\s*"counts\.types": 1,\n',
+              '',
+              script,
+              count=1
+          )
+          if count != 1:
+              raise SystemExit('counts.types expected-line mismatch')
           exec(compile(script, '<phase2-retire-content-types>', 'exec'), {})
           PY
           then
