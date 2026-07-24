@@ -39,17 +39,6 @@ shutil.copy2(TARGET, OLD_TARGET)
 shutil.copy2(MANIFEST, OLD_MANIFEST)
 text = TARGET.read_text(encoding="utf-8")
 
-text = replace_once(
-    text,
-    '        sourceWrapRowCount: 0,\n'
-    '        typeWrapRowCount: 0,\n',
-    '        sourceWrapRowCount: 0,\n'
-    '        sourceGridMaxColumns: 0,\n'
-    '        sourceGridLastRowItemCount: 0,\n'
-    '        sourceGridAvailableWidthDp: 0,\n'
-    '        typeWrapRowCount: 0,\n',
-    'source grid state')
-
 chip_block = r'''    function adaptiveSourceGridMetrics(itemCount) {
         var availableWidth = availableResultWidthPx();
         var fontScale = resourceFontScale();
@@ -67,7 +56,6 @@ chip_block = r'''    function adaptiveSourceGridMetrics(itemCount) {
         maxColumns = Math.max(1, Math.min(4,
             Math.min(Math.max(1, Number(itemCount || 1)), maxColumns)));
         return {
-            availableWidthPx: usableWidth,
             gapPx: gapPx,
             maxColumns: maxColumns
         };
@@ -109,9 +97,6 @@ chip_block = r'''    function adaptiveSourceGridMetrics(itemCount) {
             sourceRemaining = items.length;
             sourceRowsRemaining = Math.max(1, Math.ceil(
                 items.length / sourceMetrics.maxColumns));
-            state.sourceGridMaxColumns = sourceMetrics.maxColumns;
-            state.sourceGridAvailableWidthDp = pxToDp(
-                sourceMetrics.availableWidthPx);
         }
         for (index = 0; index < items.length; index += 1) {
             key = items[index].key;
@@ -163,7 +148,6 @@ chip_block = r'''    function adaptiveSourceGridMetrics(itemCount) {
                 if (sourceRowItems >= sourceRowTarget) {
                     sourceRowsRemaining = Math.max(0,
                         sourceRowsRemaining - 1);
-                    state.sourceGridLastRowItemCount = sourceRowItems;
                 }
                 continue;
             }
@@ -200,81 +184,40 @@ text = replace_block(
     '    function addSection(parent, title, options, kind, colors) {',
     chip_block,
     'adaptive source chip grid')
-
-text = replace_once(
-    text,
-    '            sourceWrapRowCount: Number(state.sourceWrapRowCount),\n'
-    '            typeWrapRowCount: Number(state.typeWrapRowCount),\n',
-    '            sourceWrapRowCount: Number(state.sourceWrapRowCount),\n'
-    '            sourceGridMaxColumns:\n'
-    '                Number(state.sourceGridMaxColumns),\n'
-    '            sourceGridLastRowItemCount:\n'
-    '                Number(state.sourceGridLastRowItemCount),\n'
-    '            sourceGridAvailableWidthDp:\n'
-    '                Number(state.sourceGridAvailableWidthDp),\n'
-    '            typeWrapRowCount: Number(state.typeWrapRowCount),\n',
-    'source grid panel state')
-
-text = replace_once(
-    text,
-    '        state.sourceWrapRowCount = 0;\n'
-    '        state.typeWrapRowCount = 0;\n',
-    '        state.sourceWrapRowCount = 0;\n'
-    '        state.sourceGridMaxColumns = 0;\n'
-    '        state.sourceGridLastRowItemCount = 0;\n'
-    '        state.sourceGridAvailableWidthDp = 0;\n'
-    '        state.typeWrapRowCount = 0;\n',
-    'reset source grid state')
-
-text = replace_once(
-    text,
+text = replace_once(text,
     '        state.searchPageStyle = "reference_search_v10";\n',
     '        state.searchPageStyle = "reference_search_v11";\n',
     'search style version')
-
-text = replace_once(
-    text,
+text = replace_once(text,
     '        MODULE_VERSION: 25,\n',
     '        MODULE_VERSION: 26,\n',
     'filter module version')
-
 TARGET.write_text(text, encoding="utf-8")
 
 manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
 manifest["moduleSetVersion"] = "20260724.18"
 blob = git_blob_sha(TARGET.read_bytes())
-found = False
 for module in manifest.get("modules", []):
     if module.get("path") == "src/ch_11_filter.js":
         module["sha"] = blob
-        found = True
         break
-if not found:
+else:
     raise RuntimeError("ch_11_filter.js missing from manifest")
 MANIFEST.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
                     encoding="utf-8")
 
 subprocess.check_call(["node", "--check", str(TARGET)])
 updated = TARGET.read_text(encoding="utf-8")
-required = [
+for token in [
     "MODULE_VERSION: 26",
     "function adaptiveSourceGridMetrics(itemCount)",
-    "sourceGridMaxColumns",
-    "sourceGridLastRowItemCount",
-    "sourceGridAvailableWidthDp",
     "sourceRemaining / sourceRowsRemaining",
-    "new LinearLayout.LayoutParams(0,",
-    "LinearLayout.LayoutParams.WRAP_CONTENT, 1)"
-]
-for token in required:
+    "sourceMetrics.maxColumns",
+    "LinearLayout.LayoutParams.WRAP_CONTENT, 1)",
+    'if (kind === "source")'
+]:
     if token not in updated:
         raise RuntimeError("missing contract: " + token)
-source_block = updated[updated.index("function adaptiveSourceGridMetrics"):
-    updated.index("function addSection")]
-if "maxWidth = 208" not in source_block:
-    raise RuntimeError("legacy non-source wrapping unexpectedly removed")
-if "if (kind === \"source\")" not in source_block:
-    raise RuntimeError("source grid branch missing")
 
 subprocess.check_call(["git", "config", "user.name", "github-actions[bot]"])
 subprocess.check_call([
