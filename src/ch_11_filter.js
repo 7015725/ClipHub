@@ -42,6 +42,7 @@
     var RESULT_PAGE_SIZE = 20;
     var SELECTION_ENABLED = false;
     var DELETE_UNDO_TIMEOUT_MS = 5000;
+    var COPY_FEEDBACK_TIMEOUT_MS = 1600;
 
     var androidContext = null;
     var appContext = null;
@@ -103,6 +104,8 @@
     var deleteUndoView = null;
     var pendingDeleteUndo = null;
     var deleteUndoGeneration = 0;
+    var copyFeedbackView = null;
+    var copyFeedbackGeneration = 0;
     var adaptiveRenderGeneration = 0;
 
     var state = {
@@ -200,6 +203,9 @@
         deleteUndoShowCount: 0,
         deleteUndoActionCount: 0,
         deleteUndoTimeoutCount: 0,
+        copyFeedbackVisible: false,
+        copyFeedbackShowCount: 0,
+        copyFeedbackTimeoutCount: 0,
         adaptiveLayoutRefreshCount: 0,
         swipeEnabled: true,
         swipeStartCount: 0,
@@ -422,6 +428,84 @@
                 (resourceFontScale() * 3.8), 8.5, 11.5),
             radiusDp: clampNumber(pxToDp(height) * 0.30, 8, 15)
         };
+    }
+
+    function removeCopyFeedbackView() {
+        var parent;
+        if (copyFeedbackView !== null) {
+            try {
+                parent = copyFeedbackView.getParent();
+                if (parent !== null) { parent.removeView(copyFeedbackView); }
+            } catch (ignoredRemoveCopyFeedback) {}
+        }
+        copyFeedbackView = null;
+        state.copyFeedbackVisible = false;
+        return true;
+    }
+
+    function clearCopyFeedback() {
+        copyFeedbackGeneration += 1;
+        removeCopyFeedbackView();
+        return true;
+    }
+
+    function scheduleCopyFeedbackTimeout(generation) {
+        if (mainHandler === null) { return false; }
+        mainHandler.postDelayed(new Packages.java.lang.Runnable({
+            run: function () {
+                if (generation !== copyFeedbackGeneration) { return; }
+                state.copyFeedbackTimeoutCount += 1;
+                removeCopyFeedbackView();
+                copyFeedbackGeneration += 1;
+                attachDeleteUndoBanner();
+            }
+        }), COPY_FEEDBACK_TIMEOUT_MS);
+        return true;
+    }
+
+    function attachCopyFeedbackBanner() {
+        var metrics;
+        var colors;
+        var root;
+        var message;
+        var params;
+        var generation;
+        if (resultBodyFrame === null || !state.panelAttached ||
+                advancedVisible) {
+            clearCopyFeedback();
+            return false;
+        }
+        clearCopyFeedback();
+        removeDeleteUndoView();
+        metrics = deleteUndoMetrics();
+        colors = palette();
+        root = new LinearLayout(appContext);
+        root.setOrientation(LinearLayout.HORIZONTAL);
+        root.setGravity(Gravity.CENTER_VERTICAL);
+        root.setPadding(metrics.horizontalPaddingPx, 0,
+            metrics.horizontalPaddingPx, 0);
+        root.setBackground(roundedBackground(colors.textPrimary,
+            colors.strokeStrong, metrics.radiusDp));
+        message = makeText("已复制", metrics.textSp,
+            colors.surface, false);
+        message.setSingleLine(true);
+        message.setGravity(Gravity.CENTER_VERTICAL);
+        root.addView(message, new LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        params = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, metrics.heightPx);
+        params.gravity = Gravity.BOTTOM;
+        params.setMargins(metrics.sideMarginPx, 0,
+            metrics.sideMarginPx + metrics.resizeClearancePx,
+            metrics.bottomMarginPx);
+        resultBodyFrame.addView(root, params);
+        copyFeedbackView = root;
+        state.copyFeedbackVisible = true;
+        state.copyFeedbackShowCount += 1;
+        copyFeedbackGeneration += 1;
+        generation = copyFeedbackGeneration;
+        scheduleCopyFeedbackTimeout(generation);
+        return true;
     }
 
     function removeDeleteUndoView() {
@@ -1824,6 +1908,7 @@
 
     function copyResultRow(row, origin) {
         var result;
+        var copied = false;
         var closeAfter = false;
         var actionOrigin = String(origin || "card_click");
         if (row === null || row === undefined) { return false; }
@@ -1832,6 +1917,7 @@
                 label: "ClipHub",
                 sensitive: Number(row.is_sensitive || 0) === 1
             });
+            copied = result && result.ok === true;
             if (actionOrigin === "card_click") {
                 state.resultCardClickCount += 1;
             }
@@ -1843,13 +1929,16 @@
                 closeAfter = ClipHub.Settings &&
                     ClipHub.Settings.get("closeAfterCopy", false) === true;
             } catch (ignoredSetting) {}
+            if (copied && !closeAfter) {
+                attachCopyFeedbackBanner();
+            }
             if (closeAfter) {
                 closePanel({
                     restoreList: false,
                     reason: "copy_close"
                 });
             }
-            return result && result.ok === true;
+            return copied;
         } catch (error) {
             state.lastError = String(error);
             return false;
@@ -1925,6 +2014,7 @@
                     Number(selectedItemId) === Number(row.id)) {
                 clearSelectedResult();
             }
+            clearCopyFeedback();
             rememberDeleteUndo(row);
             refreshPrimaryResults(actionOrigin);
             attachDeleteUndoBanner();
@@ -2116,8 +2206,8 @@
         var icon = new View(appContext);
         var params;
         root.setBackground(roundedBackground(
-            danger ? colors.dangerSoft : colors.surfaceMuted,
-            danger ? colors.danger : colors.stroke,
+            colors.surface,
+            danger ? colors.dangerSoft : colors.divider,
             metrics.actionRadiusDp));
         root.setClickable(true);
         root.setFocusable(true);
@@ -2125,7 +2215,7 @@
         root.setOnClickListener(new JavaAdapter(
             View.OnClickListener, { onClick: callback }));
         icon.setBackground(makeVectorIconDrawable(kind,
-            danger ? colors.danger : colors.accentStrong,
+            danger ? colors.danger : colors.textSecondary,
             metrics.actionIconSizePx, metrics.actionIconStrokePx));
         params = new FrameLayout.LayoutParams(metrics.actionIconSizePx,
             metrics.actionIconSizePx);
@@ -3507,6 +3597,7 @@
                 searchGeneration += 1;
                 adaptiveRenderGeneration += 1;
                 clearDeleteUndo(true);
+                clearCopyFeedback();
                 state.panelAttached = false;
                 state.inputFocused = false;
                 advancedVisible = false;
@@ -3531,6 +3622,7 @@
                 resultBodyFrame = null;
                 resultActionViews = [];
                 deleteUndoView = null;
+                copyFeedbackView = null;
                 resultScrollView = null;
                 loadMoreView = null;
                 drawerContainer = null;
@@ -3715,6 +3807,11 @@
             deleteUndoActionCount: Number(state.deleteUndoActionCount),
             deleteUndoTimeoutCount:
                 Number(state.deleteUndoTimeoutCount),
+            copyFeedbackVisible: state.copyFeedbackVisible === true,
+            copyFeedbackShowCount:
+                Number(state.copyFeedbackShowCount),
+            copyFeedbackTimeoutCount:
+                Number(state.copyFeedbackTimeoutCount),
             adaptiveLayoutRefreshCount:
                 Number(state.adaptiveLayoutRefreshCount),
             swipeEnabled: state.swipeEnabled === true,
@@ -3863,6 +3960,9 @@
         state.deleteUndoShowCount = 0;
         state.deleteUndoActionCount = 0;
         state.deleteUndoTimeoutCount = 0;
+        state.copyFeedbackVisible = false;
+        state.copyFeedbackShowCount = 0;
+        state.copyFeedbackTimeoutCount = 0;
         state.adaptiveLayoutRefreshCount = 0;
         state.swipeEnabled = true;
         state.swipeStartCount = 0;
@@ -3902,13 +4002,13 @@
         state.resultCardCount = 0;
         state.resultSourceIconCount = 0;
         state.advancedDrawerVisible = false;
-        state.searchPageStyle = "reference_search_v9";
+        state.searchPageStyle = "reference_search_v10";
         state.lastError = null;
     }
 
     ClipHub.Filter = {
         MODULE_NAME: "ch_11_filter",
-        MODULE_VERSION: 24,
+        MODULE_VERSION: 25,
 
         init: function (context) {
             androidContext = context && context.androidContext ?
@@ -3952,6 +4052,8 @@
             deleteUndoView = null;
             pendingDeleteUndo = null;
             deleteUndoGeneration = 0;
+            copyFeedbackView = null;
+            copyFeedbackGeneration = 0;
             adaptiveRenderGeneration = 0;
             resetResultPaging();
             resetState();
@@ -4238,6 +4340,7 @@
             searchGeneration += 1;
             adaptiveRenderGeneration += 1;
             clearDeleteUndo(true);
+            clearCopyFeedback();
             rootMode = false;
             selectedItemId = null;
             resultCardViews = [];
@@ -4249,6 +4352,8 @@
             resultActionViews = [];
             deleteUndoView = null;
             pendingDeleteUndo = null;
+            copyFeedbackView = null;
+            copyFeedbackGeneration = 0;
             cancelActiveSwipe(false);
             activeSwipeCard = null;
             resetResultPaging();
