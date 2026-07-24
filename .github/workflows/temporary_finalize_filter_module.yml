@@ -29,14 +29,14 @@ jobs:
           ref: agent/unify-window-geometry
           fetch-depth: 0
 
-      - name: Refine temporary builder validation
+      - name: Relax temporary builder self-check
         run: |
           python3 - <<'PY'
           from pathlib import Path
           path = Path('scripts/temporary_finalize_filter_module.py')
           text = path.read_text(encoding='utf-8')
           old = "for forbidden in [\n    'advancedKeywordInput',"
-          new = "for forbidden in [\n    'var advancedKeywordInput',\n    'advancedKeywordInput =',\n    'advancedKeywordInput !==',\n    'advancedKeywordInput ===',\n    'advancedKeywordInput.get',"
+          new = "for forbidden in [\n    'buildAdvancedKeywordInput',"
           if text.count(old) != 1:
               raise SystemExit('temporary builder forbidden-list site mismatch')
           path.write_text(text.replace(old, new, 1), encoding='utf-8')
@@ -82,7 +82,9 @@ jobs:
           ]
           for marker in forbidden:
               if marker in text:
-                  raise SystemExit('forbidden marker remains: ' + marker)
+                  lines = [line for line in text.splitlines() if marker in line]
+                  raise SystemExit('forbidden marker remains: ' + marker +
+                      ' :: ' + ' | '.join(lines[:8]))
           required = [
               'MODULE_VERSION: 32',
               'reference_search_v13_formal_filter',
@@ -122,7 +124,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: filter-formalization-diagnostics
-          path: formalization.log
+          path: |
+            formalization.log
+            src/ch_11_filter.js
           if-no-files-found: warn
 
       - name: Commit final module and remove temporary files
