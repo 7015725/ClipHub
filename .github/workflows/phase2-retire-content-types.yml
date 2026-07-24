@@ -27,6 +27,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import json
+          import re
           import subprocess
 
           def replace_once(text, old, new, label):
@@ -34,6 +35,116 @@ jobs:
               if count != 1:
                   raise SystemExit("%s replacement count=%d" % (label, count))
               return text.replace(old, new, 1)
+
+          def matching_brace(text, open_index):
+              depth = 0
+              index = open_index
+              quote = None
+              escaped = False
+              line_comment = False
+              block_comment = False
+              while index < len(text):
+                  char = text[index]
+                  next_char = text[index + 1] if index + 1 < len(text) else ""
+                  if line_comment:
+                      if char == "\n":
+                          line_comment = False
+                      index += 1
+                      continue
+                  if block_comment:
+                      if char == "*" and next_char == "/":
+                          block_comment = False
+                          index += 2
+                      else:
+                          index += 1
+                      continue
+                  if quote is not None:
+                      if escaped:
+                          escaped = False
+                      elif char == "\\":
+                          escaped = True
+                      elif char == quote:
+                          quote = None
+                      index += 1
+                      continue
+                  if char == "/" and next_char == "/":
+                      line_comment = True
+                      index += 2
+                      continue
+                  if char == "/" and next_char == "*":
+                      block_comment = True
+                      index += 2
+                      continue
+                  if char == "'" or char == '"':
+                      quote = char
+                      index += 1
+                      continue
+                  if char == "{":
+                      depth += 1
+                  elif char == "}":
+                      depth -= 1
+                      if depth == 0:
+                          return index
+                  index += 1
+              raise SystemExit("unbalanced JavaScript braces")
+
+          def function_span(text, name):
+              pattern = re.compile(r"(?m)^    function " + re.escape(name) + r"\(")
+              matches = list(pattern.finditer(text))
+              if len(matches) != 1:
+                  raise SystemExit("%s function count=%d" % (name, len(matches)))
+              start = matches[0].start()
+              open_index = text.find("{", matches[0].end())
+              if open_index < 0:
+                  raise SystemExit("missing function brace: " + name)
+              close_index = matching_brace(text, open_index)
+              end = close_index + 1
+              while end < len(text) and text[end] in " \t":
+                  end += 1
+              if end < len(text) and text[end] == "\n":
+                  end += 1
+              if end < len(text) and text[end] == "\n":
+                  end += 1
+              return start, end
+
+          def remove_function(text, name):
+              start, end = function_span(text, name)
+              return text[:start] + text[end:]
+
+          def replace_function(text, name, replacement):
+              start, end = function_span(text, name)
+              return text[:start] + replacement + text[end:]
+
+          def object_function_span(text, name):
+              pattern = re.compile(
+                  r"(?m)^        " + re.escape(name) + r": function \("
+              )
+              matches = list(pattern.finditer(text))
+              if len(matches) != 1:
+                  raise SystemExit("%s object function count=%d" %
+                                   (name, len(matches)))
+              start = matches[0].start()
+              open_index = text.find("{", matches[0].end())
+              if open_index < 0:
+                  raise SystemExit("missing object function brace: " + name)
+              close_index = matching_brace(text, open_index)
+              end = close_index + 1
+              while end < len(text) and text[end] in " \t":
+                  end += 1
+              if end >= len(text) or text[end] != ",":
+                  raise SystemExit("missing object function comma: " + name)
+              end += 1
+              while end < len(text) and text[end] in " \t":
+                  end += 1
+              if end < len(text) and text[end] == "\n":
+                  end += 1
+              if end < len(text) and text[end] == "\n":
+                  end += 1
+              return start, end
+
+          def remove_object_function(text, name):
+              start, end = object_function_span(text, name)
+              return text[:start] + text[end:]
 
           manifest_path = Path("module-manifest.json")
           app_path = Path("src/ch_15_app.js")
@@ -43,185 +154,90 @@ jobs:
 
           manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
           if manifest.get("moduleSetVersion") != "20260724.29":
-              raise SystemExit("unexpected module set: %r" %
-                               manifest.get("moduleSetVersion"))
+              raise SystemExit("unexpected module set")
           if not classifier_path.exists():
-              raise SystemExit("classifier file already missing")
+              raise SystemExit("classifier file missing before migration")
 
           app = app_path.read_text(encoding="utf-8")
           app = replace_once(
               app,
               '        "Log", "Database", "Classifier", "Repository",\n',
               '        "Log", "Database", "Repository",\n',
-              "app classifier order"
+              "app module order"
           )
           app = replace_once(
               app,
-              '        MODULE_VERSION: 11,\n',
-              '        MODULE_VERSION: 12,\n',
+              "        MODULE_VERSION: 11,\n",
+              "        MODULE_VERSION: 12,\n",
               "app module version"
           )
           app_path.write_text(app, encoding="utf-8")
 
           repository = repository_path.read_text(encoding="utf-8")
           repository = replace_once(
-              repository,
-              '        var types;\n',
-              '',
-              "repository unused types variable"
+              repository, "        var types;\n", "",
+              "repository unused type variable"
+          )
+          repository = remove_function(
+              repository, "listContentTypeOptions"
           )
           repository = replace_once(
               repository,
-              '''    function listContentTypeOptions() {
-                  requireReady();
-                  return [];
-              }
-
-          ''',
-              '',
-              "repository content type options"
+              "        listContentTypeOptions: listContentTypeOptions,\n",
+              "",
+              "repository type option export"
           )
           repository = replace_once(
               repository,
-              '        listContentTypeOptions: listContentTypeOptions,\n',
-              '',
-              "repository content type export"
-          )
-          repository = replace_once(
-              repository,
-              '        MODULE_VERSION: 9,\n',
-              '        MODULE_VERSION: 10,\n',
+              "        MODULE_VERSION: 9,\n",
+              "        MODULE_VERSION: 10,\n",
               "repository module version"
           )
+          if "listContentTypeOptions" in repository:
+              raise SystemExit("repository type option API remains")
           repository_path.write_text(repository, encoding="utf-8")
 
           source = filter_path.read_text(encoding="utf-8")
-
-          simple_removals = [
-              ('    var typeViews = {};\n', "filter type views"),
-              ('        typeToggleCount: 0,\n', "filter type toggle state"),
-              ('        typeWrapRowCount: 0,\n', "filter type row state"),
-              ('        contentTypeOptionCount: 0,\n',
-               "filter type option state"),
-              ('        typeChipCount: 0,\n', "filter type chip state"),
-              ('            contentTypes: [],\n',
-               "filter empty value content types"),
-              ('                types: copyList(value.contentTypes),\n',
-               "filter event criteria types"),
-              ('        if (kind === "type") { state.typeWrapRowCount = rowCount; }\n',
-               "filter type row update"),
-              ('        if (value.contentTypes && value.contentTypes.length > 0) {\n'
-               '            count += 1;\n'
-               '        }\n',
-               "filter active type count"),
-              ('        typeViews = {};\n', "filter render type view reset"),
-              ('        state.typeWrapRowCount = 0;\n',
-               "filter render type row reset"),
-              ('        state.contentTypeOptionCount = counts.types.length;\n',
-               "filter render type option count"),
-              ('        state.typeChipCount = Object.keys(typeViews).length;\n',
-               "filter render type chip count"),
-              ('                typeViews = {};\n',
-               "filter close type view reset"),
-              ('            contentTypeOptionCount:\n'
-               '                Number(state.contentTypeOptionCount),\n',
-               "filter panel type option diagnostic"),
-              ('            typeChipCount: Object.keys(typeViews).length,\n',
-               "filter panel type chip diagnostic"),
-              ('            typeWrapRowCount: Number(state.typeWrapRowCount),\n',
-               "filter panel type row diagnostic"),
-              ('            typeToggleCount: Number(state.typeToggleCount),\n',
-               "filter panel type toggle diagnostic"),
-              ('        state.typeToggleCount = 0;\n',
-               "filter reset type toggle"),
-              ('        state.typeWrapRowCount = 0;\n',
-               "filter reset type row"),
-              ('        state.contentTypeOptionCount = 0;\n',
-               "filter reset type options"),
-              ('        state.typeChipCount = 0;\n',
-               "filter reset type chips"),
-          ]
-          for old, label in simple_removals:
-              source = replace_once(source, old, '', label)
-
-          source = replace_once(
+          source = remove_function(source, "toggleType")
+          source = replace_function(
               source,
-              '''        if (patch.hasOwnProperty("contentTypes")) {
-                  value.contentTypes = normalizeList(patch.contentTypes);
-              }
-          ''',
-              '',
-              "filter set content types"
-          )
-
-          source = replace_once(
-              source,
-              '''    function toggleType(type) {
-                  markUiThread();
-                  state.typeToggleCount += 1;
-                  setValue({
-                      contentTypes: toggle(value.contentTypes, type, false)
-                  }, { origin: "ui_type" });
-                  buildPanelContent(false);
-                  return true;
-              }
-
-          ''',
-              '',
-              "filter toggle type"
-          )
-
-          source = replace_once(
-              source,
-              '''        if (kind === "type") {
-                  return String(option.content_type);
-              }
-          ''',
-              '',
-              "filter option key type branch"
-          )
-
-          source = replace_once(
-              source,
-              '''        if (kind === "type") {
-                  return typeLabel(option.content_type);
-              }
-          ''',
-              '',
-              "filter option label type branch"
-          )
-
-          source = replace_once(
-              source,
-              '''        if (kind === "type") {
-                  return value.contentTypes;
-              }
-          ''',
-              '',
-              "filter selected type list"
-          )
-
-          source = replace_once(
-              source,
-              '''    function clearKind(kind) {
+              "optionKey",
+              '''    function optionKey(option, kind) {
                   if (kind === "source") {
-                      state.sourceToggleCount += 1;
-                      setValue({ sourcePackages: [] }, {
-                          origin: "ui_source_all"
-                      });
-                  } else if (kind === "type") {
-                      state.typeToggleCount += 1;
-                      setValue({ contentTypes: [] }, {
-                          origin: "ui_type_all"
-                      });
-                  } else {
-                      state.tagToggleCount += 1;
-                      setValue({ tagIds: [] }, {
-                          origin: "ui_tag_all"
-                      });
+                      return String(option.source_package);
                   }
+                  return String(Number(option.id));
               }
-          ''',
+
+          '''
+          )
+          source = replace_function(
+              source,
+              "optionLabel",
+              '''    function optionLabel(option, kind) {
+                  if (kind === "source") {
+                      return sourceLabel(option);
+                  }
+                  return String(option.name);
+              }
+
+          '''
+          )
+          source = replace_function(
+              source,
+              "selectedList",
+              '''    function selectedList(kind) {
+                  if (kind === "source") {
+                      return value.sourcePackages;
+                  }
+                  return value.tagIds;
+              }
+
+          '''
+          )
+          source = replace_function(
+              source,
+              "clearKind",
               '''    function clearKind(kind) {
                   if (kind === "source") {
                       state.sourceToggleCount += 1;
@@ -235,40 +251,12 @@ jobs:
                       });
                   }
               }
-          ''',
-              "filter clear kind"
-          )
 
-          source = replace_once(
+          '''
+          )
+          source = replace_function(
               source,
-              '''    function optionClick(kind, key, chip) {
-                  if (kind === "source") {
-                      (function (target, view) {
-                          view.setOnClickListener(new JavaAdapter(
-                              View.OnClickListener, {
-                                  onClick: function () { toggleSource(target); }
-                              }));
-                          sourceViews[target] = view;
-                      }(key, chip));
-                  } else if (kind === "type") {
-                      (function (target, view) {
-                          view.setOnClickListener(new JavaAdapter(
-                              View.OnClickListener, {
-                                  onClick: function () { toggleType(target); }
-                              }));
-                          typeViews[target] = view;
-                      }(key, chip));
-                  } else {
-                      (function (target, view) {
-                          view.setOnClickListener(new JavaAdapter(
-                              View.OnClickListener, {
-                                  onClick: function () { toggleTag(Number(target)); }
-                              }));
-                          tagViews[target] = view;
-                      }(key, chip));
-                  }
-              }
-          ''',
+              "optionClick",
               '''    function optionClick(kind, key, chip) {
                   if (kind === "source") {
                       (function (target, view) {
@@ -282,104 +270,115 @@ jobs:
                       (function (target, view) {
                           view.setOnClickListener(new JavaAdapter(
                               View.OnClickListener, {
-                                  onClick: function () { toggleTag(Number(target)); }
+                                  onClick: function () {
+                                      toggleTag(Number(target));
+                                  }
                               }));
                           tagViews[target] = view;
                       }(key, chip));
                   }
               }
-          ''',
-              "filter option click"
+
+          '''
           )
+
+          source, count = re.subn(
+              r'''(?m)^        if \(patch\.hasOwnProperty\("contentTypes"\)\) \{
+                  value\.contentTypes = normalizeList\(patch\.contentTypes\);
+              \}
+          ''',
+              "",
+              source
+          )
+          if count != 1:
+              raise SystemExit("filter contentTypes setter count=%d" % count)
+
+          source, count = re.subn(
+              r'''(?m)^        if \(value\.contentTypes && value\.contentTypes\.length > 0\) \{
+                  count \+= 1;
+              \}
+          ''',
+              "",
+              source
+          )
+          if count != 1:
+              raise SystemExit("filter active contentTypes count=%d" % count)
+
+          for name in [
+              "setContentTypes",
+              "getContentTypeOptions",
+              "performTypeClick"
+          ]:
+              source = remove_object_function(source, name)
+
+          source, count = re.subn(
+              r'''(?m)^            contentTypes: \[\],
+          ''',
+              "",
+              source
+          )
+          if count != 2:
+              raise SystemExit("filter contentTypes value lines=%d" % count)
+
+          source, count = re.subn(
+              r'''(?m)^            contentTypeOptionCount:
+                  Number\(state\.contentTypeOptionCount\),
+          ''',
+              "",
+              source
+          )
+          if count != 1:
+              raise SystemExit("filter multiline type diagnostic=%d" % count)
+
+          retired_line = re.compile(
+              r'''(?m)^.*(?:\btypeViews\b|\btypeToggleCount\b|
+              \btypeWrapRowCount\b|\bcontentTypeOptionCount\b|
+              \btypeChipCount\b|types: copyList\(value\.contentTypes\)|
+              counts\.types).*\n''',
+              re.X
+          )
+          source = retired_line.sub("", source)
 
           source = replace_once(
               source,
-              '        return { sources: sources, types: [], tags: tags };\n',
-              '        return { sources: sources, tags: tags };\n',
+              "        return { sources: sources, types: [], tags: tags };\n",
+              "        return { sources: sources, tags: tags };\n",
               "filter option counts"
           )
-
           source = replace_once(
               source,
-              '''        setContentTypes: function (types, options) {
-                  return setValue({ contentTypes: types }, options);
-              },
-
-          ''',
-              '',
-              "filter public set content types"
-          )
-
-          source = replace_once(
-              source,
-              '''        getContentTypeOptions: function () {
-                  return ClipHub.Repository.listContentTypeOptions();
-              },
-
-          ''',
-              '',
-              "filter public get type options"
-          )
-
-          source = replace_once(
-              source,
-              '''        performTypeClick: function (type) {
-                  type = String(type || "");
-                  return requireMain(runOnMainSync(function () {
-                      return typeViews[type] ?
-                          typeViews[type].performClick() : false;
-                  }, 2500));
-              },
-
-          ''',
-              '',
-              "filter type click probe"
-          )
-
-          source = replace_once(
-              source,
-              '        MODULE_VERSION: 32,\n',
-              '        MODULE_VERSION: 33,\n',
+              "        MODULE_VERSION: 32,\n",
+              "        MODULE_VERSION: 33,\n",
               "filter module version"
           )
           source = replace_once(
               source,
               '        FILTER_IME_AVOIDANCE: "formal_v32",\n',
               '        FILTER_IME_AVOIDANCE: "formal_v33",\n',
-              "filter IME contract version"
+              "filter IME contract"
           )
 
           forbidden = [
-              "contentTypes",
-              "typeViews",
-              "typeToggleCount",
-              "typeWrapRowCount",
-              "contentTypeOptionCount",
-              "typeChipCount",
-              "setContentTypes",
-              "getContentTypeOptions",
-              "performTypeClick",
-              "listContentTypeOptions",
-              "toggleType",
-              'kind === "type"',
-              "counts.types",
-              "ui_type"
+              "contentTypes", "typeViews", "typeToggleCount",
+              "typeWrapRowCount", "contentTypeOptionCount",
+              "typeChipCount", "setContentTypes",
+              "getContentTypeOptions", "performTypeClick",
+              "listContentTypeOptions", "toggleType",
+              'kind === "type"', "counts.types", "ui_type"
           ]
           for token in forbidden:
               if token in source:
-                  raise SystemExit("filter retired token remains: " + token)
-
+                  raise SystemExit("retired filter token remains: " + token)
           filter_path.write_text(source, encoding="utf-8")
 
           modules = manifest.get("modules", [])
-          before_count = len(modules)
-          modules = [
+          filtered = [
               item for item in modules
               if item.get("path") != "src/ch_05_classifier.js"
           ]
-          if len(modules) != before_count - 1:
-              raise SystemExit("classifier manifest removal mismatch")
-          manifest["modules"] = modules
+          if len(filtered) != len(modules) - 1:
+              raise SystemExit("classifier manifest entry mismatch")
+          manifest["modules"] = filtered
           manifest["moduleSetVersion"] = "20260724.30"
 
           for path in [
@@ -390,7 +389,7 @@ jobs:
               blob = subprocess.check_output(
                   ["git", "hash-object", path], text=True
               ).strip()
-              matches = [item for item in modules if item.get("path") == path]
+              matches = [item for item in filtered if item.get("path") == path]
               if len(matches) != 1:
                   raise SystemExit("manifest entry mismatch: " + path)
               matches[0]["sha"] = blob
@@ -406,9 +405,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node --check src/ch_06_repository.js
-          node --check src/ch_11_filter.js
-          node --check src/ch_15_app.js
           for file in src/*.js; do
             node --check "$file"
           done
@@ -437,12 +433,11 @@ jobs:
           if len(manifest["modules"]) != 14:
               raise SystemExit("unexpected module count")
           for item in manifest["modules"]:
-              path = item["path"]
               actual = subprocess.check_output(
-                  ["git", "hash-object", path], text=True
+                  ["git", "hash-object", item["path"]], text=True
               ).strip()
               if actual != item["sha"]:
-                  raise SystemExit("blob mismatch: " + path)
+                  raise SystemExit("blob mismatch: " + item["path"])
           PY
 
       - name: Commit cleanup
@@ -456,9 +451,6 @@ jobs:
             src/ch_06_repository.js \
             src/ch_11_filter.js \
             src/ch_15_app.js
-          if git diff --cached --quiet; then
-            echo "No changes to commit"
-            exit 0
-          fi
+          git diff --cached --quiet && exit 0
           git commit -m "清理失效的内容类型筛选链路"
           git push origin HEAD:agent/unify-window-geometry
