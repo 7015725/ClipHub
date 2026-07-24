@@ -53,6 +53,35 @@ jobs:
           set -o pipefail
           python3 scripts/temporary_finalize_filter_module.py 2>&1 | tee formalization.log
 
+      - name: Remove final advanced search residue
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          import subprocess
+
+          source = Path('src/ch_11_filter.js')
+          manifest_path = Path('module-manifest.json')
+          text = source.read_text(encoding='utf-8')
+          residue = '        advancedKeywordInput = null;\n'
+          if text.count(residue) != 1:
+              raise SystemExit('advanced search residue count mismatch: %d' %
+                  text.count(residue))
+          source.write_text(text.replace(residue, '', 1), encoding='utf-8')
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          blob = subprocess.check_output(
+              ['git', 'hash-object', str(source)], text=True).strip()
+          for item in manifest.get('modules', []):
+              if item.get('path') == 'src/ch_11_filter.js':
+                  item['sha'] = blob
+                  break
+          else:
+              raise SystemExit('filter manifest entry missing')
+          manifest_path.write_text(
+              json.dumps(manifest, ensure_ascii=False, indent=2) + '\n',
+              encoding='utf-8')
+          PY
+
       - name: Validate direct module
         run: |
           node --check src/ch_11_filter.js
