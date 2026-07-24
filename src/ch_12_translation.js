@@ -1101,7 +1101,8 @@
     var translationReplaceView = null;
     var translationSaveView = null;
     var translationRetryView = null;
-    var translationCloseView = null;
+    var translationHeaderCloseView = null;
+    var translationFooterCloseView = null;
     var translationGeneration = 0;
     var translationState = {
         attached: false,
@@ -1523,10 +1524,6 @@
             label: "ClipHub 翻译", sensitive: false
         });
         if (result && result.ok === true) {
-            if (ClipHub.Window && translationCopyView !== null &&
-                    typeof ClipHub.Window.performHaptic === "function") {
-                ClipHub.Window.performHaptic(translationCopyView, "confirm");
-            }
             translationState.copyCount += 1;
             translationSetRunning(false, "译文已复制");
             return true;
@@ -1623,17 +1620,18 @@
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.addView(title, new LinearLayout.LayoutParams(
             0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-        translationCloseView = translationText("×", 22, colors.icon, true);
-        translationCloseView.setGravity(Gravity.CENTER);
-        translationCloseView.setBackground(translationRounded(
+        translationHeaderCloseView = translationText(
+            "×", 22, colors.icon, true);
+        translationHeaderCloseView.setGravity(Gravity.CENTER);
+        translationHeaderCloseView.setBackground(translationRounded(
             colors.surfaceMuted, null, 18));
-        translationCloseView.setClickable(true);
-        translationCloseView.setFocusable(true);
-        translationCloseView.setOnClickListener(new JavaAdapter(
+        translationHeaderCloseView.setClickable(true);
+        translationHeaderCloseView.setFocusable(true);
+        translationHeaderCloseView.setOnClickListener(new JavaAdapter(
             View.OnClickListener, { onClick: function () {
                 closeTranslationPanel("button");
             }}));
-        header.addView(translationCloseView,
+        header.addView(translationHeaderCloseView,
             new LinearLayout.LayoutParams(dp(38), dp(38)));
         params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(42));
@@ -1704,12 +1702,14 @@
             LinearLayout.LayoutParams.MATCH_PARENT, dp(40)));
 
         actionRow2.setOrientation(LinearLayout.HORIZONTAL);
-        translationRetryView = translationButton("重新翻译", colors, false, false);
-        translationCloseView = translationButton("关闭", colors, false, false);
+        translationRetryView = translationButton(
+            "重新翻译", colors, false, false);
+        translationFooterCloseView = translationButton(
+            "关闭", colors, false, false);
         params = new LinearLayout.LayoutParams(0, dp(38), 1);
         params.rightMargin = dp(6);
         actionRow2.addView(translationRetryView, params);
-        actionRow2.addView(translationCloseView,
+        actionRow2.addView(translationFooterCloseView,
             new LinearLayout.LayoutParams(0, dp(38), 1));
         params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(38));
@@ -1724,7 +1724,7 @@
             View.OnClickListener, { onClick: saveTranslationAsNew }));
         translationRetryView.setOnClickListener(new JavaAdapter(
             View.OnClickListener, { onClick: beginTranslation }));
-        translationCloseView.setOnClickListener(new JavaAdapter(
+        translationFooterCloseView.setOnClickListener(new JavaAdapter(
             View.OnClickListener, { onClick: function () {
                 closeTranslationPanel("button");
             }}));
@@ -1852,7 +1852,8 @@
                 translationReplaceView = null;
                 translationSaveView = null;
                 translationRetryView = null;
-                translationCloseView = null;
+                translationHeaderCloseView = null;
+                translationFooterCloseView = null;
             }
         }, 3000);
     }
@@ -1894,7 +1895,7 @@
     }
     ClipHub.Translation = {
         MODULE_NAME: "ch_12_translation",
-        MODULE_VERSION: 9,
+        MODULE_VERSION: 10,
         init: function (context) {
             translationConfig = { enabled: true, provider: "settings" };
             navigationInit(context || {});

@@ -315,9 +315,6 @@
     function showUi() {
         var result;
         closeUi();
-        if (ClipHub.List && typeof ClipHub.List.hide === "function") {
-            ClipHub.List.hide(false);
-        }
         if (!ClipHub.Filter) {
             throw new Error("ClipHub filter root is unavailable");
         }
@@ -495,7 +492,7 @@
 
     ClipHub.App = {
         MODULE_NAME: "ch_15_app",
-        MODULE_VERSION: 10,
+        MODULE_VERSION: 11,
         CONTROL_ACTION_BASE: CONTROL_ACTION_BASE,
         CONTROL_ENDPOINT_SCHEMA: CONTROL_ENDPOINT_SCHEMA,
         CONTROL_COMMANDS: CONTROL_COMMANDS,

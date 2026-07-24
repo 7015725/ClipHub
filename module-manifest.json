@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260724.28",
+  "moduleSetVersion": "20260724.29",
   "entryMinVersion": 5,
   "sourceRef": "agent/unify-window-geometry",
   "modules": [
@@ -22,7 +22,7 @@
     {
       "name": "ch_04_clipboard.js",
       "path": "src/ch_04_clipboard.js",
-      "sha": "c31ea785f258c40190d56a3ea7ff5980b00218a7"
+      "sha": "89598ad09c96051c68bb6add37eff78a9a113a1b"
     },
     {
       "name": "ch_05_classifier.js",
@@ -62,7 +62,7 @@
     {
       "name": "ch_12_translation.js",
       "path": "src/ch_12_translation.js",
-      "sha": "99b74ff4853fc326b00aad9ab47c7f259cc64f92"
+      "sha": "47679c4dff27db138240ef50028801921ec50abd"
     },
     {
       "name": "ch_13_settings.js",
@@ -77,7 +77,7 @@
     {
       "name": "ch_15_app.js",
       "path": "src/ch_15_app.js",
-      "sha": "4b2585c331686729f641f0b91e5bb06e52371b1c"
+      "sha": "d9853235c6fa20f8023e0c2950dcde7032353726"
     }
   ]
 }

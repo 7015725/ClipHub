@@ -279,7 +279,7 @@
                 sourceLabel: null,
                 sourceUid: null,
                 sourceConfidence: 0,
-                sourceAvailable: true,
+                sourceAvailable: false,
                 sourceError: String(error)
             };
         }
@@ -768,7 +768,7 @@
 
     ClipHub.Clipboard = {
         MODULE_NAME: "ch_04_clipboard",
-        MODULE_VERSION: 4,
+        MODULE_VERSION: 5,
         SENSITIVE_KEY: SENSITIVE_KEY,
         init: function (context) {
             androidContext = context && context.androidContext
