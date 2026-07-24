@@ -1,0 +1,110 @@
+name: Temporary compact header patch
+
+on:
+  push:
+    branches:
+      - agent/unify-window-geometry
+    paths:
+      - .github/workflows/temporary_compact_header_patch.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cliphub-compact-header-patch
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/unify-window-geometry
+          fetch-depth: 0
+
+      - name: Apply compact adaptive header patch
+        run: python3 scripts/temporary_compact_header_patch.py
+
+      - name: Check JavaScript syntax
+        run: node --check src/ch_11_filter.js
+
+      - name: Check Rhino ES5 and compact header markers
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          text = Path('src/ch_11_filter.js').read_text(encoding='utf-8')
+          forbidden = {
+              r'\b(?:let|const)\b': 'let/const',
+              r'=>': 'arrow function',
+              r'`': 'template literal',
+              r'\bclass\s+[A-Za-z_$]': 'class syntax',
+              r'\?\.': 'optional chaining',
+              r'\?\?': 'nullish coalescing',
+          }
+          for pattern, label in forbidden.items():
+              if re.search(pattern, text):
+                  raise SystemExit('Rhino ES5 violation: ' + label)
+
+          required = [
+              'function headerMetrics()',
+              'function setSearchExpanded(expanded, requestKeyboard)',
+              'reference_search_v12_compact_header',
+              'MODULE_VERSION: 27',
+              'state.lastBackLayer = "search_input"',
+              'historyContainerView.setVisibility',
+          ]
+          for marker in required:
+              if marker not in text:
+                  raise SystemExit('missing compact header marker: ' + marker)
+
+          legacy = [
+              'var logo = makeText("▤"',
+              'compact ? "筛选" : "☷  筛选"',
+              'var controlHeightDp = compact ? 40 : 44',
+          ]
+          for marker in legacy:
+              if marker in text:
+                  raise SystemExit('legacy header marker remains: ' + marker)
+          PY
+
+      - name: Validate manifest blob and module version
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          import subprocess
+
+          manifest = json.loads(Path('module-manifest.json').read_text(encoding='utf-8'))
+          if manifest.get('moduleSetVersion') != '20260724.19':
+              raise SystemExit('unexpected moduleSetVersion')
+          expected = subprocess.check_output(
+              ['git', 'hash-object', 'src/ch_11_filter.js'], text=True
+          ).strip()
+          actual = None
+          for item in manifest.get('modules', []):
+              if item.get('path') == 'src/ch_11_filter.js':
+                  actual = item.get('sha')
+                  break
+          if actual != expected:
+              raise SystemExit('manifest blob mismatch: %r != %r' % (actual, expected))
+          PY
+
+      - name: Remove temporary patch files
+        run: |
+          rm -f scripts/temporary_compact_header_patch.py
+          rm -f .github/workflows/temporary_compact_header_patch.yml
+
+      - name: Commit implementation
+        run: |
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/ch_11_filter.js module-manifest.json \
+            scripts/temporary_compact_header_patch.py \
+            .github/workflows/temporary_compact_header_patch.yml
+          git commit -m "refactor: compact primary header with adaptive controls"
+          git push origin HEAD:agent/unify-window-geometry
