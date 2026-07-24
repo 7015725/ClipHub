@@ -449,7 +449,7 @@
                 immHeight >= thresholdPx ? immHeight : 0);
             output.source = "visible_display_frame";
             output.supported = true;
-        } else if (!rootAvailable && !frameAvailable &&
+        } else if (!rootAvailable &&
                 immHeight >= thresholdPx) {
             output.visible = true;
             output.bottomPx = immHeight;
@@ -2892,7 +2892,7 @@
 
     ClipHub.Settings = {
         MODULE_NAME: "ch_13_settings",
-        MODULE_VERSION: 18,
+        MODULE_VERSION: 19,
         DEFAULTS: defaultsCopy(),
         init: function (context) {
             if (!ClipHub.Database || !ClipHub.Database.isOpen()) {
