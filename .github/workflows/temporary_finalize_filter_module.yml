@@ -39,7 +39,13 @@ jobs:
           new = "for forbidden in [\n    'buildAdvancedKeywordInput',"
           if text.count(old) != 1:
               raise SystemExit('temporary builder forbidden-list site mismatch')
-          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          text = text.replace(old, new, 1)
+          old_loader = "    'compactCache',\n    'stableCache',\n    '.pending',\n    '.disabled',\n    '.failure.txt'"
+          new_loader = "    'compactCache',\n    'stableCache',\n    'pendingFile',\n    'disabledFile',\n    'failureFile'"
+          if text.count(old_loader) != 1:
+              raise SystemExit('temporary builder loader-list site mismatch')
+          path.write_text(text.replace(old_loader, new_loader, 1),
+              encoding='utf-8')
           PY
 
       - name: Build direct filter module
@@ -76,9 +82,9 @@ jobs:
               'eval(String(source))',
               'compactCache',
               'stableCache',
-              '.pending',
-              '.disabled',
-              '.failure.txt'
+              'pendingFile',
+              'disabledFile',
+              'failureFile'
           ]
           for marker in forbidden:
               if marker in text:
