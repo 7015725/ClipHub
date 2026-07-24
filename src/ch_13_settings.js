@@ -54,6 +54,7 @@
     var focusedInput = null;
     var focusedInputName = null;
     var focusedVisibilityScheduled = false;
+    var imeRestoreLayout = null;
     var density = 1;
     var panelRoot = null;
     var panelWindowRoot = null;
@@ -153,6 +154,9 @@
         keyboardAvoidanceApplied: false,
         keyboardAvoidanceApplyCount: 0,
         keyboardAvoidanceRestoreCount: 0,
+        imeRestoreSnapshotCount: 0,
+        imeRestoreFallbackCount: 0,
+        imeStaleSignalIgnoredCount: 0,
         windowLayoutUpdateCount: 0,
         imePollCount: 0,
         imePollFastCount: 0,
@@ -366,8 +370,19 @@
         return posted === true;
     }
 
+    function imeVisibilityThresholdPx(metrics) {
+        var heightPx = metrics === null || metrics === undefined ? 0 :
+            Number(metrics.heightPixels || 0);
+        var lowerPx = dp(72);
+        var upperPx = dp(180);
+        var proportionalPx = heightPx > 0 ? heightPx * 0.12 : dp(120);
+        return Math.max(lowerPx,
+            Math.min(upperPx, Math.round(proportionalPx)));
+    }
+
     function readSettingsImeState() {
         var metrics = displayMetrics();
+        var thresholdPx = imeVisibilityThresholdPx(metrics);
         var output = {
             visible: false,
             bottomPx: 0,
@@ -382,9 +397,14 @@
         var systemMask;
         var imeInsets;
         var systemInsets;
-        var immHeight;
+        var rootAvailable = false;
+        var rootVisible = false;
+        var rootBottomPx = 0;
+        var immHeight = 0;
         var frame;
-        var frameGap;
+        var frameGap = 0;
+        var frameAvailable = false;
+        var frameVisible = false;
         if (panelRoot === null) { return output; }
         if (Build.VERSION.SDK_INT >= 30) {
             try {
@@ -394,83 +414,111 @@
                     systemMask = WindowInsets.Type.systemBars();
                     imeInsets = rootInsets.getInsets(imeMask);
                     systemInsets = rootInsets.getInsets(systemMask);
-                    output.bottomPx = Math.max(0,
-                        Number(imeInsets.bottom));
+                    rootAvailable = true;
+                    rootBottomPx = Math.max(0, Number(imeInsets.bottom));
+                    rootVisible = rootInsets.isVisible(imeMask) === true ||
+                        rootBottomPx >= thresholdPx;
                     output.topInsetPx = Math.max(output.topInsetPx,
                         Number(systemInsets.top));
-                    output.visible = rootInsets.isVisible(imeMask) ||
-                        output.bottomPx >= dp(120);
-                    output.source = "root_window_insets";
                     output.supported = true;
                 }
             } catch (ignoredInsets) {}
         }
-        immHeight = inputMethodVisibleHeightPx();
-        if (immHeight > output.bottomPx) {
-            output.bottomPx = immHeight;
-            output.visible = immHeight >= dp(120);
-            output.source = "input_method_visible_height";
-            output.supported = true;
-        }
         try {
             frame = new Rect();
             panelRoot.getWindowVisibleDisplayFrame(frame);
+            frameAvailable = true;
             output.topInsetPx = Math.max(output.topInsetPx,
                 Number(frame.top));
             frameGap = Math.max(0,
                 Number(metrics.heightPixels) - Number(frame.bottom));
-            if (frameGap > output.bottomPx && frameGap >= dp(120)) {
-                output.bottomPx = frameGap;
-                output.visible = true;
-                output.source = "visible_display_frame";
+            frameVisible = frameGap >= thresholdPx;
+        } catch (ignoredFrame) {}
+        immHeight = inputMethodVisibleHeightPx();
+
+        if (rootVisible) {
+            output.visible = true;
+            output.bottomPx = Math.max(rootBottomPx,
+                frameVisible ? frameGap : 0,
+                immHeight >= thresholdPx ? immHeight : 0);
+            output.source = "root_window_insets";
+            output.supported = true;
+        } else if (frameVisible) {
+            output.visible = true;
+            output.bottomPx = Math.max(frameGap,
+                immHeight >= thresholdPx ? immHeight : 0);
+            output.source = "visible_display_frame";
+            output.supported = true;
+        } else if (!rootAvailable && !frameAvailable &&
+                immHeight >= thresholdPx) {
+            output.visible = true;
+            output.bottomPx = immHeight;
+            output.source = "input_method_visible_height";
+            output.supported = true;
+        } else {
+            output.visible = false;
+            output.bottomPx = 0;
+            if (rootAvailable) {
+                output.source = "root_window_insets_hidden";
+                output.supported = true;
+            } else if (frameAvailable) {
+                output.source = "visible_display_frame_hidden";
                 output.supported = true;
             }
-        } catch (ignoredFrame) {}
-        if (!output.visible) { output.bottomPx = 0; }
+            if (immHeight >= thresholdPx) {
+                uiState.imeStaleSignalIgnoredCount += 1;
+            }
+        }
         output.visibleBottomPx = Number(metrics.heightPixels) -
             Number(output.bottomPx);
         return output;
     }
-
     function applySettingsImeLayout(ime) {
         var metrics;
+        var geometry = null;
+        var restore = imeRestoreLayout;
         var normalHeightPx;
+        var targetWidthPx;
         var targetHeightPx;
         var targetTopPx;
         var targetGravity;
+        var targetX;
         var targetY;
         var keyboardTopPx;
         var topSafePx;
         var availablePx;
+        var thresholdPx;
         var changed = false;
         var wasApplied;
+        var targetRoot;
         if (panelRoot === null || panelParams === null) { return false; }
-        if ((!ime.visible || Number(ime.bottomPx) < dp(120)) &&
-                panelWindowRoot !== null && ClipHub.Window &&
-                typeof ClipHub.Window.refreshWindow === "function") {
-            uiState.keyboardAvoidanceApplied = false;
-            uiState.panelGravity = "shared";
-            uiState.panelBottomMarginDp = 0;
-            ClipHub.Window.refreshWindow(panelWindowRoot,
-                "settings_ime_restore");
-            uiState.currentPanelHeightDp = Number(
-                uiState.normalPanelHeightDp || uiState.panelHeightDp || 0);
-            return true;
-        }
         metrics = displayMetrics();
-        normalHeightPx = dp(Math.max(300,
-            Number(uiState.normalPanelHeightDp || uiState.panelHeightDp || 590)));
+        thresholdPx = imeVisibilityThresholdPx(metrics);
         wasApplied = uiState.keyboardAvoidanceApplied === true;
-        if (ime.visible && Number(ime.bottomPx) >= dp(120)) {
+        if (ime.visible && Number(ime.bottomPx) >= thresholdPx) {
+            if (!wasApplied || imeRestoreLayout === null) {
+                imeRestoreLayout = {
+                    width: Number(panelParams.width),
+                    height: Number(panelParams.height),
+                    gravity: Number(panelParams.gravity),
+                    x: Number(panelParams.x),
+                    y: Number(panelParams.y)
+                };
+                restore = imeRestoreLayout;
+                uiState.imeRestoreSnapshotCount += 1;
+            }
+            normalHeightPx = Math.max(dp(1), Number(restore.height));
             keyboardTopPx = Math.max(0,
                 Number(metrics.heightPixels) - Number(ime.bottomPx));
             topSafePx = Math.max(dp(6), Number(ime.topInsetPx));
             availablePx = Math.max(dp(280),
                 keyboardTopPx - topSafePx - dp(6));
+            targetWidthPx = Number(restore.width);
             targetHeightPx = Math.min(normalHeightPx, availablePx);
             targetTopPx = Math.max(topSafePx,
                 keyboardTopPx - dp(6) - targetHeightPx);
             targetGravity = Gravity.TOP | Gravity.START;
+            targetX = Number(restore.x);
             targetY = targetTopPx;
             uiState.availableAboveImeDp = pxToDp(availablePx);
             uiState.keyboardAvoidanceApplied = true;
@@ -478,16 +526,47 @@
             uiState.panelGravity = "ime_top";
             uiState.panelBottomMarginDp = 6;
         } else {
-            targetHeightPx = normalHeightPx;
-            targetGravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
-            targetY = dp(10);
-            targetTopPx = Math.max(0,
-                Number(metrics.heightPixels) - targetHeightPx - targetY);
+            restore = imeRestoreLayout;
+            if (restore === null && wasApplied && ClipHub.Window &&
+                    typeof ClipHub.Window.computeGeometry === "function") {
+                try {
+                    geometry = ClipHub.Window.computeGeometry("settings", {
+                        useSaved: true
+                    });
+                    restore = {
+                        width: Number(geometry.width),
+                        height: Number(geometry.height),
+                        gravity: Number(Gravity.TOP | Gravity.START),
+                        x: Number(geometry.x || 0),
+                        y: Number(geometry.y || 0)
+                    };
+                    uiState.imeRestoreFallbackCount += 1;
+                } catch (ignoredGeometry) { restore = null; }
+            }
+            if (restore === null) {
+                restore = {
+                    width: Number(panelParams.width),
+                    height: Number(panelParams.height),
+                    gravity: Number(panelParams.gravity),
+                    x: Number(panelParams.x),
+                    y: Number(panelParams.y)
+                };
+            }
+            targetWidthPx = Number(restore.width);
+            targetHeightPx = Number(restore.height);
+            targetGravity = Number(restore.gravity);
+            targetX = Number(restore.x);
+            targetY = Number(restore.y);
+            targetTopPx = targetY;
             uiState.availableAboveImeDp = pxToDp(Number(metrics.heightPixels));
             uiState.keyboardAvoidanceApplied = false;
             if (wasApplied) { uiState.keyboardAvoidanceRestoreCount += 1; }
-            uiState.panelGravity = "bottom";
-            uiState.panelBottomMarginDp = 10;
+            uiState.panelGravity = "shared";
+            uiState.panelBottomMarginDp = 0;
+        }
+        if (Number(panelParams.width) !== Number(targetWidthPx)) {
+            panelParams.width = targetWidthPx;
+            changed = true;
         }
         if (Number(panelParams.height) !== Number(targetHeightPx)) {
             panelParams.height = targetHeightPx;
@@ -497,21 +576,27 @@
             panelParams.gravity = targetGravity;
             changed = true;
         }
+        if (Number(panelParams.x) !== Number(targetX)) {
+            panelParams.x = targetX;
+            changed = true;
+        }
         if (Number(panelParams.y) !== Number(targetY)) {
             panelParams.y = targetY;
             changed = true;
         }
         uiState.currentPanelHeightDp = pxToDp(targetHeightPx);
         uiState.currentPanelTopDp = pxToDp(targetTopPx);
-        if (changed && uiState.attached && panelRoot.isAttachedToWindow()) {
-            windowManager.updateViewLayout(
-                panelWindowRoot !== null ? panelWindowRoot : panelRoot,
-                panelParams);
+        targetRoot = panelWindowRoot !== null ? panelWindowRoot : panelRoot;
+        if (changed && uiState.attached && targetRoot !== null &&
+                targetRoot.isAttachedToWindow()) {
+            windowManager.updateViewLayout(targetRoot, panelParams);
             uiState.windowLayoutUpdateCount += 1;
+        }
+        if (!ime.visible || Number(ime.bottomPx) < thresholdPx) {
+            imeRestoreLayout = null;
         }
         return changed;
     }
-
     function resetImeAnchorSpacer() {
         var params;
         if (imeAnchorSpacer === null) { return false; }
@@ -2479,6 +2564,7 @@
             uiState.currentPanelTopDp = pxToDp(Number(size.y || 0));
             uiState.panelGravity = "shared";
             uiState.panelBottomMarginDp = 0;
+            imeRestoreLayout = null;
             uiState.lastError = null;
             buildPage();
             startSettingsImeMonitoring();
@@ -2529,6 +2615,7 @@
                 focusedInput = null;
                 focusedInputName = null;
                 focusedVisibilityScheduled = false;
+                imeRestoreLayout = null;
                 translationStatusView = null;
                 engineBaiduView = null;
                 engineYoudaoView = null;
@@ -2748,6 +2835,12 @@
                 Number(uiState.keyboardAvoidanceApplyCount),
             keyboardAvoidanceRestoreCount:
                 Number(uiState.keyboardAvoidanceRestoreCount),
+            imeRestoreSnapshotCount:
+                Number(uiState.imeRestoreSnapshotCount),
+            imeRestoreFallbackCount:
+                Number(uiState.imeRestoreFallbackCount),
+            imeStaleSignalIgnoredCount:
+                Number(uiState.imeStaleSignalIgnoredCount),
             windowLayoutUpdateCount:
                 Number(uiState.windowLayoutUpdateCount),
             imePollCount: Number(uiState.imePollCount),
@@ -2799,7 +2892,7 @@
 
     ClipHub.Settings = {
         MODULE_NAME: "ch_13_settings",
-        MODULE_VERSION: 17,
+        MODULE_VERSION: 18,
         DEFAULTS: defaultsCopy(),
         init: function (context) {
             if (!ClipHub.Database || !ClipHub.Database.isOpen()) {
