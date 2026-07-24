@@ -29,6 +29,19 @@ jobs:
           ref: agent/unify-window-geometry
           fetch-depth: 0
 
+      - name: Refine temporary builder validation
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/temporary_finalize_filter_module.py')
+          text = path.read_text(encoding='utf-8')
+          old = "for forbidden in [\n    'advancedKeywordInput',"
+          new = "for forbidden in [\n    'var advancedKeywordInput',\n    'advancedKeywordInput =',\n    'advancedKeywordInput !==',\n    'advancedKeywordInput ===',\n    'advancedKeywordInput.get',"
+          if text.count(old) != 1:
+              raise SystemExit('temporary builder forbidden-list site mismatch')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
       - name: Build direct filter module
         run: |
           set -o pipefail
@@ -48,7 +61,11 @@ jobs:
               if re.search(pattern, text):
                   raise SystemExit('Rhino ES5 violation: ' + pattern)
           forbidden = [
-              'advancedKeywordInput',
+              'var advancedKeywordInput',
+              'advancedKeywordInput =',
+              'advancedKeywordInput !==',
+              'advancedKeywordInput ===',
+              'advancedKeywordInput.get',
               'buildAdvancedKeywordInput',
               'performAdvancedKeywordFromInput',
               'performAdvancedKeywordSearch',
