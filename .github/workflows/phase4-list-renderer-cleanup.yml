@@ -75,4 +75,4 @@ jobs:
           git commit -m '清理 List 旧首页渲染残留'
           git push origin HEAD:agent/unify-window-geometry
 
-# trigger: phase4-v1
+# trigger: phase4-v2
