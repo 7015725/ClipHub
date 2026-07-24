@@ -1652,6 +1652,28 @@
         }
     }
 
+    function adaptiveSourceGridMetrics(itemCount) {
+        var availableWidth = availableResultWidthPx();
+        var fontScale = resourceFontScale();
+        var outerInset = Math.max(touchSlop * 2,
+            Math.round(availableWidth * 0.055));
+        var usableWidth = Math.max(touchSlop * 12,
+            availableWidth - outerInset);
+        var gapPx = Math.max(1, Math.round(Math.max(touchSlop,
+            usableWidth * 0.018) * 0.48));
+        var minimumCellWidth = Math.max(touchSlop * 7,
+            Math.round(usableWidth * (0.21 +
+                Math.max(0, fontScale - 1) * 0.05)));
+        var maxColumns = Math.floor((usableWidth + gapPx) /
+            Math.max(1, minimumCellWidth + gapPx));
+        maxColumns = Math.max(1, Math.min(4,
+            Math.min(Math.max(1, Number(itemCount || 1)), maxColumns)));
+        return {
+            gapPx: gapPx,
+            maxColumns: maxColumns
+        };
+    }
+
     function makeChipRow(options, kind, colors) {
         var root = new LinearLayout(appContext);
         var row = null;
@@ -1667,6 +1689,11 @@
         var chip;
         var width;
         var params;
+        var sourceMetrics = null;
+        var sourceRowTarget = 0;
+        var sourceRowItems = 0;
+        var sourceRemaining = 0;
+        var sourceRowsRemaining = 0;
         root.setOrientation(LinearLayout.VERTICAL);
         state.horizontalFadeEnabled = false;
         for (index = 0; index < options.length && index < 30;
@@ -1677,6 +1704,12 @@
                 key: optionKey(option, kind),
                 label: optionLabel(option, kind)
             });
+        }
+        if (kind === "source") {
+            sourceMetrics = adaptiveSourceGridMetrics(items.length);
+            sourceRemaining = items.length;
+            sourceRowsRemaining = Math.max(1, Math.ceil(
+                items.length / sourceMetrics.maxColumns));
         }
         for (index = 0; index < items.length; index += 1) {
             key = items[index].key;
@@ -1699,6 +1732,37 @@
                     }));
             } else {
                 optionClick(kind, key, chip);
+            }
+            if (kind === "source") {
+                if (row === null || sourceRowItems >= sourceRowTarget) {
+                    sourceRowTarget = Math.max(1, Math.ceil(
+                        sourceRemaining / sourceRowsRemaining));
+                    row = new LinearLayout(appContext);
+                    row.setOrientation(LinearLayout.HORIZONTAL);
+                    row.setGravity(Gravity.CENTER_VERTICAL);
+                    params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                    if (rowCount > 0) {
+                        params.topMargin = sourceMetrics.gapPx;
+                    }
+                    root.addView(row, params);
+                    sourceRowItems = 0;
+                    rowCount += 1;
+                }
+                params = new LinearLayout.LayoutParams(0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+                if (sourceRowItems > 0) {
+                    params.leftMargin = sourceMetrics.gapPx;
+                }
+                row.addView(chip, params);
+                sourceRowItems += 1;
+                sourceRemaining -= 1;
+                if (sourceRowItems >= sourceRowTarget) {
+                    sourceRowsRemaining = Math.max(0,
+                        sourceRowsRemaining - 1);
+                }
+                continue;
             }
             width = chipWidthDp(label);
             if (row === null ||
@@ -4002,13 +4066,13 @@
         state.resultCardCount = 0;
         state.resultSourceIconCount = 0;
         state.advancedDrawerVisible = false;
-        state.searchPageStyle = "reference_search_v10";
+        state.searchPageStyle = "reference_search_v11";
         state.lastError = null;
     }
 
     ClipHub.Filter = {
         MODULE_NAME: "ch_11_filter",
-        MODULE_VERSION: 25,
+        MODULE_VERSION: 26,
 
         init: function (context) {
             androidContext = context && context.androidContext ?
