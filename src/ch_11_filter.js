@@ -209,7 +209,7 @@
         var newProbe =
             "            advancedButtonText: advancedView !== null ?\n" +
             "                (activeAdvancedFilterCount() > 0 ?\n" +
-            "                    \"筛选(\" + String(activeAdvancedFilterCount()) + \"\" :\n" +
+            "                    \"筛选(\" + String(activeAdvancedFilterCount()) + \")\" :\n" +
             "                    \"筛选\") : \"\",\n";
         var oldVersion = "        MODULE_VERSION: 28,\n";
         var newVersion = "        MODULE_VERSION: 30,\n";
