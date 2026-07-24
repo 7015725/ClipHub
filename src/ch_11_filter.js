@@ -37,6 +37,7 @@
     var HISTORY_LIMIT = 6;
     var RESULT_PAGE_SIZE = 20;
     var SELECTION_ENABLED = false;
+    var DELETE_UNDO_TIMEOUT_MS = 5000;
 
     var androidContext = null;
     var appContext = null;
@@ -93,6 +94,12 @@
     var resultScrollView = null;
     var loadMoreView = null;
     var activeSwipeCard = null;
+    var resultBodyFrame = null;
+    var resultActionViews = [];
+    var deleteUndoView = null;
+    var pendingDeleteUndo = null;
+    var deleteUndoGeneration = 0;
+    var adaptiveRenderGeneration = 0;
 
     var state = {
         applyCount: 0,
@@ -173,6 +180,20 @@
         addActionCount: 0,
         deleteActionCount: 0,
         detailActionCount: 0,
+        cardActionButtonCount: 0,
+        cardEditActionCount: 0,
+        cardTranslateActionCount: 0,
+        cardCopyActionCount: 0,
+        cardDeleteActionCount: 0,
+        cardActionGridWidthDp: 0,
+        cardActionCellHeightDp: 0,
+        cardActionFontScale: 1,
+        deleteUndoVisible: false,
+        deleteUndoItemId: null,
+        deleteUndoShowCount: 0,
+        deleteUndoActionCount: 0,
+        deleteUndoTimeoutCount: 0,
+        adaptiveLayoutRefreshCount: 0,
         swipeEnabled: true,
         swipeStartCount: 0,
         swipeMoveCount: 0,
@@ -221,6 +242,311 @@
 
     function pxToDp(valuePx) {
         return Math.round(Number(valuePx) / density);
+    }
+
+    function clampNumber(value, minimum, maximum) {
+        var number = Number(value);
+        var low = Number(minimum);
+        var high = Number(maximum);
+        if (high < low) { high = low; }
+        return Math.max(low, Math.min(high, number));
+    }
+
+    function resourceFontScale() {
+        var scale = 1;
+        try {
+            scale = Number(appContext.getResources()
+                .getConfiguration().fontScale || 1);
+        } catch (ignoredFontScale) {}
+        return clampNumber(scale, 0.85, 1.6);
+    }
+
+    function availableResultWidthPx() {
+        var width = 0;
+        var horizontalPadding = 0;
+        try {
+            if (panelRoot !== null) {
+                width = Number(panelRoot.getWidth());
+                horizontalPadding = Number(panelRoot.getPaddingLeft()) +
+                    Number(panelRoot.getPaddingRight());
+            }
+        } catch (ignoredMeasuredWidth) {
+            width = 0;
+            horizontalPadding = 0;
+        }
+        if (width <= 0) {
+            width = Number(state.panelWidthPx || 0);
+        }
+        if (width <= 0) {
+            width = dp(Number(state.panelWidthDp || 390));
+        }
+        return Math.max(touchSlop * 18, width - horizontalPadding);
+    }
+
+    function resultCardMetrics(cardWidthPx) {
+        var width = Number(cardWidthPx || 0);
+        var fontScale = resourceFontScale();
+        var baseUnit;
+        var actionGap;
+        var minimumCellWidth;
+        var maximumGridWidth;
+        var actionGridWidth;
+        var actionCellWidth;
+        var actionCellHeight;
+        var actionGridHeight;
+        var iconSize;
+        var contentGap;
+        var availableCenter;
+        var tagWidth;
+        var actionTextSp;
+        var actionRadiusDp;
+        var cardPaddingHorizontal;
+        var cardPaddingVertical;
+        var swipeRevealWidth;
+        if (width <= 0) { width = availableResultWidthPx(); }
+        baseUnit = Math.max(1,
+            Math.round(Math.max(touchSlop, width * 0.018)));
+        actionGap = Math.max(1, Math.round(baseUnit * 0.42));
+        minimumCellWidth = Math.max(touchSlop * 2 + baseUnit,
+            Math.round(width * 0.085));
+        maximumGridWidth = Math.max(minimumCellWidth * 2 + actionGap,
+            Math.round(width * 0.31));
+        actionGridWidth = Math.round(clampNumber(width * 0.24,
+            minimumCellWidth * 2 + actionGap, maximumGridWidth));
+        actionCellWidth = Math.max(1,
+            Math.floor((actionGridWidth - actionGap) / 2));
+        actionCellHeight = Math.round(clampNumber(actionCellWidth * 0.66,
+            touchSlop * 2 + baseUnit, width * 0.105));
+        actionGridHeight = actionCellHeight * 2 + actionGap;
+        iconSize = Math.round(clampNumber(width * 0.095,
+            touchSlop * 3, width * 0.12));
+        contentGap = Math.max(1, Math.round(baseUnit * 0.75));
+        availableCenter = Math.max(touchSlop * 8,
+            width - actionGridWidth - iconSize - contentGap * 4);
+        tagWidth = Math.round(clampNumber(availableCenter * 0.46,
+            width * 0.18, width * 0.36));
+        actionTextSp = clampNumber(pxToDp(actionCellHeight) /
+            (fontScale * 3.2), 7.5, 10.5);
+        actionRadiusDp = clampNumber(pxToDp(actionCellHeight) * 0.34,
+            6, 12);
+        cardPaddingHorizontal = Math.max(baseUnit,
+            Math.round(width * 0.018));
+        cardPaddingVertical = Math.max(Math.round(baseUnit * 0.75),
+            Math.round(actionGridHeight * 0.08));
+        swipeRevealWidth = Math.round(clampNumber(actionGridWidth * 0.96,
+            width * 0.18, width * 0.30));
+        return {
+            cardWidthPx: width,
+            fontScale: fontScale,
+            baseUnitPx: baseUnit,
+            actionGapPx: actionGap,
+            actionGridWidthPx: actionGridWidth,
+            actionGridHeightPx: actionGridHeight,
+            actionCellWidthPx: actionCellWidth,
+            actionCellHeightPx: actionCellHeight,
+            actionTextSp: actionTextSp,
+            actionRadiusDp: actionRadiusDp,
+            actionHorizontalPaddingPx: Math.max(1,
+                Math.round(actionCellWidth * 0.06)),
+            iconSizePx: iconSize,
+            contentGapPx: contentGap,
+            tagWidthPx: tagWidth,
+            cardPaddingHorizontalPx: cardPaddingHorizontal,
+            cardPaddingVerticalPx: cardPaddingVertical,
+            cardMinimumHeightPx: Math.max(actionGridHeight +
+                cardPaddingVertical * 2, iconSize + cardPaddingVertical * 2),
+            swipeRevealWidthPx: swipeRevealWidth,
+            swipeCommitDistancePx: Math.round(swipeRevealWidth * 0.8),
+            swipeMaximumOffsetPx: Math.round(swipeRevealWidth * 1.28),
+            swipeTextSp: clampNumber(actionTextSp + 1, 8.5, 11.5),
+            swipeHorizontalPaddingPx: Math.max(baseUnit,
+                Math.round(swipeRevealWidth * 0.16)),
+            sourceTextSp: clampNumber(actionTextSp, 7.5, 9.5),
+            contentTextSp: clampNumber(actionTextSp + 2.5, 10.5, 13)
+        };
+    }
+
+    function deleteUndoMetrics() {
+        var width = availableResultWidthPx();
+        var cardMetrics = resultCardMetrics(width);
+        var sideMargin = Math.max(touchSlop,
+            Math.round(width * 0.025));
+        var resizeClearance = Math.max(touchSlop * 4,
+            Math.round(width * 0.10));
+        var height = Math.round(clampNumber(
+            cardMetrics.actionCellHeightPx * 1.45,
+            touchSlop * 3, width * 0.14));
+        return {
+            heightPx: height,
+            sideMarginPx: sideMargin,
+            bottomMarginPx: Math.max(touchSlop,
+                Math.round(width * 0.02)),
+            resizeClearancePx: resizeClearance,
+            horizontalPaddingPx: Math.max(touchSlop,
+                Math.round(width * 0.025)),
+            actionWidthPx: Math.round(clampNumber(width * 0.20,
+                touchSlop * 5, width * 0.28)),
+            textSp: clampNumber(pxToDp(height) /
+                (resourceFontScale() * 3.8), 8.5, 11.5),
+            radiusDp: clampNumber(pxToDp(height) * 0.30, 8, 15)
+        };
+    }
+
+    function removeDeleteUndoView() {
+        var parent;
+        if (deleteUndoView !== null) {
+            try {
+                parent = deleteUndoView.getParent();
+                if (parent !== null) { parent.removeView(deleteUndoView); }
+            } catch (ignoredRemoveUndo) {}
+        }
+        deleteUndoView = null;
+        state.deleteUndoVisible = false;
+        return true;
+    }
+
+    function clearDeleteUndo(clearPending) {
+        deleteUndoGeneration += 1;
+        removeDeleteUndoView();
+        if (clearPending === true) {
+            pendingDeleteUndo = null;
+            state.deleteUndoItemId = null;
+        }
+        return true;
+    }
+
+    function scheduleDeleteUndoTimeout(generation) {
+        if (mainHandler === null) { return false; }
+        mainHandler.postDelayed(new Packages.java.lang.Runnable({
+            run: function () {
+                if (generation !== deleteUndoGeneration ||
+                        pendingDeleteUndo === null) {
+                    return;
+                }
+                state.deleteUndoTimeoutCount += 1;
+                clearDeleteUndo(true);
+            }
+        }), DELETE_UNDO_TIMEOUT_MS);
+        return true;
+    }
+
+    function rememberDeleteUndo(row) {
+        var now = ClipHub.Base.now();
+        clearDeleteUndo(true);
+        pendingDeleteUndo = {
+            itemId: Number(row.id),
+            expiresAt: now + DELETE_UNDO_TIMEOUT_MS
+        };
+        deleteUndoGeneration += 1;
+        state.deleteUndoItemId = Number(row.id);
+        state.deleteUndoShowCount += 1;
+        scheduleDeleteUndoTimeout(deleteUndoGeneration);
+        return pendingDeleteUndo;
+    }
+
+    function performDeleteUndo() {
+        var target = pendingDeleteUndo;
+        var changed = false;
+        if (target === null || !ClipHub.List ||
+                typeof ClipHub.List.undoLastDelete !== "function") {
+            return false;
+        }
+        clearDeleteUndo(true);
+        try {
+            changed = ClipHub.List.undoLastDelete();
+            if (changed) {
+                state.deleteUndoActionCount += 1;
+                refreshPrimaryResults("delete_undo");
+                state.lastError = null;
+            }
+            return changed === true;
+        } catch (error) {
+            state.lastError = "Delete undo failed: " + String(error);
+            return false;
+        }
+    }
+
+    function attachDeleteUndoBanner() {
+        var metrics;
+        var colors;
+        var root;
+        var message;
+        var undo;
+        var params;
+        if (pendingDeleteUndo === null || resultBodyFrame === null ||
+                !state.panelAttached || advancedVisible) {
+            removeDeleteUndoView();
+            return false;
+        }
+        if (Number(pendingDeleteUndo.expiresAt || 0) <= ClipHub.Base.now()) {
+            state.deleteUndoTimeoutCount += 1;
+            clearDeleteUndo(true);
+            return false;
+        }
+        removeDeleteUndoView();
+        metrics = deleteUndoMetrics();
+        colors = palette();
+        root = new LinearLayout(appContext);
+        root.setOrientation(LinearLayout.HORIZONTAL);
+        root.setGravity(Gravity.CENTER_VERTICAL);
+        root.setPadding(metrics.horizontalPaddingPx, 0,
+            metrics.horizontalPaddingPx, 0);
+        root.setBackground(roundedBackground(colors.textPrimary,
+            colors.strokeStrong, metrics.radiusDp));
+        message = makeText("已删除剪贴板记录", metrics.textSp,
+            colors.surface, false);
+        message.setSingleLine(true);
+        message.setEllipsize(TextUtils.TruncateAt.END);
+        root.addView(message, new LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        undo = makeText("撤销", metrics.textSp,
+            colors.accentStrong, true);
+        undo.setGravity(Gravity.CENTER);
+        undo.setClickable(true);
+        undo.setFocusable(true);
+        undo.setContentDescription("撤销最近一次删除");
+        undo.setBackground(roundedBackground(colors.accentSoft,
+            colors.accentBorder, metrics.radiusDp));
+        undo.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, {
+                onClick: function () { performDeleteUndo(); }
+            }));
+        root.addView(undo, new LinearLayout.LayoutParams(
+            metrics.actionWidthPx,
+            Math.max(1, metrics.heightPx - metrics.horizontalPaddingPx)));
+        params = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, metrics.heightPx);
+        params.gravity = Gravity.BOTTOM;
+        params.setMargins(metrics.sideMarginPx, 0,
+            metrics.sideMarginPx + metrics.resizeClearancePx,
+            metrics.bottomMarginPx);
+        resultBodyFrame.addView(root, params);
+        deleteUndoView = root;
+        state.deleteUndoVisible = true;
+        state.deleteUndoItemId = Number(pendingDeleteUndo.itemId);
+        return true;
+    }
+
+    function scheduleAdaptiveResultRefresh(previousWidth, nextWidth) {
+        var generation;
+        if (mainHandler === null || !state.panelAttached ||
+                Math.abs(Number(nextWidth) - Number(previousWidth)) <=
+                    touchSlop * 2) {
+            return false;
+        }
+        adaptiveRenderGeneration += 1;
+        generation = adaptiveRenderGeneration;
+        mainHandler.post(new Packages.java.lang.Runnable({
+            run: function () {
+                if (generation !== adaptiveRenderGeneration ||
+                        !state.panelAttached) {
+                    return;
+                }
+                state.adaptiveLayoutRefreshCount += 1;
+                buildPanelContent(false);
+            }
+        }));
+        return true;
     }
 
     function updateDrawerMeasurements() {
@@ -1464,16 +1790,22 @@
         return true;
     }
 
-    function copyResultRow(row) {
+    function copyResultRow(row, origin) {
         var result;
         var closeAfter = false;
+        var actionOrigin = String(origin || "card_click");
         if (row === null || row === undefined) { return false; }
         try {
             result = ClipHub.Clipboard.writeText(String(row.content || ""), {
                 label: "ClipHub",
                 sensitive: Number(row.is_sensitive || 0) === 1
             });
-            state.resultCardClickCount += 1;
+            if (actionOrigin === "card_click") {
+                state.resultCardClickCount += 1;
+            }
+            if (actionOrigin === "card_action_copy") {
+                state.cardCopyActionCount += 1;
+            }
             state.copyActionCount += 1;
             try {
                 closeAfter = ClipHub.Settings &&
@@ -1511,15 +1843,27 @@
         return changed === true;
     }
 
-    function editSelectedResult() {
-        var row = selectedResultRow();
-        if (row === null || !ClipHub.Editor ||
+    function editResultRow(row, origin) {
+        if (row === null || row === undefined || !ClipHub.Editor ||
                 typeof ClipHub.Editor.openItem !== "function") {
             return false;
         }
-        state.editActionCount += 1;
-        ClipHub.Editor.openItem(Number(row.id));
-        return true;
+        try {
+            state.editActionCount += 1;
+            if (String(origin || "") === "card_action_edit") {
+                state.cardEditActionCount += 1;
+            }
+            ClipHub.Editor.openItem(Number(row.id));
+            state.lastError = null;
+            return true;
+        } catch (error) {
+            state.lastError = "Editor open failed: " + String(error);
+            return false;
+        }
+    }
+
+    function editSelectedResult() {
+        return editResultRow(selectedResultRow(), "selected_edit");
     }
 
     function addNewResult() {
@@ -1534,6 +1878,7 @@
 
     function deleteResultRow(row, origin) {
         var changed;
+        var actionOrigin = String(origin || "primary_delete");
         if (row === null || row === undefined || !ClipHub.List ||
                 typeof ClipHub.List.deleteItem !== "function") {
             return false;
@@ -1541,11 +1886,16 @@
         changed = ClipHub.List.deleteItem(Number(row.id));
         if (changed) {
             state.deleteActionCount += 1;
+            if (actionOrigin === "card_action_delete") {
+                state.cardDeleteActionCount += 1;
+            }
             if (selectedItemId !== null &&
                     Number(selectedItemId) === Number(row.id)) {
                 clearSelectedResult();
             }
-            refreshPrimaryResults(String(origin || "primary_delete"));
+            rememberDeleteUndo(row);
+            refreshPrimaryResults(actionOrigin);
+            attachDeleteUndoBanner();
         }
         return changed === true;
     }
@@ -1554,21 +1904,27 @@
         return deleteResultRow(selectedResultRow(), "primary_delete");
     }
 
-    function openSelectedDetail() {
-        var row = selectedResultRow();
-        if (row === null || !ClipHub.Translation ||
+    function translateResultRow(row, origin) {
+        if (row === null || row === undefined || !ClipHub.Translation ||
                 typeof ClipHub.Translation.openForItem !== "function") {
             return false;
         }
         try {
             ClipHub.Translation.openForItem(Number(row.id));
             state.detailActionCount += 1;
+            if (String(origin || "") === "card_action_translate") {
+                state.cardTranslateActionCount += 1;
+            }
             state.lastError = null;
             return true;
         } catch (error) {
             state.lastError = "Translation open failed: " + String(error);
             return false;
         }
+    }
+
+    function openSelectedDetail() {
+        return translateResultRow(selectedResultRow(), "selected_translate");
     }
 
     function swipeInteractionBlocked() {
@@ -1588,13 +1944,94 @@
         return windowBusy;
     }
 
-    function makeSwipeAction(label, fill, textColor, gravityValue) {
-        var view = makeText(label, 10, textColor, true);
+    function makeSwipeAction(label, fill, textColor, gravityValue,
+            metrics) {
+        var view = makeText(label, metrics.swipeTextSp, textColor, true);
         view.setGravity(gravityValue | Gravity.CENTER_VERTICAL);
-        view.setPadding(dp(14), 0, dp(14), 0);
-        view.setBackground(roundedBackground(fill, null, 12));
+        view.setPadding(metrics.swipeHorizontalPaddingPx, 0,
+            metrics.swipeHorizontalPaddingPx, 0);
+        view.setBackground(roundedBackground(fill, null,
+            metrics.actionRadiusDp));
         view.setAlpha(0);
         return view;
+    }
+
+    function makeCardActionButton(label, contentDescription, colors,
+            danger, metrics, callback) {
+        var view = makeText(label, metrics.actionTextSp,
+            danger ? colors.danger : colors.accentStrong, true);
+        view.setGravity(Gravity.CENTER);
+        view.setSingleLine(true);
+        view.setPadding(metrics.actionHorizontalPaddingPx, 0,
+            metrics.actionHorizontalPaddingPx, 0);
+        view.setBackground(roundedBackground(
+            danger ? colors.dangerSoft : colors.surfaceMuted,
+            danger ? colors.danger : colors.stroke,
+            metrics.actionRadiusDp));
+        view.setClickable(true);
+        view.setFocusable(true);
+        view.setContentDescription(contentDescription);
+        view.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, { onClick: callback }));
+        return view;
+    }
+
+    function buildCardActionGrid(row, colors, metrics) {
+        var grid = new LinearLayout(appContext);
+        var top = new LinearLayout(appContext);
+        var bottom = new LinearLayout(appContext);
+        var edit;
+        var translate;
+        var copy;
+        var remove;
+        var params;
+        grid.setOrientation(LinearLayout.VERTICAL);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        bottom.setOrientation(LinearLayout.HORIZONTAL);
+        edit = makeCardActionButton("编辑", "编辑剪贴板记录", colors,
+            false, metrics, function () {
+                editResultRow(row, "card_action_edit");
+            });
+        translate = makeCardActionButton("翻译", "翻译剪贴板记录", colors,
+            false, metrics, function () {
+                translateResultRow(row, "card_action_translate");
+            });
+        copy = makeCardActionButton("复制", "复制剪贴板记录", colors,
+            false, metrics, function () {
+                copyResultRow(row, "card_action_copy");
+            });
+        remove = makeCardActionButton("删除", "删除剪贴板记录", colors,
+            true, metrics, function () {
+                deleteResultRow(row, "card_action_delete");
+            });
+        params = new LinearLayout.LayoutParams(0,
+            metrics.actionCellHeightPx, 1);
+        params.rightMargin = metrics.actionGapPx;
+        top.addView(edit, params);
+        top.addView(translate, new LinearLayout.LayoutParams(0,
+            metrics.actionCellHeightPx, 1));
+        params = new LinearLayout.LayoutParams(0,
+            metrics.actionCellHeightPx, 1);
+        params.rightMargin = metrics.actionGapPx;
+        bottom.addView(copy, params);
+        bottom.addView(remove, new LinearLayout.LayoutParams(0,
+            metrics.actionCellHeightPx, 1));
+        grid.addView(top, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            metrics.actionCellHeightPx));
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            metrics.actionCellHeightPx);
+        params.topMargin = metrics.actionGapPx;
+        grid.addView(bottom, params);
+        resultActionViews.push({
+            edit: edit,
+            translate: translate,
+            copy: copy,
+            delete: remove
+        });
+        state.cardActionButtonCount += 4;
+        return grid;
     }
 
     function setSwipeVisual(foreground, deleteAction, pinAction, offset,
@@ -1662,7 +2099,7 @@
     }
 
     function bindSwipeGesture(row, wrapper, foreground, deleteAction,
-            pinAction) {
+            pinAction, metrics) {
         var gesture = {
             downX: 0,
             downY: 0,
@@ -1671,9 +2108,6 @@
             disabled: false,
             offset: 0
         };
-        var revealWidth = dp(82);
-        var commitDistance = dp(66);
-        var maxOffset = dp(106);
         foreground.setOnTouchListener(new JavaAdapter(
             View.OnTouchListener, {
                 onTouch: function (target, event) {
@@ -1694,8 +2128,10 @@
                         gesture.swiping = false;
                         gesture.rejected = false;
                         gesture.disabled = swipeInteractionBlocked() ||
-                            Number(event.getX()) >
-                                Math.max(0, Number(target.getWidth()) - dp(58));
+                            Number(event.getX()) > Math.max(0,
+                                Number(target.getWidth()) -
+                                metrics.actionGridWidthPx -
+                                metrics.contentGapPx);
                         gesture.offset = 0;
                         if (!gesture.disabled) {
                             cancelActiveSwipe(true);
@@ -1736,16 +2172,17 @@
                         }
                         if (!gesture.swiping) { return false; }
                         offset = deltaX;
-                        if (Math.abs(offset) > revealWidth) {
+                        if (Math.abs(offset) > metrics.swipeRevealWidthPx) {
                             offset = (offset < 0 ? -1 : 1) *
-                                (revealWidth +
-                                (Math.abs(offset) - revealWidth) * 0.22);
+                                (metrics.swipeRevealWidthPx +
+                                (Math.abs(offset) -
+                                metrics.swipeRevealWidthPx) * 0.22);
                         }
-                        offset = Math.max(-maxOffset,
-                            Math.min(maxOffset, offset));
+                        offset = Math.max(-metrics.swipeMaximumOffsetPx,
+                            Math.min(metrics.swipeMaximumOffsetPx, offset));
                         gesture.offset = offset;
                         setSwipeVisual(foreground, deleteAction, pinAction,
-                            offset, revealWidth);
+                            offset, metrics.swipeRevealWidthPx);
                         state.swipeMoveCount += 1;
                         return true;
                     }
@@ -1759,7 +2196,8 @@
                             }
                         } catch (ignoredReleaseParent) {}
                         commit = action === MotionEvent.ACTION_UP &&
-                            Math.abs(gesture.offset) >= commitDistance;
+                            Math.abs(gesture.offset) >=
+                                metrics.swipeCommitDistancePx;
                         direction = gesture.offset < 0 ? -1 : 1;
                         resetSwipeVisual(foreground, deleteAction, pinAction,
                             !commit);
@@ -1781,46 +2219,45 @@
     function makeResultCard(row, colors) {
         var selected = SELECTION_ENABLED && selectedItemId !== null &&
             Number(selectedItemId) === Number(row.id);
+        var metrics = resultCardMetrics(0);
         var wrapper = new FrameLayout(appContext);
         var actionLayer = new FrameLayout(appContext);
         var deleteAction = makeSwipeAction("删除", colors.dangerSoft,
-            colors.danger, Gravity.START);
+            colors.danger, Gravity.START, metrics);
         var pinAction = makeSwipeAction(
             Number(row.is_pinned || 0) === 1 ? "取消置顶" : "置顶",
-            colors.accentSoft, colors.accentStrong, Gravity.END);
+            colors.accentSoft, colors.accentStrong, Gravity.END, metrics);
         var card = new LinearLayout(appContext);
         var icon = makeSourceIcon(row, colors);
         var center = new LinearLayout(appContext);
         var content = makeText(String(row.content || ""),
-            11, colors.textPrimary, selected);
+            metrics.contentTextSp, colors.textPrimary, selected);
         var metaRow = new LinearLayout(appContext);
         var tags = tagsForResult(row);
         var tagBadge = makeText((tags.length > 0 ? "●  " : "") +
-            tagSummary(tags), 8,
+            tagSummary(tags), metrics.sourceTextSp,
             tags.length > 0 ? tagColorText(tags[0], colors.accentStrong) :
                 colors.textTertiary, tags.length > 0);
-        var source = makeText(sourceLabel(row),
-            8, colors.textSecondary, false);
-        var right = new LinearLayout(appContext);
-        var time = makeText(formatTime(row.last_copied_at),
-            8, colors.textTertiary, false);
-        var star = makeText(Number(row.is_pinned || 0) === 1 ?
-            "★" : "☆", 17,
-            Number(row.is_pinned || 0) === 1 ?
-                colors.accentStrong : colors.textTertiary, false);
+        var source = makeText(sourceLabel(row) + " · " +
+            formatTime(row.last_copied_at), metrics.sourceTextSp,
+            colors.textSecondary, false);
+        var actionGrid = buildCardActionGrid(row, colors, metrics);
         var params;
 
+        state.cardActionGridWidthDp = pxToDp(metrics.actionGridWidthPx);
+        state.cardActionCellHeightDp = pxToDp(metrics.actionCellHeightPx);
+        state.cardActionFontScale = metrics.fontScale;
         wrapper.setClipChildren(true);
         wrapper.setClipToPadding(true);
         wrapper.setBackground(roundedBackground(colors.surfaceMuted,
             colors.stroke, 12));
         actionLayer.setClipChildren(true);
         actionLayer.setClipToPadding(true);
-        params = new FrameLayout.LayoutParams(dp(82),
+        params = new FrameLayout.LayoutParams(metrics.swipeRevealWidthPx,
             FrameLayout.LayoutParams.MATCH_PARENT);
         params.gravity = Gravity.START | Gravity.CENTER_VERTICAL;
         actionLayer.addView(deleteAction, params);
-        params = new FrameLayout.LayoutParams(dp(82),
+        params = new FrameLayout.LayoutParams(metrics.swipeRevealWidthPx,
             FrameLayout.LayoutParams.MATCH_PARENT);
         params.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
         actionLayer.addView(pinAction, params);
@@ -1830,23 +2267,26 @@
 
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setPadding(dp(8), dp(7), dp(7), dp(7));
+        card.setPadding(metrics.cardPaddingHorizontalPx,
+            metrics.cardPaddingVerticalPx,
+            metrics.cardPaddingHorizontalPx,
+            metrics.cardPaddingVerticalPx);
+        card.setMinimumHeight(metrics.cardMinimumHeightPx);
         card.setBackground(roundedBackground(
             selected ? colors.accentSoft : colors.card,
             selected ? colors.accentBorder : colors.stroke, 12));
         card.setClickable(true);
         card.setFocusable(true);
         card.setContentDescription(
-            "剪贴板记录，点击复制，左滑置顶，右滑删除");
-        (function (target, view) {
-            view.setOnClickListener(new JavaAdapter(
-                View.OnClickListener, {
-                    onClick: function () { copyResultRow(target); }
-                }));
-        }(row, card));
+            "剪贴板记录，点击正文复制，左滑置顶，右滑删除，右侧提供编辑翻译复制删除");
+        card.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, {
+                onClick: function () { copyResultRow(row, "card_click"); }
+            }));
 
-        params = new LinearLayout.LayoutParams(dp(34), dp(34));
-        params.rightMargin = dp(8);
+        params = new LinearLayout.LayoutParams(metrics.iconSizePx,
+            metrics.iconSizePx);
+        params.rightMargin = metrics.contentGapPx;
         card.addView(icon, params);
 
         center.setOrientation(LinearLayout.VERTICAL);
@@ -1857,16 +2297,19 @@
             LinearLayout.LayoutParams.WRAP_CONTENT));
         metaRow.setOrientation(LinearLayout.HORIZONTAL);
         metaRow.setGravity(Gravity.CENTER_VERTICAL);
-        tagBadge.setPadding(dp(6), dp(2), dp(6), dp(2));
+        tagBadge.setPadding(metrics.baseUnitPx,
+            Math.max(1, Math.round(metrics.baseUnitPx * 0.28)),
+            metrics.baseUnitPx,
+            Math.max(1, Math.round(metrics.baseUnitPx * 0.28)));
         tagBadge.setSingleLine(true);
         tagBadge.setMaxLines(1);
         tagBadge.setEllipsize(TextUtils.TruncateAt.END);
         tagBadge.setBackground(roundedBackground(
             tags.length > 0 ? colors.accentSoft : colors.surfaceMuted,
-            null, 7));
-        params = new LinearLayout.LayoutParams(dp(112),
+            null, metrics.actionRadiusDp));
+        params = new LinearLayout.LayoutParams(metrics.tagWidthPx,
             LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.rightMargin = dp(6);
+        params.rightMargin = metrics.contentGapPx;
         metaRow.addView(tagBadge, params);
         state.renderedTagLabelCount += Math.min(2, tags.length);
         if (tags.length > 0) { state.tagColorPreviewCount += 1; }
@@ -1877,33 +2320,17 @@
         center.addView(metaRow, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT));
-        card.addView(center, new LinearLayout.LayoutParams(
-            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-
-        right.setOrientation(LinearLayout.VERTICAL);
-        right.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        time.setGravity(Gravity.END);
-        right.addView(time, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(16)));
-        star.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        star.setClickable(true);
-        star.setFocusable(true);
-        star.setContentDescription("切换置顶");
-        (function (target, view) {
-            view.setOnClickListener(new JavaAdapter(
-                View.OnClickListener, {
-                    onClick: function () { toggleResultPinned(target); }
-                }));
-        }(row, star));
-        right.addView(star, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(28)));
-        card.addView(right, new LinearLayout.LayoutParams(dp(48),
-            LinearLayout.LayoutParams.WRAP_CONTENT));
+        params = new LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+        params.rightMargin = metrics.contentGapPx;
+        card.addView(center, params);
+        card.addView(actionGrid, new LinearLayout.LayoutParams(
+            metrics.actionGridWidthPx, metrics.actionGridHeightPx));
 
         wrapper.addView(card, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.WRAP_CONTENT));
-        bindSwipeGesture(row, wrapper, card, deleteAction, pinAction);
+        bindSwipeGesture(row, wrapper, card, deleteAction, pinAction, metrics);
         resultCardViews.push(card);
         state.resultCardCount += 1;
         return wrapper;
@@ -1948,7 +2375,9 @@
         state.resultCardCount = 0;
         state.resultSourceIconCount = 0;
         state.renderedTagLabelCount = 0;
+        state.cardActionButtonCount = 0;
         resultCardViews = [];
+        resultActionViews = [];
         for (index = 0; index < previewRows.length; index += 1) {
             ids.push(Number(previewRows[index].id));
         }
@@ -1965,6 +2394,7 @@
                 new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT));
+            attachDeleteUndoBanner();
             return true;
         }
         for (index = 0; index < previewRows.length; index += 1) {
@@ -1999,6 +2429,7 @@
         state.loadedResultCount = previewRows.length;
         state.resultHasMore = resultHasMore;
         state.resultPageLimit = resultPageLimit;
+        attachDeleteUndoBanner();
         return true;
     }
 
@@ -2595,6 +3026,9 @@
         drawerScrollView = null;
         drawerContentView = null;
         drawerFooterView = null;
+        resultBodyFrame = null;
+        deleteUndoView = null;
+        state.deleteUndoVisible = false;
         resultContainer = null;
         resultCountView = null;
         state.sourceOptionCount = counts.sources.length;
@@ -2631,6 +3065,7 @@
         bodyFrame.addView(resultArea, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT));
+        resultBodyFrame = bodyFrame;
         if (advancedVisible) {
             drawerContainer = buildAdvancedDrawer(colors, counts);
             state.drawerWidthDp = compactWindowLayout() ?
@@ -2646,6 +3081,7 @@
         }
         panelRoot.addView(bodyFrame, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
+        attachDeleteUndoBanner();
 
         toolbarActionViews = {};
         state.toolbarEnabledCount = 0;
@@ -2784,13 +3220,18 @@
                     resizeVisual: panelManagedFrame.resizeVisual,
                     geometry: size,
                     onGeometryChanged: function (geometry) {
+                        var previousWidth;
+                        var nextWidth;
                         if (!geometry) { return; }
+                        previousWidth = Number(state.panelWidthPx || 0);
+                        nextWidth = Number(geometry.width || 0);
                         state.panelX = Number(geometry.x || 0);
                         state.panelY = Number(geometry.y || 0);
-                        state.panelWidthPx = Number(geometry.width || 0);
+                        state.panelWidthPx = nextWidth;
                         state.panelHeightPx = Number(geometry.height || 0);
                         state.panelWidthDp = Number(geometry.widthDp || 0);
                         state.panelHeightDp = Number(geometry.heightDp || 0);
+                        scheduleAdaptiveResultRefresh(previousWidth, nextWidth);
                     },
                     onRequestClose: function (reason) {
                         return closePanel({ restoreList: false,
@@ -2853,6 +3294,7 @@
             state.primarySurface = "filter_overlay";
             state.primaryGeometryManaged = false;
             clearSelectedResult();
+            clearDeleteUndo(true);
             return {
                 ok: true,
                 attached: false,
@@ -2887,6 +3329,8 @@
                     catch (ignoredDetach) {}
                 }
                 searchGeneration += 1;
+                adaptiveRenderGeneration += 1;
+                clearDeleteUndo(true);
                 state.panelAttached = false;
                 state.inputFocused = false;
                 advancedVisible = false;
@@ -2908,6 +3352,9 @@
                 clearHistoryView = null;
                 resultContainer = null;
                 resultCountView = null;
+                resultBodyFrame = null;
+                resultActionViews = [];
+                deleteUndoView = null;
                 resultScrollView = null;
                 loadMoreView = null;
                 drawerContainer = null;
@@ -3071,6 +3518,25 @@
             addActionCount: Number(state.addActionCount),
             deleteActionCount: Number(state.deleteActionCount),
             detailActionCount: Number(state.detailActionCount),
+            cardActionButtonCount: Number(state.cardActionButtonCount),
+            cardEditActionCount: Number(state.cardEditActionCount),
+            cardTranslateActionCount:
+                Number(state.cardTranslateActionCount),
+            cardCopyActionCount: Number(state.cardCopyActionCount),
+            cardDeleteActionCount: Number(state.cardDeleteActionCount),
+            cardActionGridWidthDp:
+                Number(state.cardActionGridWidthDp),
+            cardActionCellHeightDp:
+                Number(state.cardActionCellHeightDp),
+            cardActionFontScale: Number(state.cardActionFontScale),
+            deleteUndoVisible: state.deleteUndoVisible === true,
+            deleteUndoItemId: state.deleteUndoItemId,
+            deleteUndoShowCount: Number(state.deleteUndoShowCount),
+            deleteUndoActionCount: Number(state.deleteUndoActionCount),
+            deleteUndoTimeoutCount:
+                Number(state.deleteUndoTimeoutCount),
+            adaptiveLayoutRefreshCount:
+                Number(state.adaptiveLayoutRefreshCount),
             swipeEnabled: state.swipeEnabled === true,
             swipeStartCount: Number(state.swipeStartCount),
             swipeMoveCount: Number(state.swipeMoveCount),
@@ -3201,6 +3667,20 @@
         state.addActionCount = 0;
         state.deleteActionCount = 0;
         state.detailActionCount = 0;
+        state.cardActionButtonCount = 0;
+        state.cardEditActionCount = 0;
+        state.cardTranslateActionCount = 0;
+        state.cardCopyActionCount = 0;
+        state.cardDeleteActionCount = 0;
+        state.cardActionGridWidthDp = 0;
+        state.cardActionCellHeightDp = 0;
+        state.cardActionFontScale = 1;
+        state.deleteUndoVisible = false;
+        state.deleteUndoItemId = null;
+        state.deleteUndoShowCount = 0;
+        state.deleteUndoActionCount = 0;
+        state.deleteUndoTimeoutCount = 0;
+        state.adaptiveLayoutRefreshCount = 0;
         state.swipeEnabled = true;
         state.swipeStartCount = 0;
         state.swipeMoveCount = 0;
@@ -3219,7 +3699,7 @@
         state.resultHasMore = false;
         state.resultCanScroll = false;
         state.loadMoreCount = 0;
-        state.toolbarEnabledCount = 1;
+        state.toolbarEnabledCount = 0;
         state.repositorySortUnchanged = true;
         state.sortScope = "result_window";
         state.panelAddThreadId = null;
@@ -3239,13 +3719,13 @@
         state.resultCardCount = 0;
         state.resultSourceIconCount = 0;
         state.advancedDrawerVisible = false;
-        state.searchPageStyle = "reference_search_v7";
+        state.searchPageStyle = "reference_search_v8";
         state.lastError = null;
     }
 
     ClipHub.Filter = {
         MODULE_NAME: "ch_11_filter",
-        MODULE_VERSION: 22,
+        MODULE_VERSION: 23,
 
         init: function (context) {
             androidContext = context && context.androidContext ?
@@ -3284,6 +3764,12 @@
             resultTagMap = {};
             resultScrollView = null;
             loadMoreView = null;
+            resultBodyFrame = null;
+            resultActionViews = [];
+            deleteUndoView = null;
+            pendingDeleteUndo = null;
+            deleteUndoGeneration = 0;
+            adaptiveRenderGeneration = 0;
             resetResultPaging();
             resetState();
             loadHistory();
@@ -3393,6 +3879,24 @@
             return requireMain(runOnMainSync(function () {
                 return index >= 0 && index < resultCardViews.length ?
                     resultCardViews[index].performLongClick() : false;
+            }, 2500));
+        },
+
+        performResultActionClick: function (index, action) {
+            index = Math.floor(Number(index));
+            action = String(action || "");
+            return requireMain(runOnMainSync(function () {
+                var views = index >= 0 && index < resultActionViews.length ?
+                    resultActionViews[index] : null;
+                return views !== null && views[action] ?
+                    views[action].performClick() : false;
+            }, 2500));
+        },
+
+        performDeleteUndoClick: function () {
+            return requireMain(runOnMainSync(function () {
+                return deleteUndoView !== null ?
+                    performDeleteUndo() : false;
             }, 2500));
         },
 
@@ -3549,6 +4053,8 @@
             } catch (ignoredClose) {}
             unregisterEvents();
             searchGeneration += 1;
+            adaptiveRenderGeneration += 1;
+            clearDeleteUndo(true);
             rootMode = false;
             selectedItemId = null;
             resultCardViews = [];
@@ -3556,6 +4062,10 @@
             resultTagMap = {};
             resultScrollView = null;
             loadMoreView = null;
+            resultBodyFrame = null;
+            resultActionViews = [];
+            deleteUndoView = null;
+            pendingDeleteUndo = null;
             cancelActiveSwipe(false);
             activeSwipeCard = null;
             resetResultPaging();
