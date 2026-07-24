@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260724.30",
+  "moduleSetVersion": "20260724.31",
   "entryMinVersion": 5,
   "sourceRef": "agent/unify-window-geometry",
   "modules": [
@@ -23,6 +23,11 @@
       "name": "ch_04_clipboard.js",
       "path": "src/ch_04_clipboard.js",
       "sha": "89598ad09c96051c68bb6add37eff78a9a113a1b"
+    },
+    {
+      "name": "ch_05_classifier.js",
+      "path": "src/ch_05_classifier.js",
+      "sha": "38088c2d7039473d0098960f6d9a0986a4322d1e"
     },
     {
       "name": "ch_06_repository.js",
