@@ -1,2 +1,1 @@
-embedded patch replacement mismatch:                   "counts.types": 1,
-
+retired line counts mismatch: {'typeViews': 5, 'typeToggleCount': 3, 'typeWrapRowCount': 5, 'contentTypeOptionCount.line': 3, 'typeChipCount': 2, 'contentTypes': 3, 'contentTypeOptionCount.property': 1, 'contentTypeOptionCount.continuation': 1} expected {'contentTypes': 3, 'typeViews': 5, 'typeToggleCount': 4, 'typeWrapRowCount': 6, 'typeChipCount': 4, 'contentTypeOptionCount.property': 1, 'contentTypeOptionCount.continuation': 1, 'contentTypeOptionCount.line': 3}
