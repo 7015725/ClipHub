@@ -1,0 +1,115 @@
+name: Fix ClipHub IME avoidance direction
+
+on:
+  push:
+    branches:
+      - agent/unify-window-geometry
+    paths:
+      - .github/cliphub-ime-avoidance-fix-trigger.txt
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/unify-window-geometry
+          fetch-depth: 0
+
+      - name: Apply guarded IME patch
+        run: python3 scripts/fix_ime_avoidance_direction.py
+
+      - name: Validate JavaScript and module boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in src/*.js; do
+            node --check "$file"
+          done
+          grep -q 'MODULE_VERSION: 17' src/ch_10_editor.js
+          grep -q 'MODULE_VERSION: 34' src/ch_11_filter.js
+          grep -q 'FILTER_IME_AVOIDANCE: "formal_v34"' src/ch_11_filter.js
+          grep -q 'MODULE_VERSION: 20' src/ch_13_settings.js
+          grep -q 'availableAtOriginalTopPx' src/ch_10_editor.js
+          grep -q 'availableAtOriginalTop' src/ch_11_filter.js
+          grep -q 'availableAtOriginalTopPx' src/ch_13_settings.js
+          ! grep -q 'keyboardTopPx - dp(6) - targetHeightPx' src/ch_10_editor.js
+          ! grep -q 'keyboardTop - adaptiveGap -' src/ch_11_filter.js
+          ! grep -q 'keyboardTopPx - dp(6) - targetHeightPx' src/ch_13_settings.js
+
+      - name: Validate avoidance geometry
+        run: |
+          python3 - <<'PY'
+          def avoid(original_top, normal_height, keyboard_top,
+                    top_safe, gap, minimum_height):
+              minimum_top = top_safe
+              bottom_limit = max(minimum_top + 1, keyboard_top - gap)
+              original_top = max(minimum_top, original_top)
+              available_at_original = max(1, bottom_limit - original_top)
+              target_height = min(normal_height, available_at_original)
+              if target_height < minimum_height:
+                  target_height = min(normal_height,
+                      max(1, bottom_limit - minimum_top))
+              target_top = max(minimum_top,
+                  min(original_top, bottom_limit - target_height))
+              return target_top, target_height, bottom_limit
+
+          cases = [
+              (80, 560, 962, 80, 8, 280),
+              (500, 560, 962, 80, 8, 280),
+              (800, 560, 962, 80, 8, 280),
+              (20, 700, 720, 80, 8, 280),
+          ]
+          outputs = []
+          for case in cases:
+              top, height, bottom = avoid(*case)
+              original_top = max(case[3], case[0])
+              assert top <= original_top, (case, top, original_top)
+              assert top >= case[3], (case, top)
+              assert height >= 1, (case, height)
+              assert top + height <= bottom, (case, top, height, bottom)
+              outputs.append((top, height))
+          assert outputs[0] == (80, 560), outputs[0]
+          assert outputs[1][0] == 500 and outputs[1][1] < 560, outputs[1]
+          assert outputs[2][0] < 800, outputs[2]
+          assert outputs[3][0] == 80, outputs[3]
+          print(outputs)
+          PY
+
+      - name: Validate manifest integrity
+        run: |
+          python3 - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+          manifest = json.loads(Path('module-manifest.json').read_text())
+          assert manifest['moduleSetVersion'] == '20260724.34'
+          assert manifest['entryMinVersion'] == 5
+          assert len(manifest['modules']) == 15
+          names = [item['name'] for item in manifest['modules']]
+          assert 'ch_05_classifier.js' in names
+          for module in manifest['modules']:
+              actual = subprocess.check_output(
+                  ['git', 'hash-object', module['path']], text=True).strip()
+              assert actual == module['sha'], (
+                  module['path'], actual, module['sha'])
+          PY
+          git diff --check
+
+      - name: Commit final IME fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f scripts/fix_ime_avoidance_direction.py
+          rm -f .github/workflows/fix-ime-avoidance-direction.yml
+          rm -f .github/cliphub-ime-avoidance-fix-trigger.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m '修复 IME 避让窗口向下跳动'
+          git push origin HEAD:agent/unify-window-geometry
