@@ -23,7 +23,7 @@
     var COMPACT_BLOB = "06e62539e5f9a0af0067840d927a0cbec679eead";
     var STABLE_COMMIT = "16052f67dbd0323fbe0b203ec64fe11c08a41308";
     var STABLE_BLOB = "42457aa526a2fac000a482c914194332a19fa743";
-    var CACHE_VERSION = "v30";
+    var CACHE_VERSION = "v31";
     var SOURCE_PATH = "src/ch_11_filter.js";
 
     var options = global.ClipHubBootstrapOptions || {};
@@ -212,9 +212,18 @@
             "                    \"筛选(\" + String(activeAdvancedFilterCount()) + \")\" :\n" +
             "                    \"筛选\") : \"\",\n";
         var oldVersion = "        MODULE_VERSION: 28,\n";
-        var newVersion = "        MODULE_VERSION: 30,\n";
+        var newVersion = "        MODULE_VERSION: 31,\n";
+        var oldAdvancedSearch =
+            "        params = new LinearLayout.LayoutParams(\n" +
+            "            LinearLayout.LayoutParams.MATCH_PARENT, dp(40));\n" +
+            "        params.bottomMargin = dp(9);\n" +
+            "        drawer.addView(buildAdvancedKeywordInput(colors), params);\n";
+        var newAdvancedSearch =
+            "        advancedKeywordInput = null;\n" +
+            "        state.advancedKeywordInputPresent = false;\n";
         var first;
         var second;
+        var third;
 
         requireBlob(source, COMPACT_BLOB, "compact source");
         first = source.indexOf(oldProbe);
@@ -233,9 +242,21 @@
         source = source.substring(0, second) + newVersion +
             source.substring(second + oldVersion.length);
 
+        third = source.indexOf(oldAdvancedSearch);
+        if (third < 0 || source.indexOf(oldAdvancedSearch,
+                third + oldAdvancedSearch.length) >= 0) {
+            throw new Error("Advanced filter search contract site mismatch");
+        }
+        source = source.substring(0, third) + newAdvancedSearch +
+            source.substring(third + oldAdvancedSearch.length);
+
         if (source.indexOf("advancedView.getText()") >= 0 ||
-                source.indexOf("MODULE_VERSION: 30") < 0 ||
+                source.indexOf("MODULE_VERSION: 31") < 0 ||
                 source.indexOf("advancedView = statusFilter;") < 0 ||
+                source.indexOf(
+                    "drawer.addView(buildAdvancedKeywordInput(colors), params);") >= 0 ||
+                source.indexOf(
+                    "state.advancedKeywordInputPresent = false;") < 0 ||
                 source.indexOf(
                     "reference_search_v12_compact_header") < 0) {
             throw new Error("Compact source runtime contract validation failed");
@@ -245,8 +266,12 @@
 
     function validatePatchedCompact(source) {
         if (source.indexOf("advancedView.getText()") >= 0 ||
-                source.indexOf("MODULE_VERSION: 30") < 0 ||
+                source.indexOf("MODULE_VERSION: 31") < 0 ||
                 source.indexOf("advancedView = statusFilter;") < 0 ||
+                source.indexOf(
+                    "drawer.addView(buildAdvancedKeywordInput(colors), params);") >= 0 ||
+                source.indexOf(
+                    "state.advancedKeywordInputPresent = false;") < 0 ||
                 source.indexOf(
                     "reference_search_v12_compact_header") < 0) {
             throw new Error("Cached compact source validation failed");
