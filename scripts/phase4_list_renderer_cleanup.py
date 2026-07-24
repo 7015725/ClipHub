@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+import base64
+import json
+import subprocess
+import zlib
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+LIST_PATH = ROOT / "src/ch_09_list.js"
+MANIFEST_PATH = ROOT / "module-manifest.json"
+
+NEW_LIST_ZLIB_B64 = "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"
+
+OBSOLETE_APIS = [
+    "suspendForFilterPanel",
+    "finishFilterPanel",
+    "performSelectClick",
+    "performDeleteClick",
+    "performEditClick",
+    "performPinClick",
+    "performTagClick",
+    "performDetailClick",
+    "performReorderHandleDrag",
+    "performUndoClick",
+    "performFilterClick",
+    "performAddClick",
+    "enterSelection",
+    "leaveSelection",
+]
+
+current = LIST_PATH.read_text(encoding="utf-8")
+if "MODULE_VERSION: 17" not in current:
+    raise SystemExit("unexpected List version")
+if "function buildContent(rows)" not in current or "function renderRows(rows)" not in current:
+    raise SystemExit("legacy renderer baseline missing")
+
+references = []
+for path in ROOT.rglob("*"):
+    if not path.is_file() or ".git" in path.parts or path == LIST_PATH:
+        continue
+    if path.suffix not in {".js", ".md", ".json", ".yml", ".yaml", ".txt"}:
+        continue
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    for name in OBSOLETE_APIS:
+        if "ClipHub.List." + name in text:
+            references.append(str(path.relative_to(ROOT)) + ":" + name)
+if references:
+    raise SystemExit("obsolete List APIs still referenced: " + ", ".join(references))
+
+new_list = zlib.decompress(base64.b64decode(NEW_LIST_ZLIB_B64)).decode("utf-8")
+if "MODULE_VERSION: 18" not in new_list:
+    raise SystemExit("replacement List version missing")
+for forbidden in [
+    "function buildContent(rows)",
+    "function renderRows(rows)",
+    "filterPanelSuspended",
+    "selectionMode",
+    "reorderViews",
+    "cardContainers",
+    "detailRestoreList",
+]:
+    if forbidden in new_list:
+        raise SystemExit("legacy token remains: " + forbidden)
+LIST_PATH.write_text(new_list, encoding="utf-8")
+
+manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+if manifest.get("moduleSetVersion") != "20260724.32":
+    raise SystemExit("unexpected module set version")
+manifest["moduleSetVersion"] = "20260724.33"
+blob_sha = subprocess.check_output(
+    ["git", "hash-object", "src/ch_09_list.js"],
+    cwd=str(ROOT), text=True).strip()
+found = False
+for module in manifest.get("modules", []):
+    if module.get("path") == "src/ch_09_list.js":
+        module["sha"] = blob_sha
+        found = True
+        break
+if not found:
+    raise SystemExit("List manifest entry missing")
+if len(manifest.get("modules", [])) != 15:
+    raise SystemExit("physical module protocol changed")
+MANIFEST_PATH.write_text(
+    json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+    encoding="utf-8")
+
+print(json.dumps({
+    "ok": True,
+    "moduleSetVersion": manifest["moduleSetVersion"],
+    "listBlob": blob_sha,
+    "oldLines": len(current.splitlines()),
+    "newLines": len(new_list.splitlines()),
+    "removedLines": len(current.splitlines()) - len(new_list.splitlines()),
+}, ensure_ascii=False))
