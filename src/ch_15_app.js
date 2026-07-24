@@ -18,7 +18,7 @@
     var CONTROL_ENDPOINT_SCHEMA = 3;
     var CONTROL_COMMANDS = ["show", "hide", "toggle", "status", "stop"];
     var order = [
-        "Log", "Database", "Classifier", "Repository",
+        "Log", "Database", "Repository",
         "EventBus", "Theme", "Clipboard", "Window", "List",
         "Editor", "Filter", "Settings", "Translation"
     ];
@@ -492,7 +492,7 @@
 
     ClipHub.App = {
         MODULE_NAME: "ch_15_app",
-        MODULE_VERSION: 11,
+        MODULE_VERSION: 12,
         CONTROL_ACTION_BASE: CONTROL_ACTION_BASE,
         CONTROL_ENDPOINT_SCHEMA: CONTROL_ENDPOINT_SCHEMA,
         CONTROL_COMMANDS: CONTROL_COMMANDS,

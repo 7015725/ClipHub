@@ -172,7 +172,6 @@
         var keyword;
         var pattern;
         var sources;
-        var types;
         var tagIds;
         var index;
         requireReady();
@@ -230,11 +229,6 @@
             "ORDER BY COALESCE(MAX(source_label), source_package) COLLATE NOCASE ASC",
             []
         );
-    }
-
-    function listContentTypeOptions() {
-        requireReady();
-        return [];
     }
 
     function updateItem(id, patch) {
@@ -648,7 +642,7 @@
 
     ClipHub.Repository = {
         MODULE_NAME: "ch_06_repository",
-        MODULE_VERSION: 9,
+        MODULE_VERSION: 10,
         init: function () {
             ready = !!(ClipHub.Database && ClipHub.Database.isOpen());
             if (!ready) { throw new Error("Database is unavailable"); }
@@ -661,7 +655,6 @@
         getItem: getItem,
         listItems: listItems,
         listSourceOptions: listSourceOptions,
-        listContentTypeOptions: listContentTypeOptions,
         updateItem: updateItem,
         listOrderRows: listOrderRows,
         reorderItem: reorderItem,

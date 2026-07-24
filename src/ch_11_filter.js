@@ -78,7 +78,6 @@
     var drawerContentView = null;
     var drawerFooterView = null;
     var sourceViews = {};
-    var typeViews = {};
     var tagViews = {};
     var pinnedViews = {};
     var sensitiveViews = {};
@@ -136,7 +135,6 @@
         headerGapDp: 0,
         headerFilterActiveCount: 0,
         sourceToggleCount: 0,
-        typeToggleCount: 0,
         tagToggleCount: 0,
         pinnedToggleCount: 0,
         sensitiveToggleCount: 0,
@@ -179,7 +177,6 @@
         advancedKeywordInputPresent: false,
         sortOptionCount: 0,
         sourceWrapRowCount: 0,
-        typeWrapRowCount: 0,
         tagWrapRowCount: 0,
         drawerWidthDp: 0,
         drawerHeightDp: 0,
@@ -251,10 +248,8 @@
         lastUiThreadName: null,
         inputFocused: false,
         sourceOptionCount: 0,
-        contentTypeOptionCount: 0,
         tagOptionCount: 0,
         sourceChipCount: 0,
-        typeChipCount: 0,
         tagChipCount: 0,
         historyChipCount: 0,
         resultCardCount: 0,
@@ -801,7 +796,6 @@
         return {
             keyword: "",
             sourcePackages: [],
-            contentTypes: [],
             tagIds: [],
             pinnedOnly: false,
             sensitiveMode: "all",
@@ -814,7 +808,6 @@
         return {
             keyword: String(input.keyword || ""),
             sourcePackages: copyList(input.sourcePackages),
-            contentTypes: [],
             tagIds: copyList(input.tagIds),
             pinnedOnly: input.pinnedOnly === true,
             sensitiveMode: String(input.sensitiveMode || "all"),
@@ -1190,7 +1183,6 @@
             criteria: {
                 keyword: String(value.keyword || ""),
                 sourcePackages: copyList(value.sourcePackages),
-                types: copyList(value.contentTypes),
                 tagIds: copyList(value.tagIds),
                 pinnedOnly: value.pinnedOnly === true,
                 sensitiveMode: String(value.sensitiveMode || "all"),
@@ -1293,9 +1285,6 @@
         }
         if (patch.hasOwnProperty("sourcePackages")) {
             value.sourcePackages = normalizeList(patch.sourcePackages);
-        }
-        if (patch.hasOwnProperty("contentTypes")) {
-            value.contentTypes = normalizeList(patch.contentTypes);
         }
         if (patch.hasOwnProperty("tagIds")) {
             value.tagIds = normalizeIdList(patch.tagIds);
@@ -1465,16 +1454,6 @@
         return true;
     }
 
-    function toggleType(type) {
-        markUiThread();
-        state.typeToggleCount += 1;
-        setValue({
-            contentTypes: toggle(value.contentTypes, type, false)
-        }, { origin: "ui_type" });
-        buildPanelContent(false);
-        return true;
-    }
-
     function toggleTag(tagId) {
         markUiThread();
         state.tagToggleCount += 1;
@@ -1562,9 +1541,6 @@
         if (kind === "source") {
             return String(option.source_package);
         }
-        if (kind === "type") {
-            return String(option.content_type);
-        }
         return String(Number(option.id));
     }
 
@@ -1572,18 +1548,12 @@
         if (kind === "source") {
             return sourceLabel(option);
         }
-        if (kind === "type") {
-            return typeLabel(option.content_type);
-        }
         return String(option.name);
     }
 
     function selectedList(kind) {
         if (kind === "source") {
             return value.sourcePackages;
-        }
-        if (kind === "type") {
-            return value.contentTypes;
         }
         return value.tagIds;
     }
@@ -1593,11 +1563,6 @@
             state.sourceToggleCount += 1;
             setValue({ sourcePackages: [] }, {
                 origin: "ui_source_all"
-            });
-        } else if (kind === "type") {
-            state.typeToggleCount += 1;
-            setValue({ contentTypes: [] }, {
-                origin: "ui_type_all"
             });
         } else {
             state.tagToggleCount += 1;
@@ -1628,19 +1593,13 @@
                     }));
                 sourceViews[target] = view;
             }(key, chip));
-        } else if (kind === "type") {
-            (function (target, view) {
-                view.setOnClickListener(new JavaAdapter(
-                    View.OnClickListener, {
-                        onClick: function () { toggleType(target); }
-                    }));
-                typeViews[target] = view;
-            }(key, chip));
         } else {
             (function (target, view) {
                 view.setOnClickListener(new JavaAdapter(
                     View.OnClickListener, {
-                        onClick: function () { toggleTag(Number(target)); }
+                        onClick: function () {
+                            toggleTag(Number(target));
+                        }
                     }));
                 tagViews[target] = view;
             }(key, chip));
@@ -1780,7 +1739,6 @@
             rowWidth += (rowWidth > 0 ? 6 : 0) + width;
         }
         if (kind === "source") { state.sourceWrapRowCount = rowCount; }
-        if (kind === "type") { state.typeWrapRowCount = rowCount; }
         if (kind === "tag") { state.tagWrapRowCount = rowCount; }
         return root;
     }
@@ -1803,7 +1761,7 @@
     function optionCounts() {
         var sources = ClipHub.Repository.listSourceOptions();
         var tags = ClipHub.Repository.listTags();
-        return { sources: sources, types: [], tags: tags };
+        return { sources: sources, tags: tags };
     }
 
     function displayMetrics() {
@@ -2849,9 +2807,6 @@
         if (value.sourcePackages && value.sourcePackages.length > 0) {
             count += 1;
         }
-        if (value.contentTypes && value.contentTypes.length > 0) {
-            count += 1;
-        }
         if (value.tagIds && value.tagIds.length > 0) {
             count += 1;
         }
@@ -3511,7 +3466,6 @@
         }
         panelRoot.removeAllViews();
         sourceViews = {};
-        typeViews = {};
         tagViews = {};
         pinnedViews = {};
         sensitiveViews = {};
@@ -3519,7 +3473,6 @@
         state.advancedKeywordInputPresent = false;
         state.sortOptionCount = 0;
         state.sourceWrapRowCount = 0;
-        state.typeWrapRowCount = 0;
         state.tagWrapRowCount = 0;
         state.drawerWidthDp = 0;
         state.drawerHeightDp = 0;
@@ -3548,7 +3501,6 @@
         resultContainer = null;
         resultCountView = null;
         state.sourceOptionCount = counts.sources.length;
-        state.contentTypeOptionCount = counts.types.length;
         state.tagOptionCount = counts.tags.length;
 
         handle = new View(appContext);
@@ -3607,7 +3559,6 @@
         state.toolbarEnabledCount = 0;
 
         state.sourceChipCount = Object.keys(sourceViews).length;
-        state.typeChipCount = Object.keys(typeViews).length;
         state.tagChipCount = Object.keys(tagViews).length;
         state.advancedDrawerVisible = advancedVisible;
         state.panelRenderCount += 1;
@@ -4291,7 +4242,6 @@
                 drawerContentView = null;
                 drawerFooterView = null;
                 sourceViews = {};
-                typeViews = {};
                 tagViews = {};
                 pinnedViews = {};
                 sensitiveViews = {};
@@ -4375,11 +4325,8 @@
             advancedKeywordInputPresent: false,
             inputFocused: state.inputFocused,
             sourceOptionCount: Number(state.sourceOptionCount),
-            contentTypeOptionCount:
-                Number(state.contentTypeOptionCount),
             tagOptionCount: Number(state.tagOptionCount),
             sourceChipCount: Object.keys(sourceViews).length,
-            typeChipCount: Object.keys(typeViews).length,
             tagChipCount: Object.keys(tagViews).length,
             historyChipCount: Number(state.historyChipCount),
             searchExpanded: searchExpanded === true,
@@ -4416,7 +4363,6 @@
             sortMode: validateSortMode(value && value.sortMode),
             sortOptionCount: Number(state.sortOptionCount),
             sourceWrapRowCount: Number(state.sourceWrapRowCount),
-            typeWrapRowCount: Number(state.typeWrapRowCount),
             tagWrapRowCount: Number(state.tagWrapRowCount),
             drawerWidthDp: Number(state.drawerWidthDp),
             drawerHeightDp: Number(state.drawerHeightDp),
@@ -4528,7 +4474,6 @@
             realtimeSearchCount:
                 Number(state.realtimeSearchCount),
             sourceToggleCount: Number(state.sourceToggleCount),
-            typeToggleCount: Number(state.typeToggleCount),
             tagToggleCount: Number(state.tagToggleCount),
             pinnedToggleCount: Number(state.pinnedToggleCount),
             sensitiveToggleCount:
@@ -4573,7 +4518,6 @@
         state.headerGapDp = 0;
         state.headerFilterActiveCount = 0;
         state.sourceToggleCount = 0;
-        state.typeToggleCount = 0;
         state.tagToggleCount = 0;
         state.pinnedToggleCount = 0;
         state.sensitiveToggleCount = 0;
@@ -4610,7 +4554,6 @@
         state.advancedKeywordInputPresent = false;
         state.sortOptionCount = 0;
         state.sourceWrapRowCount = 0;
-        state.typeWrapRowCount = 0;
         state.tagWrapRowCount = 0;
         state.drawerWidthDp = 0;
         state.drawerHeightDp = 0;
@@ -4682,10 +4625,8 @@
         state.lastUiThreadName = null;
         state.inputFocused = false;
         state.sourceOptionCount = 0;
-        state.contentTypeOptionCount = 0;
         state.tagOptionCount = 0;
         state.sourceChipCount = 0;
-        state.typeChipCount = 0;
         state.tagChipCount = 0;
         state.historyChipCount = 0;
         state.resultCardCount = 0;
@@ -4697,7 +4638,7 @@
 
     ClipHub.Filter = {
         MODULE_NAME: "ch_11_filter",
-        MODULE_VERSION: 32,
+        MODULE_VERSION: 33,
 
         init: function (context) {
             stopFilterImeAvoidance(false);
@@ -4801,10 +4742,6 @@
             return setValue({ sourcePackages: packages }, options);
         },
 
-        setContentTypes: function (types, options) {
-            return setValue({ contentTypes: types }, options);
-        },
-
         setTagIds: function (tagIds, options) {
             return setValue({ tagIds: tagIds }, options);
         },
@@ -4825,10 +4762,6 @@
             return ClipHub.Repository.listSourceOptions();
         },
 
-        getContentTypeOptions: function () {
-            return ClipHub.Repository.listContentTypeOptions();
-        },
-
         getTagOptions: function () {
             return ClipHub.Repository.listTags();
         },
@@ -4846,7 +4779,7 @@
         handleBack: handleBack,
         getPanelState: getPanelState,
         getImeAvoidanceState: getFilterImeAvoidanceState,
-        FILTER_IME_AVOIDANCE: "formal_v32",
+        FILTER_IME_AVOIDANCE: "formal_v33",
         getSelectedItemId: function () { return selectedItemId; },
 
         performResultClick: function (index) {
@@ -4956,14 +4889,6 @@
             return requireMain(runOnMainSync(function () {
                 return sourceViews[packageName] ?
                     sourceViews[packageName].performClick() : false;
-            }, 2500));
-        },
-
-        performTypeClick: function (type) {
-            type = String(type || "");
-            return requireMain(runOnMainSync(function () {
-                return typeViews[type] ?
-                    typeViews[type].performClick() : false;
             }, 2500));
         },
 
