@@ -232,14 +232,12 @@
 
     function uiStatus() {
         var list = safeState(ClipHub.List, "getState", {});
-        var windowState = safeState(ClipHub.Window, "getState", {});
         var detail = safeState(ClipHub.List, "getDetailState", {});
         var editor = safeState(ClipHub.Editor, "getState", {});
         var filter = safeState(ClipHub.Filter, "getPanelState", {});
         var settings = safeState(ClipHub.Settings, "getState", {});
         var translation = safeState(ClipHub.Translation, "getState", {});
-        var windowAttached = windowState.attachedToWindow === true ||
-            windowState.attached === true;
+        var geometry = safeState(ClipHub.Window, "getState", {});
         var detailAttached = detail.attachedToWindow === true ||
             detail.attached === true;
         var editorAttached = editor.attachedToWindow === true ||
@@ -252,43 +250,48 @@
             translation.attached === true;
         return {
             started: state.started === true,
-            uiVisible: windowAttached || detailAttached || editorAttached ||
-                filterAttached || settingsAttached || translationAttached,
-            listVisible: list.visible === true,
-            windowAttached: windowAttached,
+            uiVisible: detailAttached || editorAttached || filterAttached ||
+                settingsAttached || translationAttached,
+            listVisible: false,
+            windowAttached: false,
+            geometryServiceAttached: geometry.primaryAttached === true,
             detailAttached: detailAttached,
             editorAttached: editorAttached,
             filterAttached: filterAttached,
             settingsAttached: settingsAttached,
             translationAttached: translationAttached,
-            homeFilterAttachedCount:
-                (windowAttached ? 1 : 0) + (filterAttached ? 1 : 0),
-            homeFilterExclusive:
-                ((windowAttached ? 1 : 0) +
-                    (filterAttached ? 1 : 0)) <= 1,
+            homeFilterAttachedCount: filterAttached ? 1 : 0,
+            homeFilterExclusive: true,
             primarySurface: filterAttached && filter.rootMode === true ?
-                "filter_root" : (windowAttached ? "legacy_list" : "none"),
+                "filter_root" : "none",
             filterRootMode: filter.rootMode === true,
-            legacyHomeAttached: windowAttached,
+            legacyHomeAttached: false,
+            legacyHomeRemoved: true,
+            resizeCorner: geometry.resizeCorner || "bottom_right",
             itemCount: Number(list.itemCount || 0),
-            renderedCount: Number(list.renderedCount || 0),
-            filterActive: list.filterActive === true
+            renderedCount: Number(filter.resultCardCount ||
+                list.renderedCount || 0),
+            filterActive: filter.active === true ||
+                list.filterActive === true
         };
     }
 
     function closeUi() {
         try {
-            if (ClipHub.Translation && typeof ClipHub.Translation.close === "function") {
+            if (ClipHub.Translation &&
+                    typeof ClipHub.Translation.close === "function") {
                 ClipHub.Translation.close("app_hide");
             }
         } catch (ignoredTranslation) {}
         try {
-            if (ClipHub.Settings && typeof ClipHub.Settings.close === "function") {
+            if (ClipHub.Settings &&
+                    typeof ClipHub.Settings.close === "function") {
                 ClipHub.Settings.close("app_hide");
             }
         } catch (ignoredSettings) {}
         try {
-            if (ClipHub.Filter && typeof ClipHub.Filter.closePanel === "function") {
+            if (ClipHub.Filter &&
+                    typeof ClipHub.Filter.closePanel === "function") {
                 ClipHub.Filter.closePanel({
                     restoreList: false,
                     reason: "app_hide"
@@ -296,15 +299,14 @@
             }
         } catch (ignoredFilter) {}
         try {
-            if (ClipHub.Editor && typeof ClipHub.Editor.close === "function") {
+            if (ClipHub.Editor &&
+                    typeof ClipHub.Editor.close === "function") {
                 ClipHub.Editor.close();
             }
         } catch (ignoredEditor) {}
         try {
             if (ClipHub.List && typeof ClipHub.List.hide === "function") {
-                ClipHub.List.hide(true);
-            } else if (ClipHub.Window && typeof ClipHub.Window.close === "function") {
-                ClipHub.Window.close();
+                ClipHub.List.hide(false);
             }
         } catch (ignoredList) {}
         return uiStatus();
@@ -314,7 +316,7 @@
         var result;
         closeUi();
         if (ClipHub.List && typeof ClipHub.List.hide === "function") {
-            ClipHub.List.hide(true);
+            ClipHub.List.hide(false);
         }
         if (!ClipHub.Filter) {
             throw new Error("ClipHub filter root is unavailable");
@@ -493,7 +495,7 @@
 
     ClipHub.App = {
         MODULE_NAME: "ch_15_app",
-        MODULE_VERSION: 9,
+        MODULE_VERSION: 10,
         CONTROL_ACTION_BASE: CONTROL_ACTION_BASE,
         CONTROL_ENDPOINT_SCHEMA: CONTROL_ENDPOINT_SCHEMA,
         CONTROL_COMMANDS: CONTROL_COMMANDS,

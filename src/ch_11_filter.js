@@ -8,11 +8,17 @@
     var TimeUnit = Packages.java.util.concurrent.TimeUnit;
     var Thread = Packages.java.lang.Thread;
     var View = Packages.android.view.View;
+    var MotionEvent = Packages.android.view.MotionEvent;
+    var ViewConfiguration = Packages.android.view.ViewConfiguration;
     var Gravity = Packages.android.view.Gravity;
     var WindowManager = Packages.android.view.WindowManager;
     var PixelFormat = Packages.android.graphics.PixelFormat;
     var Color = Packages.android.graphics.Color;
     var GradientDrawable = Packages.android.graphics.drawable.GradientDrawable;
+    var Drawable = Packages.android.graphics.drawable.Drawable;
+    var Paint = Packages.android.graphics.Paint;
+    var Path = Packages.android.graphics.Path;
+    var RectF = Packages.android.graphics.RectF;
     var LinearLayout = Packages.android.widget.LinearLayout;
     var FrameLayout = Packages.android.widget.FrameLayout;
     var ScrollView = Packages.android.widget.ScrollView;
@@ -34,6 +40,9 @@
     var HISTORY_KEY = "filterSearchHistory";
     var HISTORY_LIMIT = 6;
     var RESULT_PAGE_SIZE = 20;
+    var SELECTION_ENABLED = false;
+    var DELETE_UNDO_TIMEOUT_MS = 5000;
+    var COPY_FEEDBACK_TIMEOUT_MS = 1600;
 
     var androidContext = null;
     var appContext = null;
@@ -41,12 +50,17 @@
     var inputMethodManager = null;
     var mainHandler = null;
     var density = 1;
+    var touchSlop = 8;
     var value = null;
     var ready = false;
     var eventListeners = [];
 
     var panelRoot = null;
+    var panelWindowRoot = null;
+    var panelManagedFrame = null;
     var panelParams = null;
+    var primaryDragView = null;
+    var primaryResizeView = null;
     var keywordInput = null;
     var advancedKeywordInput = null;
     var searchView = null;
@@ -84,6 +98,21 @@
     var resultHasMore = false;
     var resultScrollView = null;
     var loadMoreView = null;
+    var activeSwipeCard = null;
+    var resultBodyFrame = null;
+    var resultActionViews = [];
+    var deleteUndoView = null;
+    var pendingDeleteUndo = null;
+    var deleteUndoGeneration = 0;
+    var copyFeedbackView = null;
+    var copyFeedbackGeneration = 0;
+    var adaptiveRenderGeneration = 0;
+    var searchExpanded = false;
+    var searchStatusRow = null;
+    var searchInputRow = null;
+    var searchToggleView = null;
+    var searchClearView = null;
+    var historyContainerView = null;
 
     var state = {
         applyCount: 0,
@@ -97,6 +126,14 @@
         panelRenderCount: 0,
         searchActionCount: 0,
         realtimeSearchCount: 0,
+        searchExpanded: false,
+        searchExpandCount: 0,
+        searchCollapseCount: 0,
+        headerHeightDp: 0,
+        headerControlHeightDp: 0,
+        headerActionSizeDp: 0,
+        headerGapDp: 0,
+        headerFilterActiveCount: 0,
         sourceToggleCount: 0,
         typeToggleCount: 0,
         tagToggleCount: 0,
@@ -116,6 +153,12 @@
         panelHeightPx: null,
         panelWidthDp: null,
         panelHeightDp: null,
+        panelX: 0,
+        panelY: 0,
+        primaryGeometryManaged: false,
+        primaryDragViewPresent: false,
+        primaryResizeViewPresent: false,
+        resizeCorner: "bottom_right",
         dimAmount: 0,
         modalWindow: false,
         opaqueBackground: false,
@@ -158,6 +201,34 @@
         addActionCount: 0,
         deleteActionCount: 0,
         detailActionCount: 0,
+        cardActionButtonCount: 0,
+        cardEditActionCount: 0,
+        cardTranslateActionCount: 0,
+        cardCopyActionCount: 0,
+        cardDeleteActionCount: 0,
+        cardActionGridWidthDp: 0,
+        cardActionCellHeightDp: 0,
+        cardActionFontScale: 1,
+        cardActionIconSizeDp: 0,
+        pinnedBadgeCount: 0,
+        pinBadgeSizeDp: 0,
+        deleteUndoVisible: false,
+        deleteUndoItemId: null,
+        deleteUndoShowCount: 0,
+        deleteUndoActionCount: 0,
+        deleteUndoTimeoutCount: 0,
+        copyFeedbackVisible: false,
+        copyFeedbackShowCount: 0,
+        copyFeedbackTimeoutCount: 0,
+        adaptiveLayoutRefreshCount: 0,
+        swipeEnabled: true,
+        swipeStartCount: 0,
+        swipeMoveCount: 0,
+        swipePinCount: 0,
+        swipeDeleteCount: 0,
+        swipeCancelCount: 0,
+        lastSwipeItemId: null,
+        lastSwipeAction: null,
         settingsOpenCount: 0,
         settingsButtonPresent: false,
         renderedTagLabelCount: 0,
@@ -198,6 +269,414 @@
 
     function pxToDp(valuePx) {
         return Math.round(Number(valuePx) / density);
+    }
+
+    function clampNumber(value, minimum, maximum) {
+        var number = Number(value);
+        var low = Number(minimum);
+        var high = Number(maximum);
+        if (high < low) { high = low; }
+        return Math.max(low, Math.min(high, number));
+    }
+
+    function resourceFontScale() {
+        var scale = 1;
+        try {
+            scale = Number(appContext.getResources()
+                .getConfiguration().fontScale || 1);
+        } catch (ignoredFontScale) {}
+        return clampNumber(scale, 0.85, 1.6);
+    }
+
+    function availableResultWidthPx() {
+        var width = 0;
+        var horizontalPadding = 0;
+        try {
+            if (panelRoot !== null) {
+                width = Number(panelRoot.getWidth());
+                horizontalPadding = Number(panelRoot.getPaddingLeft()) +
+                    Number(panelRoot.getPaddingRight());
+            }
+        } catch (ignoredMeasuredWidth) {
+            width = 0;
+            horizontalPadding = 0;
+        }
+        if (width <= 0) {
+            width = Number(state.panelWidthPx || 0);
+        }
+        if (width <= 0) {
+            width = dp(Number(state.panelWidthDp || 390));
+        }
+        return Math.max(touchSlop * 18, width - horizontalPadding);
+    }
+
+    function resultCardMetrics(cardWidthPx) {
+        var width = Number(cardWidthPx || 0);
+        var fontScale = resourceFontScale();
+        var baseUnit;
+        var actionGap;
+        var minimumCellWidth;
+        var maximumGridWidth;
+        var actionGridWidth;
+        var actionCellWidth;
+        var actionCellHeight;
+        var actionGridHeight;
+        var iconSize;
+        var contentGap;
+        var availableCenter;
+        var tagWidth;
+        var actionTextSp;
+        var actionRadiusDp;
+        var actionIconSize;
+        var actionIconStroke;
+        var pinBadgeSize;
+        var pinIconSize;
+        var pinIconStroke;
+        var cardPaddingHorizontal;
+        var cardPaddingVertical;
+        var swipeRevealWidth;
+        if (width <= 0) { width = availableResultWidthPx(); }
+        baseUnit = Math.max(1,
+            Math.round(Math.max(touchSlop, width * 0.018)));
+        actionGap = Math.max(1, Math.round(baseUnit * 0.42));
+        minimumCellWidth = Math.max(touchSlop * 2 + baseUnit,
+            Math.round(width * 0.085));
+        maximumGridWidth = Math.max(minimumCellWidth * 2 + actionGap,
+            Math.round(width * 0.31));
+        actionGridWidth = Math.round(clampNumber(width * 0.24,
+            minimumCellWidth * 2 + actionGap, maximumGridWidth));
+        actionCellWidth = Math.max(1,
+            Math.floor((actionGridWidth - actionGap) / 2));
+        actionCellHeight = Math.round(clampNumber(actionCellWidth * 0.66,
+            touchSlop * 2 + baseUnit, width * 0.105));
+        actionGridHeight = actionCellHeight * 2 + actionGap;
+        iconSize = Math.round(clampNumber(width * 0.095,
+            touchSlop * 3, width * 0.12));
+        contentGap = Math.max(1, Math.round(baseUnit * 0.75));
+        availableCenter = Math.max(touchSlop * 8,
+            width - actionGridWidth - iconSize - contentGap * 4);
+        tagWidth = Math.round(clampNumber(availableCenter * 0.46,
+            width * 0.18, width * 0.36));
+        actionTextSp = clampNumber(pxToDp(actionCellHeight) /
+            (fontScale * 3.2), 7.5, 10.5);
+        actionRadiusDp = clampNumber(pxToDp(actionCellHeight) * 0.34,
+            6, 12);
+        actionIconSize = Math.round(clampNumber(
+            Math.min(actionCellWidth, actionCellHeight) * 0.48,
+            touchSlop * 1.25,
+            Math.min(actionCellWidth, actionCellHeight) * 0.68));
+        actionIconStroke = clampNumber(actionIconSize * 0.105,
+            1, actionIconSize * 0.16);
+        pinBadgeSize = Math.round(clampNumber(
+            actionCellHeight * 0.60, touchSlop * 1.35,
+            actionCellHeight * 0.78));
+        pinIconSize = Math.round(pinBadgeSize * 0.56);
+        pinIconStroke = clampNumber(pinIconSize * 0.10,
+            1, pinIconSize * 0.16);
+        cardPaddingHorizontal = Math.max(baseUnit,
+            Math.round(width * 0.018));
+        cardPaddingVertical = Math.max(Math.round(baseUnit * 0.75),
+            Math.round(actionGridHeight * 0.08));
+        swipeRevealWidth = Math.round(clampNumber(actionGridWidth * 0.96,
+            width * 0.18, width * 0.30));
+        return {
+            cardWidthPx: width,
+            fontScale: fontScale,
+            baseUnitPx: baseUnit,
+            actionGapPx: actionGap,
+            actionGridWidthPx: actionGridWidth,
+            actionGridHeightPx: actionGridHeight,
+            actionCellWidthPx: actionCellWidth,
+            actionCellHeightPx: actionCellHeight,
+            actionTextSp: actionTextSp,
+            actionRadiusDp: actionRadiusDp,
+            actionIconSizePx: actionIconSize,
+            actionIconStrokePx: actionIconStroke,
+            pinBadgeSizePx: pinBadgeSize,
+            pinIconSizePx: pinIconSize,
+            pinIconStrokePx: pinIconStroke,
+            pinBadgeGapPx: Math.max(1, Math.round(contentGap * 0.72)),
+            pinBadgeRadiusDp: clampNumber(
+                pxToDp(pinBadgeSize) * 0.36, 5, 11),
+            actionHorizontalPaddingPx: Math.max(1,
+                Math.round(actionCellWidth * 0.06)),
+            iconSizePx: iconSize,
+            contentGapPx: contentGap,
+            tagWidthPx: tagWidth,
+            cardPaddingHorizontalPx: cardPaddingHorizontal,
+            cardPaddingVerticalPx: cardPaddingVertical,
+            cardMinimumHeightPx: Math.max(actionGridHeight +
+                cardPaddingVertical * 2, iconSize + cardPaddingVertical * 2),
+            swipeRevealWidthPx: swipeRevealWidth,
+            swipeCommitDistancePx: Math.round(swipeRevealWidth * 0.8),
+            swipeMaximumOffsetPx: Math.round(swipeRevealWidth * 1.28),
+            swipeTextSp: clampNumber(actionTextSp + 1, 8.5, 11.5),
+            swipeHorizontalPaddingPx: Math.max(baseUnit,
+                Math.round(swipeRevealWidth * 0.16)),
+            sourceTextSp: clampNumber(actionTextSp, 7.5, 9.5),
+            contentTextSp: clampNumber(actionTextSp + 2.5, 10.5, 13)
+        };
+    }
+
+    function deleteUndoMetrics() {
+        var width = availableResultWidthPx();
+        var cardMetrics = resultCardMetrics(width);
+        var sideMargin = Math.max(touchSlop,
+            Math.round(width * 0.025));
+        var resizeClearance = Math.max(touchSlop * 4,
+            Math.round(width * 0.10));
+        var height = Math.round(clampNumber(
+            cardMetrics.actionCellHeightPx * 1.45,
+            touchSlop * 3, width * 0.14));
+        return {
+            heightPx: height,
+            sideMarginPx: sideMargin,
+            bottomMarginPx: Math.max(touchSlop,
+                Math.round(width * 0.02)),
+            resizeClearancePx: resizeClearance,
+            horizontalPaddingPx: Math.max(touchSlop,
+                Math.round(width * 0.025)),
+            actionWidthPx: Math.round(clampNumber(width * 0.20,
+                touchSlop * 5, width * 0.28)),
+            textSp: clampNumber(pxToDp(height) /
+                (resourceFontScale() * 3.8), 8.5, 11.5),
+            radiusDp: clampNumber(pxToDp(height) * 0.30, 8, 15)
+        };
+    }
+
+    function removeCopyFeedbackView() {
+        var parent;
+        if (copyFeedbackView !== null) {
+            try {
+                parent = copyFeedbackView.getParent();
+                if (parent !== null) { parent.removeView(copyFeedbackView); }
+            } catch (ignoredRemoveCopyFeedback) {}
+        }
+        copyFeedbackView = null;
+        state.copyFeedbackVisible = false;
+        return true;
+    }
+
+    function clearCopyFeedback() {
+        copyFeedbackGeneration += 1;
+        removeCopyFeedbackView();
+        return true;
+    }
+
+    function scheduleCopyFeedbackTimeout(generation) {
+        if (mainHandler === null) { return false; }
+        mainHandler.postDelayed(new Packages.java.lang.Runnable({
+            run: function () {
+                if (generation !== copyFeedbackGeneration) { return; }
+                state.copyFeedbackTimeoutCount += 1;
+                removeCopyFeedbackView();
+                copyFeedbackGeneration += 1;
+                attachDeleteUndoBanner();
+            }
+        }), COPY_FEEDBACK_TIMEOUT_MS);
+        return true;
+    }
+
+    function attachCopyFeedbackBanner() {
+        var metrics;
+        var colors;
+        var root;
+        var message;
+        var params;
+        var generation;
+        if (resultBodyFrame === null || !state.panelAttached ||
+                advancedVisible) {
+            clearCopyFeedback();
+            return false;
+        }
+        clearCopyFeedback();
+        removeDeleteUndoView();
+        metrics = deleteUndoMetrics();
+        colors = palette();
+        root = new LinearLayout(appContext);
+        root.setOrientation(LinearLayout.HORIZONTAL);
+        root.setGravity(Gravity.CENTER_VERTICAL);
+        root.setPadding(metrics.horizontalPaddingPx, 0,
+            metrics.horizontalPaddingPx, 0);
+        root.setBackground(roundedBackground(colors.textPrimary,
+            colors.strokeStrong, metrics.radiusDp));
+        message = makeText("已复制", metrics.textSp,
+            colors.surface, false);
+        message.setSingleLine(true);
+        message.setGravity(Gravity.CENTER_VERTICAL);
+        root.addView(message, new LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        params = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, metrics.heightPx);
+        params.gravity = Gravity.BOTTOM;
+        params.setMargins(metrics.sideMarginPx, 0,
+            metrics.sideMarginPx + metrics.resizeClearancePx,
+            metrics.bottomMarginPx);
+        resultBodyFrame.addView(root, params);
+        copyFeedbackView = root;
+        state.copyFeedbackVisible = true;
+        state.copyFeedbackShowCount += 1;
+        copyFeedbackGeneration += 1;
+        generation = copyFeedbackGeneration;
+        scheduleCopyFeedbackTimeout(generation);
+        return true;
+    }
+
+    function removeDeleteUndoView() {
+        var parent;
+        if (deleteUndoView !== null) {
+            try {
+                parent = deleteUndoView.getParent();
+                if (parent !== null) { parent.removeView(deleteUndoView); }
+            } catch (ignoredRemoveUndo) {}
+        }
+        deleteUndoView = null;
+        state.deleteUndoVisible = false;
+        return true;
+    }
+
+    function clearDeleteUndo(clearPending) {
+        deleteUndoGeneration += 1;
+        removeDeleteUndoView();
+        if (clearPending === true) {
+            pendingDeleteUndo = null;
+            state.deleteUndoItemId = null;
+        }
+        return true;
+    }
+
+    function scheduleDeleteUndoTimeout(generation) {
+        if (mainHandler === null) { return false; }
+        mainHandler.postDelayed(new Packages.java.lang.Runnable({
+            run: function () {
+                if (generation !== deleteUndoGeneration ||
+                        pendingDeleteUndo === null) {
+                    return;
+                }
+                state.deleteUndoTimeoutCount += 1;
+                clearDeleteUndo(true);
+            }
+        }), DELETE_UNDO_TIMEOUT_MS);
+        return true;
+    }
+
+    function rememberDeleteUndo(row) {
+        var now = ClipHub.Base.now();
+        clearDeleteUndo(true);
+        pendingDeleteUndo = {
+            itemId: Number(row.id),
+            expiresAt: now + DELETE_UNDO_TIMEOUT_MS
+        };
+        deleteUndoGeneration += 1;
+        state.deleteUndoItemId = Number(row.id);
+        state.deleteUndoShowCount += 1;
+        scheduleDeleteUndoTimeout(deleteUndoGeneration);
+        return pendingDeleteUndo;
+    }
+
+    function performDeleteUndo() {
+        var target = pendingDeleteUndo;
+        var changed = false;
+        if (target === null || !ClipHub.List ||
+                typeof ClipHub.List.undoLastDelete !== "function") {
+            return false;
+        }
+        clearDeleteUndo(true);
+        try {
+            changed = ClipHub.List.undoLastDelete();
+            if (changed) {
+                state.deleteUndoActionCount += 1;
+                refreshPrimaryResults("delete_undo");
+                state.lastError = null;
+            }
+            return changed === true;
+        } catch (error) {
+            state.lastError = "Delete undo failed: " + String(error);
+            return false;
+        }
+    }
+
+    function attachDeleteUndoBanner() {
+        var metrics;
+        var colors;
+        var root;
+        var message;
+        var undo;
+        var params;
+        if (pendingDeleteUndo === null || resultBodyFrame === null ||
+                !state.panelAttached || advancedVisible) {
+            removeDeleteUndoView();
+            return false;
+        }
+        if (Number(pendingDeleteUndo.expiresAt || 0) <= ClipHub.Base.now()) {
+            state.deleteUndoTimeoutCount += 1;
+            clearDeleteUndo(true);
+            return false;
+        }
+        removeDeleteUndoView();
+        metrics = deleteUndoMetrics();
+        colors = palette();
+        root = new LinearLayout(appContext);
+        root.setOrientation(LinearLayout.HORIZONTAL);
+        root.setGravity(Gravity.CENTER_VERTICAL);
+        root.setPadding(metrics.horizontalPaddingPx, 0,
+            metrics.horizontalPaddingPx, 0);
+        root.setBackground(roundedBackground(colors.textPrimary,
+            colors.strokeStrong, metrics.radiusDp));
+        message = makeText("已删除剪贴板记录", metrics.textSp,
+            colors.surface, false);
+        message.setSingleLine(true);
+        message.setEllipsize(TextUtils.TruncateAt.END);
+        root.addView(message, new LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        undo = makeText("撤销", metrics.textSp,
+            colors.accentStrong, true);
+        undo.setGravity(Gravity.CENTER);
+        undo.setClickable(true);
+        undo.setFocusable(true);
+        undo.setContentDescription("撤销最近一次删除");
+        undo.setBackground(roundedBackground(colors.accentSoft,
+            colors.accentBorder, metrics.radiusDp));
+        undo.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, {
+                onClick: function () { performDeleteUndo(); }
+            }));
+        root.addView(undo, new LinearLayout.LayoutParams(
+            metrics.actionWidthPx,
+            Math.max(1, metrics.heightPx - metrics.horizontalPaddingPx)));
+        params = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, metrics.heightPx);
+        params.gravity = Gravity.BOTTOM;
+        params.setMargins(metrics.sideMarginPx, 0,
+            metrics.sideMarginPx + metrics.resizeClearancePx,
+            metrics.bottomMarginPx);
+        resultBodyFrame.addView(root, params);
+        deleteUndoView = root;
+        state.deleteUndoVisible = true;
+        state.deleteUndoItemId = Number(pendingDeleteUndo.itemId);
+        return true;
+    }
+
+    function scheduleAdaptiveResultRefresh(previousWidth, nextWidth) {
+        var generation;
+        if (mainHandler === null || !state.panelAttached ||
+                Math.abs(Number(nextWidth) - Number(previousWidth)) <=
+                    touchSlop * 2) {
+            return false;
+        }
+        adaptiveRenderGeneration += 1;
+        generation = adaptiveRenderGeneration;
+        mainHandler.post(new Packages.java.lang.Runnable({
+            run: function () {
+                if (generation !== adaptiveRenderGeneration ||
+                        !state.panelAttached) {
+                    return;
+                }
+                state.adaptiveLayoutRefreshCount += 1;
+                buildPanelContent(false);
+            }
+        }));
+        return true;
     }
 
     function updateDrawerMeasurements() {
@@ -1089,6 +1568,10 @@
         advancedVisible = !advancedVisible;
         state.advancedDrawerVisible = advancedVisible;
         if (advancedVisible) {
+            if (searchExpanded) {
+                searchExpanded = false;
+                state.searchCollapseCount += 1;
+            }
             state.advancedOpenCount += 1;
             hideKeyboardOnMain();
         } else {
@@ -1187,6 +1670,28 @@
         }
     }
 
+    function adaptiveSourceGridMetrics(itemCount) {
+        var availableWidth = availableResultWidthPx();
+        var fontScale = resourceFontScale();
+        var outerInset = Math.max(touchSlop * 2,
+            Math.round(availableWidth * 0.055));
+        var usableWidth = Math.max(touchSlop * 12,
+            availableWidth - outerInset);
+        var gapPx = Math.max(1, Math.round(Math.max(touchSlop,
+            usableWidth * 0.018) * 0.48));
+        var minimumCellWidth = Math.max(touchSlop * 7,
+            Math.round(usableWidth * (0.21 +
+                Math.max(0, fontScale - 1) * 0.05)));
+        var maxColumns = Math.floor((usableWidth + gapPx) /
+            Math.max(1, minimumCellWidth + gapPx));
+        maxColumns = Math.max(1, Math.min(4,
+            Math.min(Math.max(1, Number(itemCount || 1)), maxColumns)));
+        return {
+            gapPx: gapPx,
+            maxColumns: maxColumns
+        };
+    }
+
     function makeChipRow(options, kind, colors) {
         var root = new LinearLayout(appContext);
         var row = null;
@@ -1202,6 +1707,11 @@
         var chip;
         var width;
         var params;
+        var sourceMetrics = null;
+        var sourceRowTarget = 0;
+        var sourceRowItems = 0;
+        var sourceRemaining = 0;
+        var sourceRowsRemaining = 0;
         root.setOrientation(LinearLayout.VERTICAL);
         state.horizontalFadeEnabled = false;
         for (index = 0; index < options.length && index < 30;
@@ -1212,6 +1722,12 @@
                 key: optionKey(option, kind),
                 label: optionLabel(option, kind)
             });
+        }
+        if (kind === "source") {
+            sourceMetrics = adaptiveSourceGridMetrics(items.length);
+            sourceRemaining = items.length;
+            sourceRowsRemaining = Math.max(1, Math.ceil(
+                items.length / sourceMetrics.maxColumns));
         }
         for (index = 0; index < items.length; index += 1) {
             key = items[index].key;
@@ -1234,6 +1750,37 @@
                     }));
             } else {
                 optionClick(kind, key, chip);
+            }
+            if (kind === "source") {
+                if (row === null || sourceRowItems >= sourceRowTarget) {
+                    sourceRowTarget = Math.max(1, Math.ceil(
+                        sourceRemaining / sourceRowsRemaining));
+                    row = new LinearLayout(appContext);
+                    row.setOrientation(LinearLayout.HORIZONTAL);
+                    row.setGravity(Gravity.CENTER_VERTICAL);
+                    params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                    if (rowCount > 0) {
+                        params.topMargin = sourceMetrics.gapPx;
+                    }
+                    root.addView(row, params);
+                    sourceRowItems = 0;
+                    rowCount += 1;
+                }
+                params = new LinearLayout.LayoutParams(0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+                if (sourceRowItems > 0) {
+                    params.leftMargin = sourceMetrics.gapPx;
+                }
+                row.addView(chip, params);
+                sourceRowItems += 1;
+                sourceRemaining -= 1;
+                if (sourceRowItems >= sourceRowTarget) {
+                    sourceRowsRemaining = Math.max(0,
+                        sourceRowsRemaining - 1);
+                }
+                continue;
             }
             width = chipWidthDp(label);
             if (row === null ||
@@ -1293,14 +1840,28 @@
     }
 
     function panelDimensions() {
-        var metrics = displayMetrics();
-        var screenWidthDp = Number(metrics.widthPixels) / density;
-        var screenHeightDp = Number(metrics.heightPixels) / density;
-        var widthDp = Math.min(390, Math.max(300,
-            screenWidthDp - 20));
-        var heightDp = Math.min(720, Math.max(560,
-            screenHeightDp - 170));
+        var geometry;
+        var metrics;
+        var screenWidthDp;
+        var screenHeightDp;
+        var widthDp;
+        var heightDp;
+        if (ClipHub.Window &&
+                typeof ClipHub.Window.computeGeometry === "function") {
+            geometry = ClipHub.Window.computeGeometry(
+                rootMode ? "primary" : "filter_overlay", {
+                    useSaved: true
+                });
+            return geometry;
+        }
+        metrics = displayMetrics();
+        screenWidthDp = Number(metrics.widthPixels) / density;
+        screenHeightDp = Number(metrics.heightPixels) / density;
+        widthDp = Math.min(390, Math.max(300, screenWidthDp - 20));
+        heightDp = Math.min(720, Math.max(360, screenHeightDp * 0.82));
         return {
+            x: 0,
+            y: 0,
             width: dp(widthDp),
             height: dp(heightDp),
             widthDp: widthDp,
@@ -1310,19 +1871,29 @@
 
     function updatePanelSize() {
         var size;
-        if (panelRoot === null || panelParams === null) {
-            return false;
+        var targetRoot;
+        if (panelRoot === null || panelParams === null) { return false; }
+        if (panelWindowRoot !== null && ClipHub.Window &&
+                typeof ClipHub.Window.refreshWindow === "function") {
+            ClipHub.Window.refreshWindow(panelWindowRoot,
+                "filter_content_changed");
+            return true;
         }
         size = panelDimensions();
         panelParams.width = size.width;
         panelParams.height = size.height;
+        panelParams.gravity = Gravity.TOP | Gravity.START;
+        panelParams.x = Number(size.x || 0);
+        panelParams.y = Number(size.y || 0);
+        state.panelX = Number(size.x || 0);
+        state.panelY = Number(size.y || 0);
         state.panelWidthPx = size.width;
         state.panelHeightPx = size.height;
         state.panelWidthDp = size.widthDp;
         state.panelHeightDp = size.heightDp;
-        try {
-            windowManager.updateViewLayout(panelRoot, panelParams);
-        } catch (ignoredUpdate) {}
+        targetRoot = panelWindowRoot !== null ? panelWindowRoot : panelRoot;
+        try { windowManager.updateViewLayout(targetRoot, panelParams); }
+        catch (ignoredUpdate) {}
         return true;
     }
 
@@ -1397,10 +1968,10 @@
     }
 
     function setSelectedResult(row) {
-        selectedItemId = row === null || row === undefined ?
-            null : Number(row.id);
+        selectedItemId = SELECTION_ENABLED && row !== null &&
+            row !== undefined ? Number(row.id) : null;
         state.selectedItemId = selectedItemId;
-        state.selectionMode = selectedItemId !== null;
+        state.selectionMode = SELECTION_ENABLED && selectedItemId !== null;
         return selectedItemId;
     }
 
@@ -1417,28 +1988,39 @@
         return true;
     }
 
-    function copyResultRow(row) {
+    function copyResultRow(row, origin) {
         var result;
+        var copied = false;
         var closeAfter = false;
+        var actionOrigin = String(origin || "card_click");
         if (row === null || row === undefined) { return false; }
         try {
             result = ClipHub.Clipboard.writeText(String(row.content || ""), {
                 label: "ClipHub",
                 sensitive: Number(row.is_sensitive || 0) === 1
             });
-            state.resultCardClickCount += 1;
+            copied = result && result.ok === true;
+            if (actionOrigin === "card_click") {
+                state.resultCardClickCount += 1;
+            }
+            if (actionOrigin === "card_action_copy") {
+                state.cardCopyActionCount += 1;
+            }
             state.copyActionCount += 1;
             try {
                 closeAfter = ClipHub.Settings &&
                     ClipHub.Settings.get("closeAfterCopy", false) === true;
             } catch (ignoredSetting) {}
+            if (copied && !closeAfter) {
+                attachCopyFeedbackBanner();
+            }
             if (closeAfter) {
                 closePanel({
                     restoreList: false,
                     reason: "copy_close"
                 });
             }
-            return result && result.ok === true;
+            return copied;
         } catch (error) {
             state.lastError = String(error);
             return false;
@@ -1446,13 +2028,8 @@
     }
 
     function selectResultRow(row) {
-        if (row === null || row === undefined) { return false; }
-        state.resultCardLongPressCount += 1;
-        setSelectedResult(row);
-        if (state.panelAttached) {
-            buildPanelContent(false);
-        }
-        return true;
+        clearSelectedResult();
+        return false;
     }
 
     function toggleResultPinned(row) {
@@ -1469,15 +2046,27 @@
         return changed === true;
     }
 
-    function editSelectedResult() {
-        var row = selectedResultRow();
-        if (row === null || !ClipHub.Editor ||
+    function editResultRow(row, origin) {
+        if (row === null || row === undefined || !ClipHub.Editor ||
                 typeof ClipHub.Editor.openItem !== "function") {
             return false;
         }
-        state.editActionCount += 1;
-        ClipHub.Editor.openItem(Number(row.id));
-        return true;
+        try {
+            state.editActionCount += 1;
+            if (String(origin || "") === "card_action_edit") {
+                state.cardEditActionCount += 1;
+            }
+            ClipHub.Editor.openItem(Number(row.id));
+            state.lastError = null;
+            return true;
+        } catch (error) {
+            state.lastError = "Editor open failed: " + String(error);
+            return false;
+        }
+    }
+
+    function editSelectedResult() {
+        return editResultRow(selectedResultRow(), "selected_edit");
     }
 
     function addNewResult() {
@@ -1490,31 +2079,46 @@
         return true;
     }
 
-    function deleteSelectedResult() {
-        var row = selectedResultRow();
+    function deleteResultRow(row, origin) {
         var changed;
-        if (row === null || !ClipHub.List ||
+        var actionOrigin = String(origin || "primary_delete");
+        if (row === null || row === undefined || !ClipHub.List ||
                 typeof ClipHub.List.deleteItem !== "function") {
             return false;
         }
         changed = ClipHub.List.deleteItem(Number(row.id));
         if (changed) {
             state.deleteActionCount += 1;
-            clearSelectedResult();
-            refreshPrimaryResults("primary_delete");
+            if (actionOrigin === "card_action_delete") {
+                state.cardDeleteActionCount += 1;
+            }
+            if (selectedItemId !== null &&
+                    Number(selectedItemId) === Number(row.id)) {
+                clearSelectedResult();
+            }
+            clearCopyFeedback();
+            rememberDeleteUndo(row);
+            refreshPrimaryResults(actionOrigin);
+            attachDeleteUndoBanner();
         }
         return changed === true;
     }
 
-    function openSelectedDetail() {
-        var row = selectedResultRow();
-        if (row === null || !ClipHub.Translation ||
+    function deleteSelectedResult() {
+        return deleteResultRow(selectedResultRow(), "primary_delete");
+    }
+
+    function translateResultRow(row, origin) {
+        if (row === null || row === undefined || !ClipHub.Translation ||
                 typeof ClipHub.Translation.openForItem !== "function") {
             return false;
         }
         try {
             ClipHub.Translation.openForItem(Number(row.id));
             state.detailActionCount += 1;
+            if (String(origin || "") === "card_action_translate") {
+                state.cardTranslateActionCount += 1;
+            }
             state.lastError = null;
             return true;
         } catch (error) {
@@ -1523,75 +2127,536 @@
         }
     }
 
+    function openSelectedDetail() {
+        return translateResultRow(selectedResultRow(), "selected_translate");
+    }
+
+    function swipeInteractionBlocked() {
+        var windowBusy = false;
+        if (!rootMode || advancedVisible || selectedItemId !== null) {
+            return true;
+        }
+        try {
+            windowBusy = ClipHub.Window &&
+                ((typeof ClipHub.Window.isMoving === "function" &&
+                    ClipHub.Window.isMoving()) ||
+                (typeof ClipHub.Window.isResizing === "function" &&
+                    ClipHub.Window.isResizing()));
+        } catch (ignoredWindowState) {
+            windowBusy = false;
+        }
+        return windowBusy;
+    }
+
+    function makeSwipeAction(label, fill, textColor, gravityValue,
+            metrics) {
+        var view = makeText(label, metrics.swipeTextSp, textColor, true);
+        view.setGravity(gravityValue | Gravity.CENTER_VERTICAL);
+        view.setPadding(metrics.swipeHorizontalPaddingPx, 0,
+            metrics.swipeHorizontalPaddingPx, 0);
+        view.setBackground(roundedBackground(fill, null,
+            metrics.actionRadiusDp));
+        view.setAlpha(0);
+        return view;
+    }
+
+    function safeColorInt(value, fallback) {
+        try { return Color.parseColor(String(value)); }
+        catch (ignoredColor) { return Color.parseColor(String(fallback)); }
+    }
+
+    function makeVectorIconDrawable(kind, colorValue, iconSizePx,
+            strokeWidthPx) {
+        var paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        var path = new Path();
+        var drawable;
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeJoin(Paint.Join.ROUND);
+        paint.setStrokeWidth(Number(strokeWidthPx));
+        paint["setColor(int)"](safeColorInt(colorValue, "#FF5A37E6"));
+        drawable = new JavaAdapter(Drawable, {
+            draw: function (canvas) {
+                var bounds = drawable.getBounds();
+                var width = Number(bounds.width());
+                var height = Number(bounds.height());
+                var size = Math.min(width, height,
+                    Math.max(1, Number(iconSizePx)));
+                var left = Number(bounds.left) + (width - size) / 2;
+                var top = Number(bounds.top) + (height - size) / 2;
+                var right = left + size;
+                var bottom = top + size;
+                var radius = Math.max(1, size * 0.08);
+                var rect;
+                path.reset();
+                paint.setStyle(Paint.Style.STROKE);
+                if (kind === "edit") {
+                    path.moveTo(left + size * 0.25, top + size * 0.72);
+                    path.lineTo(left + size * 0.66, top + size * 0.31);
+                    path.lineTo(left + size * 0.79, top + size * 0.44);
+                    path.lineTo(left + size * 0.38, top + size * 0.85);
+                    path.lineTo(left + size * 0.23, top + size * 0.88);
+                    path.close();
+                    canvas.drawPath(path, paint);
+                    canvas.drawLine(left + size * 0.61, top + size * 0.36,
+                        left + size * 0.74, top + size * 0.49, paint);
+                    return;
+                }
+                if (kind === "translate") {
+                    rect = new RectF(left + size * 0.19, top + size * 0.19,
+                        right - size * 0.19, bottom - size * 0.19);
+                    canvas.drawOval(rect, paint);
+                    canvas.drawOval(new RectF(left + size * 0.37,
+                        top + size * 0.19, right - size * 0.37,
+                        bottom - size * 0.19), paint);
+                    canvas.drawLine(left + size * 0.20, top + size * 0.50,
+                        right - size * 0.20, top + size * 0.50, paint);
+                    canvas.drawLine(left + size * 0.28, top + size * 0.34,
+                        right - size * 0.28, top + size * 0.34, paint);
+                    canvas.drawLine(left + size * 0.28, top + size * 0.66,
+                        right - size * 0.28, top + size * 0.66, paint);
+                    return;
+                }
+                if (kind === "copy") {
+                    canvas.drawRoundRect(new RectF(left + size * 0.34,
+                        top + size * 0.20, right - size * 0.17,
+                        bottom - size * 0.31), radius, radius, paint);
+                    canvas.drawRoundRect(new RectF(left + size * 0.18,
+                        top + size * 0.35, right - size * 0.33,
+                        bottom - size * 0.16), radius, radius, paint);
+                    return;
+                }
+                if (kind === "delete") {
+                    canvas.drawLine(left + size * 0.22, top + size * 0.30,
+                        right - size * 0.22, top + size * 0.30, paint);
+                    canvas.drawLine(left + size * 0.40, top + size * 0.21,
+                        right - size * 0.40, top + size * 0.21, paint);
+                    canvas.drawRoundRect(new RectF(left + size * 0.29,
+                        top + size * 0.34, right - size * 0.29,
+                        bottom - size * 0.17), radius, radius, paint);
+                    canvas.drawLine(left + size * 0.42, top + size * 0.45,
+                        left + size * 0.42, bottom - size * 0.28, paint);
+                    canvas.drawLine(right - size * 0.42, top + size * 0.45,
+                        right - size * 0.42, bottom - size * 0.28, paint);
+                    return;
+                }
+                if (kind === "pin") {
+                    paint.setStyle(Paint.Style.FILL);
+                    path.moveTo(left + size * 0.31, top + size * 0.20);
+                    path.lineTo(right - size * 0.31, top + size * 0.20);
+                    path.lineTo(right - size * 0.36, top + size * 0.43);
+                    path.lineTo(right - size * 0.23, top + size * 0.57);
+                    path.lineTo(left + size * 0.55, top + size * 0.57);
+                    path.lineTo(left + size * 0.50, bottom - size * 0.12);
+                    path.lineTo(left + size * 0.45, top + size * 0.57);
+                    path.lineTo(left + size * 0.23, top + size * 0.57);
+                    path.lineTo(left + size * 0.36, top + size * 0.43);
+                    path.close();
+                    canvas.drawPath(path, paint);
+                }
+            },
+            setAlpha: function (alpha) { paint.setAlpha(Number(alpha)); },
+            setColorFilter: function (filter) {
+                paint.setColorFilter(filter);
+            },
+            getOpacity: function () { return PixelFormat.TRANSLUCENT; }
+        });
+        return drawable;
+    }
+
+    function makePinnedBadge(colors, metrics) {
+        var root = new FrameLayout(appContext);
+        var icon = new View(appContext);
+        var params;
+        root.setBackground(roundedBackground(colors.accentSoft,
+            colors.accentBorder, metrics.pinBadgeRadiusDp));
+        root.setContentDescription("已置顶");
+        root.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        icon.setBackground(makeVectorIconDrawable("pin",
+            colors.accentStrong, metrics.pinIconSizePx,
+            metrics.pinIconStrokePx));
+        params = new FrameLayout.LayoutParams(metrics.pinIconSizePx,
+            metrics.pinIconSizePx);
+        params.gravity = Gravity.CENTER;
+        root.addView(icon, params);
+        return root;
+    }
+
+    function makeCardActionButton(kind, contentDescription, colors,
+            danger, metrics, callback) {
+        var root = new FrameLayout(appContext);
+        var icon = new View(appContext);
+        var params;
+        root.setBackground(roundedBackground(
+            colors.surface,
+            danger ? colors.dangerSoft : colors.divider,
+            metrics.actionRadiusDp));
+        root.setClickable(true);
+        root.setFocusable(true);
+        root.setContentDescription(contentDescription);
+        root.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, { onClick: callback }));
+        icon.setBackground(makeVectorIconDrawable(kind,
+            danger ? colors.danger : colors.textSecondary,
+            metrics.actionIconSizePx, metrics.actionIconStrokePx));
+        params = new FrameLayout.LayoutParams(metrics.actionIconSizePx,
+            metrics.actionIconSizePx);
+        params.gravity = Gravity.CENTER;
+        root.addView(icon, params);
+        return root;
+    }
+
+    function buildCardActionGrid(row, colors, metrics) {
+        var grid = new LinearLayout(appContext);
+        var top = new LinearLayout(appContext);
+        var bottom = new LinearLayout(appContext);
+        var edit;
+        var translate;
+        var copy;
+        var remove;
+        var params;
+        grid.setOrientation(LinearLayout.VERTICAL);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        bottom.setOrientation(LinearLayout.HORIZONTAL);
+        edit = makeCardActionButton("edit", "编辑剪贴板记录", colors,
+            false, metrics, function () {
+                editResultRow(row, "card_action_edit");
+            });
+        translate = makeCardActionButton("translate", "翻译剪贴板记录", colors,
+            false, metrics, function () {
+                translateResultRow(row, "card_action_translate");
+            });
+        copy = makeCardActionButton("copy", "复制剪贴板记录", colors,
+            false, metrics, function () {
+                copyResultRow(row, "card_action_copy");
+            });
+        remove = makeCardActionButton("delete", "删除剪贴板记录", colors,
+            true, metrics, function () {
+                deleteResultRow(row, "card_action_delete");
+            });
+        params = new LinearLayout.LayoutParams(0,
+            metrics.actionCellHeightPx, 1);
+        params.rightMargin = metrics.actionGapPx;
+        top.addView(edit, params);
+        top.addView(translate, new LinearLayout.LayoutParams(0,
+            metrics.actionCellHeightPx, 1));
+        params = new LinearLayout.LayoutParams(0,
+            metrics.actionCellHeightPx, 1);
+        params.rightMargin = metrics.actionGapPx;
+        bottom.addView(copy, params);
+        bottom.addView(remove, new LinearLayout.LayoutParams(0,
+            metrics.actionCellHeightPx, 1));
+        grid.addView(top, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            metrics.actionCellHeightPx));
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            metrics.actionCellHeightPx);
+        params.topMargin = metrics.actionGapPx;
+        grid.addView(bottom, params);
+        resultActionViews.push({
+            edit: edit,
+            translate: translate,
+            copy: copy,
+            delete: remove
+        });
+        state.cardActionButtonCount += 4;
+        return grid;
+    }
+
+    function setSwipeVisual(foreground, deleteAction, pinAction, offset,
+            revealWidth) {
+        var progress = Math.min(1,
+            Math.abs(Number(offset)) / Math.max(1, Number(revealWidth)));
+        foreground.setTranslationX(Number(offset));
+        deleteAction.setAlpha(offset > 0 ? progress : 0);
+        pinAction.setAlpha(offset < 0 ? progress : 0);
+    }
+
+    function resetSwipeVisual(foreground, deleteAction, pinAction, animated) {
+        if (foreground === null || foreground === undefined) { return false; }
+        try { foreground.animate().cancel(); } catch (ignoredCancel) {}
+        if (animated === true) {
+            try {
+                foreground.animate().translationX(0).setDuration(135).start();
+            } catch (ignoredAnimation) {
+                foreground.setTranslationX(0);
+            }
+        } else {
+            foreground.setTranslationX(0);
+        }
+        deleteAction.setAlpha(0);
+        pinAction.setAlpha(0);
+        if (activeSwipeCard !== null &&
+                activeSwipeCard.foreground === foreground) {
+            activeSwipeCard = null;
+        }
+        return true;
+    }
+
+    function cancelActiveSwipe(animated) {
+        var current = activeSwipeCard;
+        if (current === null) { return false; }
+        resetSwipeVisual(current.foreground, current.deleteAction,
+            current.pinAction, animated === true);
+        activeSwipeCard = null;
+        return true;
+    }
+
+    function performSwipeAction(row, direction, foreground) {
+        var changed = false;
+        state.lastSwipeItemId = Number(row.id);
+        if (direction < 0) {
+            changed = toggleResultPinned(row);
+            if (changed) {
+                state.swipePinCount += 1;
+                state.lastSwipeAction = Number(row.is_pinned || 0) === 1 ?
+                    "unpin" : "pin";
+            }
+        } else {
+            changed = deleteResultRow(row, "swipe_delete");
+            if (changed) {
+                state.swipeDeleteCount += 1;
+                state.lastSwipeAction = "delete";
+            }
+        }
+        if (changed && ClipHub.Window &&
+                typeof ClipHub.Window.performHaptic === "function") {
+            try { ClipHub.Window.performHaptic(foreground, "confirm"); }
+            catch (ignoredHaptic) {}
+        }
+        return changed;
+    }
+
+    function bindSwipeGesture(row, wrapper, foreground, deleteAction,
+            pinAction, metrics) {
+        var gesture = {
+            downX: 0,
+            downY: 0,
+            swiping: false,
+            rejected: false,
+            disabled: false,
+            offset: 0
+        };
+        foreground.setOnTouchListener(new JavaAdapter(
+            View.OnTouchListener, {
+                onTouch: function (target, event) {
+                    var action = Number(event.getActionMasked());
+                    var rawX = Number(event.getRawX());
+                    var rawY = Number(event.getRawY());
+                    var deltaX;
+                    var deltaY;
+                    var absX;
+                    var absY;
+                    var offset;
+                    var parent;
+                    var commit;
+                    var direction;
+                    if (action === MotionEvent.ACTION_DOWN) {
+                        gesture.downX = rawX;
+                        gesture.downY = rawY;
+                        gesture.swiping = false;
+                        gesture.rejected = false;
+                        gesture.disabled = swipeInteractionBlocked() ||
+                            Number(event.getX()) > Math.max(0,
+                                Number(target.getWidth()) -
+                                metrics.actionGridWidthPx -
+                                metrics.contentGapPx);
+                        gesture.offset = 0;
+                        if (!gesture.disabled) {
+                            cancelActiveSwipe(true);
+                            try { target.animate().cancel(); }
+                            catch (ignoredAnimationCancel) {}
+                        }
+                        return false;
+                    }
+                    if (gesture.disabled) { return false; }
+                    if (action === MotionEvent.ACTION_MOVE) {
+                        deltaX = rawX - gesture.downX;
+                        deltaY = rawY - gesture.downY;
+                        absX = Math.abs(deltaX);
+                        absY = Math.abs(deltaY);
+                        if (!gesture.swiping && !gesture.rejected) {
+                            if (absY > touchSlop && absY >= absX) {
+                                gesture.rejected = true;
+                                return false;
+                            }
+                            if (absX > touchSlop && absX > absY * 1.2) {
+                                gesture.swiping = true;
+                                state.swipeStartCount += 1;
+                                activeSwipeCard = {
+                                    foreground: foreground,
+                                    deleteAction: deleteAction,
+                                    pinAction: pinAction
+                                };
+                                try { target.setPressed(false); }
+                                catch (ignoredPressed) {}
+                                try {
+                                    parent = wrapper.getParent();
+                                    if (parent !== null) {
+                                        parent.requestDisallowInterceptTouchEvent(
+                                            true);
+                                    }
+                                } catch (ignoredParent) {}
+                            }
+                        }
+                        if (!gesture.swiping) { return false; }
+                        offset = deltaX;
+                        if (Math.abs(offset) > metrics.swipeRevealWidthPx) {
+                            offset = (offset < 0 ? -1 : 1) *
+                                (metrics.swipeRevealWidthPx +
+                                (Math.abs(offset) -
+                                metrics.swipeRevealWidthPx) * 0.22);
+                        }
+                        offset = Math.max(-metrics.swipeMaximumOffsetPx,
+                            Math.min(metrics.swipeMaximumOffsetPx, offset));
+                        gesture.offset = offset;
+                        setSwipeVisual(foreground, deleteAction, pinAction,
+                            offset, metrics.swipeRevealWidthPx);
+                        state.swipeMoveCount += 1;
+                        return true;
+                    }
+                    if (action === MotionEvent.ACTION_UP ||
+                            action === MotionEvent.ACTION_CANCEL) {
+                        if (!gesture.swiping) { return false; }
+                        try {
+                            parent = wrapper.getParent();
+                            if (parent !== null) {
+                                parent.requestDisallowInterceptTouchEvent(false);
+                            }
+                        } catch (ignoredReleaseParent) {}
+                        commit = action === MotionEvent.ACTION_UP &&
+                            Math.abs(gesture.offset) >=
+                                metrics.swipeCommitDistancePx;
+                        direction = gesture.offset < 0 ? -1 : 1;
+                        resetSwipeVisual(foreground, deleteAction, pinAction,
+                            !commit);
+                        if (commit) {
+                            performSwipeAction(row, direction, foreground);
+                        } else {
+                            state.swipeCancelCount += 1;
+                        }
+                        gesture.swiping = false;
+                        gesture.offset = 0;
+                        return true;
+                    }
+                    return false;
+                }
+            }));
+        return wrapper;
+    }
+
     function makeResultCard(row, colors) {
-        var selected = selectedItemId !== null &&
+        var selected = SELECTION_ENABLED && selectedItemId !== null &&
             Number(selectedItemId) === Number(row.id);
+        var pinned = Number(row.is_pinned || 0) === 1;
+        var metrics = resultCardMetrics(0);
+        var wrapper = new FrameLayout(appContext);
+        var actionLayer = new FrameLayout(appContext);
+        var deleteAction = makeSwipeAction("删除", colors.dangerSoft,
+            colors.danger, Gravity.START, metrics);
+        var pinAction = makeSwipeAction(
+            pinned ? "取消置顶" : "置顶",
+            colors.accentSoft, colors.accentStrong, Gravity.END, metrics);
         var card = new LinearLayout(appContext);
         var icon = makeSourceIcon(row, colors);
         var center = new LinearLayout(appContext);
+        var contentRow = new LinearLayout(appContext);
+        var pinBadge = null;
         var content = makeText(String(row.content || ""),
-            11, colors.textPrimary, selected);
+            metrics.contentTextSp, colors.textPrimary, selected);
         var metaRow = new LinearLayout(appContext);
         var tags = tagsForResult(row);
         var tagBadge = makeText((tags.length > 0 ? "●  " : "") +
-            tagSummary(tags), 8,
+            tagSummary(tags), metrics.sourceTextSp,
             tags.length > 0 ? tagColorText(tags[0], colors.accentStrong) :
                 colors.textTertiary, tags.length > 0);
-        var source = makeText(sourceLabel(row),
-            8, colors.textSecondary, false);
-        var right = new LinearLayout(appContext);
-        var time = makeText(formatTime(row.last_copied_at),
-            8, colors.textTertiary, false);
-        var star = makeText(Number(row.is_pinned || 0) === 1 ?
-            "★" : "☆", 17,
-            Number(row.is_pinned || 0) === 1 ?
-                colors.accentStrong : colors.textTertiary, false);
+        var source = makeText(sourceLabel(row) + " · " +
+            formatTime(row.last_copied_at), metrics.sourceTextSp,
+            colors.textSecondary, false);
+        var actionGrid = buildCardActionGrid(row, colors, metrics);
         var params;
+
+        state.cardActionGridWidthDp = pxToDp(metrics.actionGridWidthPx);
+        state.cardActionCellHeightDp = pxToDp(metrics.actionCellHeightPx);
+        state.cardActionFontScale = metrics.fontScale;
+        state.cardActionIconSizeDp = pxToDp(metrics.actionIconSizePx);
+        state.pinBadgeSizeDp = pxToDp(metrics.pinBadgeSizePx);
+        wrapper.setClipChildren(true);
+        wrapper.setClipToPadding(true);
+        wrapper.setBackground(roundedBackground(colors.surfaceMuted,
+            colors.stroke, 12));
+        actionLayer.setClipChildren(true);
+        actionLayer.setClipToPadding(true);
+        params = new FrameLayout.LayoutParams(metrics.swipeRevealWidthPx,
+            FrameLayout.LayoutParams.MATCH_PARENT);
+        params.gravity = Gravity.START | Gravity.CENTER_VERTICAL;
+        actionLayer.addView(deleteAction, params);
+        params = new FrameLayout.LayoutParams(metrics.swipeRevealWidthPx,
+            FrameLayout.LayoutParams.MATCH_PARENT);
+        params.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
+        actionLayer.addView(pinAction, params);
+        wrapper.addView(actionLayer, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT));
 
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setPadding(dp(8), dp(7), dp(7), dp(7));
+        card.setPadding(metrics.cardPaddingHorizontalPx,
+            metrics.cardPaddingVerticalPx,
+            metrics.cardPaddingHorizontalPx,
+            metrics.cardPaddingVerticalPx);
+        card.setMinimumHeight(metrics.cardMinimumHeightPx);
         card.setBackground(roundedBackground(
             selected ? colors.accentSoft : colors.card,
             selected ? colors.accentBorder : colors.stroke, 12));
         card.setClickable(true);
         card.setFocusable(true);
-        card.setContentDescription("剪贴板记录，点击复制，长按选择");
-        (function (target, view) {
-            view.setOnClickListener(new JavaAdapter(
-                View.OnClickListener, {
-                    onClick: function () { copyResultRow(target); }
-                }));
-            view.setOnLongClickListener(new JavaAdapter(
-                View.OnLongClickListener, {
-                    onLongClick: function () {
-                        return selectResultRow(target);
-                    }
-                }));
-        }(row, card));
+        card.setContentDescription((pinned ? "已置顶，" : "") +
+            "剪贴板记录，点击正文复制，左滑置顶，右滑删除，右侧提供编辑翻译复制删除图标");
+        card.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, {
+                onClick: function () { copyResultRow(row, "card_click"); }
+            }));
 
-        params = new LinearLayout.LayoutParams(dp(34), dp(34));
-        params.rightMargin = dp(8);
+        params = new LinearLayout.LayoutParams(metrics.iconSizePx,
+            metrics.iconSizePx);
+        params.rightMargin = metrics.contentGapPx;
         card.addView(icon, params);
 
         center.setOrientation(LinearLayout.VERTICAL);
+        contentRow.setOrientation(LinearLayout.HORIZONTAL);
+        contentRow.setGravity(Gravity.TOP);
         content.setMaxLines(2);
         content.setEllipsize(TextUtils.TruncateAt.END);
-        center.addView(content, new LinearLayout.LayoutParams(
+        contentRow.addView(content, new LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        if (pinned) {
+            pinBadge = makePinnedBadge(colors, metrics);
+            params = new LinearLayout.LayoutParams(metrics.pinBadgeSizePx,
+                metrics.pinBadgeSizePx);
+            params.leftMargin = metrics.pinBadgeGapPx;
+            contentRow.addView(pinBadge, params);
+            state.pinnedBadgeCount += 1;
+        }
+        center.addView(contentRow, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT));
         metaRow.setOrientation(LinearLayout.HORIZONTAL);
         metaRow.setGravity(Gravity.CENTER_VERTICAL);
-        tagBadge.setPadding(dp(6), dp(2), dp(6), dp(2));
+        tagBadge.setPadding(metrics.baseUnitPx,
+            Math.max(1, Math.round(metrics.baseUnitPx * 0.28)),
+            metrics.baseUnitPx,
+            Math.max(1, Math.round(metrics.baseUnitPx * 0.28)));
         tagBadge.setSingleLine(true);
         tagBadge.setMaxLines(1);
         tagBadge.setEllipsize(TextUtils.TruncateAt.END);
         tagBadge.setBackground(roundedBackground(
             tags.length > 0 ? colors.accentSoft : colors.surfaceMuted,
-            null, 7));
-        params = new LinearLayout.LayoutParams(dp(112),
+            null, metrics.actionRadiusDp));
+        params = new LinearLayout.LayoutParams(metrics.tagWidthPx,
             LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.rightMargin = dp(6);
+        params.rightMargin = metrics.contentGapPx;
         metaRow.addView(tagBadge, params);
         state.renderedTagLabelCount += Math.min(2, tags.length);
         if (tags.length > 0) { state.tagColorPreviewCount += 1; }
@@ -1602,31 +2667,20 @@
         center.addView(metaRow, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT));
-        card.addView(center, new LinearLayout.LayoutParams(
-            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        params = new LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+        params.rightMargin = metrics.contentGapPx;
+        card.addView(center, params);
+        card.addView(actionGrid, new LinearLayout.LayoutParams(
+            metrics.actionGridWidthPx, metrics.actionGridHeightPx));
 
-        right.setOrientation(LinearLayout.VERTICAL);
-        right.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        time.setGravity(Gravity.END);
-        right.addView(time, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(16)));
-        star.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        star.setClickable(true);
-        star.setFocusable(true);
-        star.setContentDescription("切换置顶");
-        (function (target, view) {
-            view.setOnClickListener(new JavaAdapter(
-                View.OnClickListener, {
-                    onClick: function () { toggleResultPinned(target); }
-                }));
-        }(row, star));
-        right.addView(star, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(28)));
-        card.addView(right, new LinearLayout.LayoutParams(dp(48),
-            LinearLayout.LayoutParams.WRAP_CONTENT));
+        wrapper.addView(card, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT));
+        bindSwipeGesture(row, wrapper, card, deleteAction, pinAction, metrics);
         resultCardViews.push(card);
         state.resultCardCount += 1;
-        return card;
+        return wrapper;
     }
 
     function updateResultScrollState() {
@@ -1663,11 +2717,15 @@
         if (resultContainer === null) {
             return false;
         }
+        cancelActiveSwipe(false);
         resultContainer.removeAllViews();
         state.resultCardCount = 0;
         state.resultSourceIconCount = 0;
         state.renderedTagLabelCount = 0;
+        state.cardActionButtonCount = 0;
+        state.pinnedBadgeCount = 0;
         resultCardViews = [];
+        resultActionViews = [];
         for (index = 0; index < previewRows.length; index += 1) {
             ids.push(Number(previewRows[index].id));
         }
@@ -1684,6 +2742,7 @@
                 new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT));
+            attachDeleteUndoBanner();
             return true;
         }
         for (index = 0; index < previewRows.length; index += 1) {
@@ -1718,6 +2777,7 @@
         state.loadedResultCount = previewRows.length;
         state.resultHasMore = resultHasMore;
         state.resultPageLimit = resultPageLimit;
+        attachDeleteUndoBanner();
         return true;
     }
 
@@ -1806,32 +2866,226 @@
         return container;
     }
 
+    function activeAdvancedFilterCount() {
+        var count = 0;
+        if (value === null || value === undefined) { return 0; }
+        if (value.sourcePackages && value.sourcePackages.length > 0) {
+            count += 1;
+        }
+        if (value.contentTypes && value.contentTypes.length > 0) {
+            count += 1;
+        }
+        if (value.tagIds && value.tagIds.length > 0) {
+            count += 1;
+        }
+        if (value.pinnedOnly === true) { count += 1; }
+        if (String(value.sensitiveMode || "all") !== "all") {
+            count += 1;
+        }
+        if (validateSortMode(value.sortMode) !== "latest") {
+            count += 1;
+        }
+        return count;
+    }
+
+    function headerMetrics() {
+        var widthDp = Number(state.panelWidthDp || 0);
+        var fontScale = resourceFontScale();
+        var touchDp = Math.max(1, Number(touchSlop || 1) / density);
+        var baseDp;
+        var actionSizeDp;
+        var controlHeightDp;
+        var gapDp;
+        var titleSp;
+        var iconSp;
+        var statusSp;
+        var searchSp;
+        var radiusDp;
+        var inputPaddingDp;
+        var badgeSizeDp;
+        var badgeSp;
+        if (widthDp <= 0 && Number(state.panelWidthPx || 0) > 0) {
+            widthDp = Number(state.panelWidthPx) / density;
+        }
+        if (widthDp <= 0) {
+            widthDp = Number(appContext.getResources()
+                .getDisplayMetrics().widthPixels) / density;
+        }
+        baseDp = Math.max(touchDp, widthDp * 0.018);
+        actionSizeDp = clampNumber(widthDp * 0.092,
+            baseDp * 4.4, widthDp * 0.12);
+        controlHeightDp = clampNumber(actionSizeDp * 1.02,
+            baseDp * 4.6, widthDp * 0.125);
+        gapDp = clampNumber(widthDp * 0.014,
+            baseDp * 0.65, actionSizeDp * 0.24);
+        titleSp = clampNumber(widthDp / (fontScale * 23),
+            actionSizeDp / (fontScale * 2.45),
+            actionSizeDp / (fontScale * 1.85));
+        iconSp = clampNumber(actionSizeDp / (fontScale * 2.05),
+            titleSp * 0.86, titleSp * 1.18);
+        statusSp = clampNumber(titleSp * 0.60,
+            iconSp * 0.58, titleSp * 0.72);
+        searchSp = clampNumber(titleSp * 0.70,
+            statusSp, titleSp * 0.82);
+        radiusDp = Math.max(baseDp * 1.3, controlHeightDp * 0.44);
+        inputPaddingDp = Math.max(baseDp * 0.65, gapDp);
+        badgeSizeDp = Math.max(baseDp * 2.0, actionSizeDp * 0.38);
+        badgeSp = Math.max(statusSp * 0.64,
+            badgeSizeDp / (fontScale * 3.4));
+        state.headerHeightDp = actionSizeDp + gapDp + controlHeightDp;
+        state.headerControlHeightDp = controlHeightDp;
+        state.headerActionSizeDp = actionSizeDp;
+        state.headerGapDp = gapDp;
+        return {
+            widthDp: widthDp,
+            fontScale: fontScale,
+            baseDp: baseDp,
+            actionSizeDp: actionSizeDp,
+            controlHeightDp: controlHeightDp,
+            gapDp: gapDp,
+            titleSp: titleSp,
+            iconSp: iconSp,
+            statusSp: statusSp,
+            searchSp: searchSp,
+            radiusDp: radiusDp,
+            inputPaddingDp: inputPaddingDp,
+            badgeSizeDp: badgeSizeDp,
+            badgeSp: badgeSp
+        };
+    }
+
+    function makeHeaderAction(iconText, description, colors, metrics,
+            emphasized) {
+        var view = makeIcon(iconText, metrics.iconSp,
+            emphasized ? colors.accentStrong : colors.icon,
+            description);
+        view.setBackground(circleBackground(
+            emphasized ? colors.accentSoft : colors.surfaceMuted,
+            null));
+        return view;
+    }
+
+    function makeFilterAction(colors, metrics) {
+        var activeCount = activeAdvancedFilterCount();
+        var root = new FrameLayout(appContext);
+        var icon = makeIcon("☷", metrics.iconSp,
+            activeCount > 0 ? colors.accentStrong : colors.icon,
+            activeCount > 0 ?
+                "打开筛选，已启用 " + String(activeCount) + " 类条件" :
+                "打开筛选");
+        var badge;
+        var params;
+        root.setClickable(true);
+        root.setFocusable(true);
+        root.setContentDescription(activeCount > 0 ?
+            "打开筛选，已启用 " + String(activeCount) + " 类条件" :
+            "打开筛选");
+        root.setBackground(circleBackground(
+            activeCount > 0 ? colors.accentSoft : colors.surfaceMuted,
+            activeCount > 0 ? colors.accentBorder : null));
+        root.addView(icon, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT));
+        if (activeCount > 0) {
+            badge = makeText(String(Math.min(9, activeCount)),
+                metrics.badgeSp, "#FFFFFFFF", true);
+            badge.setGravity(Gravity.CENTER);
+            badge.setBackground(circleBackground(colors.accentStrong, null));
+            params = new FrameLayout.LayoutParams(
+                dp(metrics.badgeSizeDp), dp(metrics.badgeSizeDp));
+            params.gravity = Gravity.TOP | Gravity.END;
+            root.addView(badge, params);
+        }
+        root.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, {
+                onClick: function () { toggleAdvanced(); }
+            }));
+        state.headerFilterActiveCount = activeCount;
+        return root;
+    }
+
+    function updateSearchVisibility(requestKeyboard) {
+        var showInput = searchExpanded && !advancedVisible;
+        if (searchStatusRow !== null) {
+            searchStatusRow.setVisibility(
+                showInput ? View.GONE : View.VISIBLE);
+        }
+        if (searchInputRow !== null) {
+            searchInputRow.setVisibility(
+                showInput ? View.VISIBLE : View.GONE);
+        }
+        if (historyContainerView !== null) {
+            historyContainerView.setVisibility(
+                showInput ? View.VISIBLE : View.GONE);
+        }
+        state.searchExpanded = searchExpanded === true;
+        if (showInput && requestKeyboard === true) {
+            requestKeyboardOnMain();
+        } else if (!showInput) {
+            hideKeyboardOnMain();
+        }
+        return showInput;
+    }
+
+    function setSearchExpanded(expanded, requestKeyboard) {
+        var next = expanded === true;
+        if (next && advancedVisible) {
+            advancedVisible = false;
+            state.advancedDrawerVisible = false;
+            state.advancedCloseCount += 1;
+            searchExpanded = true;
+            state.searchExpandCount += 1;
+            buildPanelContent(requestKeyboard === true);
+            return true;
+        }
+        if (searchExpanded !== next) {
+            if (next) {
+                state.searchExpandCount += 1;
+            } else {
+                state.searchCollapseCount += 1;
+            }
+        }
+        searchExpanded = next;
+        updateSearchVisibility(requestKeyboard === true);
+        return true;
+    }
+
     function buildSearchHeader(colors) {
         var container = new LinearLayout(appContext);
         var titleRow = new LinearLayout(appContext);
-        var logo = makeText("▤", 19,
-            colors.accentStrong, true);
-        var title = makeText("全局剪切板", 17,
-            colors.textPrimary, true);
-        var searchRow = new LinearLayout(appContext);
-        var params;
+        var title;
+        var statusRow = new LinearLayout(appContext);
+        var inputRow = new LinearLayout(appContext);
+        var sort;
+        var statusFilter;
+        var inputFilter;
         var addButton;
+        var params;
+        var metrics = headerMetrics();
 
         container.setOrientation(LinearLayout.VERTICAL);
         titleRow.setOrientation(LinearLayout.HORIZONTAL);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        logo.setGravity(Gravity.CENTER);
-        logo.setBackground(roundedBackground(colors.accentSoft,
-            colors.accentBorder, 9));
-        params = new LinearLayout.LayoutParams(dp(34), dp(34));
-        params.rightMargin = dp(8);
-        titleRow.addView(logo, params);
+        title = makeText("全局剪切板", metrics.titleSp,
+            colors.textPrimary, true);
+        title.setSingleLine(true);
+        title.setEllipsize(TextUtils.TruncateAt.END);
         titleRow.addView(title, new LinearLayout.LayoutParams(
             0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-        settingsButton = makeIcon("⚙", 18, colors.icon,
-            "打开 ClipHub 设置");
-        settingsButton.setBackground(circleBackground(
-            colors.surfaceMuted, null));
+
+        addButton = makeHeaderAction("+", "新增剪切板内容",
+            colors, metrics, true);
+        addButton.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, {
+                onClick: function () { addNewResult(); }
+            }));
+        params = new LinearLayout.LayoutParams(
+            dp(metrics.actionSizeDp), dp(metrics.actionSizeDp));
+        params.leftMargin = dp(metrics.gapDp);
+        titleRow.addView(addButton, params);
+
+        settingsButton = makeHeaderAction("⚙", "打开 ClipHub 设置",
+            colors, metrics, false);
         settingsButton.setOnClickListener(new JavaAdapter(
             View.OnClickListener, {
                 onClick: function () {
@@ -1845,13 +3099,14 @@
                     }
                 }
             }));
-        titleRow.addView(settingsButton,
-            new LinearLayout.LayoutParams(dp(36), dp(36)));
+        params = new LinearLayout.LayoutParams(
+            dp(metrics.actionSizeDp), dp(metrics.actionSizeDp));
+        params.leftMargin = dp(metrics.gapDp);
+        titleRow.addView(settingsButton, params);
         state.settingsButtonPresent = true;
 
-        closeView = makeIcon("×", 22, colors.icon,
-            "关闭搜索与筛选");
-        closeView.setBackground(circleBackground(colors.surfaceMuted, null));
+        closeView = makeHeaderAction("×", "关闭全局剪切板",
+            colors, metrics, false);
         closeView.setOnClickListener(new JavaAdapter(
             View.OnClickListener, {
                 onClick: function () {
@@ -1861,16 +3116,64 @@
                     });
                 }
             }));
-        titleRow.addView(closeView,
-            new LinearLayout.LayoutParams(dp(36), dp(36)));
+        params = new LinearLayout.LayoutParams(
+            dp(metrics.actionSizeDp), dp(metrics.actionSizeDp));
+        params.leftMargin = dp(metrics.gapDp);
+        titleRow.addView(closeView, params);
         params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dp(8);
+            dp(metrics.actionSizeDp));
+        params.bottomMargin = dp(metrics.gapDp);
         container.addView(titleRow, params);
 
-        searchRow.setOrientation(LinearLayout.HORIZONTAL);
-        searchRow.setGravity(Gravity.CENTER_VERTICAL);
+        statusRow.setOrientation(LinearLayout.HORIZONTAL);
+        statusRow.setGravity(Gravity.CENTER_VERTICAL);
+        resultCountView = makeText("", metrics.statusSp,
+            colors.textSecondary, false);
+        resultCountView.setSingleLine(true);
+        updateResultCountOnMain();
+        statusRow.addView(resultCountView,
+            new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+
+        sort = makeText("按" + sortModeLabel(value.sortMode),
+            metrics.statusSp, colors.textSecondary, false);
+        sort.setSingleLine(true);
+        sort.setEllipsize(TextUtils.TruncateAt.END);
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.leftMargin = dp(metrics.gapDp);
+        statusRow.addView(sort, params);
+
+        searchToggleView = makeHeaderAction("⌕", "展开搜索",
+            colors, metrics, false);
+        searchToggleView.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, {
+                onClick: function () {
+                    setSearchExpanded(true, true);
+                }
+            }));
+        searchView = searchToggleView;
+        params = new LinearLayout.LayoutParams(
+            dp(metrics.actionSizeDp), dp(metrics.actionSizeDp));
+        params.leftMargin = dp(metrics.gapDp);
+        statusRow.addView(searchToggleView, params);
+
+        statusFilter = makeFilterAction(colors, metrics);
+        advancedView = statusFilter;
+        params = new LinearLayout.LayoutParams(
+            dp(metrics.actionSizeDp), dp(metrics.actionSizeDp));
+        params.leftMargin = dp(metrics.gapDp);
+        statusRow.addView(statusFilter, params);
+        searchStatusRow = statusRow;
+        container.addView(statusRow,
+            new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(metrics.controlHeightDp)));
+
+        inputRow.setOrientation(LinearLayout.HORIZONTAL);
+        inputRow.setGravity(Gravity.CENTER_VERTICAL);
         keywordInput = new EditText(appContext);
         keywordInput.setSingleLine(true);
         suppressTextWatcher = true;
@@ -1878,15 +3181,17 @@
         keywordInput.setSelection(keywordInput.getText().length());
         suppressTextWatcher = false;
         keywordInput.setHint("搜索剪切板内容");
-        keywordInput.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        keywordInput.setTextSize(TypedValue.COMPLEX_UNIT_SP,
+            metrics.searchSp);
         ClipHub.Theme.applyTextColor(keywordInput, colors.textPrimary);
         ClipHub.Theme.applyHintTextColor(keywordInput, colors.textSecondary);
         keywordInput.setInputType(InputType.TYPE_CLASS_TEXT |
             InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         keywordInput.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
-        keywordInput.setPadding(dp(12), dp(6), dp(10), dp(6));
+        keywordInput.setPadding(dp(metrics.inputPaddingDp), 0,
+            dp(metrics.inputPaddingDp), 0);
         keywordInput.setBackground(roundedBackground(colors.surface,
-            colors.stroke, 20));
+            colors.stroke, metrics.radiusDp));
         keywordInput.setOnEditorActionListener(new JavaAdapter(
             TextView.OnEditorActionListener, {
                 onEditorAction: function (view, actionId) {
@@ -1907,69 +3212,63 @@
             },
             afterTextChanged: function () {}
         }));
-        params = new LinearLayout.LayoutParams(0, dp(44), 1);
-        params.rightMargin = dp(8);
-        searchRow.addView(keywordInput, params);
+        params = new LinearLayout.LayoutParams(
+            0, dp(metrics.controlHeightDp), 1);
+        params.rightMargin = dp(metrics.gapDp);
+        inputRow.addView(keywordInput, params);
 
-        advancedView = makeText("☷  筛选", 11,
-            colors.accentStrong, true);
-        advancedView.setGravity(Gravity.CENTER);
-        advancedView.setBackground(roundedBackground(colors.accentSoft,
-            null, 14));
-        advancedView.setClickable(true);
-        advancedView.setFocusable(true);
-        advancedView.setOnClickListener(new JavaAdapter(
-            View.OnClickListener, {
-                onClick: function () { toggleAdvanced(); }
-            }));
-        params = new LinearLayout.LayoutParams(dp(78), dp(44));
-        params.rightMargin = dp(8);
-        searchRow.addView(advancedView, params);
-
-        addButton = makeIcon("+", 24,
-            colors.accentStrong, "新增剪切板内容");
-        addButton.setBackground(circleBackground(colors.accentSoft, null));
-        addButton.setOnClickListener(new JavaAdapter(
+        searchClearView = makeHeaderAction("×",
+            "清空搜索；搜索为空时收起搜索框",
+            colors, metrics, false);
+        searchClearView.setOnClickListener(new JavaAdapter(
             View.OnClickListener, {
                 onClick: function () {
-                    try {
-                        if (ClipHub.Editor && ClipHub.Editor.openNew) {
-                            ClipHub.Editor.openNew();
-                        }
-                    } catch (error) {
-                        state.lastError = String(error);
+                    var current = keywordInput === null ? "" :
+                        normalizeText(String(keywordInput.getText()));
+                    if (current.length === 0) {
+                        setSearchExpanded(false, false);
+                        return;
                     }
+                    suppressTextWatcher = true;
+                    try {
+                        keywordInput.setText("");
+                        keywordInput.setSelection(0);
+                    } finally {
+                        suppressTextWatcher = false;
+                    }
+                    state.searchActionCount += 1;
+                    setValue({ keyword: "" }, {
+                        origin: "ui_search_clear"
+                    });
+                    refreshResultsOnMain();
+                    updateResultCountOnMain();
+                    requestKeyboardOnMain();
                 }
             }));
-        searchRow.addView(addButton,
-            new LinearLayout.LayoutParams(dp(44), dp(44)));
-        container.addView(searchRow,
+        inputRow.addView(searchClearView,
+            new LinearLayout.LayoutParams(
+                dp(metrics.actionSizeDp), dp(metrics.actionSizeDp)));
+
+        inputFilter = makeFilterAction(colors, metrics);
+        params = new LinearLayout.LayoutParams(
+            dp(metrics.actionSizeDp), dp(metrics.actionSizeDp));
+        params.leftMargin = dp(metrics.gapDp);
+        inputRow.addView(inputFilter, params);
+        searchInputRow = inputRow;
+        container.addView(inputRow,
             new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
+                dp(metrics.controlHeightDp)));
+
+        updateSearchVisibility(false);
         return container;
     }
 
     function buildResultArea(colors) {
         var root = new LinearLayout(appContext);
-        var status = new LinearLayout(appContext);
-        var sort = makeText("按" + sortModeLabel(value.sortMode), 9,
-            colors.textSecondary, false);
         var scroll = new ScrollView(appContext);
         resultScrollView = scroll;
         root.setOrientation(LinearLayout.VERTICAL);
-        status.setOrientation(LinearLayout.HORIZONTAL);
-        status.setGravity(Gravity.CENTER_VERTICAL);
-        resultCountView = makeText("", 10,
-            colors.textSecondary, false);
-        updateResultCountOnMain();
-        status.addView(resultCountView, new LinearLayout.LayoutParams(
-            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-        status.addView(sort, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT));
-        root.addView(status, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(31)));
         resultContainer = new LinearLayout(appContext);
         resultContainer.setOrientation(LinearLayout.VERTICAL);
         scroll.setFillViewport(false);
@@ -2089,12 +3388,18 @@
         var pinnedRow;
         var sensitiveRow;
         var sortRow;
+        var compact = compactWindowLayout();
+        var footerButtonHeightDp = compact ? 36 : 40;
+        var footerHeightDp = compact ? 44 : 48;
 
         drawer.setOrientation(LinearLayout.VERTICAL);
         drawer.setPadding(dp(11), dp(9), dp(11), dp(9));
         drawer.setBackground(roundedBackground(colors.surface,
             colors.stroke, 17));
-        if (Build.VERSION.SDK_INT >= 21) { drawer.setElevation(dp(16)); }
+        if (Build.VERSION.SDK_INT >= 21) {
+            drawer.setElevation(0);
+            drawer.setClipToOutline(true);
+        }
         titleRow.setOrientation(LinearLayout.HORIZONTAL);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
         titleRow.addView(title, new LinearLayout.LayoutParams(
@@ -2169,15 +3474,17 @@
             View.OnClickListener, {
                 onClick: function () { applyFromUi(); }
             }));
-        params = new LinearLayout.LayoutParams(0, dp(40), 1);
+        params = new LinearLayout.LayoutParams(0,
+            dp(footerButtonHeightDp), 1);
         params.rightMargin = dp(7);
         footer.addView(resetView, params);
         footer.addView(applyView,
-            new LinearLayout.LayoutParams(0, dp(40), 1));
+            new LinearLayout.LayoutParams(0,
+                dp(footerButtonHeightDp), 1));
         drawer.addView(footer, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(48)));
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(footerHeightDp)));
         state.drawerFooterTopGapDp = 0;
-        state.drawerFooterHeightDp = 48;
+        state.drawerFooterHeightDp = footerHeightDp;
         return drawer;
     }
 
@@ -2252,6 +3559,10 @@
         return toolbar;
     }
 
+    function compactWindowLayout() {
+        return Number(state.panelWidthDp || 390) <= 340;
+    }
+
     function buildPanelContent(requestFocus) {
         var colors = palette();
         var counts = optionCounts();
@@ -2293,6 +3604,14 @@
         drawerScrollView = null;
         drawerContentView = null;
         drawerFooterView = null;
+        resultBodyFrame = null;
+        searchStatusRow = null;
+        searchInputRow = null;
+        searchToggleView = null;
+        searchClearView = null;
+        historyContainerView = null;
+        deleteUndoView = null;
+        state.deleteUndoVisible = false;
         resultContainer = null;
         resultCountView = null;
         state.sourceOptionCount = counts.sources.length;
@@ -2315,12 +3634,16 @@
 
         if (searchHistory.length > 0 && !advancedVisible) {
             history = buildHistoryRow(colors);
+            historyContainerView = history;
+            history.setVisibility(searchExpanded ?
+                View.VISIBLE : View.GONE);
             params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-            params.bottomMargin = dp(5);
+            params.bottomMargin = dp(headerMetrics().gapDp);
             panelRoot.addView(history, params);
         } else {
+            historyContainerView = null;
             state.historyChipCount = 0;
         }
 
@@ -2329,22 +3652,26 @@
         bodyFrame.addView(resultArea, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT));
+        resultBodyFrame = bodyFrame;
         if (advancedVisible) {
             drawerContainer = buildAdvancedDrawer(colors, counts);
-            state.drawerWidthDp = 238;
-            state.drawerHeightDp = 540;
+            state.drawerWidthDp = compactWindowLayout() ?
+                Math.max(176, Number(state.panelWidthDp || 320) - 16) :
+                Math.max(196, Math.min(238,
+                    Number(state.panelWidthDp || 390) - 24));
+            state.drawerHeightDp = Math.max(180,
+                Number(state.panelHeightDp || 560) - 128);
             params = new FrameLayout.LayoutParams(dp(state.drawerWidthDp),
-                dp(state.drawerHeightDp));
+                FrameLayout.LayoutParams.MATCH_PARENT);
             params.gravity = Gravity.END | Gravity.TOP;
             bodyFrame.addView(drawerContainer, params);
         }
         panelRoot.addView(bodyFrame, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
+        attachDeleteUndoBanner();
 
-        params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(64));
-        params.topMargin = dp(4);
-        panelRoot.addView(buildBottomToolbar(colors), params);
+        toolbarActionViews = {};
+        state.toolbarEnabledCount = 0;
 
         state.sourceChipCount = Object.keys(sourceViews).length;
         state.typeChipCount = Object.keys(typeViews).length;
@@ -2352,45 +3679,23 @@
         state.advancedDrawerVisible = advancedVisible;
         state.panelRenderCount += 1;
         updatePanelSize();
-        if (requestFocus && !advancedVisible) {
+        if (requestFocus && !advancedVisible && searchExpanded) {
             requestKeyboardOnMain();
         }
         return true;
     }
 
     function suspendHomeWindow() {
-        var suspended = false;
-        if (ClipHub.List &&
-                typeof ClipHub.List.suspendForFilterPanel === "function") {
-            suspended = ClipHub.List.suspendForFilterPanel() === true;
-        }
-        restoreListOnClose = suspended;
-        state.homeWindowSuspended = suspended;
-        if (suspended) { state.homeSuspendCount += 1; }
-        return suspended;
+        restoreListOnClose = false;
+        state.homeWindowSuspended = false;
+        state.lastError = null;
+        return false;
     }
 
     function finishHomeWindow(options) {
-        var restored = false;
-        var shouldRestore;
-        options = options || {};
-        shouldRestore = restoreListOnClose &&
-            options.restoreList !== false;
-        if (ClipHub.List &&
-                typeof ClipHub.List.finishFilterPanel === "function") {
-            restored = ClipHub.List.finishFilterPanel({
-                restore: shouldRestore,
-                reason: String(options.reason || "filter_closed")
-            }) === true;
-        }
-        if (restored) {
-            state.homeRestoreCount += 1;
-        } else if (restoreListOnClose && !shouldRestore) {
-            state.homeRestoreCancelCount += 1;
-        }
         restoreListOnClose = false;
         state.homeWindowSuspended = false;
-        return restored;
+        return false;
     }
 
     function showPanel(options) {
@@ -2405,7 +3710,12 @@
         }
         loadHistory();
         advancedVisible = options.showAdvanced === true;
+        searchExpanded = options.requestKeyboard === true &&
+            !advancedVisible;
+        state.searchExpanded = searchExpanded;
         state.advancedDrawerVisible = advancedVisible;
+        restoreListOnClose = false;
+        state.homeWindowSuspended = false;
         if (state.panelAttached) {
             requireMain(runOnMainSync(function () {
                 buildPanelContent(options.requestKeyboard === true);
@@ -2418,12 +3728,6 @@
                 state: getPanelState()
             };
         }
-        if (rootMode) {
-            restoreListOnClose = false;
-            state.homeWindowSuspended = false;
-        } else {
-            suspendHomeWindow();
-        }
         try {
             result = requireMain(runOnMainSync(function () {
                 var size = panelDimensions();
@@ -2432,6 +3736,9 @@
                     WindowManager.LayoutParams.TYPE_SYSTEM_ALERT;
                 var thread = nowThread();
                 var colors = palette();
+                var windowRoot;
+                var rootParams;
+                var resizeParams;
                 panelRoot = new LinearLayout(appContext);
                 panelRoot.setOrientation(LinearLayout.VERTICAL);
                 panelRoot.setPadding(dp(12), dp(8), dp(12), dp(10));
@@ -2440,27 +3747,38 @@
                 if (Build.VERSION.SDK_INT >= 21) {
                     panelRoot.setElevation(dp(20));
                 }
+                panelManagedFrame = ClipHub.Window.createManagedFrame(
+                    panelRoot, { accentColor: colors.accentStrong });
+                panelWindowRoot = panelManagedFrame.rootView;
+                primaryDragView = panelManagedFrame.dragView;
+                primaryResizeView = panelManagedFrame.resizeView;
+                windowRoot = panelWindowRoot;
                 panelParams = new WindowManager.LayoutParams(
                     size.width, size.height, type,
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
                         WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED |
                         WindowManager.LayoutParams.FLAG_DIM_BEHIND,
                     PixelFormat.TRANSLUCENT);
-                panelParams.gravity = Gravity.BOTTOM |
-                    Gravity.CENTER_HORIZONTAL;
-                panelParams.y = dp(10);
+                panelParams.gravity = Gravity.TOP | Gravity.START;
+                panelParams.x = Number(size.x || 0);
+                panelParams.y = Number(size.y || 0);
                 panelParams.dimAmount = 0.44;
                 panelParams.softInputMode =
                     WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE |
-                    WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE;
+                    (rootMode ?
+                        WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN :
+                        WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
                 try {
-                    panelParams.setTitle("ClipHub Filter Panel");
+                    panelParams.setTitle(rootMode ?
+                        "ClipHub Primary Window" : "ClipHub Filter Panel");
                 } catch (ignoredTitle) {}
-                windowManager.addView(panelRoot, panelParams);
+                windowManager.addView(windowRoot, panelParams);
                 state.panelAttached = true;
                 state.panelOpenCount += 1;
                 state.panelWindowType = Number(type);
                 state.panelFlags = Number(panelParams.flags);
+                state.panelX = Number(size.x || 0);
+                state.panelY = Number(size.y || 0);
                 state.panelWidthPx = size.width;
                 state.panelHeightPx = size.height;
                 state.panelWidthDp = size.widthDp;
@@ -2470,6 +3788,8 @@
                 state.opaqueBackground = true;
                 state.panelAddThreadId = thread.id;
                 state.panelAddThreadName = thread.name;
+                state.primaryGeometryManaged = rootMode;
+                state.primaryResizeViewPresent = primaryResizeView !== null;
                 state.lastError = null;
                 try {
                     resetResultPaging();
@@ -2479,6 +3799,38 @@
                     previewRows = [];
                 }
                 buildPanelContent(options.requestKeyboard !== false);
+                ClipHub.Window.attachWindow({
+                    role: rootMode ? "primary" : "filter_overlay",
+                    rootView: panelWindowRoot,
+                    contentView: panelRoot,
+                    layoutParams: panelParams,
+                    windowManager: windowManager,
+                    dragView: primaryDragView,
+                    resizeView: primaryResizeView,
+                    resizeVisual: panelManagedFrame.resizeVisual,
+                    geometry: size,
+                    onGeometryChanged: function (geometry) {
+                        var previousWidth;
+                        var nextWidth;
+                        if (!geometry) { return; }
+                        previousWidth = Number(state.panelWidthPx || 0);
+                        nextWidth = Number(geometry.width || 0);
+                        state.panelX = Number(geometry.x || 0);
+                        state.panelY = Number(geometry.y || 0);
+                        state.panelWidthPx = nextWidth;
+                        state.panelHeightPx = Number(geometry.height || 0);
+                        state.panelWidthDp = Number(geometry.widthDp || 0);
+                        state.panelHeightDp = Number(geometry.heightDp || 0);
+                        scheduleAdaptiveResultRefresh(previousWidth, nextWidth);
+                    },
+                    onRequestClose: function (reason) {
+                        return closePanel({ restoreList: false,
+                            reason: String(reason || "managed_close") }).ok === true;
+                    }
+                });
+                state.primaryGeometryManaged = true;
+                state.primaryDragViewPresent = primaryDragView !== null;
+                state.primaryResizeViewPresent = primaryResizeView !== null;
                 return {
                     ok: true,
                     attached: true,
@@ -2488,15 +3840,35 @@
             }, 3000));
             return result;
         } catch (error) {
-            if (!rootMode) {
-                finishHomeWindow({
-                    restoreList: true,
-                    reason: "show_failed"
-                });
-            }
+            try {
+                if (panelWindowRoot !== null && ClipHub.Window &&
+                        typeof ClipHub.Window.detachWindow === "function") {
+                    ClipHub.Window.detachWindow(panelWindowRoot);
+                } else if (rootMode && ClipHub.Window &&
+                        typeof ClipHub.Window.detachPrimaryWindow === "function") {
+                    ClipHub.Window.detachPrimaryWindow();
+                }
+            } catch (ignoredDetach) {}
+            try {
+                if (panelWindowRoot !== null &&
+                        panelWindowRoot.isAttachedToWindow()) {
+                    windowManager.removeViewImmediate(panelWindowRoot);
+                } else if (panelRoot !== null &&
+                        panelRoot.isAttachedToWindow()) {
+                    windowManager.removeViewImmediate(panelRoot);
+                }
+            } catch (ignoredRemove) {}
+            state.panelAttached = false;
+            panelRoot = null;
+            panelWindowRoot = null;
+            panelManagedFrame = null;
+            panelParams = null;
+            primaryDragView = null;
+            primaryResizeView = null;
             rootMode = false;
             state.rootMode = false;
             state.primarySurface = "filter_overlay";
+            state.primaryGeometryManaged = false;
             throw error;
         }
     }
@@ -2505,12 +3877,14 @@
         var result;
         var wasRootMode = rootMode;
         options = options || {};
-        if (!state.panelAttached && panelRoot === null) {
-            if (!wasRootMode) { finishHomeWindow(options); }
+        if (!state.panelAttached && panelRoot === null &&
+                panelWindowRoot === null) {
             rootMode = false;
             state.rootMode = false;
             state.primarySurface = "filter_overlay";
+            state.primaryGeometryManaged = false;
             clearSelectedResult();
+            clearDeleteUndo(true);
             return {
                 ok: true,
                 attached: false,
@@ -2520,13 +3894,15 @@
         }
         result = requireMain(runOnMainSync(function () {
             var thread = nowThread();
+            var targetRoot = panelWindowRoot !== null ?
+                panelWindowRoot : panelRoot;
             try {
                 hideKeyboardOnMain();
-                if (panelRoot !== null) {
+                if (targetRoot !== null) {
                     try {
-                        windowManager.removeViewImmediate(panelRoot);
+                        windowManager.removeViewImmediate(targetRoot);
                     } catch (error) {
-                        if (panelRoot.isAttachedToWindow()) {
+                        if (targetRoot.isAttachedToWindow()) {
                             throw error;
                         }
                     }
@@ -2537,16 +3913,33 @@
                 state.lastError = null;
                 return true;
             } finally {
+                if (panelWindowRoot !== null && ClipHub.Window &&
+                        typeof ClipHub.Window.detachWindow === "function") {
+                    try { ClipHub.Window.detachWindow(panelWindowRoot); }
+                    catch (ignoredDetach) {}
+                }
                 searchGeneration += 1;
+                adaptiveRenderGeneration += 1;
+                clearDeleteUndo(true);
+                clearCopyFeedback();
                 state.panelAttached = false;
                 state.inputFocused = false;
                 advancedVisible = false;
                 state.advancedDrawerVisible = false;
                 panelRoot = null;
+                panelWindowRoot = null;
+                panelManagedFrame = null;
                 panelParams = null;
+                primaryDragView = null;
+                primaryResizeView = null;
                 keywordInput = null;
                 advancedKeywordInput = null;
                 searchView = null;
+                searchStatusRow = null;
+                searchInputRow = null;
+                searchToggleView = null;
+                searchClearView = null;
+                historyContainerView = null;
                 resetView = null;
                 closeView = null;
                 settingsButton = null;
@@ -2555,6 +3948,10 @@
                 clearHistoryView = null;
                 resultContainer = null;
                 resultCountView = null;
+                resultBodyFrame = null;
+                resultActionViews = [];
+                deleteUndoView = null;
+                copyFeedbackView = null;
                 resultScrollView = null;
                 loadMoreView = null;
                 drawerContainer = null;
@@ -2568,12 +3965,18 @@
                 sensitiveViews = {};
                 sortViews = {};
                 historyViews = [];
+                state.primaryGeometryManaged = false;
+                state.primaryDragViewPresent = false;
+                state.primaryResizeViewPresent = false;
             }
         }, 3000));
-        if (!wasRootMode) { finishHomeWindow(options); }
         rootMode = false;
+        searchExpanded = false;
+        state.searchExpanded = false;
         state.rootMode = false;
         state.primarySurface = "filter_overlay";
+        restoreListOnClose = false;
+        state.homeWindowSuspended = false;
         clearSelectedResult();
         resultCardViews = [];
         toolbarActionViews = {};
@@ -2599,6 +4002,11 @@
             }, 2500));
             return true;
         }
+        if (searchExpanded) {
+            state.backLayerCloseCount += 1;
+            state.lastBackLayer = "search_input";
+            return setSearchExpanded(false, false);
+        }
         state.backLayerCloseCount += 1;
         state.lastBackLayer = "search_panel";
         closePanel({
@@ -2612,8 +4020,10 @@
         var attachedToWindow = false;
         var notFocusable = false;
         try {
-            attachedToWindow = panelRoot !== null &&
-                panelRoot.isAttachedToWindow();
+            attachedToWindow = (panelWindowRoot !== null ?
+                panelWindowRoot : panelRoot) !== null &&
+                (panelWindowRoot !== null ?
+                    panelWindowRoot : panelRoot).isAttachedToWindow();
         } catch (ignored) {}
         try {
             notFocusable = panelParams !== null &&
@@ -2641,6 +4051,16 @@
             typeChipCount: Object.keys(typeViews).length,
             tagChipCount: Object.keys(tagViews).length,
             historyChipCount: Number(state.historyChipCount),
+            searchExpanded: searchExpanded === true,
+            searchExpandCount: Number(state.searchExpandCount),
+            searchCollapseCount: Number(state.searchCollapseCount),
+            headerHeightDp: Number(state.headerHeightDp),
+            headerControlHeightDp:
+                Number(state.headerControlHeightDp),
+            headerActionSizeDp: Number(state.headerActionSizeDp),
+            headerGapDp: Number(state.headerGapDp),
+            headerFilterActiveCount:
+                Number(state.headerFilterActiveCount),
             resultCardCount: Number(state.resultCardCount),
             settingsButtonPresent: settingsButton !== null,
             settingsOpenCount: Number(state.settingsOpenCount),
@@ -2700,7 +4120,8 @@
             rootMode: rootMode === true,
             primarySurface: state.primarySurface,
             selectedItemId: selectedItemId,
-            selectionMode: selectedItemId !== null,
+            selectionEnabled: SELECTION_ENABLED === true,
+            selectionMode: SELECTION_ENABLED && selectedItemId !== null,
             resultCardClickCount:
                 Number(state.resultCardClickCount),
             resultCardLongPressCount:
@@ -2711,6 +4132,42 @@
             addActionCount: Number(state.addActionCount),
             deleteActionCount: Number(state.deleteActionCount),
             detailActionCount: Number(state.detailActionCount),
+            cardActionButtonCount: Number(state.cardActionButtonCount),
+            cardEditActionCount: Number(state.cardEditActionCount),
+            cardTranslateActionCount:
+                Number(state.cardTranslateActionCount),
+            cardCopyActionCount: Number(state.cardCopyActionCount),
+            cardDeleteActionCount: Number(state.cardDeleteActionCount),
+            cardActionGridWidthDp:
+                Number(state.cardActionGridWidthDp),
+            cardActionCellHeightDp:
+                Number(state.cardActionCellHeightDp),
+            cardActionFontScale: Number(state.cardActionFontScale),
+            cardActionIconSizeDp:
+                Number(state.cardActionIconSizeDp),
+            pinnedBadgeCount: Number(state.pinnedBadgeCount),
+            pinBadgeSizeDp: Number(state.pinBadgeSizeDp),
+            deleteUndoVisible: state.deleteUndoVisible === true,
+            deleteUndoItemId: state.deleteUndoItemId,
+            deleteUndoShowCount: Number(state.deleteUndoShowCount),
+            deleteUndoActionCount: Number(state.deleteUndoActionCount),
+            deleteUndoTimeoutCount:
+                Number(state.deleteUndoTimeoutCount),
+            copyFeedbackVisible: state.copyFeedbackVisible === true,
+            copyFeedbackShowCount:
+                Number(state.copyFeedbackShowCount),
+            copyFeedbackTimeoutCount:
+                Number(state.copyFeedbackTimeoutCount),
+            adaptiveLayoutRefreshCount:
+                Number(state.adaptiveLayoutRefreshCount),
+            swipeEnabled: state.swipeEnabled === true,
+            swipeStartCount: Number(state.swipeStartCount),
+            swipeMoveCount: Number(state.swipeMoveCount),
+            swipePinCount: Number(state.swipePinCount),
+            swipeDeleteCount: Number(state.swipeDeleteCount),
+            swipeCancelCount: Number(state.swipeCancelCount),
+            lastSwipeItemId: state.lastSwipeItemId,
+            lastSwipeAction: state.lastSwipeAction,
             toolbarEnabledCount:
                 Number(state.toolbarEnabledCount),
             panelWindowType: state.panelWindowType,
@@ -2719,6 +4176,12 @@
             panelHeightPx: state.panelHeightPx,
             panelWidthDp: state.panelWidthDp,
             panelHeightDp: state.panelHeightDp,
+            panelX: Number(state.panelX || 0),
+            panelY: Number(state.panelY || 0),
+            primaryGeometryManaged: state.primaryGeometryManaged === true,
+            primaryDragViewPresent: state.primaryDragViewPresent === true,
+            primaryResizeViewPresent: state.primaryResizeViewPresent === true,
+            resizeCorner: state.resizeCorner,
             dimAmount: state.dimAmount,
             modalWindow: state.modalWindow,
             opaqueBackground: state.opaqueBackground,
@@ -2766,6 +4229,14 @@
         state.panelRenderCount = 0;
         state.searchActionCount = 0;
         state.realtimeSearchCount = 0;
+        state.searchExpanded = false;
+        state.searchExpandCount = 0;
+        state.searchCollapseCount = 0;
+        state.headerHeightDp = 0;
+        state.headerControlHeightDp = 0;
+        state.headerActionSizeDp = 0;
+        state.headerGapDp = 0;
+        state.headerFilterActiveCount = 0;
         state.sourceToggleCount = 0;
         state.typeToggleCount = 0;
         state.tagToggleCount = 0;
@@ -2827,6 +4298,34 @@
         state.addActionCount = 0;
         state.deleteActionCount = 0;
         state.detailActionCount = 0;
+        state.cardActionButtonCount = 0;
+        state.cardEditActionCount = 0;
+        state.cardTranslateActionCount = 0;
+        state.cardCopyActionCount = 0;
+        state.cardDeleteActionCount = 0;
+        state.cardActionGridWidthDp = 0;
+        state.cardActionCellHeightDp = 0;
+        state.cardActionFontScale = 1;
+        state.cardActionIconSizeDp = 0;
+        state.pinnedBadgeCount = 0;
+        state.pinBadgeSizeDp = 0;
+        state.deleteUndoVisible = false;
+        state.deleteUndoItemId = null;
+        state.deleteUndoShowCount = 0;
+        state.deleteUndoActionCount = 0;
+        state.deleteUndoTimeoutCount = 0;
+        state.copyFeedbackVisible = false;
+        state.copyFeedbackShowCount = 0;
+        state.copyFeedbackTimeoutCount = 0;
+        state.adaptiveLayoutRefreshCount = 0;
+        state.swipeEnabled = true;
+        state.swipeStartCount = 0;
+        state.swipeMoveCount = 0;
+        state.swipePinCount = 0;
+        state.swipeDeleteCount = 0;
+        state.swipeCancelCount = 0;
+        state.lastSwipeItemId = null;
+        state.lastSwipeAction = null;
         state.settingsOpenCount = 0;
         state.settingsButtonPresent = false;
         state.renderedTagLabelCount = 0;
@@ -2837,7 +4336,7 @@
         state.resultHasMore = false;
         state.resultCanScroll = false;
         state.loadMoreCount = 0;
-        state.toolbarEnabledCount = 1;
+        state.toolbarEnabledCount = 0;
         state.repositorySortUnchanged = true;
         state.sortScope = "result_window";
         state.panelAddThreadId = null;
@@ -2857,13 +4356,13 @@
         state.resultCardCount = 0;
         state.resultSourceIconCount = 0;
         state.advancedDrawerVisible = false;
-        state.searchPageStyle = "reference_search_v7";
+        state.searchPageStyle = "reference_search_v12_compact_header";
         state.lastError = null;
     }
 
     ClipHub.Filter = {
         MODULE_NAME: "ch_11_filter",
-        MODULE_VERSION: 15,
+        MODULE_VERSION: 27,
 
         init: function (context) {
             androidContext = context && context.androidContext ?
@@ -2884,6 +4383,8 @@
             mainHandler = new Handler(Looper.getMainLooper());
             density = Number(appContext.getResources()
                 .getDisplayMetrics().density || 1);
+            touchSlop = Number(ViewConfiguration.get(appContext)
+                .getScaledTouchSlop());
             value = emptyValue();
             ready = true;
             eventListeners = [];
@@ -2900,6 +4401,20 @@
             resultTagMap = {};
             resultScrollView = null;
             loadMoreView = null;
+            resultBodyFrame = null;
+            resultActionViews = [];
+            deleteUndoView = null;
+            pendingDeleteUndo = null;
+            deleteUndoGeneration = 0;
+            copyFeedbackView = null;
+            copyFeedbackGeneration = 0;
+            adaptiveRenderGeneration = 0;
+            searchExpanded = false;
+            searchStatusRow = null;
+            searchInputRow = null;
+            searchToggleView = null;
+            searchClearView = null;
+            historyContainerView = null;
             resetResultPaging();
             resetState();
             loadHistory();
@@ -3009,6 +4524,24 @@
             return requireMain(runOnMainSync(function () {
                 return index >= 0 && index < resultCardViews.length ?
                     resultCardViews[index].performLongClick() : false;
+            }, 2500));
+        },
+
+        performResultActionClick: function (index, action) {
+            index = Math.floor(Number(index));
+            action = String(action || "");
+            return requireMain(runOnMainSync(function () {
+                var views = index >= 0 && index < resultActionViews.length ?
+                    resultActionViews[index] : null;
+                return views !== null && views[action] ?
+                    views[action].performClick() : false;
+            }, 2500));
+        },
+
+        performDeleteUndoClick: function () {
+            return requireMain(runOnMainSync(function () {
+                return deleteUndoView !== null ?
+                    performDeleteUndo() : false;
             }, 2500));
         },
 
@@ -3165,13 +4698,25 @@
             } catch (ignoredClose) {}
             unregisterEvents();
             searchGeneration += 1;
+            adaptiveRenderGeneration += 1;
+            clearDeleteUndo(true);
+            clearCopyFeedback();
             rootMode = false;
+            searchExpanded = false;
             selectedItemId = null;
             resultCardViews = [];
             toolbarActionViews = {};
             resultTagMap = {};
             resultScrollView = null;
             loadMoreView = null;
+            resultBodyFrame = null;
+            resultActionViews = [];
+            deleteUndoView = null;
+            pendingDeleteUndo = null;
+            copyFeedbackView = null;
+            copyFeedbackGeneration = 0;
+            cancelActiveSwipe(false);
+            activeSwipeCard = null;
             resetResultPaging();
             value = null;
             ready = false;

@@ -3,9 +3,11 @@
     var AndroidContext = Packages.android.content.Context;
     var AndroidClipData = Packages.android.content.ClipData;
     var ClipboardManager = Packages.android.content.ClipboardManager;
+    var Build = Packages.android.os.Build;
     var Thread = Packages.java.lang.Thread;
     var SENSITIVE_KEY = "android.content.extra.IS_SENSITIVE";
     var manager = null;
+    var vibrator = null;
     var listener = null;
     var androidContext = null;
     var packageManager = null;
@@ -32,6 +34,12 @@
         sourceErrorCount: 0,
         sensitiveIgnoredCount: 0,
         ignoredPackageCount: 0,
+        copyHapticCount: 0,
+        copyHapticFailureCount: 0,
+        lastCopyHapticAt: 0,
+        lastCopyHapticLabel: null,
+        lastCopyHapticThreadId: null,
+        lastCopyHapticThreadName: null,
         lastEvent: null,
         lastObserved: { hash: "", at: 0 },
         ownWrite: { hash: "", at: 0, expiresAt: 0, consumed: false },
@@ -40,6 +48,70 @@
     };
 
     function now() { return ClipHub.Base.now(); }
+
+    function resolveVibrator() {
+        var managerService;
+        if (androidContext === null || androidContext === undefined) {
+            return null;
+        }
+        if (Build.VERSION.SDK_INT >= 31) {
+            try {
+                managerService = androidContext.getSystemService(
+                    AndroidContext.VIBRATOR_MANAGER_SERVICE);
+                if (managerService !== null && managerService !== undefined &&
+                        typeof managerService.getDefaultVibrator === "function") {
+                    return managerService.getDefaultVibrator();
+                }
+            } catch (ignoredManager) {}
+        }
+        try {
+            return androidContext.getSystemService(
+                AndroidContext.VIBRATOR_SERVICE);
+        } catch (ignoredVibrator) {
+            return null;
+        }
+    }
+
+    function performCopySuccessHaptic(options) {
+        var durationMs;
+        var amplitude;
+        var effect;
+        var thread;
+        options = options || {};
+        if (options.haptic === false) { return false; }
+        if (vibrator === null || vibrator === undefined) {
+            vibrator = resolveVibrator();
+        }
+        if (vibrator === null || vibrator === undefined) { return false; }
+        try {
+            if (typeof vibrator.hasVibrator === "function" &&
+                    !vibrator.hasVibrator()) {
+                return false;
+            }
+            durationMs = Math.max(8, Math.min(40,
+                Math.floor(Number(options.hapticDurationMs || 18))));
+            amplitude = Math.max(1, Math.min(255,
+                Math.floor(Number(options.hapticAmplitude || 60))));
+            if (Build.VERSION.SDK_INT >= 26) {
+                effect = Packages.android.os.VibrationEffect.createOneShot(
+                    durationMs, amplitude);
+                vibrator.vibrate(effect);
+            } else {
+                vibrator.vibrate(durationMs);
+            }
+            thread = Thread.currentThread();
+            state.copyHapticCount += 1;
+            state.lastCopyHapticAt = now();
+            state.lastCopyHapticLabel = String(
+                options.hapticLabel || options.label || "ClipHub");
+            state.lastCopyHapticThreadId = Number(thread.getId());
+            state.lastCopyHapticThreadName = String(thread.getName());
+            return true;
+        } catch (error) {
+            state.copyHapticFailureCount += 1;
+            return false;
+        }
+    }
 
     function log(level, message) {
         try {
@@ -561,6 +633,7 @@
         var at;
         var PersistableBundle;
         var extras;
+        var hapticPerformed = false;
         options = options || {};
         if (manager === null) { throw new Error("ClipboardManager unavailable"); }
         if (text.length === 0) { throw new Error("Clipboard text must not be empty"); }
@@ -582,13 +655,15 @@
                 clip.getDescription().setExtras(extras);
             }
             manager.setPrimaryClip(clip);
+            hapticPerformed = performCopySuccessHaptic(options);
             return {
                 ok: true,
                 written: true,
                 hash: hash,
                 at: at,
                 contentLength: text.length,
-                sensitive: options.sensitive === true
+                sensitive: options.sensitive === true,
+                hapticPerformed: hapticPerformed
             };
         } catch (error) {
             state.ownWrite.hash = "";
@@ -664,6 +739,12 @@
             sourceErrorCount: state.sourceErrorCount,
             sensitiveIgnoredCount: state.sensitiveIgnoredCount,
             ignoredPackageCount: state.ignoredPackageCount,
+            copyHapticCount: state.copyHapticCount,
+            copyHapticFailureCount: state.copyHapticFailureCount,
+            lastCopyHapticAt: state.lastCopyHapticAt,
+            lastCopyHapticLabel: state.lastCopyHapticLabel,
+            lastCopyHapticThreadId: state.lastCopyHapticThreadId,
+            lastCopyHapticThreadName: state.lastCopyHapticThreadName,
             lastEvent: state.lastEvent,
             lastObserved: {
                 hash: state.lastObserved.hash,
@@ -687,7 +768,7 @@
 
     ClipHub.Clipboard = {
         MODULE_NAME: "ch_04_clipboard",
-        MODULE_VERSION: 3,
+        MODULE_VERSION: 4,
         SENSITIVE_KEY: SENSITIVE_KEY,
         init: function (context) {
             androidContext = context && context.androidContext
@@ -698,6 +779,7 @@
             packageManager = androidContext.getPackageManager();
             manager = androidContext.getSystemService(AndroidContext.CLIPBOARD_SERVICE);
             if (manager === null) { throw new Error("ClipboardManager unavailable"); }
+            vibrator = resolveVibrator();
             return start();
         },
         start: start,
@@ -714,6 +796,7 @@
         shutdown: function () {
             stop();
             manager = null;
+            vibrator = null;
             androidContext = null;
             packageManager = null;
             sourceCache = {};

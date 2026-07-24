@@ -66,6 +66,8 @@
 
     var detailWindowManager = null;
     var detailRoot = null;
+    var detailWindowRoot = null;
+    var detailManagedFrame = null;
     var detailParams = null;
     var detailRow = null;
     var detailCopyView = null;
@@ -698,53 +700,15 @@
     }
 
     function suspendForFilterPanel() {
-        var shouldSuspend;
-        if (filterPanelSuspended) { return true; }
-        shouldSuspend = visible && ClipHub.Window &&
-            ClipHub.Window.isAttached();
-        filterPanelSuspended = shouldSuspend;
-        if (!shouldSuspend) {
-            state.lastFilterPanelAction = "open_without_home";
-            return false;
-        }
-        ClipHub.Window.close();
-        state.filterPanelHideCount += 1;
-        state.lastFilterPanelAction = "home_suspended";
-        return true;
+        filterPanelSuspended = false;
+        state.lastFilterPanelAction = "legacy_home_removed";
+        return false;
     }
 
     function finishFilterPanel(options) {
-        var shouldRestore;
-        options = options || {};
-        shouldRestore = filterPanelSuspended &&
-            options.restore !== false && visible;
         filterPanelSuspended = false;
-        if (!shouldRestore) {
-            if (options.restore === false) {
-                state.filterPanelCancelCount += 1;
-                state.lastFilterPanelAction = "restore_cancelled";
-            } else {
-                state.lastFilterPanelAction = "restore_not_required";
-            }
-            return false;
-        }
-        try {
-            ClipHub.Window.open({
-                widthDp: Number(lastShowOptions.widthDp || 390),
-                heightDp: Number(lastShowOptions.heightDp || 720),
-                statusText: "正在加载剪贴板历史",
-                dimAmount: 0.44
-            });
-            refresh(false);
-            state.filterPanelRestoreCount += 1;
-            state.lastFilterPanelAction = String(
-                options.reason || "filter_closed");
-            return true;
-        } catch (error) {
-            state.lastError = String(error);
-            state.lastFilterPanelAction = "restore_failed";
-            return false;
-        }
+        state.lastFilterPanelAction = "legacy_home_removed";
+        return false;
     }
 
     function openFilterPanel() {
@@ -762,48 +726,23 @@
     }
 
     function detailDimensions() {
-        var display = new DisplayMetrics();
-        var width;
-        var height;
-        try {
-            detailWindowManager.getDefaultDisplay().getRealMetrics(display);
-        } catch (ignored) {
-            display = androidContext.getResources().getDisplayMetrics();
+        if (ClipHub.Window &&
+                typeof ClipHub.Window.computeGeometry === "function") {
+            return ClipHub.Window.computeGeometry("detail", {
+                useSaved: true
+            });
         }
-        width = Math.min(dp(420), Math.max(dp(300),
-            Number(display.widthPixels) - dp(22)));
-        height = Math.min(dp(650), Math.max(dp(400),
-            Number(display.heightPixels) - dp(72)));
-        return { width: width, height: height };
+        return { x: 0, y: 0, width: dp(390), height: dp(650),
+            widthDp: 390, heightDp: 650 };
     }
 
     function shouldRestoreList(reason) {
-        reason = String(reason || "close");
-        return detailRestoreList && visible &&
-            reason !== "list_hide" &&
-            reason !== "shutdown" &&
-            reason !== "copy_close" &&
-            reason !== "replace";
+        return false;
     }
 
     function restoreListAfterDetail(reason) {
-        if (!shouldRestoreList(reason)) {
-            return false;
-        }
-        try {
-            ClipHub.Window.open({
-                widthDp: Number(lastShowOptions.widthDp || 390),
-                heightDp: Number(lastShowOptions.heightDp || 720),
-                statusText: "正在加载剪贴板历史",
-                dimAmount: 0.44
-            });
-            renderRows(items);
-            state.detailListRestoreCount += 1;
-            return true;
-        } catch (error) {
-            state.lastError = String(error);
-            return false;
-        }
+        detailRestoreList = false;
+        return false;
     }
 
     function closeDetail(reason) {
@@ -823,9 +762,18 @@
             var thread = Thread.currentThread();
             try {
                 try {
-                    detailWindowManager.removeViewImmediate(detailRoot);
+                    if (ClipHub.Window && detailWindowRoot !== null &&
+                            typeof ClipHub.Window.detachWindow === "function") {
+                        ClipHub.Window.detachWindow(detailWindowRoot);
+                    }
+                } catch (ignoredDetach) {}
+                try {
+                    detailWindowManager.removeViewImmediate(
+                        detailWindowRoot !== null ? detailWindowRoot : detailRoot);
                 } catch (error) {
-                    if (detailRoot.isAttachedToWindow()) {
+                    if (detailWindowRoot !== null ?
+                            detailWindowRoot.isAttachedToWindow() :
+                            detailRoot.isAttachedToWindow()) {
                         throw error;
                     }
                 }
@@ -835,6 +783,8 @@
                 state.lastDetailAction = String(reason || "close");
             } finally {
                 detailRoot = null;
+                detailWindowRoot = null;
+                detailManagedFrame = null;
                 detailParams = null;
                 detailRow = null;
                 detailCopyView = null;
@@ -1019,14 +969,7 @@
         if (detailRoot !== null) {
             closeDetail("replace");
         }
-        detailRestoreList = restoreFromPrevious ||
-            (visible && ClipHub.Window && ClipHub.Window.isAttached());
-        if (detailRestoreList) {
-            try {
-                ClipHub.Window.close();
-                state.detailListHideCount += 1;
-            } catch (ignoredClose) {}
-        }
+        detailRestoreList = false;
         return ClipHub.Window.runOnMain(function () {
             var size = detailDimensions();
             var type = Build.VERSION.SDK_INT >= 26 ?
@@ -1040,17 +983,41 @@
 
             detailRow = row;
             detailRoot = buildDetailView(row);
+            detailManagedFrame = ClipHub.Window.createManagedFrame(detailRoot, {
+                accentColor: colors().accentStrong
+            });
+            detailWindowRoot = detailManagedFrame.rootView;
             detailWidthPx = Number(size.width);
             detailHeightPx = Number(size.height);
             detailParams = new WindowManager.LayoutParams(
                 size.width, size.height, type, flags,
                 PixelFormat.TRANSLUCENT);
-            detailParams.gravity = Gravity.CENTER;
+            detailParams.gravity = Gravity.TOP | Gravity.START;
+            detailParams.x = Number(size.x || 0);
+            detailParams.y = Number(size.y || 0);
             detailParams.dimAmount = DETAIL_DIM_AMOUNT;
             try {
                 detailParams.setTitle("ClipHub Content Detail");
             } catch (ignoredTitle) {}
-            detailWindowManager.addView(detailRoot, detailParams);
+            detailWindowManager.addView(detailWindowRoot, detailParams);
+            ClipHub.Window.attachWindow({
+                role: "detail",
+                rootView: detailWindowRoot,
+                contentView: detailRoot,
+                layoutParams: detailParams,
+                windowManager: detailWindowManager,
+                dragView: detailManagedFrame.dragView,
+                resizeView: detailManagedFrame.resizeView,
+                resizeVisual: detailManagedFrame.resizeVisual,
+                geometry: size,
+                onGeometryChanged: function (geometry) {
+                    detailWidthPx = Number(geometry.width || 0);
+                    detailHeightPx = Number(geometry.height || 0);
+                },
+                onRequestClose: function () {
+                    return closeDetail("managed_close").ok === true;
+                }
+            });
             state.detailOpenCount += 1;
             state.cardOpenDetailCount += 1;
             state.lastDetailItemId = Number(row.id);
@@ -1349,729 +1316,10 @@
         return true;
     }
 
-    function makeSourceIcon(row, palette) {
-        var type = typeInfo(row, palette);
-        var holder = new FrameLayout(androidContext);
-        var packageName = String(row.source_package || "");
-        var image;
-        var drawable;
-        var fallback;
-
-        holder.setBackground(circleBackground(type.soft, null));
-        try {
-            if (packageName.length > 0) {
-                drawable = androidContext.getPackageManager()
-                    .getApplicationIcon(packageName);
-                image = new ImageView(androidContext);
-                image.setImageDrawable(drawable);
-                image.setScaleType(
-                    ImageView.ScaleType.CENTER_INSIDE);
-                image.setPadding(dp(5), dp(5), dp(5), dp(5));
-                holder.addView(image,
-                    new FrameLayout.LayoutParams(
-                        FrameLayout.LayoutParams.MATCH_PARENT,
-                        FrameLayout.LayoutParams.MATCH_PARENT));
-                state.actualSourceAppIconCount += 1;
-            }
-        } catch (ignoredIcon) {}
-
-        if (holder.getChildCount() === 0) {
-            fallback = makeText(type.icon,
-                type.key === "code" ? 9 : 16,
-                type.color, true);
-            fallback.setGravity(Gravity.CENTER);
-            holder.addView(fallback,
-                new FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.MATCH_PARENT));
-        }
-        state.sourceIconCount += 1;
-        return holder;
-    }
-
-    function addChip(row, text, palette, selected) {
-        var chip = makePill(text, palette, selected);
-        var params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.rightMargin = dp(5);
-        row.addView(chip, params);
-    }
-
-    function buildCard(row, rowTags, index,
-            allowReorder, palette) {
-        var selected = selectedItemId !== null &&
-            Number(selectedItemId) === Number(row.id);
-        var wrapper = new FrameLayout(androidContext);
-        var card = new LinearLayout(androidContext);
-        var check = null;
-        var icon = makeSourceIcon(row, palette);
-        var center = new LinearLayout(androidContext);
-        var preview = makeText(
-            Number(row.is_sensitive || 0) === 1 ?
-            "敏感内容" : String(row.content),
-            13, palette.textPrimary, false);
-        var tagScroll = new HorizontalScrollView(androidContext);
-        var tagRow = new LinearLayout(androidContext);
-        var right = new LinearLayout(androidContext);
-        var time = makeText(formatTime(row.last_copied_at),
-            10, palette.textTertiary, false);
-        var rightActions = new LinearLayout(androidContext);
-        var star = makeIcon(
-            Number(row.is_pinned || 0) === 1 ? "★" : "☆",
-            Number(row.is_pinned || 0) === 1 ?
-                palette.accentStrong : palette.textTertiary,
-            19, "置顶");
-        var more = makeIcon("⋮", palette.icon, 19,
-            "更多与拖动排序");
-        var type = typeInfo(row, palette);
-        var detailAction = null;
-        var tagAction;
-        var editAction;
-        var deleteAction;
-        var params;
-        var tagIndex;
-
-        wrapper.setBackground(roundedBackground(
-            selected ? palette.cardSelected : palette.card,
-            selected ? palette.accent : palette.stroke,
-            15));
-        if (Build.VERSION.SDK_INT >= 21) {
-            wrapper.setElevation(dp(1));
-        }
-
-        card.setOrientation(LinearLayout.HORIZONTAL);
-        card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setPadding(dp(10), dp(7), dp(7), dp(7));
-        card.setClickable(true);
-        card.setFocusable(true);
-
-        if (selectionMode || selected) {
-            check = makeText(selected ? "✓" : "", 11,
-                "#FFFFFFFF", true);
-            check.setGravity(Gravity.CENTER);
-            check.setBackground(circleBackground(
-                selected ? palette.accent :
-                palette.surfaceMuted,
-                selected ? null : palette.stroke));
-            params = new LinearLayout.LayoutParams(
-                dp(22), dp(22));
-            params.rightMargin = dp(7);
-            card.addView(check, params);
-        }
-
-        params = new LinearLayout.LayoutParams(
-            dp(38), dp(38));
-        params.rightMargin = dp(9);
-        card.addView(icon, params);
-
-        center.setOrientation(LinearLayout.VERTICAL);
-        preview.setMaxLines(2);
-        preview.setEllipsize(TextUtils.TruncateAt.END);
-        preview.setLineSpacing(0, 1.06);
-        center.addView(preview,
-            new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        if (Number(row.is_sensitive || 0) === 1) {
-            state.renderedSensitiveMaskCount += 1;
-        }
-
-        tagScroll.setHorizontalScrollBarEnabled(false);
-        tagScroll.setFillViewport(false);
-        tagRow.setOrientation(LinearLayout.HORIZONTAL);
-        tagRow.setGravity(Gravity.CENTER_VERTICAL);
-        tagRow.setPadding(0, dp(5), 0, 0);
-        addChip(tagRow, type.label, palette, true);
-        for (tagIndex = 0;
-                tagIndex < rowTags.length &&
-                tagIndex < 3;
-                tagIndex += 1) {
-            addChip(tagRow,
-                String(rowTags[tagIndex].name),
-                palette, false);
-        }
-        if (rowTags.length > 3) {
-            addChip(tagRow,
-                "+" + String(rowTags.length - 3),
-                palette, false);
-        }
-        if (rowTags.length > 0) {
-            state.renderedTagLabelCount += 1;
-        }
-        tagScroll.addView(tagRow,
-            new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT));
-        center.addView(tagScroll,
-            new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        params = new LinearLayout.LayoutParams(
-            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
-        card.addView(center, params);
-
-        right.setOrientation(LinearLayout.VERTICAL);
-        right.setGravity(Gravity.END);
-        time.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        right.addView(time,
-            new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(18)));
-
-        rightActions.setOrientation(LinearLayout.HORIZONTAL);
-        rightActions.setGravity(Gravity.END |
-            Gravity.CENTER_VERTICAL);
-
-        star.setOnClickListener(new JavaAdapter(
-            View.OnClickListener, {
-                onClick: function () {
-                    togglePinned(row);
-                }
-            }));
-        rightActions.addView(star,
-            new LinearLayout.LayoutParams(dp(32), dp(32)));
-
-        if (allowReorder) {
-            more.setOnTouchListener(new JavaAdapter(
-                View.OnTouchListener, {
-                    onTouch: function (view, event) {
-                        return handleReorderTouch(
-                            index, view, event);
-                    }
-                }));
-        } else {
-            more.setOnClickListener(new JavaAdapter(
-                View.OnClickListener, {
-                    onClick: function () {
-                        openTagEditor(row);
-                    }
-                }));
-        }
-        rightActions.addView(more,
-            new LinearLayout.LayoutParams(dp(28), dp(32)));
-
-        right.addView(rightActions,
-            new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(34)));
-        card.addView(right,
-            new LinearLayout.LayoutParams(dp(72),
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        card.setOnClickListener(new JavaAdapter(
-            View.OnClickListener, {
-                onClick: function () {
-                    if (selectionMode) {
-                        toggleSelection(row);
-                    } else {
-                        openDetail(row, true);
-                    }
-                }
-            }));
-        card.setOnLongClickListener(new JavaAdapter(
-            View.OnLongClickListener, {
-                onLongClick: function () {
-                    enterSelection(row);
-                    return true;
-                }
-            }));
-
-        wrapper.addView(card,
-            new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT));
-
-        if (isLongText(row)) {
-            state.longItemCount += 1;
-            detailAction = makeText("详情", 1,
-                palette.textPrimary, false);
-            detailAction.setOnClickListener(
-                new JavaAdapter(View.OnClickListener, {
-                    onClick: function () {
-                        openDetail(row, false);
-                    }
-                }));
-        }
-
-        tagAction = makeText("标签", 1,
-            palette.textPrimary, false);
-        tagAction.setOnClickListener(
-            new JavaAdapter(View.OnClickListener, {
-                onClick: function () {
-                    openTagEditor(row);
-                }
-            }));
-
-        editAction = makeText("编辑", 1,
-            palette.textPrimary, false);
-        editAction.setOnClickListener(
-            new JavaAdapter(View.OnClickListener, {
-                onClick: function () {
-                    openEditEditor(row);
-                }
-            }));
-
-        deleteAction = makeText("删除", 1,
-            palette.danger, false);
-        deleteAction.setOnClickListener(
-            new JavaAdapter(View.OnClickListener, {
-                onClick: function () {
-                    deleteRow(row);
-                }
-            }));
-
-        state.metaRowCount += 1;
-        state.actionRowCount += 1;
-        state.cardMoreButtonCount += 1;
-        cardContainers.push(wrapper);
-        itemViews.push(card);
-        reorderViews.push(allowReorder ? more : null);
-        detailViews.push(detailAction);
-        tagViews.push(tagAction);
-        pinViews.push(star);
-        editViews.push(editAction);
-        deleteViews.push(deleteAction);
-        return wrapper;
-    }
-
-    function buildSearchField(searchText, palette, active) {
-        var root = new LinearLayout(androidContext);
-        var icon = makeText("⌕", 18,
-            palette.textSecondary, false);
-        var label = makeText(searchText, 12,
-            active ? palette.textPrimary :
-                palette.textSecondary, false);
-
-        root.setOrientation(LinearLayout.HORIZONTAL);
-        root.setGravity(Gravity.CENTER_VERTICAL);
-        root.setPadding(dp(12), 0, dp(11), 0);
-        root.setBackground(roundedBackground(
-            palette.surface,
-            active ? palette.accentBorder :
-                palette.stroke, 22));
-        root.setClickable(true);
-        root.setFocusable(true);
-
-        icon.setGravity(Gravity.CENTER);
-        root.addView(icon,
-            new LinearLayout.LayoutParams(dp(24),
-                LinearLayout.LayoutParams.MATCH_PARENT));
-
-        label.setSingleLine(true);
-        label.setEllipsize(TextUtils.TruncateAt.END);
-        label.setGravity(Gravity.CENTER_VERTICAL);
-        root.addView(label,
-            new LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                1));
-        return root;
-    }
-
-    function buildHeader(rows, palette, active) {
-        var container = new LinearLayout(androidContext);
-        var titleRow = new LinearLayout(androidContext);
-        var logo = makeText("▤", 20,
-            palette.accentStrong, true);
-        var title = makeText("全局剪切板", 18,
-            palette.textPrimary, true);
-        var searchRow = new LinearLayout(androidContext);
-        var searchText = active && filterSummary() ?
-            filterSummary() : "搜索剪切板内容";
-        var filterButton;
-        var plusButton;
-        var statusRow = new LinearLayout(androidContext);
-        var count = makeText("共 " + rows.length + " 条",
-            11, palette.textSecondary, false);
-        var sort = makeText(active ?
-            "筛选结果" : "↕  长按拖动可排序",
-            10, palette.textTertiary, false);
-        var params;
-
-        container.setOrientation(LinearLayout.VERTICAL);
-
-        titleRow.setOrientation(LinearLayout.HORIZONTAL);
-        titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        logo.setGravity(Gravity.CENTER);
-        logo.setBackground(roundedBackground(
-            palette.accentSoft,
-            palette.accentBorder, 10));
-        params = new LinearLayout.LayoutParams(
-            dp(36), dp(36));
-        params.rightMargin = dp(9);
-        titleRow.addView(logo, params);
-        titleRow.addView(title,
-            new LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1));
-
-        headerPinView = makeIcon("⌖",
-            ClipHub.Window.getState().pinned ?
-                palette.accentStrong : palette.icon,
-            19, "固定窗口");
-        headerPinView.setOnClickListener(
-            new JavaAdapter(View.OnClickListener, {
-                onClick: function () {
-                    ClipHub.Window.setPinned(
-                        !ClipHub.Window.getState().pinned);
-                    renderRows(items);
-                }
-            }));
-        titleRow.addView(headerPinView,
-            new LinearLayout.LayoutParams(dp(40), dp(40)));
-
-        headerSettingsView = makeIcon("⚙",
-            palette.icon, 18, "设置");
-        headerSettingsView.setOnClickListener(
-            new JavaAdapter(View.OnClickListener, {
-                onClick: function () {
-                    openFilterPanel();
-                }
-            }));
-        titleRow.addView(headerSettingsView,
-            new LinearLayout.LayoutParams(dp(40), dp(40)));
-
-        params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dp(8);
-        container.addView(titleRow, params);
-
-        searchRow.setOrientation(LinearLayout.HORIZONTAL);
-        searchRow.setGravity(Gravity.CENTER_VERTICAL);
-
-        searchView = buildSearchField(
-            searchText, palette, active);
-        searchView.setOnClickListener(
-            new JavaAdapter(View.OnClickListener, {
-                onClick: function () {
-                    openFilterPanel();
-                }
-            }));
-        params = new LinearLayout.LayoutParams(
-            0, dp(44), 1);
-        params.rightMargin = dp(8);
-        searchRow.addView(searchView, params);
-
-        filterButton = makeText(
-            active ? "☷  筛选中" : "☷  筛选",
-            11, palette.accentStrong, true);
-        filterButton.setGravity(Gravity.CENTER);
-        filterButton.setBackground(roundedBackground(
-            palette.accentSoft, null, 14));
-        filterButton.setClickable(true);
-        filterButton.setFocusable(true);
-        filterButton.setOnClickListener(
-            new JavaAdapter(View.OnClickListener, {
-                onClick: function () {
-                    openFilterPanel();
-                }
-            }));
-        filterView = filterButton;
-        params = new LinearLayout.LayoutParams(
-            dp(82), dp(44));
-        params.rightMargin = dp(8);
-        searchRow.addView(filterButton, params);
-
-        plusButton = makeIcon("+",
-            palette.accentStrong, 25, "新增");
-        plusButton.setBackground(circleBackground(
-            palette.accentSoft, null));
-        plusButton.setOnClickListener(
-            new JavaAdapter(View.OnClickListener, {
-                onClick: function () {
-                    openNewEditor();
-                }
-            }));
-        addView = plusButton;
-        searchRow.addView(plusButton,
-            new LinearLayout.LayoutParams(
-                dp(44), dp(44)));
-
-        params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dp(8);
-        container.addView(searchRow, params);
-
-        statusRow.setOrientation(LinearLayout.HORIZONTAL);
-        statusRow.setGravity(Gravity.CENTER_VERTICAL);
-        statusRow.addView(count,
-            new LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1));
-
-        sort.setGravity(Gravity.CENTER);
-        params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.rightMargin = dp(12);
-        statusRow.addView(sort, params);
-
-        manageView = makeText(
-            selectionMode ? "完成" : "管理",
-            11, palette.accentStrong, true);
-        manageView.setGravity(Gravity.CENTER);
-        manageView.setClickable(true);
-        manageView.setFocusable(true);
-        manageView.setOnClickListener(
-            new JavaAdapter(View.OnClickListener, {
-                onClick: function () {
-                    if (selectionMode) {
-                        leaveSelection();
-                    } else {
-                        selectionMode = true;
-                        state.selectionMode = true;
-                        renderRows(items);
-                    }
-                }
-            }));
-        statusRow.addView(manageView,
-            new LinearLayout.LayoutParams(dp(45), dp(32)));
-
-        container.addView(statusRow,
-            new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-        return container;
-    }
-
-    function buildBottomToolbar(palette) {
-        var toolbar = new LinearLayout(androidContext);
-        var hasSelection = selectedRow() !== null;
-        var params;
-
-        toolbar.setOrientation(LinearLayout.HORIZONTAL);
-        toolbar.setGravity(Gravity.CENTER);
-        toolbar.setPadding(dp(5), dp(3), dp(5), dp(3));
-        toolbar.setBackground(roundedBackground(
-            palette.toolbar, null, 18));
-
-        bottomPinView = makeActionButton(
-            "⌖", "置顶", palette, hasSelection);
-        bottomPinView.setOnClickListener(
-            new JavaAdapter(View.OnClickListener, {
-                onClick: function () {
-                    var row = selectedRow();
-                    if (row) {
-                        togglePinned(row);
-                    }
-                }
-            }));
-
-        bottomEditView = makeActionButton(
-            "✎", "编辑", palette, hasSelection);
-        bottomEditView.setOnClickListener(
-            new JavaAdapter(View.OnClickListener, {
-                onClick: function () {
-                    openEditEditor(selectedRow());
-                }
-            }));
-
-        bottomAddView = makeCenterAddAction(palette);
-        bottomAddView.setOnClickListener(
-            new JavaAdapter(View.OnClickListener, {
-                onClick: function () {
-                    openNewEditor();
-                }
-            }));
-
-        bottomDeleteView = makeActionButton(
-            "⌫", "删除", palette, hasSelection);
-        bottomDeleteView.setOnClickListener(
-            new JavaAdapter(View.OnClickListener, {
-                onClick: function () {
-                    var row = selectedRow();
-                    if (row) {
-                        deleteRow(row);
-                    }
-                }
-            }));
-
-        bottomTranslateView = makeActionButton(
-            "文", "翻译", palette, hasSelection);
-        bottomTranslateView.setOnClickListener(
-            new JavaAdapter(View.OnClickListener, {
-                onClick: function () {
-                    var row = selectedRow();
-                    if (row) {
-                        openDetail(row, true);
-                    }
-                }
-            }));
-
-        params = new LinearLayout.LayoutParams(
-            0, dp(64), 1);
-        toolbar.addView(bottomPinView, params);
-        toolbar.addView(bottomEditView,
-            new LinearLayout.LayoutParams(
-                0, dp(64), 1));
-        toolbar.addView(bottomAddView,
-            new LinearLayout.LayoutParams(
-                0, dp(68), 1));
-        toolbar.addView(bottomDeleteView,
-            new LinearLayout.LayoutParams(
-                0, dp(64), 1));
-        toolbar.addView(bottomTranslateView,
-            new LinearLayout.LayoutParams(
-                0, dp(64), 1));
-
-        state.toolbarActionCount = 5;
-        return toolbar;
-    }
-
     function buildContent(rows) {
-        var palette = colors();
-        var outer = new LinearLayout(androidContext);
-        var active = filterState().active === true;
-        var allowReorder = !active && rows.length > 1;
-        var header;
-        var undoBar;
-        var undoText;
-        var scroll;
-        var list;
-        var toolbar;
-        var index;
-        var params;
-        var ids = [];
-        var tagMap;
-        var rowTags;
-        var thread = Thread.currentThread();
-
-        state.renderedTagLabelCount = 0;
-        state.renderedSensitiveMaskCount = 0;
-        state.longItemCount = 0;
-        state.metaRowCount = 0;
-        state.actionRowCount = 0;
-        state.sourceIconCount = 0;
-        state.actualSourceAppIconCount = 0;
-        state.toolbarActionCount = 0;
-        state.cardMoreButtonCount = 0;
-
-        for (index = 0; index < rows.length; index += 1) {
-            ids.push(Number(rows[index].id));
-        }
-        tagMap = ClipHub.Repository.listItemTagMap(ids);
-
-        outer.setOrientation(LinearLayout.VERTICAL);
-        header = buildHeader(rows, palette, active);
-        params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dp(6);
-        outer.addView(header, params);
-
-        undoView = null;
-        if (lastDeleted !== null) {
-            undoBar = new LinearLayout(androidContext);
-            undoBar.setOrientation(LinearLayout.HORIZONTAL);
-            undoBar.setGravity(Gravity.CENTER_VERTICAL);
-            undoBar.setPadding(
-                dp(10), dp(7), dp(8), dp(7));
-            undoBar.setBackground(roundedBackground(
-                palette.surfaceMuted,
-                palette.stroke, 12));
-            undoText = makeText("已删除 1 条记录",
-                11, palette.textSecondary, false);
-            undoBar.addView(undoText,
-                new LinearLayout.LayoutParams(
-                    0,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    1));
-            undoView = makePill("撤销",
-                palette, true);
-            undoView.setClickable(true);
-            undoView.setFocusable(true);
-            undoView.setOnClickListener(
-                new JavaAdapter(View.OnClickListener, {
-                    onClick: function () {
-                        undoLastDelete();
-                    }
-                }));
-            undoBar.addView(undoView,
-                new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT));
-            params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-            params.bottomMargin = dp(6);
-            outer.addView(undoBar, params);
-        }
-
-        scroll = new ScrollView(androidContext);
-        scroll.setFillViewport(true);
-        scroll.setVerticalScrollBarEnabled(false);
-        list = new LinearLayout(androidContext);
-        list.setOrientation(LinearLayout.VERTICAL);
-        list.setPadding(0, 0, 0, dp(4));
-        scroll.addView(list,
-            new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT));
-        outer.addView(scroll,
-            new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                0, 1));
-
-        itemViews = [];
-        cardContainers = [];
-        deleteViews = [];
-        editViews = [];
-        pinViews = [];
-        tagViews = [];
-        detailViews = [];
-        reorderViews = [];
-
-        if (rows.length === 0) {
-            state.emptyVisible = true;
-            undoText = makeText(active ?
-                "没有匹配的记录\n调整筛选条件后重试" :
-                "暂无剪贴板记录\n复制文本或点击新增后会显示在这里",
-                13, palette.textSecondary, false);
-            undoText.setGravity(Gravity.CENTER);
-            undoText.setLineSpacing(0, 1.16);
-            undoText.setPadding(
-                dp(12), dp(42), dp(12), dp(42));
-            list.addView(undoText,
-                new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT));
-        } else {
-            state.emptyVisible = false;
-            for (index = 0; index < rows.length; index += 1) {
-                rowTags = tagMap[
-                    String(rows[index].id)] || [];
-                params = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT);
-                params.bottomMargin = dp(6);
-                list.addView(buildCard(
-                    rows[index], rowTags, index,
-                    allowReorder, palette), params);
-            }
-        }
-
-        toolbar = buildBottomToolbar(palette);
-        params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            dp(72));
-        params.topMargin = dp(3);
-        outer.addView(toolbar, params);
-
-        state.renderedCount = rows.length;
-        state.selectionMode = selectionMode;
-        state.selectedItemId = selectedItemId;
-        state.selectedCount =
-            selectedItemId === null ? 0 : 1;
-        state.renderThreadId = Number(thread.getId());
-        state.renderThreadName = String(thread.getName());
-        return outer;
+        state.renderedCount = rows ? rows.length : 0;
+        state.emptyVisible = !rows || rows.length === 0;
+        return null;
     }
 
     function copyRows(rows) {
@@ -2085,11 +1333,9 @@
     }
 
     function renderRows(rows) {
-        return ClipHub.Window.runOnMain(function () {
-            ClipHub.Window.setContentView(
-                buildContent(rows));
-            return true;
-        }, 3500);
+        state.renderedCount = rows ? rows.length : 0;
+        state.emptyVisible = !rows || rows.length === 0;
+        return true;
     }
 
     function queryCurrentRows() {
@@ -2167,60 +1413,32 @@
     }
 
     function preferredHomeDimensions(options) {
-        var display = androidContext.getResources()
-            .getDisplayMetrics();
-        var screenWidthDp =
-            Number(display.widthPixels) / density;
-        var screenHeightDp =
-            Number(display.heightPixels) / density;
-        var requestedWidth =
-            Number(options.widthDp || 390);
-        var requestedHeight =
-            Number(options.heightDp || 720);
-        var shouldAdapt = requestedWidth <= 340 &&
-            requestedHeight >= 500 &&
-            options.keepRequestedSize !== true;
-
-        if (shouldAdapt) {
-            requestedWidth = Math.min(
-                390, Math.max(300,
-                    screenWidthDp - 20));
-            requestedHeight = Math.min(
-                720, Math.max(560,
-                    screenHeightDp - 170));
+        var geometry;
+        options = options || {};
+        if (ClipHub.Window &&
+                typeof ClipHub.Window.computeGeometry === "function") {
+            geometry = ClipHub.Window.computeGeometry("primary", {
+                useSaved: true
+            });
+            return {
+                widthDp: Number(geometry.widthDp),
+                heightDp: Number(geometry.heightDp)
+            };
         }
-        return {
-            widthDp: requestedWidth,
-            heightDp: requestedHeight
-        };
+        return { widthDp: 390, heightDp: 720 };
     }
 
     function show(options) {
-        var openResult;
-        var preferred;
         options = options || {};
-        limit = Math.max(1, Math.min(
-            100, Math.floor(Number(
-                options.limit || limit))));
-        preferred = preferredHomeDimensions(options);
-        lastShowOptions.widthDp =
-            Number(preferred.widthDp);
-        lastShowOptions.heightDp =
-            Number(preferred.heightDp);
-        openResult = ClipHub.Window.open({
-            widthDp: lastShowOptions.widthDp,
-            heightDp: lastShowOptions.heightDp,
-            statusText: "正在加载剪贴板历史",
-            dimAmount: 0.44
+        visible = false;
+        if (!ClipHub.Filter ||
+                typeof ClipHub.Filter.showRoot !== "function") {
+            throw new Error("ClipHub primary home is unavailable");
+        }
+        return ClipHub.Filter.showRoot({
+            requestKeyboard: options.requestKeyboard === true,
+            showAdvanced: options.showAdvanced === true
         });
-        visible = true;
-        refresh(false);
-        return {
-            ok: true,
-            visible: true,
-            open: openResult,
-            state: getState()
-        };
     }
 
     function currentManualOrders() {
@@ -2383,8 +1601,8 @@
                 Number(lastShowOptions.heightDp),
             detail: getDetailState(),
             lastError: state.lastError,
-            windowAttached: !!(ClipHub.Window &&
-                ClipHub.Window.isAttached())
+            windowAttached: false,
+            legacyHomeRemoved: true
         };
     }
 
@@ -2517,7 +1735,7 @@
 
     ClipHub.List = {
         MODULE_NAME: "ch_09_list",
-        MODULE_VERSION: 14,
+        MODULE_VERSION: 16,
         LONG_TEXT_THRESHOLD: LONG_TEXT_THRESHOLD,
 
         init: function (context) {
@@ -2577,6 +1795,8 @@
             filterPanelSuspended = false;
             eventBindings = [];
             detailRoot = null;
+            detailWindowRoot = null;
+            detailManagedFrame = null;
             detailParams = null;
             detailRow = null;
             detailRestoreList = false;
@@ -2621,9 +1841,7 @@
             selectionMode = false;
             selectRow(null);
             closeDetail("list_hide");
-            if (closeWindow !== false && ClipHub.Window) {
-                ClipHub.Window.close();
-            }
+            filterPanelSuspended = false;
             return true;
         },
 
