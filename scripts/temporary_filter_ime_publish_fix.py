@@ -9,7 +9,6 @@ text = source_path.read_text(encoding='utf-8')
 
 bad = '            "                    \\"筛选(\\" + String(activeAdvancedFilterCount()) + \\"\\" :\\n" +\n'
 good = '            "                    \\"筛选(\\" + String(activeAdvancedFilterCount()) + \\"){\\" :\\n" +\n'
-# Replace the accidental publish typo with the exact intended generated source.
 good = good.replace('){\\"', ')\\"')
 if bad not in text:
     raise SystemExit('malformed compact probe line not found exactly once')
