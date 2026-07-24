@@ -15,6 +15,10 @@
     var PixelFormat = Packages.android.graphics.PixelFormat;
     var Color = Packages.android.graphics.Color;
     var GradientDrawable = Packages.android.graphics.drawable.GradientDrawable;
+    var Drawable = Packages.android.graphics.drawable.Drawable;
+    var Paint = Packages.android.graphics.Paint;
+    var Path = Packages.android.graphics.Path;
+    var RectF = Packages.android.graphics.RectF;
     var LinearLayout = Packages.android.widget.LinearLayout;
     var FrameLayout = Packages.android.widget.FrameLayout;
     var ScrollView = Packages.android.widget.ScrollView;
@@ -188,6 +192,9 @@
         cardActionGridWidthDp: 0,
         cardActionCellHeightDp: 0,
         cardActionFontScale: 1,
+        cardActionIconSizeDp: 0,
+        pinnedBadgeCount: 0,
+        pinBadgeSizeDp: 0,
         deleteUndoVisible: false,
         deleteUndoItemId: null,
         deleteUndoShowCount: 0,
@@ -300,6 +307,11 @@
         var tagWidth;
         var actionTextSp;
         var actionRadiusDp;
+        var actionIconSize;
+        var actionIconStroke;
+        var pinBadgeSize;
+        var pinIconSize;
+        var pinIconStroke;
         var cardPaddingHorizontal;
         var cardPaddingVertical;
         var swipeRevealWidth;
@@ -329,6 +341,18 @@
             (fontScale * 3.2), 7.5, 10.5);
         actionRadiusDp = clampNumber(pxToDp(actionCellHeight) * 0.34,
             6, 12);
+        actionIconSize = Math.round(clampNumber(
+            Math.min(actionCellWidth, actionCellHeight) * 0.48,
+            touchSlop * 1.25,
+            Math.min(actionCellWidth, actionCellHeight) * 0.68));
+        actionIconStroke = clampNumber(actionIconSize * 0.105,
+            1, actionIconSize * 0.16);
+        pinBadgeSize = Math.round(clampNumber(
+            actionCellHeight * 0.60, touchSlop * 1.35,
+            actionCellHeight * 0.78));
+        pinIconSize = Math.round(pinBadgeSize * 0.56);
+        pinIconStroke = clampNumber(pinIconSize * 0.10,
+            1, pinIconSize * 0.16);
         cardPaddingHorizontal = Math.max(baseUnit,
             Math.round(width * 0.018));
         cardPaddingVertical = Math.max(Math.round(baseUnit * 0.75),
@@ -346,6 +370,14 @@
             actionCellHeightPx: actionCellHeight,
             actionTextSp: actionTextSp,
             actionRadiusDp: actionRadiusDp,
+            actionIconSizePx: actionIconSize,
+            actionIconStrokePx: actionIconStroke,
+            pinBadgeSizePx: pinBadgeSize,
+            pinIconSizePx: pinIconSize,
+            pinIconStrokePx: pinIconStroke,
+            pinBadgeGapPx: Math.max(1, Math.round(contentGap * 0.72)),
+            pinBadgeRadiusDp: clampNumber(
+                pxToDp(pinBadgeSize) * 0.36, 5, 11),
             actionHorizontalPaddingPx: Math.max(1,
                 Math.round(actionCellWidth * 0.06)),
             iconSizePx: iconSize,
@@ -1956,24 +1988,150 @@
         return view;
     }
 
-    function makeCardActionButton(label, contentDescription, colors,
+    function safeColorInt(value, fallback) {
+        try { return Color.parseColor(String(value)); }
+        catch (ignoredColor) { return Color.parseColor(String(fallback)); }
+    }
+
+    function makeVectorIconDrawable(kind, colorValue, iconSizePx,
+            strokeWidthPx) {
+        var paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        var path = new Path();
+        var drawable;
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeJoin(Paint.Join.ROUND);
+        paint.setStrokeWidth(Number(strokeWidthPx));
+        paint["setColor(int)"](safeColorInt(colorValue, "#FF5A37E6"));
+        drawable = new JavaAdapter(Drawable, {
+            draw: function (canvas) {
+                var bounds = drawable.getBounds();
+                var width = Number(bounds.width());
+                var height = Number(bounds.height());
+                var size = Math.min(width, height,
+                    Math.max(1, Number(iconSizePx)));
+                var left = Number(bounds.left) + (width - size) / 2;
+                var top = Number(bounds.top) + (height - size) / 2;
+                var right = left + size;
+                var bottom = top + size;
+                var radius = Math.max(1, size * 0.08);
+                var rect;
+                path.reset();
+                paint.setStyle(Paint.Style.STROKE);
+                if (kind === "edit") {
+                    path.moveTo(left + size * 0.25, top + size * 0.72);
+                    path.lineTo(left + size * 0.66, top + size * 0.31);
+                    path.lineTo(left + size * 0.79, top + size * 0.44);
+                    path.lineTo(left + size * 0.38, top + size * 0.85);
+                    path.lineTo(left + size * 0.23, top + size * 0.88);
+                    path.close();
+                    canvas.drawPath(path, paint);
+                    canvas.drawLine(left + size * 0.61, top + size * 0.36,
+                        left + size * 0.74, top + size * 0.49, paint);
+                    return;
+                }
+                if (kind === "translate") {
+                    rect = new RectF(left + size * 0.19, top + size * 0.19,
+                        right - size * 0.19, bottom - size * 0.19);
+                    canvas.drawOval(rect, paint);
+                    canvas.drawOval(new RectF(left + size * 0.37,
+                        top + size * 0.19, right - size * 0.37,
+                        bottom - size * 0.19), paint);
+                    canvas.drawLine(left + size * 0.20, top + size * 0.50,
+                        right - size * 0.20, top + size * 0.50, paint);
+                    canvas.drawLine(left + size * 0.28, top + size * 0.34,
+                        right - size * 0.28, top + size * 0.34, paint);
+                    canvas.drawLine(left + size * 0.28, top + size * 0.66,
+                        right - size * 0.28, top + size * 0.66, paint);
+                    return;
+                }
+                if (kind === "copy") {
+                    canvas.drawRoundRect(new RectF(left + size * 0.34,
+                        top + size * 0.20, right - size * 0.17,
+                        bottom - size * 0.31), radius, radius, paint);
+                    canvas.drawRoundRect(new RectF(left + size * 0.18,
+                        top + size * 0.35, right - size * 0.33,
+                        bottom - size * 0.16), radius, radius, paint);
+                    return;
+                }
+                if (kind === "delete") {
+                    canvas.drawLine(left + size * 0.22, top + size * 0.30,
+                        right - size * 0.22, top + size * 0.30, paint);
+                    canvas.drawLine(left + size * 0.40, top + size * 0.21,
+                        right - size * 0.40, top + size * 0.21, paint);
+                    canvas.drawRoundRect(new RectF(left + size * 0.29,
+                        top + size * 0.34, right - size * 0.29,
+                        bottom - size * 0.17), radius, radius, paint);
+                    canvas.drawLine(left + size * 0.42, top + size * 0.45,
+                        left + size * 0.42, bottom - size * 0.28, paint);
+                    canvas.drawLine(right - size * 0.42, top + size * 0.45,
+                        right - size * 0.42, bottom - size * 0.28, paint);
+                    return;
+                }
+                if (kind === "pin") {
+                    paint.setStyle(Paint.Style.FILL);
+                    path.moveTo(left + size * 0.31, top + size * 0.20);
+                    path.lineTo(right - size * 0.31, top + size * 0.20);
+                    path.lineTo(right - size * 0.36, top + size * 0.43);
+                    path.lineTo(right - size * 0.23, top + size * 0.57);
+                    path.lineTo(left + size * 0.55, top + size * 0.57);
+                    path.lineTo(left + size * 0.50, bottom - size * 0.12);
+                    path.lineTo(left + size * 0.45, top + size * 0.57);
+                    path.lineTo(left + size * 0.23, top + size * 0.57);
+                    path.lineTo(left + size * 0.36, top + size * 0.43);
+                    path.close();
+                    canvas.drawPath(path, paint);
+                }
+            },
+            setAlpha: function (alpha) { paint.setAlpha(Number(alpha)); },
+            setColorFilter: function (filter) {
+                paint.setColorFilter(filter);
+            },
+            getOpacity: function () { return PixelFormat.TRANSLUCENT; }
+        });
+        return drawable;
+    }
+
+    function makePinnedBadge(colors, metrics) {
+        var root = new FrameLayout(appContext);
+        var icon = new View(appContext);
+        var params;
+        root.setBackground(roundedBackground(colors.accentSoft,
+            colors.accentBorder, metrics.pinBadgeRadiusDp));
+        root.setContentDescription("已置顶");
+        root.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        icon.setBackground(makeVectorIconDrawable("pin",
+            colors.accentStrong, metrics.pinIconSizePx,
+            metrics.pinIconStrokePx));
+        params = new FrameLayout.LayoutParams(metrics.pinIconSizePx,
+            metrics.pinIconSizePx);
+        params.gravity = Gravity.CENTER;
+        root.addView(icon, params);
+        return root;
+    }
+
+    function makeCardActionButton(kind, contentDescription, colors,
             danger, metrics, callback) {
-        var view = makeText(label, metrics.actionTextSp,
-            danger ? colors.danger : colors.accentStrong, true);
-        view.setGravity(Gravity.CENTER);
-        view.setSingleLine(true);
-        view.setPadding(metrics.actionHorizontalPaddingPx, 0,
-            metrics.actionHorizontalPaddingPx, 0);
-        view.setBackground(roundedBackground(
+        var root = new FrameLayout(appContext);
+        var icon = new View(appContext);
+        var params;
+        root.setBackground(roundedBackground(
             danger ? colors.dangerSoft : colors.surfaceMuted,
             danger ? colors.danger : colors.stroke,
             metrics.actionRadiusDp));
-        view.setClickable(true);
-        view.setFocusable(true);
-        view.setContentDescription(contentDescription);
-        view.setOnClickListener(new JavaAdapter(
+        root.setClickable(true);
+        root.setFocusable(true);
+        root.setContentDescription(contentDescription);
+        root.setOnClickListener(new JavaAdapter(
             View.OnClickListener, { onClick: callback }));
-        return view;
+        icon.setBackground(makeVectorIconDrawable(kind,
+            danger ? colors.danger : colors.accentStrong,
+            metrics.actionIconSizePx, metrics.actionIconStrokePx));
+        params = new FrameLayout.LayoutParams(metrics.actionIconSizePx,
+            metrics.actionIconSizePx);
+        params.gravity = Gravity.CENTER;
+        root.addView(icon, params);
+        return root;
     }
 
     function buildCardActionGrid(row, colors, metrics) {
@@ -1988,19 +2146,19 @@
         grid.setOrientation(LinearLayout.VERTICAL);
         top.setOrientation(LinearLayout.HORIZONTAL);
         bottom.setOrientation(LinearLayout.HORIZONTAL);
-        edit = makeCardActionButton("编辑", "编辑剪贴板记录", colors,
+        edit = makeCardActionButton("edit", "编辑剪贴板记录", colors,
             false, metrics, function () {
                 editResultRow(row, "card_action_edit");
             });
-        translate = makeCardActionButton("翻译", "翻译剪贴板记录", colors,
+        translate = makeCardActionButton("translate", "翻译剪贴板记录", colors,
             false, metrics, function () {
                 translateResultRow(row, "card_action_translate");
             });
-        copy = makeCardActionButton("复制", "复制剪贴板记录", colors,
+        copy = makeCardActionButton("copy", "复制剪贴板记录", colors,
             false, metrics, function () {
                 copyResultRow(row, "card_action_copy");
             });
-        remove = makeCardActionButton("删除", "删除剪贴板记录", colors,
+        remove = makeCardActionButton("delete", "删除剪贴板记录", colors,
             true, metrics, function () {
                 deleteResultRow(row, "card_action_delete");
             });
@@ -2219,17 +2377,20 @@
     function makeResultCard(row, colors) {
         var selected = SELECTION_ENABLED && selectedItemId !== null &&
             Number(selectedItemId) === Number(row.id);
+        var pinned = Number(row.is_pinned || 0) === 1;
         var metrics = resultCardMetrics(0);
         var wrapper = new FrameLayout(appContext);
         var actionLayer = new FrameLayout(appContext);
         var deleteAction = makeSwipeAction("删除", colors.dangerSoft,
             colors.danger, Gravity.START, metrics);
         var pinAction = makeSwipeAction(
-            Number(row.is_pinned || 0) === 1 ? "取消置顶" : "置顶",
+            pinned ? "取消置顶" : "置顶",
             colors.accentSoft, colors.accentStrong, Gravity.END, metrics);
         var card = new LinearLayout(appContext);
         var icon = makeSourceIcon(row, colors);
         var center = new LinearLayout(appContext);
+        var contentRow = new LinearLayout(appContext);
+        var pinBadge = null;
         var content = makeText(String(row.content || ""),
             metrics.contentTextSp, colors.textPrimary, selected);
         var metaRow = new LinearLayout(appContext);
@@ -2247,6 +2408,8 @@
         state.cardActionGridWidthDp = pxToDp(metrics.actionGridWidthPx);
         state.cardActionCellHeightDp = pxToDp(metrics.actionCellHeightPx);
         state.cardActionFontScale = metrics.fontScale;
+        state.cardActionIconSizeDp = pxToDp(metrics.actionIconSizePx);
+        state.pinBadgeSizeDp = pxToDp(metrics.pinBadgeSizePx);
         wrapper.setClipChildren(true);
         wrapper.setClipToPadding(true);
         wrapper.setBackground(roundedBackground(colors.surfaceMuted,
@@ -2277,8 +2440,8 @@
             selected ? colors.accentBorder : colors.stroke, 12));
         card.setClickable(true);
         card.setFocusable(true);
-        card.setContentDescription(
-            "剪贴板记录，点击正文复制，左滑置顶，右滑删除，右侧提供编辑翻译复制删除");
+        card.setContentDescription((pinned ? "已置顶，" : "") +
+            "剪贴板记录，点击正文复制，左滑置顶，右滑删除，右侧提供编辑翻译复制删除图标");
         card.setOnClickListener(new JavaAdapter(
             View.OnClickListener, {
                 onClick: function () { copyResultRow(row, "card_click"); }
@@ -2290,9 +2453,21 @@
         card.addView(icon, params);
 
         center.setOrientation(LinearLayout.VERTICAL);
+        contentRow.setOrientation(LinearLayout.HORIZONTAL);
+        contentRow.setGravity(Gravity.TOP);
         content.setMaxLines(2);
         content.setEllipsize(TextUtils.TruncateAt.END);
-        center.addView(content, new LinearLayout.LayoutParams(
+        contentRow.addView(content, new LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        if (pinned) {
+            pinBadge = makePinnedBadge(colors, metrics);
+            params = new LinearLayout.LayoutParams(metrics.pinBadgeSizePx,
+                metrics.pinBadgeSizePx);
+            params.leftMargin = metrics.pinBadgeGapPx;
+            contentRow.addView(pinBadge, params);
+            state.pinnedBadgeCount += 1;
+        }
+        center.addView(contentRow, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT));
         metaRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -2376,6 +2551,7 @@
         state.resultSourceIconCount = 0;
         state.renderedTagLabelCount = 0;
         state.cardActionButtonCount = 0;
+        state.pinnedBadgeCount = 0;
         resultCardViews = [];
         resultActionViews = [];
         for (index = 0; index < previewRows.length; index += 1) {
@@ -3529,6 +3705,10 @@
             cardActionCellHeightDp:
                 Number(state.cardActionCellHeightDp),
             cardActionFontScale: Number(state.cardActionFontScale),
+            cardActionIconSizeDp:
+                Number(state.cardActionIconSizeDp),
+            pinnedBadgeCount: Number(state.pinnedBadgeCount),
+            pinBadgeSizeDp: Number(state.pinBadgeSizeDp),
             deleteUndoVisible: state.deleteUndoVisible === true,
             deleteUndoItemId: state.deleteUndoItemId,
             deleteUndoShowCount: Number(state.deleteUndoShowCount),
@@ -3675,6 +3855,9 @@
         state.cardActionGridWidthDp = 0;
         state.cardActionCellHeightDp = 0;
         state.cardActionFontScale = 1;
+        state.cardActionIconSizeDp = 0;
+        state.pinnedBadgeCount = 0;
+        state.pinBadgeSizeDp = 0;
         state.deleteUndoVisible = false;
         state.deleteUndoItemId = null;
         state.deleteUndoShowCount = 0;
@@ -3719,13 +3902,13 @@
         state.resultCardCount = 0;
         state.resultSourceIconCount = 0;
         state.advancedDrawerVisible = false;
-        state.searchPageStyle = "reference_search_v8";
+        state.searchPageStyle = "reference_search_v9";
         state.lastError = null;
     }
 
     ClipHub.Filter = {
         MODULE_NAME: "ch_11_filter",
-        MODULE_VERSION: 23,
+        MODULE_VERSION: 24,
 
         init: function (context) {
             androidContext = context && context.androidContext ?
