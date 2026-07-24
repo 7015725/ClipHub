@@ -1,0 +1,57 @@
+name: Apply editor reversible IME fix
+
+on:
+  push:
+    branches:
+      - agent/unify-window-geometry
+    paths:
+      - .github/workflows/apply-editor-reversible-ime-fix.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-editor-reversible-ime-fix
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/unify-window-geometry
+          fetch-depth: 0
+
+      - name: Apply reversible IME fix
+        run: python3 scripts/apply_editor_reversible_ime_fix.py
+
+      - name: Validate JavaScript and manifest
+        run: |
+          node --check src/ch_10_editor.js
+          python3 -m json.tool module-manifest.json >/dev/null
+          git diff --check
+          test "$(git hash-object src/ch_10_editor.js)" = "$(python3 - <<'PY'
+          import json
+          data = json.load(open('module-manifest.json', encoding='utf-8'))
+          print(next(x['sha'] for x in data['modules'] if x['path'] == 'src/ch_10_editor.js'))
+          PY
+          )"
+
+      - name: Remove one-shot migration files
+        run: |
+          rm -f scripts/apply_editor_reversible_ime_fix.py
+          rm -f .github/workflows/apply-editor-reversible-ime-fix.yml
+
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/ch_10_editor.js module-manifest.json \
+            scripts/apply_editor_reversible_ime_fix.py \
+            .github/workflows/apply-editor-reversible-ime-fix.yml
+          git diff --cached --exit-code && exit 1 || true
+          git commit -m "修复编辑页可逆 IME 避让"
+          git push origin HEAD:agent/unify-window-geometry
