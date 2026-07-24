@@ -107,6 +107,12 @@
     var copyFeedbackView = null;
     var copyFeedbackGeneration = 0;
     var adaptiveRenderGeneration = 0;
+    var searchExpanded = false;
+    var searchStatusRow = null;
+    var searchInputRow = null;
+    var searchToggleView = null;
+    var searchClearView = null;
+    var historyContainerView = null;
 
     var state = {
         applyCount: 0,
@@ -120,6 +126,14 @@
         panelRenderCount: 0,
         searchActionCount: 0,
         realtimeSearchCount: 0,
+        searchExpanded: false,
+        searchExpandCount: 0,
+        searchCollapseCount: 0,
+        headerHeightDp: 0,
+        headerControlHeightDp: 0,
+        headerActionSizeDp: 0,
+        headerGapDp: 0,
+        headerFilterActiveCount: 0,
         sourceToggleCount: 0,
         typeToggleCount: 0,
         tagToggleCount: 0,
@@ -1554,6 +1568,10 @@
         advancedVisible = !advancedVisible;
         state.advancedDrawerVisible = advancedVisible;
         if (advancedVisible) {
+            if (searchExpanded) {
+                searchExpanded = false;
+                state.searchCollapseCount += 1;
+            }
             state.advancedOpenCount += 1;
             hideKeyboardOnMain();
         } else {
@@ -2848,36 +2866,226 @@
         return container;
     }
 
+    function activeAdvancedFilterCount() {
+        var count = 0;
+        if (value === null || value === undefined) { return 0; }
+        if (value.sourcePackages && value.sourcePackages.length > 0) {
+            count += 1;
+        }
+        if (value.contentTypes && value.contentTypes.length > 0) {
+            count += 1;
+        }
+        if (value.tagIds && value.tagIds.length > 0) {
+            count += 1;
+        }
+        if (value.pinnedOnly === true) { count += 1; }
+        if (String(value.sensitiveMode || "all") !== "all") {
+            count += 1;
+        }
+        if (validateSortMode(value.sortMode) !== "latest") {
+            count += 1;
+        }
+        return count;
+    }
+
+    function headerMetrics() {
+        var widthDp = Number(state.panelWidthDp || 0);
+        var fontScale = resourceFontScale();
+        var touchDp = Math.max(1, Number(touchSlop || 1) / density);
+        var baseDp;
+        var actionSizeDp;
+        var controlHeightDp;
+        var gapDp;
+        var titleSp;
+        var iconSp;
+        var statusSp;
+        var searchSp;
+        var radiusDp;
+        var inputPaddingDp;
+        var badgeSizeDp;
+        var badgeSp;
+        if (widthDp <= 0 && Number(state.panelWidthPx || 0) > 0) {
+            widthDp = Number(state.panelWidthPx) / density;
+        }
+        if (widthDp <= 0) {
+            widthDp = Number(appContext.getResources()
+                .getDisplayMetrics().widthPixels) / density;
+        }
+        baseDp = Math.max(touchDp, widthDp * 0.018);
+        actionSizeDp = clampNumber(widthDp * 0.092,
+            baseDp * 4.4, widthDp * 0.12);
+        controlHeightDp = clampNumber(actionSizeDp * 1.02,
+            baseDp * 4.6, widthDp * 0.125);
+        gapDp = clampNumber(widthDp * 0.014,
+            baseDp * 0.65, actionSizeDp * 0.24);
+        titleSp = clampNumber(widthDp / (fontScale * 23),
+            actionSizeDp / (fontScale * 2.45),
+            actionSizeDp / (fontScale * 1.85));
+        iconSp = clampNumber(actionSizeDp / (fontScale * 2.05),
+            titleSp * 0.86, titleSp * 1.18);
+        statusSp = clampNumber(titleSp * 0.60,
+            iconSp * 0.58, titleSp * 0.72);
+        searchSp = clampNumber(titleSp * 0.70,
+            statusSp, titleSp * 0.82);
+        radiusDp = Math.max(baseDp * 1.3, controlHeightDp * 0.44);
+        inputPaddingDp = Math.max(baseDp * 0.65, gapDp);
+        badgeSizeDp = Math.max(baseDp * 2.0, actionSizeDp * 0.38);
+        badgeSp = Math.max(statusSp * 0.64,
+            badgeSizeDp / (fontScale * 3.4));
+        state.headerHeightDp = actionSizeDp + gapDp + controlHeightDp;
+        state.headerControlHeightDp = controlHeightDp;
+        state.headerActionSizeDp = actionSizeDp;
+        state.headerGapDp = gapDp;
+        return {
+            widthDp: widthDp,
+            fontScale: fontScale,
+            baseDp: baseDp,
+            actionSizeDp: actionSizeDp,
+            controlHeightDp: controlHeightDp,
+            gapDp: gapDp,
+            titleSp: titleSp,
+            iconSp: iconSp,
+            statusSp: statusSp,
+            searchSp: searchSp,
+            radiusDp: radiusDp,
+            inputPaddingDp: inputPaddingDp,
+            badgeSizeDp: badgeSizeDp,
+            badgeSp: badgeSp
+        };
+    }
+
+    function makeHeaderAction(iconText, description, colors, metrics,
+            emphasized) {
+        var view = makeIcon(iconText, metrics.iconSp,
+            emphasized ? colors.accentStrong : colors.icon,
+            description);
+        view.setBackground(circleBackground(
+            emphasized ? colors.accentSoft : colors.surfaceMuted,
+            null));
+        return view;
+    }
+
+    function makeFilterAction(colors, metrics) {
+        var activeCount = activeAdvancedFilterCount();
+        var root = new FrameLayout(appContext);
+        var icon = makeIcon("☷", metrics.iconSp,
+            activeCount > 0 ? colors.accentStrong : colors.icon,
+            activeCount > 0 ?
+                "打开筛选，已启用 " + String(activeCount) + " 类条件" :
+                "打开筛选");
+        var badge;
+        var params;
+        root.setClickable(true);
+        root.setFocusable(true);
+        root.setContentDescription(activeCount > 0 ?
+            "打开筛选，已启用 " + String(activeCount) + " 类条件" :
+            "打开筛选");
+        root.setBackground(circleBackground(
+            activeCount > 0 ? colors.accentSoft : colors.surfaceMuted,
+            activeCount > 0 ? colors.accentBorder : null));
+        root.addView(icon, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT));
+        if (activeCount > 0) {
+            badge = makeText(String(Math.min(9, activeCount)),
+                metrics.badgeSp, "#FFFFFFFF", true);
+            badge.setGravity(Gravity.CENTER);
+            badge.setBackground(circleBackground(colors.accentStrong, null));
+            params = new FrameLayout.LayoutParams(
+                dp(metrics.badgeSizeDp), dp(metrics.badgeSizeDp));
+            params.gravity = Gravity.TOP | Gravity.END;
+            root.addView(badge, params);
+        }
+        root.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, {
+                onClick: function () { toggleAdvanced(); }
+            }));
+        state.headerFilterActiveCount = activeCount;
+        return root;
+    }
+
+    function updateSearchVisibility(requestKeyboard) {
+        var showInput = searchExpanded && !advancedVisible;
+        if (searchStatusRow !== null) {
+            searchStatusRow.setVisibility(
+                showInput ? View.GONE : View.VISIBLE);
+        }
+        if (searchInputRow !== null) {
+            searchInputRow.setVisibility(
+                showInput ? View.VISIBLE : View.GONE);
+        }
+        if (historyContainerView !== null) {
+            historyContainerView.setVisibility(
+                showInput ? View.VISIBLE : View.GONE);
+        }
+        state.searchExpanded = searchExpanded === true;
+        if (showInput && requestKeyboard === true) {
+            requestKeyboardOnMain();
+        } else if (!showInput) {
+            hideKeyboardOnMain();
+        }
+        return showInput;
+    }
+
+    function setSearchExpanded(expanded, requestKeyboard) {
+        var next = expanded === true;
+        if (next && advancedVisible) {
+            advancedVisible = false;
+            state.advancedDrawerVisible = false;
+            state.advancedCloseCount += 1;
+            searchExpanded = true;
+            state.searchExpandCount += 1;
+            buildPanelContent(requestKeyboard === true);
+            return true;
+        }
+        if (searchExpanded !== next) {
+            if (next) {
+                state.searchExpandCount += 1;
+            } else {
+                state.searchCollapseCount += 1;
+            }
+        }
+        searchExpanded = next;
+        updateSearchVisibility(requestKeyboard === true);
+        return true;
+    }
+
     function buildSearchHeader(colors) {
         var container = new LinearLayout(appContext);
         var titleRow = new LinearLayout(appContext);
-        var logo = makeText("▤", 19,
-            colors.accentStrong, true);
-        var title = makeText("全局剪切板", 17,
-            colors.textPrimary, true);
-        var searchRow = new LinearLayout(appContext);
-        var params;
+        var title;
+        var statusRow = new LinearLayout(appContext);
+        var inputRow = new LinearLayout(appContext);
+        var sort;
+        var statusFilter;
+        var inputFilter;
         var addButton;
-        var compact = compactWindowLayout();
-        var controlHeightDp = compact ? 40 : 44;
-        var filterWidthDp = compact ? 58 : 78;
-        var controlGapDp = compact ? 5 : 8;
+        var params;
+        var metrics = headerMetrics();
 
         container.setOrientation(LinearLayout.VERTICAL);
         titleRow.setOrientation(LinearLayout.HORIZONTAL);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        logo.setGravity(Gravity.CENTER);
-        logo.setBackground(roundedBackground(colors.accentSoft,
-            colors.accentBorder, 9));
-        params = new LinearLayout.LayoutParams(dp(34), dp(34));
-        params.rightMargin = dp(8);
-        titleRow.addView(logo, params);
+        title = makeText("全局剪切板", metrics.titleSp,
+            colors.textPrimary, true);
+        title.setSingleLine(true);
+        title.setEllipsize(TextUtils.TruncateAt.END);
         titleRow.addView(title, new LinearLayout.LayoutParams(
             0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-        settingsButton = makeIcon("⚙", 18, colors.icon,
-            "打开 ClipHub 设置");
-        settingsButton.setBackground(circleBackground(
-            colors.surfaceMuted, null));
+
+        addButton = makeHeaderAction("+", "新增剪切板内容",
+            colors, metrics, true);
+        addButton.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, {
+                onClick: function () { addNewResult(); }
+            }));
+        params = new LinearLayout.LayoutParams(
+            dp(metrics.actionSizeDp), dp(metrics.actionSizeDp));
+        params.leftMargin = dp(metrics.gapDp);
+        titleRow.addView(addButton, params);
+
+        settingsButton = makeHeaderAction("⚙", "打开 ClipHub 设置",
+            colors, metrics, false);
         settingsButton.setOnClickListener(new JavaAdapter(
             View.OnClickListener, {
                 onClick: function () {
@@ -2891,13 +3099,14 @@
                     }
                 }
             }));
-        titleRow.addView(settingsButton,
-            new LinearLayout.LayoutParams(dp(36), dp(36)));
+        params = new LinearLayout.LayoutParams(
+            dp(metrics.actionSizeDp), dp(metrics.actionSizeDp));
+        params.leftMargin = dp(metrics.gapDp);
+        titleRow.addView(settingsButton, params);
         state.settingsButtonPresent = true;
 
-        closeView = makeIcon("×", 22, colors.icon,
-            "关闭搜索与筛选");
-        closeView.setBackground(circleBackground(colors.surfaceMuted, null));
+        closeView = makeHeaderAction("×", "关闭全局剪切板",
+            colors, metrics, false);
         closeView.setOnClickListener(new JavaAdapter(
             View.OnClickListener, {
                 onClick: function () {
@@ -2907,16 +3116,64 @@
                     });
                 }
             }));
-        titleRow.addView(closeView,
-            new LinearLayout.LayoutParams(dp(36), dp(36)));
+        params = new LinearLayout.LayoutParams(
+            dp(metrics.actionSizeDp), dp(metrics.actionSizeDp));
+        params.leftMargin = dp(metrics.gapDp);
+        titleRow.addView(closeView, params);
         params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dp(8);
+            dp(metrics.actionSizeDp));
+        params.bottomMargin = dp(metrics.gapDp);
         container.addView(titleRow, params);
 
-        searchRow.setOrientation(LinearLayout.HORIZONTAL);
-        searchRow.setGravity(Gravity.CENTER_VERTICAL);
+        statusRow.setOrientation(LinearLayout.HORIZONTAL);
+        statusRow.setGravity(Gravity.CENTER_VERTICAL);
+        resultCountView = makeText("", metrics.statusSp,
+            colors.textSecondary, false);
+        resultCountView.setSingleLine(true);
+        updateResultCountOnMain();
+        statusRow.addView(resultCountView,
+            new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+
+        sort = makeText("按" + sortModeLabel(value.sortMode),
+            metrics.statusSp, colors.textSecondary, false);
+        sort.setSingleLine(true);
+        sort.setEllipsize(TextUtils.TruncateAt.END);
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.leftMargin = dp(metrics.gapDp);
+        statusRow.addView(sort, params);
+
+        searchToggleView = makeHeaderAction("⌕", "展开搜索",
+            colors, metrics, false);
+        searchToggleView.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, {
+                onClick: function () {
+                    setSearchExpanded(true, true);
+                }
+            }));
+        searchView = searchToggleView;
+        params = new LinearLayout.LayoutParams(
+            dp(metrics.actionSizeDp), dp(metrics.actionSizeDp));
+        params.leftMargin = dp(metrics.gapDp);
+        statusRow.addView(searchToggleView, params);
+
+        statusFilter = makeFilterAction(colors, metrics);
+        advancedView = statusFilter;
+        params = new LinearLayout.LayoutParams(
+            dp(metrics.actionSizeDp), dp(metrics.actionSizeDp));
+        params.leftMargin = dp(metrics.gapDp);
+        statusRow.addView(statusFilter, params);
+        searchStatusRow = statusRow;
+        container.addView(statusRow,
+            new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(metrics.controlHeightDp)));
+
+        inputRow.setOrientation(LinearLayout.HORIZONTAL);
+        inputRow.setGravity(Gravity.CENTER_VERTICAL);
         keywordInput = new EditText(appContext);
         keywordInput.setSingleLine(true);
         suppressTextWatcher = true;
@@ -2925,16 +3182,16 @@
         suppressTextWatcher = false;
         keywordInput.setHint("搜索剪切板内容");
         keywordInput.setTextSize(TypedValue.COMPLEX_UNIT_SP,
-            compact ? 11 : 12);
+            metrics.searchSp);
         ClipHub.Theme.applyTextColor(keywordInput, colors.textPrimary);
         ClipHub.Theme.applyHintTextColor(keywordInput, colors.textSecondary);
         keywordInput.setInputType(InputType.TYPE_CLASS_TEXT |
             InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         keywordInput.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
-        keywordInput.setPadding(dp(compact ? 9 : 12), dp(5),
-            dp(compact ? 7 : 10), dp(5));
+        keywordInput.setPadding(dp(metrics.inputPaddingDp), 0,
+            dp(metrics.inputPaddingDp), 0);
         keywordInput.setBackground(roundedBackground(colors.surface,
-            colors.stroke, 20));
+            colors.stroke, metrics.radiusDp));
         keywordInput.setOnEditorActionListener(new JavaAdapter(
             TextView.OnEditorActionListener, {
                 onEditorAction: function (view, actionId) {
@@ -2955,72 +3212,63 @@
             },
             afterTextChanged: function () {}
         }));
-        params = new LinearLayout.LayoutParams(0, dp(controlHeightDp), 1);
-        params.rightMargin = dp(controlGapDp);
-        searchRow.addView(keywordInput, params);
+        params = new LinearLayout.LayoutParams(
+            0, dp(metrics.controlHeightDp), 1);
+        params.rightMargin = dp(metrics.gapDp);
+        inputRow.addView(keywordInput, params);
 
-        advancedView = makeText(compact ? "筛选" : "☷  筛选",
-            compact ? 10 : 11,
-            colors.accentStrong, true);
-        advancedView.setGravity(Gravity.CENTER);
-        advancedView.setBackground(roundedBackground(colors.accentSoft,
-            null, 14));
-        advancedView.setClickable(true);
-        advancedView.setFocusable(true);
-        advancedView.setOnClickListener(new JavaAdapter(
-            View.OnClickListener, {
-                onClick: function () { toggleAdvanced(); }
-            }));
-        params = new LinearLayout.LayoutParams(dp(filterWidthDp),
-            dp(controlHeightDp));
-        params.rightMargin = dp(controlGapDp);
-        searchRow.addView(advancedView, params);
-
-        addButton = makeIcon("+", compact ? 21 : 24,
-            colors.accentStrong, "新增剪切板内容");
-        addButton.setBackground(circleBackground(colors.accentSoft, null));
-        addButton.setOnClickListener(new JavaAdapter(
+        searchClearView = makeHeaderAction("×",
+            "清空搜索；搜索为空时收起搜索框",
+            colors, metrics, false);
+        searchClearView.setOnClickListener(new JavaAdapter(
             View.OnClickListener, {
                 onClick: function () {
-                    try {
-                        if (ClipHub.Editor && ClipHub.Editor.openNew) {
-                            ClipHub.Editor.openNew();
-                        }
-                    } catch (error) {
-                        state.lastError = String(error);
+                    var current = keywordInput === null ? "" :
+                        normalizeText(String(keywordInput.getText()));
+                    if (current.length === 0) {
+                        setSearchExpanded(false, false);
+                        return;
                     }
+                    suppressTextWatcher = true;
+                    try {
+                        keywordInput.setText("");
+                        keywordInput.setSelection(0);
+                    } finally {
+                        suppressTextWatcher = false;
+                    }
+                    state.searchActionCount += 1;
+                    setValue({ keyword: "" }, {
+                        origin: "ui_search_clear"
+                    });
+                    refreshResultsOnMain();
+                    updateResultCountOnMain();
+                    requestKeyboardOnMain();
                 }
             }));
-        searchRow.addView(addButton,
-            new LinearLayout.LayoutParams(dp(controlHeightDp),
-                dp(controlHeightDp)));
-        container.addView(searchRow,
+        inputRow.addView(searchClearView,
+            new LinearLayout.LayoutParams(
+                dp(metrics.actionSizeDp), dp(metrics.actionSizeDp)));
+
+        inputFilter = makeFilterAction(colors, metrics);
+        params = new LinearLayout.LayoutParams(
+            dp(metrics.actionSizeDp), dp(metrics.actionSizeDp));
+        params.leftMargin = dp(metrics.gapDp);
+        inputRow.addView(inputFilter, params);
+        searchInputRow = inputRow;
+        container.addView(inputRow,
             new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
+                dp(metrics.controlHeightDp)));
+
+        updateSearchVisibility(false);
         return container;
     }
 
     function buildResultArea(colors) {
         var root = new LinearLayout(appContext);
-        var status = new LinearLayout(appContext);
-        var sort = makeText("按" + sortModeLabel(value.sortMode), 9,
-            colors.textSecondary, false);
         var scroll = new ScrollView(appContext);
         resultScrollView = scroll;
         root.setOrientation(LinearLayout.VERTICAL);
-        status.setOrientation(LinearLayout.HORIZONTAL);
-        status.setGravity(Gravity.CENTER_VERTICAL);
-        resultCountView = makeText("", 10,
-            colors.textSecondary, false);
-        updateResultCountOnMain();
-        status.addView(resultCountView, new LinearLayout.LayoutParams(
-            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-        status.addView(sort, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT));
-        root.addView(status, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(31)));
         resultContainer = new LinearLayout(appContext);
         resultContainer.setOrientation(LinearLayout.VERTICAL);
         scroll.setFillViewport(false);
@@ -3357,6 +3605,11 @@
         drawerContentView = null;
         drawerFooterView = null;
         resultBodyFrame = null;
+        searchStatusRow = null;
+        searchInputRow = null;
+        searchToggleView = null;
+        searchClearView = null;
+        historyContainerView = null;
         deleteUndoView = null;
         state.deleteUndoVisible = false;
         resultContainer = null;
@@ -3381,12 +3634,16 @@
 
         if (searchHistory.length > 0 && !advancedVisible) {
             history = buildHistoryRow(colors);
+            historyContainerView = history;
+            history.setVisibility(searchExpanded ?
+                View.VISIBLE : View.GONE);
             params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-            params.bottomMargin = dp(5);
+            params.bottomMargin = dp(headerMetrics().gapDp);
             panelRoot.addView(history, params);
         } else {
+            historyContainerView = null;
             state.historyChipCount = 0;
         }
 
@@ -3422,7 +3679,7 @@
         state.advancedDrawerVisible = advancedVisible;
         state.panelRenderCount += 1;
         updatePanelSize();
-        if (requestFocus && !advancedVisible) {
+        if (requestFocus && !advancedVisible && searchExpanded) {
             requestKeyboardOnMain();
         }
         return true;
@@ -3453,6 +3710,9 @@
         }
         loadHistory();
         advancedVisible = options.showAdvanced === true;
+        searchExpanded = options.requestKeyboard === true &&
+            !advancedVisible;
+        state.searchExpanded = searchExpanded;
         state.advancedDrawerVisible = advancedVisible;
         restoreListOnClose = false;
         state.homeWindowSuspended = false;
@@ -3675,6 +3935,11 @@
                 keywordInput = null;
                 advancedKeywordInput = null;
                 searchView = null;
+                searchStatusRow = null;
+                searchInputRow = null;
+                searchToggleView = null;
+                searchClearView = null;
+                historyContainerView = null;
                 resetView = null;
                 closeView = null;
                 settingsButton = null;
@@ -3706,6 +3971,8 @@
             }
         }, 3000));
         rootMode = false;
+        searchExpanded = false;
+        state.searchExpanded = false;
         state.rootMode = false;
         state.primarySurface = "filter_overlay";
         restoreListOnClose = false;
@@ -3734,6 +4001,11 @@
                 return true;
             }, 2500));
             return true;
+        }
+        if (searchExpanded) {
+            state.backLayerCloseCount += 1;
+            state.lastBackLayer = "search_input";
+            return setSearchExpanded(false, false);
         }
         state.backLayerCloseCount += 1;
         state.lastBackLayer = "search_panel";
@@ -3779,6 +4051,16 @@
             typeChipCount: Object.keys(typeViews).length,
             tagChipCount: Object.keys(tagViews).length,
             historyChipCount: Number(state.historyChipCount),
+            searchExpanded: searchExpanded === true,
+            searchExpandCount: Number(state.searchExpandCount),
+            searchCollapseCount: Number(state.searchCollapseCount),
+            headerHeightDp: Number(state.headerHeightDp),
+            headerControlHeightDp:
+                Number(state.headerControlHeightDp),
+            headerActionSizeDp: Number(state.headerActionSizeDp),
+            headerGapDp: Number(state.headerGapDp),
+            headerFilterActiveCount:
+                Number(state.headerFilterActiveCount),
             resultCardCount: Number(state.resultCardCount),
             settingsButtonPresent: settingsButton !== null,
             settingsOpenCount: Number(state.settingsOpenCount),
@@ -3947,6 +4229,14 @@
         state.panelRenderCount = 0;
         state.searchActionCount = 0;
         state.realtimeSearchCount = 0;
+        state.searchExpanded = false;
+        state.searchExpandCount = 0;
+        state.searchCollapseCount = 0;
+        state.headerHeightDp = 0;
+        state.headerControlHeightDp = 0;
+        state.headerActionSizeDp = 0;
+        state.headerGapDp = 0;
+        state.headerFilterActiveCount = 0;
         state.sourceToggleCount = 0;
         state.typeToggleCount = 0;
         state.tagToggleCount = 0;
@@ -4066,13 +4356,13 @@
         state.resultCardCount = 0;
         state.resultSourceIconCount = 0;
         state.advancedDrawerVisible = false;
-        state.searchPageStyle = "reference_search_v11";
+        state.searchPageStyle = "reference_search_v12_compact_header";
         state.lastError = null;
     }
 
     ClipHub.Filter = {
         MODULE_NAME: "ch_11_filter",
-        MODULE_VERSION: 26,
+        MODULE_VERSION: 27,
 
         init: function (context) {
             androidContext = context && context.androidContext ?
@@ -4119,6 +4409,12 @@
             copyFeedbackView = null;
             copyFeedbackGeneration = 0;
             adaptiveRenderGeneration = 0;
+            searchExpanded = false;
+            searchStatusRow = null;
+            searchInputRow = null;
+            searchToggleView = null;
+            searchClearView = null;
+            historyContainerView = null;
             resetResultPaging();
             resetState();
             loadHistory();
@@ -4406,6 +4702,7 @@
             clearDeleteUndo(true);
             clearCopyFeedback();
             rootMode = false;
+            searchExpanded = false;
             selectedItemId = null;
             resultCardViews = [];
             toolbarActionViews = {};
