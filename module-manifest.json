@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260724.33",
+  "moduleSetVersion": "20260724.34",
   "entryMinVersion": 5,
   "sourceRef": "agent/unify-window-geometry",
   "modules": [
@@ -52,12 +52,12 @@
     {
       "name": "ch_10_editor.js",
       "path": "src/ch_10_editor.js",
-      "sha": "1f70f61063ad984a370a54763cbe1def547ba04c"
+      "sha": "4fcdfc891092c46a8caa2f33f50bafb070c62b81"
     },
     {
       "name": "ch_11_filter.js",
       "path": "src/ch_11_filter.js",
-      "sha": "db3b3bc1b4af22ea95284a03ef5260d37023a6f5"
+      "sha": "608680acb8073f01dc37818e6fbfea9142b69f91"
     },
     {
       "name": "ch_12_translation.js",
@@ -67,7 +67,7 @@
     {
       "name": "ch_13_settings.js",
       "path": "src/ch_13_settings.js",
-      "sha": "8e1547e3148b96808f2dc9ed06cdd7eefc6f9005"
+      "sha": "bef1ed1024c6facbaf1aca936b1cb197b6245508"
     },
     {
       "name": "ch_14_event_bus.js",

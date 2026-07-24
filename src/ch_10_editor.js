@@ -696,6 +696,11 @@
         var keyboardTopPx;
         var topSafePx;
         var availablePx;
+        var minimumHeightPx;
+        var minimumTopPx;
+        var bottomLimitPx;
+        var originalTopPx;
+        var availableAtOriginalTopPx;
         var changed = false;
         var wasApplied;
         var targetRoot;
@@ -725,12 +730,26 @@
         wasApplied = state.keyboardAvoidanceApplied === true;
         keyboardTopPx = Math.max(0,
             Number(metrics.heightPixels) - Number(ime.bottomPx));
-        topSafePx = Math.max(dp(6), Number(ime.topInsetPx));
-        availablePx = Math.max(dp(280),
-            keyboardTopPx - topSafePx - dp(6));
-        targetHeightPx = Math.min(normalHeightPx, availablePx);
-        targetTopPx = Math.max(topSafePx,
-            keyboardTopPx - dp(6) - targetHeightPx);
+        topSafePx = Math.max(0, Number(ime.topInsetPx));
+        minimumHeightPx = dp(280);
+        minimumTopPx = topSafePx;
+        bottomLimitPx = Math.max(minimumTopPx + 1,
+            keyboardTopPx - dp(6));
+        originalTopPx = Math.max(minimumTopPx,
+            Number(imeRestoreGeometry.y));
+        availableAtOriginalTopPx = Math.max(1,
+            bottomLimitPx - originalTopPx);
+        targetHeightPx = Math.min(normalHeightPx,
+            availableAtOriginalTopPx);
+        if (targetHeightPx < minimumHeightPx) {
+            targetHeightPx = Math.min(normalHeightPx,
+                Math.max(1, bottomLimitPx - minimumTopPx));
+        }
+        targetTopPx = Math.max(minimumTopPx,
+            Math.min(originalTopPx,
+                bottomLimitPx - targetHeightPx));
+        availablePx = Math.max(1,
+            bottomLimitPx - minimumTopPx);
         targetGravity = Gravity.TOP | Gravity.START;
         targetY = targetTopPx;
         state.availableAboveImeDp = pxToDp(availablePx);
@@ -2420,7 +2439,7 @@
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 16,
+        MODULE_VERSION: 17,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;

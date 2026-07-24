@@ -3800,8 +3800,12 @@
                 Math.round(Math.min(screenWidth, screenHeight) * 0.008));
             var keyboardTop;
             var topSafe;
-            var available;
             var minimumHeight;
+            var minimumTop;
+            var bottomLimit;
+            var originalTop;
+            var availableAtOriginalTop;
+            var targetHeight;
             var target;
 
             stateValue.lastSource = String(ime.source || "none");
@@ -3818,16 +3822,29 @@
             topSafe = Math.max(0, Number(ime.topInsetPx || 0));
             minimumHeight = Math.max(touchSlop * 18,
                 Math.round(screenHeight * 0.22));
-            available = Math.max(minimumHeight,
-                keyboardTop - topSafe - adaptiveGap * 2);
+            minimumTop = topSafe;
+            bottomLimit = Math.max(minimumTop + 1,
+                keyboardTop - adaptiveGap);
+            originalTop = Math.max(minimumTop,
+                Number(stateValue.restore.y));
+            availableAtOriginalTop = Math.max(1,
+                bottomLimit - originalTop);
+            targetHeight = Math.min(
+                Number(stateValue.restore.height),
+                availableAtOriginalTop);
+            if (targetHeight < minimumHeight) {
+                targetHeight = Math.min(
+                    Number(stateValue.restore.height),
+                    Math.max(1, bottomLimit - minimumTop));
+            }
             target = {
                 width: Number(stateValue.restore.width),
-                height: Math.min(Number(stateValue.restore.height), available),
+                height: targetHeight,
                 gravity: Number(Gravity.TOP | Gravity.START),
                 x: Number(stateValue.restore.x),
-                y: Math.max(topSafe + adaptiveGap,
-                    keyboardTop - adaptiveGap -
-                    Math.min(Number(stateValue.restore.height), available))
+                y: Math.max(minimumTop,
+                    Math.min(originalTop,
+                        bottomLimit - targetHeight))
             };
             updateLayout(target);
             if (!stateValue.applied) { stateValue.applyCount += 1; }
@@ -4638,7 +4655,7 @@
 
     ClipHub.Filter = {
         MODULE_NAME: "ch_11_filter",
-        MODULE_VERSION: 33,
+        MODULE_VERSION: 34,
 
         init: function (context) {
             stopFilterImeAvoidance(false);
@@ -4779,7 +4796,7 @@
         handleBack: handleBack,
         getPanelState: getPanelState,
         getImeAvoidanceState: getFilterImeAvoidanceState,
-        FILTER_IME_AVOIDANCE: "formal_v33",
+        FILTER_IME_AVOIDANCE: "formal_v34",
         getSelectedItemId: function () { return selectedItemId; },
 
         performResultClick: function (index) {
