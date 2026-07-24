@@ -1,0 +1,263 @@
+name: ClipHub Phase 1 Low-Risk Cleanup
+
+on:
+  push:
+    branches:
+      - agent/unify-window-geometry
+    paths:
+      - .github/workflows/phase1-low-risk-cleanup.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/unify-window-geometry
+          fetch-depth: 0
+
+      - name: Apply guarded cleanup
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          import subprocess
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit('%s replacement count=%d' % (label, count))
+              return text.replace(old, new, 1)
+
+          def update_text(path, replacements):
+              file_path = Path(path)
+              text = file_path.read_text(encoding='utf-8')
+              for old, new, label in replacements:
+                  text = replace_once(text, old, new, label)
+              file_path.write_text(text, encoding='utf-8')
+              return text
+
+          clipboard_text = update_text('src/ch_04_clipboard.js', [
+              (
+                  '                sourceAvailable: true,\n'
+                  '                sourceError: String(error)\n'
+                  '            };\n'
+                  '        }\n'
+                  '    }\n\n'
+                  '    function readPrimaryText()',
+                  '                sourceAvailable: false,\n'
+                  '                sourceError: String(error)\n'
+                  '            };\n'
+                  '        }\n'
+                  '    }\n\n'
+                  '    function readPrimaryText()',
+                  'clipboard source availability'
+              ),
+              (
+                  '        MODULE_VERSION: 4,',
+                  '        MODULE_VERSION: 5,',
+                  'clipboard module version'
+              )
+          ])
+
+          app_text = update_text('src/ch_15_app.js', [
+              (
+                  '    function showUi() {\n'
+                  '        var result;\n'
+                  '        closeUi();\n'
+                  '        if (ClipHub.List && typeof ClipHub.List.hide === "function") {\n'
+                  '            ClipHub.List.hide(false);\n'
+                  '        }\n'
+                  '        if (!ClipHub.Filter) {',
+                  '    function showUi() {\n'
+                  '        var result;\n'
+                  '        closeUi();\n'
+                  '        if (!ClipHub.Filter) {',
+                  'app duplicate list hide'
+              ),
+              (
+                  '        MODULE_VERSION: 10,',
+                  '        MODULE_VERSION: 11,',
+                  'app module version'
+              )
+          ])
+
+          translation_text = update_text('src/ch_12_translation.js', [
+              (
+                  '    var translationRetryView = null;\n'
+                  '    var translationCloseView = null;\n'
+                  '    var translationGeneration = 0;',
+                  '    var translationRetryView = null;\n'
+                  '    var translationHeaderCloseView = null;\n'
+                  '    var translationFooterCloseView = null;\n'
+                  '    var translationGeneration = 0;',
+                  'translation close view declarations'
+              ),
+              (
+                  '            if (ClipHub.Window && translationCopyView !== null &&\n'
+                  '                    typeof ClipHub.Window.performHaptic === "function") {\n'
+                  '                ClipHub.Window.performHaptic(translationCopyView, "confirm");\n'
+                  '            }\n',
+                  '',
+                  'translation duplicate haptic'
+              ),
+              (
+                  '        translationCloseView = translationText("×", 22, colors.icon, true);\n'
+                  '        translationCloseView.setGravity(Gravity.CENTER);\n'
+                  '        translationCloseView.setBackground(translationRounded(\n'
+                  '            colors.surfaceMuted, null, 18));\n'
+                  '        translationCloseView.setClickable(true);\n'
+                  '        translationCloseView.setFocusable(true);\n'
+                  '        translationCloseView.setOnClickListener(new JavaAdapter(\n'
+                  '            View.OnClickListener, { onClick: function () {\n'
+                  '                closeTranslationPanel("button");\n'
+                  '            }}));\n'
+                  '        header.addView(translationCloseView,\n'
+                  '            new LinearLayout.LayoutParams(dp(38), dp(38)));',
+                  '        translationHeaderCloseView = translationText(\n'
+                  '            "×", 22, colors.icon, true);\n'
+                  '        translationHeaderCloseView.setGravity(Gravity.CENTER);\n'
+                  '        translationHeaderCloseView.setBackground(translationRounded(\n'
+                  '            colors.surfaceMuted, null, 18));\n'
+                  '        translationHeaderCloseView.setClickable(true);\n'
+                  '        translationHeaderCloseView.setFocusable(true);\n'
+                  '        translationHeaderCloseView.setOnClickListener(new JavaAdapter(\n'
+                  '            View.OnClickListener, { onClick: function () {\n'
+                  '                closeTranslationPanel("button");\n'
+                  '            }}));\n'
+                  '        header.addView(translationHeaderCloseView,\n'
+                  '            new LinearLayout.LayoutParams(dp(38), dp(38)));',
+                  'translation header close view'
+              ),
+              (
+                  '        translationRetryView = translationButton("重新翻译", colors, false, false);\n'
+                  '        translationCloseView = translationButton("关闭", colors, false, false);\n'
+                  '        params = new LinearLayout.LayoutParams(0, dp(38), 1);\n'
+                  '        params.rightMargin = dp(6);\n'
+                  '        actionRow2.addView(translationRetryView, params);\n'
+                  '        actionRow2.addView(translationCloseView,\n'
+                  '            new LinearLayout.LayoutParams(0, dp(38), 1));',
+                  '        translationRetryView = translationButton(\n'
+                  '            "重新翻译", colors, false, false);\n'
+                  '        translationFooterCloseView = translationButton(\n'
+                  '            "关闭", colors, false, false);\n'
+                  '        params = new LinearLayout.LayoutParams(0, dp(38), 1);\n'
+                  '        params.rightMargin = dp(6);\n'
+                  '        actionRow2.addView(translationRetryView, params);\n'
+                  '        actionRow2.addView(translationFooterCloseView,\n'
+                  '            new LinearLayout.LayoutParams(0, dp(38), 1));',
+                  'translation footer close view creation'
+              ),
+              (
+                  '        translationCloseView.setOnClickListener(new JavaAdapter(\n'
+                  '            View.OnClickListener, { onClick: function () {\n'
+                  '                closeTranslationPanel("button");\n'
+                  '            }}));',
+                  '        translationFooterCloseView.setOnClickListener(new JavaAdapter(\n'
+                  '            View.OnClickListener, { onClick: function () {\n'
+                  '                closeTranslationPanel("button");\n'
+                  '            }}));',
+                  'translation footer close listener'
+              ),
+              (
+                  '                translationRetryView = null;\n'
+                  '                translationCloseView = null;',
+                  '                translationRetryView = null;\n'
+                  '                translationHeaderCloseView = null;\n'
+                  '                translationFooterCloseView = null;',
+                  'translation close cleanup'
+              ),
+              (
+                  '        MODULE_VERSION: 9,',
+                  '        MODULE_VERSION: 10,',
+                  'translation module version'
+              )
+          ])
+
+          if 'translationCloseView' in translation_text:
+              raise SystemExit('legacy translationCloseView reference remains')
+          if 'ClipHub.Window.performHaptic(translationCopyView' in translation_text:
+              raise SystemExit('duplicate translation haptic remains')
+          if app_text.count('function showUi()') != 1:
+              raise SystemExit('showUi contract invalid')
+          if 'sourceAvailable: false' not in clipboard_text:
+              raise SystemExit('clipboard source availability fix missing')
+
+          obsolete = Path('scripts/temporary_remove_advanced_filter_search.py')
+          if not obsolete.exists():
+              raise SystemExit('obsolete advanced filter script missing')
+          obsolete.unlink()
+
+          manifest_path = Path('module-manifest.json')
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          if manifest.get('moduleSetVersion') != '20260724.28':
+              raise SystemExit('unexpected moduleSetVersion: %r' %
+                               manifest.get('moduleSetVersion'))
+          manifest['moduleSetVersion'] = '20260724.29'
+
+          changed_paths = {
+              'src/ch_04_clipboard.js',
+              'src/ch_12_translation.js',
+              'src/ch_15_app.js'
+          }
+          seen = set()
+          for item in manifest.get('modules', []):
+              path = item.get('path')
+              if path in changed_paths:
+                  item['sha'] = subprocess.check_output(
+                      ['git', 'hash-object', path], text=True).strip()
+                  seen.add(path)
+          if seen != changed_paths:
+              raise SystemExit('manifest paths missing: %r' %
+                               sorted(changed_paths - seen))
+          manifest_path.write_text(
+              json.dumps(manifest, ensure_ascii=False, indent=2) + '\n',
+              encoding='utf-8')
+          PY
+
+      - name: Validate JavaScript and manifest
+        shell: bash
+        run: |
+          node --check src/ch_04_clipboard.js
+          node --check src/ch_12_translation.js
+          node --check src/ch_15_app.js
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          import subprocess
+
+          manifest = json.loads(Path('module-manifest.json').read_text(encoding='utf-8'))
+          assert manifest['moduleSetVersion'] == '20260724.29'
+          expected = {
+              item['path']: item['sha']
+              for item in manifest['modules']
+          }
+          for path in ('src/ch_04_clipboard.js',
+                       'src/ch_12_translation.js',
+                       'src/ch_15_app.js'):
+              actual = subprocess.check_output(
+                  ['git', 'hash-object', path], text=True).strip()
+              assert expected[path] == actual, (path, expected[path], actual)
+          assert not Path('scripts/temporary_remove_advanced_filter_search.py').exists()
+          PY
+          git diff --check
+
+      - name: Commit cleanup
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/ch_04_clipboard.js \
+                  src/ch_12_translation.js \
+                  src/ch_15_app.js \
+                  module-manifest.json \
+                  scripts/temporary_remove_advanced_filter_search.py
+          git diff --cached --stat
+          git commit -m "完成阶段1低风险清理"
+          git push origin HEAD:agent/unify-window-geometry
