@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "moduleSetVersion": "20260724.35",
   "entryMinVersion": 5,
-  "sourceRef": "agent/unify-window-geometry",
+  "sourceRef": "main",
   "modules": [
     {
       "name": "ch_01_base.js",
