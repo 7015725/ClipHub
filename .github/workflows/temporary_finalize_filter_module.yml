@@ -30,7 +30,9 @@ jobs:
           fetch-depth: 0
 
       - name: Build direct filter module
-        run: python3 scripts/temporary_finalize_filter_module.py
+        run: |
+          set -o pipefail
+          python3 scripts/temporary_finalize_filter_module.py 2>&1 | tee formalization.log
 
       - name: Validate direct module
         run: |
@@ -98,8 +100,17 @@ jobs:
           PY
           git diff --check
 
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: filter-formalization-diagnostics
+          path: formalization.log
+          if-no-files-found: warn
+
       - name: Commit final module and remove temporary files
         run: |
+          rm -f formalization.log
           rm -f scripts/temporary_finalize_filter_module.py
           rm -f .github/workflows/temporary_finalize_filter_module.yml
           git config user.name "github-actions[bot]"
