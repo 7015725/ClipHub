@@ -1,0 +1,139 @@
+name: ClipHub Phase 2 Retry 3
+
+on:
+  push:
+    branches:
+      - agent/unify-window-geometry
+    paths:
+      - .github/workflows/phase2-content-types-retry3.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  retry:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/unify-window-geometry
+          fetch-depth: 0
+
+      - name: Execute corrected bounded patch
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          publish_error() {
+            git reset --hard HEAD
+            cp /tmp/phase2-retry3.log .phase2-content-type-retry3-error.txt || \
+              echo "phase2 retry3 failed without output" > \
+                .phase2-content-type-retry3-error.txt
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .phase2-content-type-retry3-error.txt
+            git commit -m "记录阶段2第三次重放失败"
+            git push origin HEAD:agent/unify-window-geometry
+            exit 0
+          }
+
+          if ! python3 - <<'PY' 2>&1 | tee /tmp/phase2-retry3.log
+          from pathlib import Path
+          import re
+
+          text = Path(
+              '.github/workflows/phase2-retire-content-types.yml'
+          ).read_text(encoding='utf-8')
+          marker = "          python3 - <<'PY' 2>&1 | tee /tmp/phase2-content-types.log\n"
+          start = text.index(marker) + len(marker)
+          end = text.index('\n          PY\n', start)
+          script = '\n'.join(
+              line[10:] if line.startswith('          ') else line
+              for line in text[start:end].splitlines()
+          )
+
+          exact_replacements = [
+              (
+                  'if "contentTypeOptionCount:" in line:',
+                  'if line.strip() == "contentTypeOptionCount:":'
+              ),
+              ('"typeToggleCount": 4,', '"typeToggleCount": 3,'),
+              ('"typeWrapRowCount": 6,', '"typeWrapRowCount": 5,'),
+              ('"typeChipCount": 4,', '"typeChipCount": 2,')
+          ]
+          for old, new in exact_replacements:
+              if script.count(old) != 1:
+                  raise SystemExit('embedded replacement mismatch: ' + old)
+              script = script.replace(old, new, 1)
+
+          script, count = re.subn(
+              r'(?m)^\s*"counts\.types": 1,\n',
+              '',
+              script,
+              count=1
+          )
+          if count != 1:
+              raise SystemExit('counts.types expected-line mismatch')
+
+          exec(compile(script, '<phase2-retire-content-types>', 'exec'), {})
+          PY
+          then
+            publish_error
+          fi
+
+          if ! {
+            set -e
+            for file in src/*.js; do
+              node --check "$file"
+            done
+            python3 -m json.tool module-manifest.json >/dev/null
+            test ! -e src/ch_05_classifier.js
+            ! grep -R -n -E 'ClipHub\.Classifier|"Classifier"|ch_05_classifier' \
+              src module-manifest.json
+            ! grep -R -n -E \
+              'contentTypes|typeViews|typeToggleCount|typeWrapRowCount|contentTypeOptionCount|typeChipCount|setContentTypes|getContentTypeOptions|performTypeClick|listContentTypeOptions|toggleType|ui_type' \
+              src/ch_06_repository.js src/ch_11_filter.js
+            grep -q 'content_type TEXT NOT NULL DEFAULT' src/ch_03_database.js
+            grep -q 'idx_clipboard_items_type' src/ch_03_database.js
+            grep -q 'function typeLabel' src/ch_11_filter.js
+            git diff --check
+            python3 - <<'PY'
+          from pathlib import Path
+          import json
+          import subprocess
+
+          manifest = json.loads(
+              Path('module-manifest.json').read_text(encoding='utf-8')
+          )
+          assert manifest['moduleSetVersion'] == '20260724.30'
+          assert len(manifest['modules']) == 14
+          for item in manifest['modules']:
+              actual = subprocess.check_output(
+                  ['git', 'hash-object', item['path']], text=True
+              ).strip()
+              assert actual == item['sha'], item['path']
+          PY
+          } 2>&1 | tee -a /tmp/phase2-retry3.log
+          then
+            publish_error
+          fi
+
+          rm -f .phase2-content-type-diagnostic.txt \
+            .phase2-content-type-error.txt \
+            .phase2-content-type-retry-error.txt \
+            .phase2-content-type-retry3-error.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A module-manifest.json \
+            src/ch_05_classifier.js \
+            src/ch_06_repository.js \
+            src/ch_11_filter.js \
+            src/ch_15_app.js \
+            .phase2-content-type-diagnostic.txt \
+            .phase2-content-type-error.txt \
+            .phase2-content-type-retry-error.txt \
+            .phase2-content-type-retry3-error.txt
+          git commit -m "清理失效的内容类型筛选链路"
+          git push origin HEAD:agent/unify-window-geometry
