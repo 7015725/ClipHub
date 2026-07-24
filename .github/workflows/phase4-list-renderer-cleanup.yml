@@ -5,7 +5,7 @@ on:
     branches:
       - agent/unify-window-geometry
     paths:
-      - .github/workflows/phase4-list-renderer-cleanup.yml
+      - .github/phase4-list-renderer-cleanup-trigger.txt
   workflow_dispatch:
 
 permissions:
@@ -69,10 +69,9 @@ jobs:
         run: |
           rm -f scripts/phase4_list_renderer_cleanup.py
           rm -f .github/workflows/phase4-list-renderer-cleanup.yml
+          rm -f .github/phase4-list-renderer-cleanup-trigger.txt
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
           git commit -m '清理 List 旧首页渲染残留'
           git push origin HEAD:agent/unify-window-geometry
-
-# trigger: phase4-v2
