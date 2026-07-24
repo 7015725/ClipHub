@@ -55,10 +55,11 @@ jobs:
           ]:
               if marker not in text:
                   raise SystemExit('missing marker: ' + marker)
-          malformed = 'String(activeAdvancedFilterCount()) + "" :'
+          malformed = r'String(activeAdvancedFilterCount()) + \"\" :'
           if malformed in text:
               raise SystemExit('malformed compact probe remains')
-          intended = 'String(activeAdvancedFilterCount()) + ")" :'
+          intended = r'String(activeAdvancedFilterCount()) + \"\)\" :'
+          intended = intended.replace('\\)', ')')
           if intended not in text:
               raise SystemExit('correct compact probe missing')
           manifest = json.loads(Path('module-manifest.json').read_text(encoding='utf-8'))
