@@ -9,7 +9,9 @@
     var TimeUnit = Packages.java.util.concurrent.TimeUnit;
     var Thread = Packages.java.lang.Thread;
     var View = Packages.android.view.View;
+    var ViewGroup = Packages.android.view.ViewGroup;
     var MotionEvent = Packages.android.view.MotionEvent;
+    var InputMethodManager = Packages.android.view.inputmethod.InputMethodManager;
     var Gravity = Packages.android.view.Gravity;
     var WindowManager = Packages.android.view.WindowManager;
     var WindowInsets = Packages.android.view.WindowInsets;
@@ -38,6 +40,7 @@
     var touchSlopPx = 0;
     var longPressTimeoutMs = 500;
     var managedWindows = [];
+    var preparedFrames = [];
     var nextManagedId = 1;
     var activeBinding = null;
     var frameUpdate = {
@@ -133,6 +136,14 @@
         displayListenerRegistered: false,
         lastBoundsReason: "",
         lastPersistedGeometry: null,
+        singleHostEnabled: true,
+        singleHostAttachCount: 0,
+        outsideTapCount: 0,
+        outsideImeDismissCount: 0,
+        outsideDismissCount: 0,
+        outsideGestureCancelCount: 0,
+        lastOutsideRole: "",
+        lastOutsideAction: "",
         lastError: null
     };
 
@@ -506,8 +517,35 @@
         };
     }
 
+    function removePreparedFrame(rootView) {
+        var kept = [];
+        var removed = null;
+        var index;
+        for (index = 0; index < preparedFrames.length; index += 1) {
+            if (preparedFrames[index].rootView === rootView) {
+                removed = preparedFrames[index];
+            } else {
+                kept.push(preparedFrames[index]);
+            }
+        }
+        preparedFrames = kept;
+        return removed;
+    }
+
+    function findPreparedFrame(rootView) {
+        var index;
+        for (index = preparedFrames.length - 1; index >= 0; index -= 1) {
+            if (preparedFrames[index].rootView === rootView) {
+                return preparedFrames[index];
+            }
+        }
+        return null;
+    }
+
     function createManagedFrame(contentView, options) {
-        var root;
+        var hostRoot;
+        var panelRoot;
+        var panelParams;
         var contentParams;
         var dragView;
         var dragParams;
@@ -517,13 +555,26 @@
         if (contentView === null || contentView === undefined) {
             throw new Error("Managed window content view is required");
         }
-        root = new FrameLayout(appContext);
-        root.setClipChildren(false);
-        root.setClipToPadding(false);
+        hostRoot = new FrameLayout(appContext);
+        hostRoot.setClipChildren(false);
+        hostRoot.setClipToPadding(false);
+        hostRoot.setBackgroundColor(Color.TRANSPARENT);
+        hostRoot.setClickable(true);
+        hostRoot.setFocusable(true);
+        hostRoot.setFocusableInTouchMode(true);
+
+        panelRoot = new FrameLayout(appContext);
+        panelRoot.setClipChildren(false);
+        panelRoot.setClipToPadding(false);
+        panelParams = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT);
+        hostRoot.addView(panelRoot, panelParams);
+
         contentParams = new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT);
-        root.addView(contentView, contentParams);
+        panelRoot.addView(contentView, contentParams);
         if (Build.VERSION.SDK_INT >= 21) {
             try { contentView.setElevation(0); } catch (ignoredElevation) {}
             try { contentView.setClipToOutline(true); } catch (ignoredClip) {}
@@ -534,17 +585,24 @@
         dragView.setContentDescription("长按并拖动移动窗口");
         dragParams = new FrameLayout.LayoutParams(dp(86), dp(24));
         dragParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
-        root.addView(dragView, dragParams);
+        panelRoot.addView(dragView, dragParams);
         resizeVisual = createResizeVisual(options.accentColor || "#7C5CFC");
         resizeParams = new FrameLayout.LayoutParams(dp(40), dp(40));
         resizeParams.gravity = Gravity.END | Gravity.BOTTOM;
-        root.addView(resizeVisual.view, resizeParams);
+        panelRoot.addView(resizeVisual.view, resizeParams);
+        preparedFrames.push({
+            rootView: hostRoot,
+            panelView: panelRoot,
+            contentView: contentView
+        });
         return {
-            rootView: root,
+            rootView: hostRoot,
+            panelView: panelRoot,
             contentView: contentView,
             dragView: dragView,
             resizeView: resizeVisual.view,
-            resizeVisual: resizeVisual
+            resizeVisual: resizeVisual,
+            singleHost: true
         };
     }
 
@@ -639,6 +697,236 @@
         }
     }
 
+    function fullScreenLayoutParams(source) {
+        var params = new WindowManager.LayoutParams();
+        params.copyFrom(source);
+        params.width = ViewGroup.LayoutParams.MATCH_PARENT;
+        params.height = ViewGroup.LayoutParams.MATCH_PARENT;
+        params.gravity = Gravity.TOP | Gravity.START;
+        params.x = 0;
+        params.y = 0;
+        return params;
+    }
+
+    function applyPanelLayout(binding, params) {
+        var panelParams;
+        var width;
+        var height;
+        if (!binding || !binding.panelView || !params) { return false; }
+        width = Math.max(1, Math.floor(Number(params.width)));
+        height = Math.max(1, Math.floor(Number(params.height)));
+        panelParams = binding.panelView.getLayoutParams();
+        if (panelParams === null || panelParams === undefined) {
+            panelParams = new FrameLayout.LayoutParams(width, height);
+        } else {
+            panelParams.width = width;
+            panelParams.height = height;
+        }
+        binding.panelView.setLayoutParams(panelParams);
+        binding.panelView.setX(Number(params.x || 0));
+        binding.panelView.setY(Number(params.y || 0));
+        try { binding.panelView.requestLayout(); } catch (ignoredLayout) {}
+        return true;
+    }
+
+    function panelContainsPoint(binding, x, y) {
+        var left;
+        var top;
+        var width;
+        var height;
+        if (!binding || !binding.panelView) { return true; }
+        left = Number(binding.panelView.getX());
+        top = Number(binding.panelView.getY());
+        width = Number(binding.panelView.getWidth());
+        height = Number(binding.panelView.getHeight());
+        if (width <= 0 && binding.layoutParams) {
+            width = Number(binding.layoutParams.width);
+        }
+        if (height <= 0 && binding.layoutParams) {
+            height = Number(binding.layoutParams.height);
+        }
+        return Number(x) >= left && Number(x) < left + width &&
+            Number(y) >= top && Number(y) < top + height;
+    }
+
+    function topAttachedBinding() {
+        var index;
+        var binding;
+        for (index = managedWindows.length - 1; index >= 0; index -= 1) {
+            binding = managedWindows[index];
+            if (!binding || binding.attached !== true || !binding.rootView) {
+                continue;
+            }
+            try {
+                if (binding.rootView.isAttachedToWindow()) { return binding; }
+            } catch (ignored) {}
+        }
+        return null;
+    }
+
+    function hideBindingIme(binding) {
+        var manager;
+        var token;
+        if (!binding || !binding.rootView || appContext === null) {
+            return false;
+        }
+        try {
+            manager = appContext.getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (manager === null) { return false; }
+            token = binding.contentView && binding.contentView.getWindowToken() ?
+                binding.contentView.getWindowToken() :
+                binding.rootView.getWindowToken();
+            if (token === null) { return false; }
+            manager.hideSoftInputFromWindow(token, 0);
+            return true;
+        } catch (error) {
+            state.lastError = String(error);
+            return false;
+        }
+    }
+
+    function invokeBindingDismiss(binding, reason, outside) {
+        var callback = outside === true ?
+            binding.onRequestOutsideDismiss : binding.onRequestBack;
+        var role = String(binding.role || "shared");
+        if (typeof callback === "function") {
+            try { return callback(String(reason || "window_request")) !== false; }
+            catch (callbackError) {
+                state.lastError = String(callbackError);
+                return false;
+            }
+        }
+        if ((role === "primary" || role === "filter_overlay") &&
+                ClipHub.Filter &&
+                typeof ClipHub.Filter.handleBack === "function") {
+            try { return ClipHub.Filter.handleBack() !== false; }
+            catch (filterError) {
+                state.lastError = String(filterError);
+                return false;
+            }
+        }
+        if ((role === "editor" || role === "tag_selector") &&
+                ClipHub.Editor &&
+                typeof ClipHub.Editor.handleBack === "function") {
+            try { return ClipHub.Editor.handleBack() !== false; }
+            catch (editorError) {
+                state.lastError = String(editorError);
+                return false;
+            }
+        }
+        if (typeof binding.onRequestClose === "function") {
+            try { return binding.onRequestClose(String(reason ||
+                "window_request")) !== false; }
+            catch (closeError) {
+                state.lastError = String(closeError);
+                return false;
+            }
+        }
+        return false;
+    }
+
+    function requestBindingOutsideDismiss(binding, reason) {
+        var visible;
+        if (!binding || binding !== topAttachedBinding()) { return false; }
+        visible = bindingImeVisible(binding);
+        if (visible) {
+            hideBindingIme(binding);
+            binding.imeDismissPending = true;
+            state.outsideImeDismissCount += 1;
+            state.lastOutsideRole = String(binding.role || "shared");
+            state.lastOutsideAction = "hide_ime";
+            return true;
+        }
+        if (binding.imeDismissPending === true) {
+            binding.imeDismissPending = false;
+        }
+        state.outsideDismissCount += 1;
+        state.lastOutsideRole = String(binding.role || "shared");
+        state.lastOutsideAction = "dismiss";
+        return invokeBindingDismiss(binding,
+            String(reason || "outside_tap"), true);
+    }
+
+    function installOutsideTouch(binding) {
+        var gesture = {
+            tracking: false,
+            canceled: false,
+            downX: 0,
+            downY: 0
+        };
+        var listener;
+        if (!binding || !binding.singleHost || !binding.rootView) {
+            return false;
+        }
+        listener = new JavaAdapter(View.OnTouchListener, {
+            onTouch: function (view, event) {
+                var action = Number(event.getActionMasked());
+                var x = Number(event.getX());
+                var y = Number(event.getY());
+                var dx;
+                var dy;
+                if (action === MotionEvent.ACTION_DOWN) {
+                    if (panelContainsPoint(binding, x, y)) {
+                        gesture.tracking = false;
+                        gesture.canceled = false;
+                        return false;
+                    }
+                    gesture.tracking = true;
+                    gesture.canceled = false;
+                    gesture.downX = x;
+                    gesture.downY = y;
+                    state.outsideTapCount += 1;
+                    return true;
+                }
+                if (!gesture.tracking) { return false; }
+                if (action === MotionEvent.ACTION_MOVE) {
+                    dx = x - gesture.downX;
+                    dy = y - gesture.downY;
+                    if (Math.sqrt(dx * dx + dy * dy) > touchSlopPx) {
+                        gesture.canceled = true;
+                    }
+                    return true;
+                }
+                if (action === MotionEvent.ACTION_CANCEL) {
+                    gesture.tracking = false;
+                    gesture.canceled = true;
+                    state.outsideGestureCancelCount += 1;
+                    return true;
+                }
+                if (action === MotionEvent.ACTION_UP) {
+                    if (!gesture.canceled &&
+                            !panelContainsPoint(binding, x, y)) {
+                        requestBindingOutsideDismiss(binding, "outside_tap");
+                    }
+                    gesture.tracking = false;
+                    gesture.canceled = false;
+                    return true;
+                }
+                return true;
+            }
+        });
+        binding.outsideTouchListener = listener;
+        binding.rootView.setOnTouchListener(listener);
+        return true;
+    }
+
+    function applyExternalLayout(rootView, params, reason) {
+        var binding = findBinding(rootView);
+        var geometry;
+        if (!binding || binding.singleHost !== true || !params) {
+            return false;
+        }
+        binding.layoutParams.width = Number(params.width);
+        binding.layoutParams.height = Number(params.height);
+        binding.layoutParams.gravity = Number(params.gravity);
+        binding.layoutParams.x = Number(params.x);
+        binding.layoutParams.y = Number(params.y);
+        if (!applyPanelLayout(binding, binding.layoutParams)) { return false; }
+        geometry = geometryFromBinding(binding);
+        notifyBinding(binding, geometry, String(reason || "external_layout"));
+        return true;
+    }
+
     function applyGeometryToBinding(binding, geometry, reason, force) {
         var targetWidth;
         var targetHeight;
@@ -664,6 +952,9 @@
             Number(binding.layoutParams.gravity) !==
                 Number(Gravity.TOP | Gravity.START);
         if (!changed) {
+            if (binding.singleHost === true) {
+                applyPanelLayout(binding, binding.layoutParams);
+            }
             binding.pendingSharedGeometry = null;
             binding.geometry = copyGeometry(geometry);
             state.frameUpdateSkippedCount += 1;
@@ -675,7 +966,9 @@
         binding.layoutParams.x = targetX;
         binding.layoutParams.y = targetY;
         try {
-            if (binding.rootView.isAttachedToWindow()) {
+            if (binding.singleHost === true) {
+                applyPanelLayout(binding, binding.layoutParams);
+            } else if (binding.rootView.isAttachedToWindow()) {
                 binding.manager.updateViewLayout(binding.rootView,
                     binding.layoutParams);
             }
@@ -1381,6 +1674,63 @@
         return binding.resizeView !== null;
     }
 
+    function bindingImeFocusManaged(binding) {
+        var role = binding ? String(binding.role || "") : "";
+        return role !== "editor" && role !== "tag_selector";
+    }
+
+    function requestBindingRootFocus(binding, verifyLater) {
+        var root;
+        var target = null;
+        var previous = -1;
+        var requested = false;
+        var focused = false;
+        if (!binding || !binding.rootView || !binding.attached ||
+                !bindingImeFocusManaged(binding)) {
+            return false;
+        }
+        root = binding.rootView;
+        try { target = root.findFocus(); }
+        catch (ignoredFind) { target = null; }
+        try { previous = Number(root.getDescendantFocusability()); }
+        catch (ignoredPrevious) {}
+        try {
+            root.setFocusable(true);
+            root.setFocusableInTouchMode(true);
+            root.setDescendantFocusability(
+                ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+            if (target !== null && target !== root) {
+                try {
+                    if (target.onCheckIsTextEditor() === true) {
+                        target.clearFocus();
+                    }
+                } catch (ignoredEditor) {}
+            }
+            requested = root.requestFocus();
+            focused = root.isFocused();
+        } catch (focusError) {
+            state.lastError = String(focusError);
+        } finally {
+            if (previous >= 0) {
+                try { root.setDescendantFocusability(previous); }
+                catch (ignoredRestore) {}
+            }
+        }
+        if (verifyLater === true && mainHandler !== null) {
+            mainHandler.postDelayed(
+                new Packages.java.lang.Runnable({
+                    run: function () {
+                        if (!binding.attached ||
+                                binding !== topAttachedBinding()) {
+                            return;
+                        }
+                        requestBindingRootFocus(binding, false);
+                    }
+                }), 180);
+        }
+        return focused || requested;
+    }
+
     function installImeObserver(binding) {
         var observer;
         if (!binding || !binding.rootView) { return false; }
@@ -1395,6 +1745,7 @@
                         var wasVisible = binding.imeVisible === true;
                         binding.imeVisible = visible;
                         if (wasVisible && !visible && binding.attached) {
+                            requestBindingRootFocus(binding, true);
                             mainHandler.postDelayed(
                                 new Packages.java.lang.Runnable({
                                     run: function () {
@@ -1432,6 +1783,8 @@
     function attachWindow(options) {
         var geometry;
         var binding;
+        var prepared;
+        var hostParams;
         options = options || {};
         if (!options.rootView || !options.layoutParams ||
                 !options.windowManager) {
@@ -1441,34 +1794,66 @@
         geometry = options.geometry || computeGeometry("shared", {
             useSaved: true
         });
+        prepared = findPreparedFrame(options.rootView);
         binding = {
             id: nextManagedId,
             role: String(options.role || "shared"),
             attached: true,
             rootView: options.rootView,
             contentView: options.contentView || null,
+            panelView: prepared ? prepared.panelView : null,
+            singleHost: prepared !== null,
             layoutParams: options.layoutParams,
+            windowLayoutParams: null,
             manager: options.windowManager,
             dragView: null,
             resizeView: null,
             resizeVisual: options.resizeVisual || null,
             onGeometryChanged: options.onGeometryChanged || null,
             onRequestClose: options.onRequestClose || null,
+            onRequestBack: options.onRequestBack || null,
+            onRequestOutsideDismiss: options.onRequestOutsideDismiss || null,
             geometry: copyGeometry(geometry),
             pendingSharedGeometry: null,
             pinned: options.pinned === true,
             layoutObserver: null,
             layoutListener: null,
+            outsideTouchListener: null,
+            imeDismissPending: false,
             imeVisible: false
         };
+        if (binding.singleHost) {
+            hostParams = fullScreenLayoutParams(options.layoutParams);
+            binding.windowLayoutParams = hostParams;
+            try {
+                if (binding.rootView.isAttachedToWindow()) {
+                    binding.manager.updateViewLayout(binding.rootView,
+                        hostParams);
+                }
+            } catch (hostError) {
+                state.lastError = String(hostError);
+                throw hostError;
+            }
+            state.singleHostAttachCount += 1;
+        }
         nextManagedId += 1;
         managedWindows.push(binding);
         activateBinding(binding);
         bindDragView(binding, options.dragView || null);
         bindResizeView(binding, options.resizeView || null);
+        if (binding.singleHost) { installOutsideTouch(binding); }
         installImeObserver(binding);
         updateSharedLayout(binding, Number(geometry.x), Number(geometry.y),
             Number(geometry.width), Number(geometry.height), "attach_shared");
+        try {
+            if (ClipHub.Navigation &&
+                    typeof ClipHub.Navigation.registerWindow === "function") {
+                ClipHub.Navigation.registerWindow(binding.rootView,
+                    binding.role);
+            }
+        } catch (navigationError) {
+            state.lastError = String(navigationError);
+        }
         return getState();
     }
 
@@ -1496,6 +1881,12 @@
                         removed.resizeView.setOnTouchListener(null);
                     }
                 } catch (ignoredResize) {}
+                try {
+                    if (removed.rootView) {
+                        removed.rootView.setOnTouchListener(null);
+                    }
+                } catch (ignoredOutside) {}
+                removePreparedFrame(removed.rootView);
                 setResizeVisual(removed, false);
             } else {
                 kept.push(managedWindows[index]);
@@ -1509,6 +1900,7 @@
         state.primaryAttached = activeBinding !== null;
         state.primaryPinned = activeBinding !== null &&
             activeBinding.pinned === true;
+        removePreparedFrame(rootView);
         return removed !== null;
     }
 
@@ -1694,8 +2086,7 @@
     }
 
     function requestClose(reason) {
-        var binding = activeBinding || (managedWindows.length > 0 ?
-            managedWindows[managedWindows.length - 1] : null);
+        var binding = topAttachedBinding() || activeBinding;
         if (!binding || typeof binding.onRequestClose !== "function") {
             return false;
         }
@@ -1704,6 +2095,19 @@
             state.lastError = String(error);
             return false;
         }
+    }
+
+    function requestBack(reason) {
+        var binding = topAttachedBinding() || activeBinding;
+        if (!binding) { return false; }
+        return invokeBindingDismiss(binding,
+            String(reason || "system_back"), false);
+    }
+
+    function requestOutsideDismiss(reason) {
+        var binding = topAttachedBinding() || activeBinding;
+        return requestBindingOutsideDismiss(binding,
+            String(reason || "outside_tap"));
     }
 
     function getState() {
@@ -1765,6 +2169,15 @@
                 state.componentCallbacksRegistered === true,
             displayListenerRegistered:
                 state.displayListenerRegistered === true,
+            singleHostEnabled: true,
+            singleHostAttachCount: Number(state.singleHostAttachCount),
+            outsideTapCount: Number(state.outsideTapCount),
+            outsideImeDismissCount: Number(state.outsideImeDismissCount),
+            outsideDismissCount: Number(state.outsideDismissCount),
+            outsideGestureCancelCount:
+                Number(state.outsideGestureCancelCount),
+            lastOutsideRole: state.lastOutsideRole,
+            lastOutsideAction: state.lastOutsideAction,
             lastBoundsReason: state.lastBoundsReason,
             lastPersistedGeometry: state.lastPersistedGeometry,
             stateThreadId: thread.id,
@@ -1775,7 +2188,7 @@
 
     ClipHub.Window = {
         MODULE_NAME: "ch_08_window",
-        MODULE_VERSION: 15,
+        MODULE_VERSION: 18,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
@@ -1795,6 +2208,7 @@
                 .getScaledTouchSlop());
             longPressTimeoutMs = Number(ViewConfiguration.getLongPressTimeout());
             managedWindows = [];
+            preparedFrames = [];
             activeBinding = null;
             clearFrameUpdate();
             clearResizePreviewState();
@@ -1834,6 +2248,13 @@
         attachWindow: attachWindow,
         detachWindow: detachWindow,
         refreshWindow: refreshWindow,
+        applyExternalLayout: applyExternalLayout,
+        requestBack: requestBack,
+        requestOutsideDismiss: requestOutsideDismiss,
+        getTopRole: function () {
+            var binding = topAttachedBinding();
+            return binding ? String(binding.role || "shared") : null;
+        },
         setWindowDragView: setWindowDragView,
         setWindowResizeView: setWindowResizeView,
         installPrimaryWindow: installPrimaryWindow,

@@ -221,6 +221,31 @@
         }
     }
 
+    function runtimeModuleCount() {
+        return order.length + 2;
+    }
+
+    function moduleFileCount(context) {
+        var moduleDir;
+        var files;
+        var count = 0;
+        var index;
+        var name;
+        try {
+            moduleDir = context && context.moduleDir ?
+                new File(String(context.moduleDir)) : null;
+            if (moduleDir === null || !moduleDir.isDirectory()) { return 0; }
+            files = moduleDir.listFiles();
+            if (files === null) { return 0; }
+            for (index = 0; index < files.length; index += 1) {
+                if (files[index] === null || !files[index].isFile()) { continue; }
+                name = String(files[index].getName());
+                if (/^ch_[0-9][0-9]_.+\.js$/.test(name)) { count += 1; }
+            }
+        } catch (ignored) { return 0; }
+        return count;
+    }
+
     function safeState(module, method, fallback) {
         try {
             if (module && typeof module[method] === "function") {
@@ -492,7 +517,7 @@
 
     ClipHub.App = {
         MODULE_NAME: "ch_15_app",
-        MODULE_VERSION: 12,
+        MODULE_VERSION: 14,
         CONTROL_ACTION_BASE: CONTROL_ACTION_BASE,
         CONTROL_ENDPOINT_SCHEMA: CONTROL_ENDPOINT_SCHEMA,
         CONTROL_COMMANDS: CONTROL_COMMANDS,
@@ -529,9 +554,11 @@
                     status: "skeleton_ready",
                     runtimeDir: context.runtimeDir,
                     databasePath: ClipHub.Database.getPath(),
-                    initializedModuleCount: order.length + 1,
-                    moduleFileCount: order.length + 2,
-                    moduleCount: order.length + 1,
+                    initializedModuleCount: state.initialized.length,
+                    moduleFileCount: moduleFileCount(context),
+                    moduleCount: runtimeModuleCount(),
+                    placeholderModuleFileCount: Math.max(0,
+                        moduleFileCount(context) - runtimeModuleCount()),
                     entryVersion: Number(state.entryVersion || 0),
                     moduleSetVersion: String(state.moduleSetVersion || ""),
                     sourceRef: String(state.sourceRef || ""),

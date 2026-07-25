@@ -550,7 +550,7 @@
     function dispatchBack(owner, reason) {
         var timestamp = now();
         var signature = backSignature(owner, reason);
-        var handled;
+        var handled = false;
         if (timestamp - lastBackAt < 180 &&
                 signature === lastBackSignature) {
             navState.duplicateBackCount += 1;
@@ -562,7 +562,19 @@
         navState.lastBackOwner = String(owner || "");
         navState.lastBackReason = String(reason || "system_back");
         navState.lastBackSignature = signature;
-        handled = closeTop(owner, navState.lastBackReason);
+        try {
+            if (ClipHub.Window &&
+                    typeof ClipHub.Window.requestBack === "function") {
+                handled = ClipHub.Window.requestBack(
+                    navState.lastBackReason) === true;
+            }
+        } catch (windowBackError) {
+            navState.lastError = String(windowBackError);
+            handled = false;
+        }
+        if (!handled) {
+            handled = closeTop(owner, navState.lastBackReason);
+        }
         if (handled) { navState.backHandledCount += 1; }
         log("I", "navigation back owner=" + navState.lastBackOwner +
             " reason=" + navState.lastBackReason +
@@ -877,6 +889,24 @@
         return true;
     }
 
+    function registerManagedWindow(view, owner) {
+        if (!initialized || !view) { return false; }
+        return runOnMainSync(function () {
+            if (findEntry(view)) { return true; }
+            try {
+                if (!view.isAttachedToWindow()) {
+                    scheduleScan(owner);
+                    return false;
+                }
+            } catch (ignoredAttached) {
+                scheduleScan(owner);
+                return false;
+            }
+            return registerView(view,
+                String(owner || ownerFor(view, "unknown")), 0);
+        }, 2500);
+    }
+
     function scan(owner) {
         var views;
         var index;
@@ -940,6 +970,8 @@
         wrap(ClipHub.Editor, "openItem", "editor");
         wrap(ClipHub.Editor, "openTags", "tags");
         wrap(ClipHub.Filter, "showPanel", "filter");
+        wrap(ClipHub.Filter, "showRoot", "home");
+        wrap(ClipHub.Settings, "openPage", "settings");
         if (ClipHub.App) {
             originalAppHideUi = ClipHub.App.hideUi;
             ClipHub.App.hideUi = hideUi;
@@ -1072,7 +1104,7 @@
 
     ClipHub.Navigation = {
         MODULE_NAME: "ch_14_navigation_embedded",
-        MODULE_VERSION: 3,
+        MODULE_VERSION: 4,
         init: navigationInit,
         dispatchBack: function (reason) {
             return dispatchBack("", reason || "api_back");
@@ -1085,6 +1117,7 @@
             return checkBackground(reason || "api", fallback === true);
         },
         scanNow: function () { return scan(null); },
+        registerWindow: registerManagedWindow,
         getState: navigationState,
         shutdown: navigationShutdown
     };

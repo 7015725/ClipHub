@@ -67,6 +67,10 @@
     var tagReturnMode = null;
     var tagReturnText = "";
     var tagReturnRow = null;
+    var editorOriginalContent = "";
+    var editorOriginalTagIds = [];
+    var exitConfirmOverlay = null;
+    var exitConfirmReason = "";
     var ready = false;
     var state = {
         open: false,
@@ -672,7 +676,12 @@
         targetRoot = panelWindowRoot !== null ? panelWindowRoot : panelRoot;
         if (changed && state.attached && targetRoot !== null &&
                 targetRoot.isAttachedToWindow()) {
-            windowManager.updateViewLayout(targetRoot, panelParams);
+            if (!ClipHub.Window ||
+                    typeof ClipHub.Window.applyExternalLayout !== "function" ||
+                    ClipHub.Window.applyExternalLayout(targetRoot, panelParams,
+                        "ch_10_editor.js_external_layout") !== true) {
+                windowManager.updateViewLayout(targetRoot, panelParams);
+            }
             state.windowLayoutUpdateCount += 1;
         }
         state.keyboardAvoidanceApplied = false;
@@ -774,41 +783,48 @@
         targetRoot = panelWindowRoot !== null ? panelWindowRoot : panelRoot;
         if (changed && state.attached && targetRoot !== null &&
                 targetRoot.isAttachedToWindow()) {
-            windowManager.updateViewLayout(targetRoot, panelParams);
+            if (!ClipHub.Window ||
+                    typeof ClipHub.Window.applyExternalLayout !== "function" ||
+                    ClipHub.Window.applyExternalLayout(targetRoot, panelParams,
+                        "ch_10_editor.js_external_layout") !== true) {
+                windowManager.updateViewLayout(targetRoot, panelParams);
+            }
             state.windowLayoutUpdateCount += 1;
         }
         return changed;
     }
 
     function handoffEditorFocusAfterImeHide() {
+        var focusRoot = panelWindowRoot !== null ?
+            panelWindowRoot : panelRoot;
         var previousDescendantFocusability = -1;
         var released = false;
         var requested = false;
         var focused = false;
-        if (panelRoot === null || contentInput === null ||
+        if (focusRoot === null || contentInput === null ||
                 state.mode === "tags") {
             return false;
         }
         state.focusReleaseCount += 1;
         try {
             previousDescendantFocusability =
-                Number(panelRoot.getDescendantFocusability());
+                Number(focusRoot.getDescendantFocusability());
         } catch (ignoredDescendantRead) {}
         try {
-            panelRoot.setFocusable(true);
-            panelRoot.setFocusableInTouchMode(true);
-            panelRoot.setDescendantFocusability(
+            focusRoot.setFocusable(true);
+            focusRoot.setFocusableInTouchMode(true);
+            focusRoot.setDescendantFocusability(
                 ViewGroup.FOCUS_BLOCK_DESCENDANTS);
             contentInput.clearFocus();
             released = !contentInput.hasFocus();
-            requested = panelRoot.requestFocus();
-            focused = panelRoot.isFocused();
+            requested = focusRoot.requestFocus();
+            focused = focusRoot.isFocused();
         } catch (error) {
             state.lastError = String(error);
         } finally {
             if (previousDescendantFocusability >= 0) {
                 try {
-                    panelRoot.setDescendantFocusability(
+                    focusRoot.setDescendantFocusability(
                         previousDescendantFocusability);
                 } catch (ignoredDescendantRestore) {}
             }
@@ -816,35 +832,41 @@
         state.focusReleasedAfterImeHide = released;
         state.rootFocusRequestedAfterImeHide = requested || focused;
         state.rootFocusedAfterImeHide = focused;
-        if (!focused && mainHandler !== null) {
+        if (mainHandler !== null) {
             postEditorDelayed(function () {
+                var currentRoot = panelWindowRoot !== null ?
+                    panelWindowRoot : panelRoot;
                 var previous = -1;
                 var retried = false;
                 if (!state.attached || state.keyboardVisible ||
-                        panelRoot === null || contentInput === null) {
+                        currentRoot === null || contentInput === null) {
                     return;
                 }
                 try {
-                    previous = Number(panelRoot.getDescendantFocusability());
+                    previous = Number(
+                        currentRoot.getDescendantFocusability());
                 } catch (ignoredPrevious) {}
                 try {
-                    panelRoot.setFocusable(true);
-                    panelRoot.setFocusableInTouchMode(true);
-                    panelRoot.setDescendantFocusability(
+                    currentRoot.setFocusable(true);
+                    currentRoot.setFocusableInTouchMode(true);
+                    currentRoot.setDescendantFocusability(
                         ViewGroup.FOCUS_BLOCK_DESCENDANTS);
                     contentInput.clearFocus();
-                    retried = panelRoot.requestFocus();
-                    state.focusReleasedAfterImeHide = !contentInput.hasFocus();
+                    retried = currentRoot.requestFocus();
+                    state.focusReleasedAfterImeHide =
+                        !contentInput.hasFocus();
                     state.rootFocusRequestedAfterImeHide =
                         state.rootFocusRequestedAfterImeHide || retried;
-                    state.rootFocusedAfterImeHide = panelRoot.isFocused();
+                    state.rootFocusedAfterImeHide =
+                        currentRoot.isFocused();
                 } finally {
-                    if (previous >= 0 && panelRoot !== null) {
-                        try { panelRoot.setDescendantFocusability(previous); }
-                        catch (ignoredRestore) {}
+                    if (previous >= 0 && currentRoot !== null) {
+                        try {
+                            currentRoot.setDescendantFocusability(previous);
+                        } catch (ignoredRestore) {}
                     }
                 }
-            }, 80, true);
+            }, 180, true);
         }
         return released && (requested || focused);
     }
@@ -905,9 +927,11 @@
             }
             state.lastKeyboardVisible = ime.visible;
             if (!ime.visible && state.focusReleasedAfterImeHide === true &&
-                    panelRoot !== null) {
+                    (panelWindowRoot !== null || panelRoot !== null)) {
                 try {
-                    state.rootFocusedAfterImeHide = panelRoot.isFocused();
+                    state.rootFocusedAfterImeHide =
+                        (panelWindowRoot !== null ?
+                            panelWindowRoot : panelRoot).isFocused();
                 } catch (ignoredRootFocus) {}
             }
             state.keyboardVisible = ime.visible;
@@ -1224,6 +1248,10 @@
         tagReturnMode = null;
         tagReturnText = "";
         tagReturnRow = null;
+        editorOriginalContent = "";
+        editorOriginalTagIds = [];
+        exitConfirmOverlay = null;
+        exitConfirmReason = "";
         state.dragHandlePresent = false;
         state.headerIconPresent = false;
         state.headerCloseButtonPresent = false;
@@ -1265,10 +1293,177 @@
         state.rootFocusedAfterImeHide = false;
     }
 
+    function sameTagIds(left, right) {
+        var first = copyTagIds(left).sort(function (a, b) {
+            return Number(a) - Number(b);
+        });
+        var second = copyTagIds(right).sort(function (a, b) {
+            return Number(a) - Number(b);
+        });
+        var index;
+        if (first.length !== second.length) { return false; }
+        for (index = 0; index < first.length; index += 1) {
+            if (Number(first[index]) !== Number(second[index])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function hasEditorUnsavedChanges() {
+        var currentText;
+        var pendingTagName = "";
+        if (!state.attached) { return false; }
+        if (state.mode === "tags") {
+            try {
+                pendingTagName = tagNameInput !== null ?
+                    String(tagNameInput.getText()).replace(/^\s+|\s+$/g, "") : "";
+            } catch (ignoredTagInput) {}
+            return state.tagSelectionDirty === true ||
+                pendingTagName.length > 0;
+        }
+        currentText = contentInput !== null ?
+            String(contentInput.getText()) : String(tagReturnText || "");
+        return currentText !== String(editorOriginalContent || "") ||
+            !sameTagIds(editorDraftTagIds, editorOriginalTagIds);
+    }
+
+    function removeExitConfirmOnMain() {
+        var parent;
+        if (exitConfirmOverlay === null) { return false; }
+        try {
+            parent = exitConfirmOverlay.getParent();
+            if (parent && typeof parent.removeView === "function") {
+                parent.removeView(exitConfirmOverlay);
+            }
+        } catch (ignored) {}
+        exitConfirmOverlay = null;
+        exitConfirmReason = "";
+        return true;
+    }
+
+    function showExitConfirmOnMain(reason) {
+        var colors;
+        var overlay;
+        var card;
+        var title;
+        var message;
+        var actions;
+        var continueView;
+        var discardView;
+        var cardParams;
+        var actionParams;
+        if (exitConfirmOverlay !== null) { return true; }
+        if (!panelManagedFrame || !panelManagedFrame.panelView) {
+            return false;
+        }
+        colors = editorPalette();
+        overlay = new FrameLayout(appContext);
+        overlay.setBackgroundColor(Color.argb(118, 0, 0, 0));
+        overlay.setClickable(true);
+        overlay.setFocusable(true);
+        overlay.setFocusableInTouchMode(true);
+        overlay.setOnClickListener(new JavaAdapter(View.OnClickListener, {
+            onClick: function () {}
+        }));
+
+        card = new LinearLayout(appContext);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(16), dp(15), dp(16), dp(14));
+        card.setBackground(roundedBackground(
+            colors.surface, colors.stroke, 18));
+        if (Build.VERSION.SDK_INT >= 21) {
+            try { card.setElevation(dp(24)); } catch (ignoredElevation) {}
+        }
+        title = makeText("放弃未保存的修改？", 16,
+            colors.textPrimary, true);
+        message = makeText(state.mode === "tags" ?
+            "当前标签选择尚未完成，放弃后将恢复进入标签页前的选择。" :
+            "当前正文或标签已经修改，放弃后无法恢复。",
+            11, colors.textSecondary, false);
+        card.addView(title, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT));
+        cardParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        cardParams.topMargin = dp(7);
+        cardParams.bottomMargin = dp(14);
+        card.addView(message, cardParams);
+
+        actions = new LinearLayout(appContext);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.setGravity(Gravity.CENTER_VERTICAL);
+        continueView = makeEditorAction("继续编辑", colors, false);
+        discardView = makeEditorAction("放弃修改", colors, true);
+        continueView.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, {
+                onClick: function () { removeExitConfirmOnMain(); }
+            }));
+        discardView.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, {
+                onClick: function () {
+                    var tagsMode = state.mode === "tags" &&
+                        tagReturnMode !== null;
+                    removeExitConfirmOnMain();
+                    if (tagsMode) {
+                        restoreTextEditorOnMain(false);
+                    } else {
+                        closePanel("discard_confirmed");
+                    }
+                }
+            }));
+        actionParams = new LinearLayout.LayoutParams(0, dp(42), 1);
+        actionParams.rightMargin = dp(8);
+        actions.addView(continueView, actionParams);
+        actions.addView(discardView,
+            new LinearLayout.LayoutParams(0, dp(42), 1));
+        card.addView(actions, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        cardParams = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT);
+        cardParams.gravity = Gravity.CENTER;
+        cardParams.leftMargin = dp(22);
+        cardParams.rightMargin = dp(22);
+        overlay.addView(card, cardParams);
+        panelManagedFrame.panelView.addView(overlay,
+            new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+        exitConfirmOverlay = overlay;
+        exitConfirmReason = String(reason || "exit");
+        try { overlay.requestFocus(); } catch (ignoredFocus) {}
+        return true;
+    }
+
+    function requestExit(reason) {
+        return requireMain(runOnMainSync(function () {
+            if (!state.attached) { return true; }
+            if (exitConfirmOverlay !== null) {
+                removeExitConfirmOnMain();
+                return true;
+            }
+            if (state.mode === "tags" && tagReturnMode !== null) {
+                if (hasEditorUnsavedChanges()) {
+                    return showExitConfirmOnMain(reason);
+                }
+                return restoreTextEditorOnMain(false);
+            }
+            if (hasEditorUnsavedChanges()) {
+                return showExitConfirmOnMain(reason);
+            }
+            return closePanel("clean_exit").ok === true;
+        }, 2500));
+    }
+
     function closePanel(reason) {
         if (state.mode === "tags" && tagReturnMode !== null &&
                 String(reason || "") !== "shutdown" &&
                 String(reason || "") !== "replace" &&
+                String(reason || "") !== "force_close" &&
                 String(reason || "") !== "save") {
             requireMain(runOnMainSync(function () {
                 return restoreTextEditorOnMain(false);
@@ -1619,7 +1814,7 @@
         cancelView = makeCloseButton(dark);
         cancelView.setContentDescription("关闭编辑窗口");
         cancelView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
-            onClick: function () { closePanel("cancel"); }
+            onClick: function () { requestExit("cancel_button"); }
         }));
         titleRow.addView(cancelView, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -1710,7 +1905,7 @@
         headerCloseView.setFocusable(true);
         headerCloseView.setOnClickListener(new JavaAdapter(
             View.OnClickListener, {
-                onClick: function () { closePanel("cancel"); }
+                onClick: function () { requestExit("cancel_button"); }
             }));
         header.addView(headerCloseView,
             new LinearLayout.LayoutParams(dp(38), dp(38)));
@@ -1812,7 +2007,7 @@
         cancelView.setContentDescription("取消编辑");
         cancelView.setOnClickListener(new JavaAdapter(
             View.OnClickListener, {
-                onClick: function () { closePanel("cancel"); }
+                onClick: function () { requestExit("cancel_button"); }
             }));
         saveView = makeEditorAction("保存", colors, true);
         saveView.setContentDescription("保存记录");
@@ -1908,7 +2103,7 @@
         headerCloseView.setContentDescription("取消标签选择");
         headerCloseView.setOnClickListener(new JavaAdapter(
             View.OnClickListener, {
-                onClick: function () { cancelTagSelectionDraft(); }
+                onClick: function () { requestExit("tag_cancel"); }
             }));
         header.addView(headerCloseView,
             new LinearLayout.LayoutParams(dp(38), dp(38)));
@@ -2033,7 +2228,7 @@
         tagSelectionCancelView = makeEditorAction("取消", colors, false);
         tagSelectionCancelView.setOnClickListener(new JavaAdapter(
             View.OnClickListener, {
-                onClick: function () { cancelTagSelectionDraft(); }
+                onClick: function () { requestExit("tag_cancel"); }
             }));
         tagSelectionSaveView = makeEditorAction(
             "完成（" + String(editorDraftTagIds.length) + "）", colors, true);
@@ -2074,6 +2269,8 @@
             editorDraftTagIds = state.mode === "edit" ?
                 loadItemTagIds(state.itemId) : [];
             tagSelectorOriginalIds = copyTagIds(editorDraftTagIds);
+            editorOriginalContent = initialText;
+            editorOriginalTagIds = copyTagIds(editorDraftTagIds);
             state.tagDraftCount = editorDraftTagIds.length;
             state.tagOriginalCount = editorDraftTagIds.length;
             state.tagSelectionDirty = false;
@@ -2160,8 +2357,14 @@
                         state.currentPanelHeightDp = state.panelHeightDp;
                     }
                 },
-                onRequestClose: function () {
-                    return closePanel("managed_close").ok === true;
+                onRequestBack: function (reason) {
+                    return requestExit(String(reason || "system_back"));
+                },
+                onRequestOutsideDismiss: function (reason) {
+                    return requestExit(String(reason || "outside_tap"));
+                },
+                onRequestClose: function (reason) {
+                    return requestExit(String(reason || "managed_close"));
                 }
             });
             state.open = true;
@@ -2242,6 +2445,9 @@
             tagSelectionSaveCount: Number(state.tagSelectionSaveCount),
             tagSelectionCancelCount: Number(state.tagSelectionCancelCount),
             tagSelectionDirty: state.tagSelectionDirty === true,
+            unsavedChanges: hasEditorUnsavedChanges(),
+            exitConfirmVisible: exitConfirmOverlay !== null,
+            exitConfirmReason: exitConfirmReason,
             tagDraftCount: Number(state.tagDraftCount),
             tagOriginalCount: Number(state.tagOriginalCount),
             tagColorPreviewCount: Number(state.tagColorPreviewCount),
@@ -2439,7 +2645,7 @@
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 17,
+        MODULE_VERSION: 20,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
@@ -2478,7 +2684,10 @@
             }, 2500));
             return opened;
         },
-        close: function () { return closePanel("close"); },
+        close: function () { return closePanel("force_close"); },
+        handleBack: function () { return requestExit("system_back"); },
+        requestExit: requestExit,
+        hasUnsavedChanges: hasEditorUnsavedChanges,
         getState: getState,
         refreshLayoutMetrics: function () {
             return requireMain(runOnMainSync(function () {
