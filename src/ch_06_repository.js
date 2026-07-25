@@ -108,6 +108,16 @@
             .replace(/\s+/g, " ");
     }
 
+    function normalizeContentType(value) {
+        value = String(value || "text").toLowerCase();
+        if (value === "link") { return "url"; }
+        if (value === "url" || value === "email" || value === "phone" ||
+                value === "code") {
+            return value;
+        }
+        return "text";
+    }
+
     function insertItem(item) {
         var content;
         var normalized;
@@ -137,7 +147,7 @@
             [
                 content,
                 item.normalizedHash || sha256(normalized),
-                "text",
+                normalizeContentType(item.contentType),
                 item.sourcePackage === undefined ? null : item.sourcePackage,
                 item.sourceLabel === undefined ? null : item.sourceLabel,
                 item.sourceUid === undefined || item.sourceUid === null
@@ -234,6 +244,7 @@
     function updateItem(id, patch) {
         var allowed = {
             content: true,
+            content_type: true,
             source_package: true,
             source_label: true,
             source_uid: true,
@@ -605,20 +616,78 @@
         );
     }
 
-    function setItemTags(itemId, tagIds) {
+    function replaceItemTagsInternal(itemId, tagIds) {
         var ids = intList(tagIds);
         var index;
         var attached = 0;
+        ClipHub.Database.executeUpdateDelete(
+            "DELETE FROM clipboard_item_tags WHERE item_id = ?",
+            [intValue(itemId, -1)]
+        );
+        for (index = 0; index < ids.length; index += 1) {
+            if (attachTag(itemId, ids[index]) >= 0) { attached += 1; }
+        }
+        return attached;
+    }
+
+    function setItemTags(itemId, tagIds) {
+        var attached = 0;
         requireReady();
         ClipHub.Database.transaction(function () {
-            ClipHub.Database.executeUpdateDelete(
-                "DELETE FROM clipboard_item_tags WHERE item_id = ?", [intValue(itemId, -1)]
-            );
-            for (index = 0; index < ids.length; index += 1) {
-                if (attachTag(itemId, ids[index]) >= 0) { attached += 1; }
-            }
+            attached = replaceItemTagsInternal(itemId, tagIds);
         });
         return attached;
+    }
+
+    function saveItemWithTags(options) {
+        var itemId;
+        var created = false;
+        var changed = 0;
+        var tagCount = 0;
+        var contentType;
+        options = options || {};
+        requireReady();
+        contentType = normalizeContentType(options.contentType);
+        ClipHub.Database.transaction(function () {
+            if (options.itemId === null || options.itemId === undefined) {
+                itemId = Number(insertItem({
+                    content: options.content,
+                    contentType: contentType,
+                    normalizedHash: options.normalizedHash,
+                    sourcePackage: options.sourcePackage,
+                    sourceLabel: options.sourceLabel,
+                    sourceUid: options.sourceUid,
+                    sourceConfidence: options.sourceConfidence,
+                    isSensitive: options.isSensitive === true,
+                    isPinned: options.isPinned === true,
+                    manualOrder: options.manualOrder,
+                    copyCount: options.copyCount,
+                    createdAt: options.createdAt,
+                    lastCopiedAt: options.lastCopiedAt,
+                    updatedAt: options.updatedAt
+                }));
+                created = true;
+                changed = 1;
+            } else {
+                itemId = intValue(options.itemId, -1);
+                if (getItem(itemId, false) === null) {
+                    throw new Error("Clipboard item does not exist");
+                }
+                changed = updateItem(itemId, {
+                    content: options.content,
+                    content_type: contentType
+                });
+            }
+            tagCount = replaceItemTagsInternal(itemId, options.tagIds || []);
+        });
+        return {
+            ok: true,
+            id: Number(itemId),
+            created: created,
+            changed: Number(changed),
+            contentType: contentType,
+            tagCount: Number(tagCount)
+        };
     }
 
     function reorderTags(tagIds) {
@@ -642,7 +711,7 @@
 
     ClipHub.Repository = {
         MODULE_NAME: "ch_06_repository",
-        MODULE_VERSION: 10,
+        MODULE_VERSION: 11,
         init: function () {
             ready = !!(ClipHub.Database && ClipHub.Database.isOpen());
             if (!ready) { throw new Error("Database is unavailable"); }
@@ -668,6 +737,7 @@
         trimHistory: trimHistory,
         cleanupHistory: cleanupHistory,
         normalizeTagName: normalizeTagName,
+        normalizeContentType: normalizeContentType,
         getTag: getTag,
         getTagByName: getTagByName,
         insertTag: insertTag,
@@ -680,6 +750,7 @@
         attachTag: attachTag,
         detachTag: detachTag,
         setItemTags: setItemTags,
+        saveItemWithTags: saveItemWithTags,
         reorderTags: reorderTags,
         insert: insertItem,
         update: updateItem,

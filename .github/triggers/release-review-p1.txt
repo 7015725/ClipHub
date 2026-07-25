@@ -1,3 +1,0 @@
-apply=20260726.06
-source=agent/fix-release-review-p1
-retry=git-data

@@ -71,6 +71,7 @@
     var editorOriginalTagIds = [];
     var exitConfirmOverlay = null;
     var exitConfirmReason = "";
+    var pendingDraft = null;
     var ready = false;
     var state = {
         open: false,
@@ -194,6 +195,10 @@
         pendingDelayedCallbackCount: 0,
         postShutdownCallbackAttemptCount: 0,
         lastDelayedCallbackError: null,
+        draftCaptureCount: 0,
+        draftRestoreCount: 0,
+        draftDiscardCount: 0,
+        lastDraftReason: null,
         lastError: null
     };
 
@@ -1459,6 +1464,107 @@
         }, 2500));
     }
 
+    function clonePendingDraft(value) {
+        if (value === null || value === undefined) { return null; }
+        return {
+            mode: String(value.mode || "new"),
+            viewMode: String(value.viewMode || value.mode || "new"),
+            itemId: value.itemId === null || value.itemId === undefined ?
+                null : Number(value.itemId),
+            content: String(value.content || ""),
+            draftTagIds: copyTagIds(value.draftTagIds),
+            originalContent: String(value.originalContent || ""),
+            originalTagIds: copyTagIds(value.originalTagIds),
+            pendingTagName: String(value.pendingTagName || ""),
+            capturedAt: Number(value.capturedAt || 0),
+            reason: String(value.reason || "")
+        };
+    }
+
+    function captureDraft(reason) {
+        return requireMain(runOnMainSync(function () {
+            var content;
+            var mode;
+            var pendingTagName = "";
+            if (!state.attached || !hasEditorUnsavedChanges()) {
+                return null;
+            }
+            mode = state.mode === "tags" && tagReturnMode !== null ?
+                String(tagReturnMode) : String(state.mode || "new");
+            content = state.mode === "tags" ? String(tagReturnText || "") :
+                (contentInput === null ? String(tagReturnText || "") :
+                    String(contentInput.getText()));
+            try {
+                pendingTagName = tagNameInput === null ? "" :
+                    String(tagNameInput.getText());
+            } catch (ignoredTagName) {}
+            pendingDraft = {
+                mode: mode,
+                viewMode: String(state.mode || mode),
+                itemId: state.itemId === null ? null : Number(state.itemId),
+                content: content,
+                draftTagIds: copyTagIds(editorDraftTagIds),
+                originalContent: String(editorOriginalContent || ""),
+                originalTagIds: copyTagIds(editorOriginalTagIds),
+                pendingTagName: pendingTagName,
+                capturedAt: ClipHub.Base.now(),
+                reason: String(reason || "hide")
+            };
+            state.draftCaptureCount += 1;
+            state.lastDraftReason = pendingDraft.reason;
+            return clonePendingDraft(pendingDraft);
+        }, 2500));
+    }
+
+    function discardPendingDraft() {
+        var existed = pendingDraft !== null;
+        pendingDraft = null;
+        if (existed) { state.draftDiscardCount += 1; }
+        return existed;
+    }
+
+    function hasPendingDraft() {
+        return pendingDraft !== null;
+    }
+
+    function restorePendingDraft(options) {
+        var draft = clonePendingDraft(pendingDraft);
+        var opened;
+        options = options || {};
+        if (draft === null) {
+            return { ok: false, restored: false, reason: "no_pending_draft" };
+        }
+        opened = openPanel(draft.mode, draft.itemId, {
+            requestKeyboard: options.requestKeyboard === true
+        });
+        requireMain(runOnMainSync(function () {
+            editorDraftTagIds = copyTagIds(draft.draftTagIds);
+            state.tagDraftCount = editorDraftTagIds.length;
+            if (contentInput !== null) {
+                contentInput.setText(draft.content);
+                contentInput.setSelection(contentInput.getText().length());
+                updateCharacterCount();
+            }
+            if (metadataTypeView !== null) {
+                metadataTypeView.setText(editorDraftTagIds.length > 0 ?
+                    "标签  " + String(editorDraftTagIds.length) + " 个" :
+                    "标签  未设置");
+            }
+            if (draft.viewMode === "tags") {
+                openTagSelectorOnMain();
+                if (tagNameInput !== null && draft.pendingTagName.length > 0) {
+                    tagNameInput.setText(draft.pendingTagName);
+                    tagNameInput.setSelection(tagNameInput.getText().length());
+                }
+            }
+            return true;
+        }, 2500));
+        pendingDraft = null;
+        state.draftRestoreCount += 1;
+        state.lastDraftReason = String(draft.reason || "restore");
+        return { ok: true, restored: true, draft: draft, opened: opened };
+    }
+
     function closePanel(reason) {
         if (state.mode === "tags" && tagReturnMode !== null &&
                 String(reason || "") !== "shutdown" &&
@@ -1520,8 +1626,9 @@
         var thread = nowThread();
         var content;
         var id;
-        var changed;
         var delivered;
+        var classified;
+        var saved;
         if (contentInput === null) { return false; }
         try {
             content = String(contentInput.getText());
@@ -1531,32 +1638,39 @@
             if (content.length > 200000) {
                 throw new Error("内容长度不能超过 200000 字符");
             }
-            if (state.mode === "new") {
-                id = Number(ClipHub.Repository.insertItem({
-                    content: content,
-                    contentType: "text",
-                    sourcePackage: null,
-                    sourceLabel: "ClipHub 手动",
-                    sourceUid: Number(Packages.android.os.Process.myUid()),
-                    sourceConfidence: 100,
-                    isSensitive: false,
-                    isPinned: false
-                }));
+            classified = ClipHub.Classifier &&
+                typeof ClipHub.Classifier.classify === "function" ?
+                ClipHub.Classifier.classify(content) :
+                { type: "text", confidence: 0 };
+            saved = ClipHub.Repository.saveItemWithTags({
+                itemId: state.mode === "new" ? null : Number(state.itemId),
+                content: content,
+                contentType: classified && classified.type ?
+                    String(classified.type) : "text",
+                tagIds: editorDraftTagIds,
+                sourcePackage: null,
+                sourceLabel: "ClipHub 手动",
+                sourceUid: Number(Packages.android.os.Process.myUid()),
+                sourceConfidence: 100,
+                isSensitive: false,
+                isPinned: false
+            });
+            id = Number(saved.id);
+            if (saved.created === true) {
                 state.createCount += 1;
                 state.lastSaveAction = "created";
-                delivered = emitMutation("clipboard_added", id, "created", {});
+                delivered = emitMutation("clipboard_added", id, "created", {
+                    contentType: saved.contentType
+                });
             } else {
-                id = Number(state.itemId);
-                changed = ClipHub.Repository.updateItem(id, { content: content });
-                if (Number(changed) < 1) {
-                    throw new Error("编辑目标不存在或未更新");
-                }
                 state.updateCount += 1;
                 state.lastSaveAction = "updated";
-                delivered = emitMutation("clipboard_merged", id, "updated", {});
+                delivered = emitMutation("clipboard_merged", id, "updated", {
+                    contentType: saved.contentType
+                });
             }
-            ClipHub.Repository.setItemTags(id, editorDraftTagIds);
             emitTagChanged("item_tags_saved", id, null);
+            pendingDraft = null;
             state.saveCount += 1;
             state.lastSavedId = id;
             state.saveThreadId = thread.id;
@@ -2446,6 +2560,13 @@
             tagSelectionCancelCount: Number(state.tagSelectionCancelCount),
             tagSelectionDirty: state.tagSelectionDirty === true,
             unsavedChanges: hasEditorUnsavedChanges(),
+            pendingDraftPresent: pendingDraft !== null,
+            pendingDraftReason: pendingDraft === null ? null :
+                String(pendingDraft.reason || ""),
+            draftCaptureCount: Number(state.draftCaptureCount),
+            draftRestoreCount: Number(state.draftRestoreCount),
+            draftDiscardCount: Number(state.draftDiscardCount),
+            lastDraftReason: state.lastDraftReason,
             exitConfirmVisible: exitConfirmOverlay !== null,
             exitConfirmReason: exitConfirmReason,
             tagDraftCount: Number(state.tagDraftCount),
@@ -2626,6 +2747,8 @@
             pendingDelayedCallbackCount: 0,
             postShutdownCallbackAttemptCount: 0,
             lastDelayedCallbackError: null,
+            draftCaptureCount: 0, draftRestoreCount: 0,
+            draftDiscardCount: 0, lastDraftReason: null,
             normalPanelHeightDp: 0, currentPanelHeightDp: 0,
             currentPanelTopDp: 0, focusReleasedAfterImeHide: false,
             focusReleaseCount: 0,
@@ -2645,7 +2768,7 @@
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 20,
+        MODULE_VERSION: 21,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
@@ -2662,6 +2785,7 @@
             mainHandler = new Handler(Looper.getMainLooper());
             density = Number(appContext.getResources()
                 .getDisplayMetrics().density || 1);
+            pendingDraft = null;
             clearViews();
             resetState();
             ready = true;
@@ -2688,6 +2812,13 @@
         handleBack: function () { return requestExit("system_back"); },
         requestExit: requestExit,
         hasUnsavedChanges: hasEditorUnsavedChanges,
+        captureDraft: captureDraft,
+        hasPendingDraft: hasPendingDraft,
+        getPendingDraft: function () {
+            return clonePendingDraft(pendingDraft);
+        },
+        restoreDraft: restorePendingDraft,
+        discardDraft: discardPendingDraft,
         getState: getState,
         refreshLayoutMetrics: function () {
             return requireMain(runOnMainSync(function () {
@@ -2790,6 +2921,7 @@
             ready = false;
             stopEditorImePolling();
             try { closePanel("shutdown"); } catch (ignoredClose) {}
+            pendingDraft = null;
             clearViews();
             androidContext = null;
             appContext = null;

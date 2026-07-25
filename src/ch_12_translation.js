@@ -325,14 +325,28 @@
         return closeFilter();
     }
 
-    function closeEditor() {
+    function closeEditor(reason, preserveDraft) {
         try {
+            if (ClipHub.Editor && preserveDraft === true &&
+                    typeof ClipHub.Editor.captureDraft === "function") {
+                ClipHub.Editor.captureDraft(String(reason || "navigation_hide"));
+            }
             if (ClipHub.Editor && ClipHub.Editor.close) {
                 ClipHub.Editor.close();
                 return true;
             }
         } catch (error) { navState.lastError = String(error); }
         return false;
+    }
+
+    function backEditor() {
+        try {
+            if (ClipHub.Editor &&
+                    typeof ClipHub.Editor.handleBack === "function") {
+                return ClipHub.Editor.handleBack() === true;
+            }
+        } catch (error) { navState.lastError = String(error); }
+        return closeEditor("navigation_back_fallback", true);
     }
 
     function closeDetail() {
@@ -468,7 +482,7 @@
         navState.lastHideReason = String(reason || "hide");
         try {
             closeFilter();
-            closeEditor();
+            closeEditor(navState.lastHideReason, true);
             try {
                 if (ClipHub.List && ClipHub.List.hide) {
                     ClipHub.List.hide(true);
@@ -513,7 +527,7 @@
         }
         if ((owner === "editor" || owner === "tags") &&
                 moduleAttached(ClipHub.Editor, "getState")) {
-            return closeEditor();
+            return backEditor();
         }
         if (owner === "detail" &&
                 moduleAttached(ClipHub.List, "getDetailState")) {
@@ -523,7 +537,7 @@
             return backFilter();
         }
         if (moduleAttached(ClipHub.Editor, "getState")) {
-            return closeEditor();
+            return backEditor();
         }
         if (moduleAttached(ClipHub.List, "getDetailState")) {
             return closeDetail();
@@ -1104,7 +1118,7 @@
 
     ClipHub.Navigation = {
         MODULE_NAME: "ch_14_navigation_embedded",
-        MODULE_VERSION: 4,
+        MODULE_VERSION: 5,
         init: navigationInit,
         dispatchBack: function (reason) {
             return dispatchBack("", reason || "api_back");
@@ -1570,7 +1584,11 @@
             return false;
         }
         changed = ClipHub.Repository.updateItem(Number(translationState.itemId), {
-            content: translationState.translatedText
+            content: translationState.translatedText,
+            content_type: ClipHub.Classifier &&
+                typeof ClipHub.Classifier.classify === "function" ?
+                ClipHub.Classifier.classify(
+                    translationState.translatedText).type : "text"
         });
         if (Number(changed) > 0) {
             translationState.replaceCount += 1;
@@ -1591,7 +1609,10 @@
         if (!translationState.translatedText) { return false; }
         id = Number(ClipHub.Repository.insertItem({
             content: translationState.translatedText,
-            contentType: "text",
+            contentType: ClipHub.Classifier &&
+                typeof ClipHub.Classifier.classify === "function" ?
+                ClipHub.Classifier.classify(
+                    translationState.translatedText).type : "text",
             sourcePackage: null,
             sourceLabel: "ClipHub 翻译",
             sourceUid: Number(Packages.android.os.Process.myUid()),
@@ -1928,7 +1949,7 @@
     }
     ClipHub.Translation = {
         MODULE_NAME: "ch_12_translation",
-        MODULE_VERSION: 10,
+        MODULE_VERSION: 11,
         init: function (context) {
             translationConfig = { enabled: true, provider: "settings" };
             navigationInit(context || {});

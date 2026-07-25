@@ -18,7 +18,7 @@
     var CONTROL_ENDPOINT_SCHEMA = 3;
     var CONTROL_COMMANDS = ["show", "hide", "toggle", "status", "stop"];
     var order = [
-        "Log", "Database", "Repository",
+        "Log", "Database", "Repository", "Classifier",
         "EventBus", "Theme", "Clipboard", "Window", "List",
         "Editor", "Filter", "Settings", "Translation"
     ];
@@ -301,17 +301,18 @@
         };
     }
 
-    function closeUi() {
+    function closeUi(reason) {
+        var hideReason = String(reason || "app_hide");
         try {
             if (ClipHub.Translation &&
                     typeof ClipHub.Translation.close === "function") {
-                ClipHub.Translation.close("app_hide");
+                ClipHub.Translation.close(hideReason);
             }
         } catch (ignoredTranslation) {}
         try {
             if (ClipHub.Settings &&
                     typeof ClipHub.Settings.close === "function") {
-                ClipHub.Settings.close("app_hide");
+                ClipHub.Settings.close(hideReason);
             }
         } catch (ignoredSettings) {}
         try {
@@ -319,11 +320,15 @@
                     typeof ClipHub.Filter.closePanel === "function") {
                 ClipHub.Filter.closePanel({
                     restoreList: false,
-                    reason: "app_hide"
+                    reason: hideReason
                 });
             }
         } catch (ignoredFilter) {}
         try {
+            if (ClipHub.Editor &&
+                    typeof ClipHub.Editor.captureDraft === "function") {
+                ClipHub.Editor.captureDraft(hideReason);
+            }
             if (ClipHub.Editor &&
                     typeof ClipHub.Editor.close === "function") {
                 ClipHub.Editor.close();
@@ -339,7 +344,20 @@
 
     function showUi() {
         var result;
-        closeUi();
+        var before = uiStatus();
+        if (before.uiVisible) {
+            return { result: null, reused: true, status: before };
+        }
+        if (ClipHub.Editor &&
+                typeof ClipHub.Editor.hasPendingDraft === "function" &&
+                ClipHub.Editor.hasPendingDraft() === true &&
+                typeof ClipHub.Editor.restoreDraft === "function") {
+            result = ClipHub.Editor.restoreDraft({ requestKeyboard: false });
+            if (result && result.ok === true) {
+                return { result: result, restoredDraft: true,
+                    status: uiStatus() };
+            }
+        }
         if (!ClipHub.Filter) {
             throw new Error("ClipHub filter root is unavailable");
         }
@@ -357,7 +375,7 @@
         } else {
             throw new Error("ClipHub filter root cannot be shown");
         }
-        return { result: result, status: uiStatus() };
+        return { result: result, reused: false, status: uiStatus() };
     }
 
     function executeControlCommand(command) {
@@ -392,13 +410,13 @@
                 status: after };
         }
         if (command === "hide") {
-            after = closeUi();
+            after = closeUi("control_hide");
             return { ok: true, command: command, action: "hidden",
                 status: after };
         }
         before = uiStatus();
         if (before.uiVisible) {
-            after = closeUi();
+            after = closeUi("control_toggle_hide");
             return { ok: true, command: command, action: "hidden",
                 status: after };
         }
@@ -517,7 +535,7 @@
 
     ClipHub.App = {
         MODULE_NAME: "ch_15_app",
-        MODULE_VERSION: 14,
+        MODULE_VERSION: 15,
         CONTROL_ACTION_BASE: CONTROL_ACTION_BASE,
         CONTROL_ENDPOINT_SCHEMA: CONTROL_ENDPOINT_SCHEMA,
         CONTROL_COMMANDS: CONTROL_COMMANDS,

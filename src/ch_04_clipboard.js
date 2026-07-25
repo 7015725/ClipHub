@@ -562,11 +562,15 @@
             }
             state.lastObserved.hash = hash;
             state.lastObserved.at = eventAt;
-            classified = { type: "text", confidence: 100 };
+            classified = ClipHub.Classifier &&
+                typeof ClipHub.Classifier.classify === "function" ?
+                ClipHub.Classifier.classify(read.text) :
+                { type: "text", confidence: 0 };
             result = recordText(
                 read.text,
                 hash,
-                "text",
+                classified && classified.type ?
+                    String(classified.type) : "text",
                 eventAt,
                 read
             );
@@ -768,7 +772,7 @@
 
     ClipHub.Clipboard = {
         MODULE_NAME: "ch_04_clipboard",
-        MODULE_VERSION: 5,
+        MODULE_VERSION: 6,
         SENSITIVE_KEY: SENSITIVE_KEY,
         init: function (context) {
             androidContext = context && context.androidContext

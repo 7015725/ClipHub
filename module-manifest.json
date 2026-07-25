@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260726.05",
+  "moduleSetVersion": "20260726.06",
   "entryMinVersion": 5,
-  "sourceRef": "agent/release-candidate-20260726.05",
+  "sourceRef": "agent/fix-release-review-p1",
   "modules": [
     {
       "name": "ch_01_base.js",
@@ -22,17 +22,17 @@
     {
       "name": "ch_04_clipboard.js",
       "path": "src/ch_04_clipboard.js",
-      "sha": "89598ad09c96051c68bb6add37eff78a9a113a1b"
+      "sha": "3ab15ff8a09411a71a789e4f9665749860ad8c19"
     },
     {
       "name": "ch_05_classifier.js",
       "path": "src/ch_05_classifier.js",
-      "sha": "c58e85444f976f3f765c0bc274038c15b093824f"
+      "sha": "1eb8ef4ccaccfac4dba1144e9d2dbec82f873a99"
     },
     {
       "name": "ch_06_repository.js",
       "path": "src/ch_06_repository.js",
-      "sha": "ead74f22f59152a651a0b1074f681b7da0e6e8f4"
+      "sha": "e6e7bbe76d0d675f34e94d0bed165cdf53b7bacb"
     },
     {
       "name": "ch_07_theme.js",
@@ -52,7 +52,7 @@
     {
       "name": "ch_10_editor.js",
       "path": "src/ch_10_editor.js",
-      "sha": "eda62779bf1ce168cb68253224592332910c6abd"
+      "sha": "5c5e46734da8f8eb53d7373387ea18a965b01d69"
     },
     {
       "name": "ch_11_filter.js",
@@ -62,7 +62,7 @@
     {
       "name": "ch_12_translation.js",
       "path": "src/ch_12_translation.js",
-      "sha": "7382da4fcf976816437397092f017e782e658fa6"
+      "sha": "b27c2110de775bcad3dfeabdcd7e24653d48e713"
     },
     {
       "name": "ch_13_settings.js",
@@ -77,7 +77,7 @@
     {
       "name": "ch_15_app.js",
       "path": "src/ch_15_app.js",
-      "sha": "c72d4fa518d0d28e48be1747aa1994c5df6e1c2f"
+      "sha": "5eabe223af76ef22c1d6a24fd41a65ab962c5052"
     }
   ]
 }
