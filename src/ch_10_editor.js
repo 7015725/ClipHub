@@ -1333,6 +1333,22 @@
             !sameTagIds(editorDraftTagIds, editorOriginalTagIds);
     }
 
+    function hasDraftableChanges() {
+        var pendingTagName = "";
+        if (!state.attached) { return false; }
+        if (state.mode !== "tags") {
+            return hasEditorUnsavedChanges();
+        }
+        try {
+            pendingTagName = tagNameInput !== null ?
+                String(tagNameInput.getText()).replace(/^\s+|\s+$/g, "") : "";
+        } catch (ignoredTagInput) {}
+        return state.tagSelectionDirty === true ||
+            pendingTagName.length > 0 ||
+            String(tagReturnText || "") !== String(editorOriginalContent || "") ||
+            !sameTagIds(editorDraftTagIds, editorOriginalTagIds);
+    }
+
     function removeExitConfirmOnMain() {
         var parent;
         if (exitConfirmOverlay === null) { return false; }
@@ -1486,7 +1502,7 @@
             var content;
             var mode;
             var pendingTagName = "";
-            if (!state.attached || !hasEditorUnsavedChanges()) {
+            if (!state.attached || !hasDraftableChanges()) {
                 return null;
             }
             mode = state.mode === "tags" && tagReturnMode !== null ?
@@ -2768,7 +2784,7 @@
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 21,
+        MODULE_VERSION: 22,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;

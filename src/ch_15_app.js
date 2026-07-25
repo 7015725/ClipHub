@@ -329,11 +329,13 @@
                     typeof ClipHub.Editor.captureDraft === "function") {
                 ClipHub.Editor.captureDraft(hideReason);
             }
+        } catch (ignoredEditorDraft) {}
+        try {
             if (ClipHub.Editor &&
                     typeof ClipHub.Editor.close === "function") {
                 ClipHub.Editor.close();
             }
-        } catch (ignoredEditor) {}
+        } catch (ignoredEditorClose) {}
         try {
             if (ClipHub.List && typeof ClipHub.List.hide === "function") {
                 ClipHub.List.hide(false);
@@ -535,7 +537,7 @@
 
     ClipHub.App = {
         MODULE_NAME: "ch_15_app",
-        MODULE_VERSION: 15,
+        MODULE_VERSION: 16,
         CONTROL_ACTION_BASE: CONTROL_ACTION_BASE,
         CONTROL_ENDPOINT_SCHEMA: CONTROL_ENDPOINT_SCHEMA,
         CONTROL_COMMANDS: CONTROL_COMMANDS,

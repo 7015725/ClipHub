@@ -326,16 +326,20 @@
     }
 
     function closeEditor(reason, preserveDraft) {
-        try {
-            if (ClipHub.Editor && preserveDraft === true &&
-                    typeof ClipHub.Editor.captureDraft === "function") {
+        if (ClipHub.Editor && preserveDraft === true &&
+                typeof ClipHub.Editor.captureDraft === "function") {
+            try {
                 ClipHub.Editor.captureDraft(String(reason || "navigation_hide"));
+            } catch (draftError) {
+                navState.lastError = String(draftError);
             }
+        }
+        try {
             if (ClipHub.Editor && ClipHub.Editor.close) {
                 ClipHub.Editor.close();
                 return true;
             }
-        } catch (error) { navState.lastError = String(error); }
+        } catch (closeError) { navState.lastError = String(closeError); }
         return false;
     }
 
@@ -1118,7 +1122,7 @@
 
     ClipHub.Navigation = {
         MODULE_NAME: "ch_14_navigation_embedded",
-        MODULE_VERSION: 5,
+        MODULE_VERSION: 6,
         init: navigationInit,
         dispatchBack: function (reason) {
             return dispatchBack("", reason || "api_back");

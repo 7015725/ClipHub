@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260726.06",
+  "moduleSetVersion": "20260726.07",
   "entryMinVersion": 5,
   "sourceRef": "agent/fix-release-review-p1",
   "modules": [
@@ -52,7 +52,7 @@
     {
       "name": "ch_10_editor.js",
       "path": "src/ch_10_editor.js",
-      "sha": "5c5e46734da8f8eb53d7373387ea18a965b01d69"
+      "sha": "d97666ece7d20748a2cf6a966104e5f2d18e6ab5"
     },
     {
       "name": "ch_11_filter.js",
@@ -62,7 +62,7 @@
     {
       "name": "ch_12_translation.js",
       "path": "src/ch_12_translation.js",
-      "sha": "b27c2110de775bcad3dfeabdcd7e24653d48e713"
+      "sha": "bc5668aaef21cf6faa584585eaf06a9d179cc83f"
     },
     {
       "name": "ch_13_settings.js",
@@ -77,7 +77,7 @@
     {
       "name": "ch_15_app.js",
       "path": "src/ch_15_app.js",
-      "sha": "5eabe223af76ef22c1d6a24fd41a65ab962c5052"
+      "sha": "6db4bcbed5c53983c3d855ad6737c31cd750ccbd"
     }
   ]
 }
