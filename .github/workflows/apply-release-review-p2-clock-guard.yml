@@ -1,0 +1,44 @@
+name: Apply release review P2 clock guards
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - agent/fix-release-review-p1
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'agent/release-review-p2'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/release-review-p2
+          fetch-depth: 0
+
+      - name: Apply clock guards
+        run: python3 scripts/apply_release_review_p2_clock_guard.py
+
+      - name: Validate JavaScript and ES5
+        run: |
+          node --check ClipHub.js
+          for file in src/ch_*.js; do node --check "$file"; done
+          if [ -f scripts/validate_es5.py ]; then
+            python3 scripts/validate_es5.py
+          fi
+          git diff --check
+          grep -q 'callbackDeltaMs >= 0' src/ch_04_clipboard.js
+          grep -q 'eventAt >= Number(state.ownWrite.at || 0)' src/ch_04_clipboard.js
+
+      - name: Remove one-time files and commit
+        run: |
+          rm -f scripts/apply_release_review_p2_clock_guard.py
+          rm -f .github/workflows/apply-release-review-p2-clock-guard.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: guard clipboard dedup against clock rollback"
+          git push origin HEAD:agent/release-review-p2
