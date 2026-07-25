@@ -4,8 +4,6 @@ from pathlib import Path
 path = Path(__file__).with_name("apply_release_review_p2.py")
 text = path.read_text(encoding="utf-8")
 
-old = '''old_undo = r\'''    \tfunction impossible() {}\n\'''\n'''
-# Directly replace the actual generated block; the sentinel above is unused.
 old_block = """old_undo = r'''        changed = ClipHub.Repository.restoreItem(Number(target.id));
         if (Number(changed) < 1) { return false; }
 '''
