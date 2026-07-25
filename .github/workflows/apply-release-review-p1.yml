@@ -1,0 +1,49 @@
+name: Apply release review P1 fixes
+
+on:
+  push:
+    branches:
+      - agent/fix-release-review-p1
+    paths:
+      - .github/triggers/release-review-p1.txt
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-release-review-p1
+          fetch-depth: 0
+
+      - name: Apply controlled source patch
+        run: python3 scripts/apply_release_review_p1.py
+
+      - name: Validate JavaScript syntax
+        run: |
+          node --check ClipHub.js
+          for file in src/ch_*.js; do node --check "$file"; done
+
+      - name: Validate ES5 constraints
+        run: |
+          if [ -f scripts/validate_es5.py ]; then
+            python3 scripts/validate_es5.py
+          fi
+          git diff --check
+
+      - name: Remove one-time repair files
+        run: |
+          rm -f scripts/apply_release_review_p1.py
+          rm -f .github/triggers/release-review-p1.txt
+          rm -f .github/workflows/apply-release-review-p1.yml
+
+      - name: Commit repaired source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: protect drafts and restore typed atomic saves"
+          git push origin HEAD:agent/fix-release-review-p1
