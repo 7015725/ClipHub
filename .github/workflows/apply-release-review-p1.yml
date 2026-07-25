@@ -27,18 +27,18 @@ jobs:
       - name: Apply controlled source patch
         run: |
           set +e
-          python3 scripts/apply_release_review_p1.py > p1-patch.log 2>&1
+          python3 scripts/apply_release_review_p1.py > /tmp/p1-patch.log 2>&1
           status=$?
-          cat p1-patch.log
+          cat /tmp/p1-patch.log
           if [ "$status" -ne 0 ]; then
+            cp /tmp/p1-patch.log .github/p1-patch-error.txt
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add p1-patch.log
+            git add -f .github/p1-patch-error.txt
             git commit -m "chore: capture P1 patch failure"
             git push origin HEAD:agent/fix-release-review-p1
             exit "$status"
           fi
-          rm -f p1-patch.log
 
       - name: Validate JavaScript syntax
         run: |
@@ -56,6 +56,7 @@ jobs:
         run: |
           rm -f scripts/apply_release_review_p1.py
           rm -f .github/triggers/release-review-p1.txt
+          rm -f .github/p1-patch-error.txt
           rm -f .github/workflows/apply-release-review-p1.yml
 
       - name: Commit repaired source
