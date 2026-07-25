@@ -1,0 +1,42 @@
+name: Apply release review P1 draft guards
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - agent/release-candidate-20260726.05
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'agent/fix-release-review-p1'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-release-review-p1
+          fetch-depth: 0
+
+      - name: Apply guard hardening
+        run: python3 scripts/apply_release_review_p1_guard.py
+
+      - name: Validate JavaScript and ES5
+        run: |
+          node --check ClipHub.js
+          for file in src/ch_*.js; do node --check "$file"; done
+          if [ -f scripts/validate_es5.py ]; then
+            python3 scripts/validate_es5.py
+          fi
+          git diff --check
+
+      - name: Remove one-time files and commit
+        run: |
+          rm -f scripts/apply_release_review_p1_guard.py
+          rm -f .github/workflows/apply-release-review-p1-guard.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: harden hidden editor draft capture"
+          git push origin HEAD:agent/fix-release-review-p1
