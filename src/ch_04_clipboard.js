@@ -516,6 +516,7 @@
         var result;
         var classified;
         var event;
+        var callbackDeltaMs;
         state.eventSeq += 1;
         state.callbackThreadId = Number(thread.getId());
         state.callbackThreadName = String(thread.getName());
@@ -526,7 +527,8 @@
             }
             hash = ClipHub.Repository.hashContent(read.text);
             if (state.ownWrite.hash === hash &&
-                    eventAt <= state.ownWrite.expiresAt) {
+                    eventAt >= Number(state.ownWrite.at || 0) &&
+                    eventAt <= Number(state.ownWrite.expiresAt || 0)) {
                 state.ownWrite.consumed = true;
                 state.lastObserved.hash = hash;
                 state.lastObserved.at = eventAt;
@@ -546,8 +548,10 @@
                 emit("clipboard_ignored", event);
                 return setLastEvent(event);
             }
+            callbackDeltaMs = eventAt - Number(state.lastObserved.at || 0);
             if (state.lastObserved.hash === hash &&
-                    eventAt - state.lastObserved.at <= config.callbackDedupMs) {
+                    callbackDeltaMs >= 0 &&
+                    callbackDeltaMs <= Number(config.callbackDedupMs)) {
                 state.lastObserved.at = eventAt;
                 state.lastObserved.seq = state.eventSeq;
                 state.ignoredCount += 1;
@@ -784,7 +788,7 @@
 
     ClipHub.Clipboard = {
         MODULE_NAME: "ch_04_clipboard",
-        MODULE_VERSION: 7,
+        MODULE_VERSION: 8,
         SENSITIVE_KEY: SENSITIVE_KEY,
         init: function (context) {
             androidContext = context && context.androidContext
