@@ -41,7 +41,7 @@
         lastCopyHapticThreadId: null,
         lastCopyHapticThreadName: null,
         lastEvent: null,
-        lastObserved: { hash: "", at: 0 },
+        lastObserved: { hash: "", at: 0, seq: 0 },
         ownWrite: { hash: "", at: 0, expiresAt: 0, consumed: false },
         callbackThreadId: null,
         callbackThreadName: null
@@ -420,64 +420,67 @@
     }
 
     function recordText(text, hash, contentType, eventAt, metadata) {
-        var latest = ClipHub.Repository.listItems({limit: 1, offset: 0});
-        var row = latest && latest.length > 0 ? latest[0] : null;
-        var copiedAt;
-        var copyCount;
-        var id;
-        var patch;
-        var insert;
-        var sourceValues;
-        var key;
-        if (row !== null && String(row.normalized_hash) === hash) {
-            copiedAt = Number(row.last_copied_at || 0);
-            if (eventAt - copiedAt <= config.mergeWindowMs) {
-                copyCount = Number(row.copy_count || 1) + 1;
-                patch = {
-                    content: text,
-                    content_type: contentType,
-                    is_sensitive: metadata.sensitive === true ? 1 : 0,
-                    copy_count: copyCount,
-                    last_copied_at: eventAt,
-                    deleted_at: null
-                };
-                sourceValues = sourcePatch(metadata);
-                for (key in sourceValues) {
-                    if (sourceValues.hasOwnProperty(key)) {
-                        patch[key] = sourceValues[key];
+        return ClipHub.Database.transaction(function () {
+            var row = ClipHub.Repository.getLatestActiveItem();
+            var copiedAt;
+            var copyDeltaMs;
+            var copyCount;
+            var id;
+            var patch;
+            var insert;
+            var sourceValues;
+            var key;
+            if (row !== null && String(row.normalized_hash) === hash) {
+                copiedAt = Number(row.last_copied_at || 0);
+                copyDeltaMs = Number(eventAt) - copiedAt;
+                if (copyDeltaMs >= 0 &&
+                        copyDeltaMs <= Number(config.mergeWindowMs)) {
+                    copyCount = Number(row.copy_count || 1) + 1;
+                    patch = {
+                        content: text,
+                        content_type: contentType,
+                        is_sensitive: metadata.sensitive === true ? 1 : 0,
+                        copy_count: copyCount,
+                        last_copied_at: eventAt,
+                        deleted_at: null
+                    };
+                    sourceValues = sourcePatch(metadata);
+                    for (key in sourceValues) {
+                        if (sourceValues.hasOwnProperty(key)) {
+                            patch[key] = sourceValues[key];
+                        }
                     }
+                    ClipHub.Repository.updateItem(Number(row.id), patch);
+                    return {
+                        id: Number(row.id),
+                        inserted: false,
+                        merged: true,
+                        copyCount: copyCount,
+                        hash: hash
+                    };
                 }
-                ClipHub.Repository.updateItem(Number(row.id), patch);
-                return {
-                    id: Number(row.id),
-                    inserted: false,
-                    merged: true,
-                    copyCount: copyCount,
-                    hash: hash
-                };
             }
-        }
-        insert = {
-            content: text,
-            contentType: contentType,
-            normalizedHash: hash,
-            lastCopiedAt: eventAt,
-            createdAt: eventAt,
-            updatedAt: eventAt,
-            sourcePackage: metadata.sourcePackage,
-            sourceLabel: metadata.sourceLabel,
-            sourceUid: metadata.sourceUid,
-            sourceConfidence: metadata.sourceConfidence,
-            isSensitive: metadata.sensitive === true
-        };
-        id = ClipHub.Repository.insertItem(insert);
-        return {
-            id: Number(id),
-            inserted: true,
-            merged: false,
-            copyCount: 1,
-            hash: hash
-        };
+            insert = {
+                content: text,
+                contentType: contentType,
+                lastCopiedAt: eventAt,
+                createdAt: eventAt,
+                updatedAt: eventAt,
+                sourcePackage: metadata.sourcePackage,
+                sourceLabel: metadata.sourceLabel,
+                sourceUid: metadata.sourceUid,
+                sourceConfidence: metadata.sourceConfidence,
+                isSensitive: metadata.sensitive === true
+            };
+            id = ClipHub.Repository.insertItem(insert);
+            return {
+                id: Number(id),
+                inserted: true,
+                merged: false,
+                copyCount: 1,
+                hash: hash
+            };
+        });
     }
 
     function ignoredEvent(read, origin, eventAt) {
@@ -527,6 +530,7 @@
                 state.ownWrite.consumed = true;
                 state.lastObserved.hash = hash;
                 state.lastObserved.at = eventAt;
+                state.lastObserved.seq = state.eventSeq;
                 state.ignoredCount += 1;
                 event = {
                     seq: state.eventSeq,
@@ -545,6 +549,7 @@
             if (state.lastObserved.hash === hash &&
                     eventAt - state.lastObserved.at <= config.callbackDedupMs) {
                 state.lastObserved.at = eventAt;
+                state.lastObserved.seq = state.eventSeq;
                 state.ignoredCount += 1;
                 event = {
                     seq: state.eventSeq,
@@ -562,6 +567,7 @@
             }
             state.lastObserved.hash = hash;
             state.lastObserved.at = eventAt;
+            state.lastObserved.seq = state.eventSeq;
             classified = ClipHub.Classifier &&
                 typeof ClipHub.Classifier.classify === "function" ?
                 ClipHub.Classifier.classify(read.text) :
@@ -603,6 +609,11 @@
             emit(result.inserted ? "clipboard_added" : "clipboard_merged", event);
             return setLastEvent(event);
         } catch (error) {
+            if (Number(state.lastObserved.seq || 0) === Number(state.eventSeq)) {
+                state.lastObserved.hash = "";
+                state.lastObserved.at = 0;
+                state.lastObserved.seq = 0;
+            }
             state.errorCount += 1;
             event = {
                 seq: state.eventSeq,
@@ -752,7 +763,8 @@
             lastEvent: state.lastEvent,
             lastObserved: {
                 hash: state.lastObserved.hash,
-                at: state.lastObserved.at
+                at: state.lastObserved.at,
+                seq: Number(state.lastObserved.seq || 0)
             },
             ownWrite: copyOwnWrite(),
             callbackThreadId: state.callbackThreadId,
@@ -772,7 +784,7 @@
 
     ClipHub.Clipboard = {
         MODULE_NAME: "ch_04_clipboard",
-        MODULE_VERSION: 6,
+        MODULE_VERSION: 7,
         SENSITIVE_KEY: SENSITIVE_KEY,
         init: function (context) {
             androidContext = context && context.androidContext

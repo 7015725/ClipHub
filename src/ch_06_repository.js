@@ -121,6 +121,7 @@
     function insertItem(item) {
         var content;
         var normalized;
+        var normalizedHash;
         var now;
         var createdAt;
         var lastCopiedAt;
@@ -129,10 +130,11 @@
         item = item || {};
         content = String(item.content === null || item.content === undefined
             ? "" : item.content);
-        if (content.length === 0) {
-            throw new Error("Clipboard content must not be empty");
-        }
         normalized = normalizeContent(content);
+        if (normalized.length === 0) {
+            throw new Error("Clipboard content must not be blank");
+        }
+        normalizedHash = sha256(normalized);
         now = ClipHub.Base.now();
         createdAt = intValue(item.createdAt, now);
         lastCopiedAt = intValue(item.lastCopiedAt, createdAt);
@@ -146,7 +148,7 @@
             ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 content,
-                item.normalizedHash || sha256(normalized),
+                normalizedHash,
                 normalizeContentType(item.contentType),
                 item.sourcePackage === undefined ? null : item.sourcePackage,
                 item.sourceLabel === undefined ? null : item.sourceLabel,
@@ -171,6 +173,14 @@
             (includeDeleted ? "" : " AND deleted_at IS NULL") + " LIMIT 1";
         requireReady();
         return ClipHub.Database.queryOne(sql, [intValue(id, -1)]);
+    }
+
+    function getLatestActiveItem() {
+        requireReady();
+        return ClipHub.Database.queryOne(
+            "SELECT * FROM clipboard_items WHERE deleted_at IS NULL " +
+            "ORDER BY last_copied_at DESC, id DESC LIMIT 1", []
+        );
     }
 
     function listItems(options) {
@@ -260,22 +270,25 @@
         var args = [];
         var key;
         var value;
-        var normalized;
+        var normalized = null;
         requireReady();
         patch = patch || {};
         for (key in patch) {
-            if (patch.hasOwnProperty(key) && allowed[key]) {
-                value = patch[key];
-                columns.push(key + " = ?");
-                args.push(value);
+            if (!patch.hasOwnProperty(key) || !allowed[key]) { continue; }
+            value = patch[key];
+            if (key === "content") {
+                value = String(value === null || value === undefined ? "" : value);
+                normalized = normalizeContent(value);
+                if (normalized.length === 0) {
+                    throw new Error("Clipboard content must not be blank");
+                }
+            } else if (key === "content_type") {
+                value = normalizeContentType(value);
             }
+            columns.push(key + " = ?");
+            args.push(value);
         }
-        if (patch.hasOwnProperty("content")) {
-            if (patch.content === null || patch.content === undefined ||
-                    String(patch.content).length === 0) {
-                throw new Error("Clipboard content must not be empty");
-            }
-            normalized = normalizeContent(patch.content);
+        if (normalized !== null) {
             columns.push("normalized_hash = ?");
             args.push(sha256(normalized));
         }
@@ -407,6 +420,16 @@
         return updateItem(id, { deleted_at: null });
     }
 
+    function restoreItemIfDeletedAt(id, deletedAt) {
+        var now = ClipHub.Base.now();
+        requireReady();
+        return ClipHub.Database.executeUpdateDelete(
+            "UPDATE clipboard_items SET deleted_at = NULL, updated_at = ? " +
+            "WHERE id = ? AND deleted_at = ?",
+            [now, intValue(id, -1), intValue(deletedAt, -1)]
+        );
+    }
+
     function countItems(includeDeleted) {
         requireReady();
         return ClipHub.Database.scalarLong(
@@ -499,7 +522,13 @@
     function ensureTag(name, colorValue) {
         var existing = getTagByName(name);
         if (existing !== null) { return Number(existing.id); }
-        return Number(insertTag({ name: name, colorValue: colorValue }));
+        try {
+            return Number(insertTag({ name: name, colorValue: colorValue }));
+        } catch (error) {
+            existing = getTagByName(name);
+            if (existing !== null) { return Number(existing.id); }
+            throw error;
+        }
     }
 
     function updateTag(id, patch) {
@@ -711,7 +740,7 @@
 
     ClipHub.Repository = {
         MODULE_NAME: "ch_06_repository",
-        MODULE_VERSION: 11,
+        MODULE_VERSION: 12,
         init: function () {
             ready = !!(ClipHub.Database && ClipHub.Database.isOpen());
             if (!ready) { throw new Error("Database is unavailable"); }
@@ -722,6 +751,7 @@
         hashContent: function (content) { return sha256(normalizeContent(content)); },
         insertItem: insertItem,
         getItem: getItem,
+        getLatestActiveItem: getLatestActiveItem,
         listItems: listItems,
         listSourceOptions: listSourceOptions,
         updateItem: updateItem,
@@ -732,6 +762,7 @@
         softDeleteItemsByTag: softDeleteItemsByTag,
         softDeleteAllItems: softDeleteAllItems,
         restoreItem: restoreItem,
+        restoreItemIfDeletedAt: restoreItemIfDeletedAt,
         countItems: countItems,
         purgeExpired: purgeExpired,
         trimHistory: trimHistory,

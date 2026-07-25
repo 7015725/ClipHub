@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260726.07",
+  "moduleSetVersion": "20260726.08",
   "entryMinVersion": 5,
-  "sourceRef": "agent/fix-release-review-p1",
+  "sourceRef": "agent/release-review-p2",
   "modules": [
     {
       "name": "ch_01_base.js",
@@ -22,7 +22,7 @@
     {
       "name": "ch_04_clipboard.js",
       "path": "src/ch_04_clipboard.js",
-      "sha": "3ab15ff8a09411a71a789e4f9665749860ad8c19"
+      "sha": "64b33598f29ad7125d1230b65a9d5e5cc652bf83"
     },
     {
       "name": "ch_05_classifier.js",
@@ -32,7 +32,7 @@
     {
       "name": "ch_06_repository.js",
       "path": "src/ch_06_repository.js",
-      "sha": "e6e7bbe76d0d675f34e94d0bed165cdf53b7bacb"
+      "sha": "fa73f8e831fd9b31f9702d47de8b4622b3e04f28"
     },
     {
       "name": "ch_07_theme.js",
@@ -47,7 +47,7 @@
     {
       "name": "ch_09_list.js",
       "path": "src/ch_09_list.js",
-      "sha": "24e9bc1aa310b52bc68064c6e294e822a5cd90bd"
+      "sha": "274f1b1f08a711f72b5cace7dc4ff7e12f1a2758"
     },
     {
       "name": "ch_10_editor.js",

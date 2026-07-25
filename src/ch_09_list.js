@@ -301,8 +301,21 @@ lastDeleted = null;
 refreshQuietly();
 return false;
 }
-changed = ClipHub.Repository.restoreItem(Number(target.id));
-if (Number(changed) < 1) { return false; }
+if (Number(row.deleted_at) !== Number(target.deletedAt)) {
+lastDeleted = null;
+refreshQuietly();
+return false;
+}
+changed = ClipHub.Repository.restoreItemIfDeletedAt &&
+typeof ClipHub.Repository.restoreItemIfDeletedAt === "function" ?
+ClipHub.Repository.restoreItemIfDeletedAt(
+Number(target.id), Number(target.deletedAt)) :
+ClipHub.Repository.restoreItem(Number(target.id));
+if (Number(changed) < 1) {
+lastDeleted = null;
+refreshQuietly();
+return false;
+}
 lastDeleted = null;
 state.restoreCount += 1;
 state.lastRestoredId = Number(target.id);
@@ -848,7 +861,7 @@ state.lastError = null;
 }
 ClipHub.List = {
 MODULE_NAME: "ch_09_list",
-MODULE_VERSION: 18,
+MODULE_VERSION: 19,
 LONG_TEXT_THRESHOLD: LONG_TEXT_THRESHOLD,
 init: function (context) {
 androidContext = context && context.androidContext ?
