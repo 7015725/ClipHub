@@ -6,12 +6,17 @@ on:
       - agent/fix-release-review-p1
     paths:
       - .github/triggers/release-review-p1.txt
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - agent/release-candidate-20260726.05
 
 permissions:
   contents: write
 
 jobs:
   apply:
+    if: github.event_name == 'push' || github.head_ref == 'agent/fix-release-review-p1'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
