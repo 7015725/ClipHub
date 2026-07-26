@@ -108,9 +108,20 @@
             .replace(/\s+/g, " ");
     }
 
+    function normalizeContentType(value) {
+        value = String(value || "text").toLowerCase();
+        if (value === "link") { return "url"; }
+        if (value === "url" || value === "email" || value === "phone" ||
+                value === "code") {
+            return value;
+        }
+        return "text";
+    }
+
     function insertItem(item) {
         var content;
         var normalized;
+        var normalizedHash;
         var now;
         var createdAt;
         var lastCopiedAt;
@@ -119,10 +130,11 @@
         item = item || {};
         content = String(item.content === null || item.content === undefined
             ? "" : item.content);
-        if (content.length === 0) {
-            throw new Error("Clipboard content must not be empty");
-        }
         normalized = normalizeContent(content);
+        if (normalized.length === 0) {
+            throw new Error("Clipboard content must not be blank");
+        }
+        normalizedHash = sha256(normalized);
         now = ClipHub.Base.now();
         createdAt = intValue(item.createdAt, now);
         lastCopiedAt = intValue(item.lastCopiedAt, createdAt);
@@ -136,8 +148,8 @@
             ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 content,
-                item.normalizedHash || sha256(normalized),
-                "text",
+                normalizedHash,
+                normalizeContentType(item.contentType),
                 item.sourcePackage === undefined ? null : item.sourcePackage,
                 item.sourceLabel === undefined ? null : item.sourceLabel,
                 item.sourceUid === undefined || item.sourceUid === null
@@ -161,6 +173,24 @@
             (includeDeleted ? "" : " AND deleted_at IS NULL") + " LIMIT 1";
         requireReady();
         return ClipHub.Database.queryOne(sql, [intValue(id, -1)]);
+    }
+
+    function getLatestActiveItem() {
+        requireReady();
+        return ClipHub.Database.queryOne(
+            "SELECT * FROM clipboard_items WHERE deleted_at IS NULL " +
+            "ORDER BY last_copied_at DESC, id DESC LIMIT 1", []
+        );
+    }
+
+    function getLatestActiveItemByHash(normalizedHash) {
+        requireReady();
+        return ClipHub.Database.queryOne(
+            "SELECT * FROM clipboard_items WHERE deleted_at IS NULL " +
+            "AND normalized_hash = ? " +
+            "ORDER BY last_copied_at DESC, id DESC LIMIT 1",
+            [String(normalizedHash || "")]
+        );
     }
 
     function listItems(options) {
@@ -234,6 +264,7 @@
     function updateItem(id, patch) {
         var allowed = {
             content: true,
+            content_type: true,
             source_package: true,
             source_label: true,
             source_uid: true,
@@ -249,22 +280,25 @@
         var args = [];
         var key;
         var value;
-        var normalized;
+        var normalized = null;
         requireReady();
         patch = patch || {};
         for (key in patch) {
-            if (patch.hasOwnProperty(key) && allowed[key]) {
-                value = patch[key];
-                columns.push(key + " = ?");
-                args.push(value);
+            if (!patch.hasOwnProperty(key) || !allowed[key]) { continue; }
+            value = patch[key];
+            if (key === "content") {
+                value = String(value === null || value === undefined ? "" : value);
+                normalized = normalizeContent(value);
+                if (normalized.length === 0) {
+                    throw new Error("Clipboard content must not be blank");
+                }
+            } else if (key === "content_type") {
+                value = normalizeContentType(value);
             }
+            columns.push(key + " = ?");
+            args.push(value);
         }
-        if (patch.hasOwnProperty("content")) {
-            if (patch.content === null || patch.content === undefined ||
-                    String(patch.content).length === 0) {
-                throw new Error("Clipboard content must not be empty");
-            }
-            normalized = normalizeContent(patch.content);
+        if (normalized !== null) {
             columns.push("normalized_hash = ?");
             args.push(sha256(normalized));
         }
@@ -396,6 +430,16 @@
         return updateItem(id, { deleted_at: null });
     }
 
+    function restoreItemIfDeletedAt(id, deletedAt) {
+        var now = ClipHub.Base.now();
+        requireReady();
+        return ClipHub.Database.executeUpdateDelete(
+            "UPDATE clipboard_items SET deleted_at = NULL, updated_at = ? " +
+            "WHERE id = ? AND deleted_at = ?",
+            [now, intValue(id, -1), intValue(deletedAt, -1)]
+        );
+    }
+
     function countItems(includeDeleted) {
         requireReady();
         return ClipHub.Database.scalarLong(
@@ -488,7 +532,13 @@
     function ensureTag(name, colorValue) {
         var existing = getTagByName(name);
         if (existing !== null) { return Number(existing.id); }
-        return Number(insertTag({ name: name, colorValue: colorValue }));
+        try {
+            return Number(insertTag({ name: name, colorValue: colorValue }));
+        } catch (error) {
+            existing = getTagByName(name);
+            if (existing !== null) { return Number(existing.id); }
+            throw error;
+        }
     }
 
     function updateTag(id, patch) {
@@ -605,20 +655,78 @@
         );
     }
 
-    function setItemTags(itemId, tagIds) {
+    function replaceItemTagsInternal(itemId, tagIds) {
         var ids = intList(tagIds);
         var index;
         var attached = 0;
+        ClipHub.Database.executeUpdateDelete(
+            "DELETE FROM clipboard_item_tags WHERE item_id = ?",
+            [intValue(itemId, -1)]
+        );
+        for (index = 0; index < ids.length; index += 1) {
+            if (attachTag(itemId, ids[index]) >= 0) { attached += 1; }
+        }
+        return attached;
+    }
+
+    function setItemTags(itemId, tagIds) {
+        var attached = 0;
         requireReady();
         ClipHub.Database.transaction(function () {
-            ClipHub.Database.executeUpdateDelete(
-                "DELETE FROM clipboard_item_tags WHERE item_id = ?", [intValue(itemId, -1)]
-            );
-            for (index = 0; index < ids.length; index += 1) {
-                if (attachTag(itemId, ids[index]) >= 0) { attached += 1; }
-            }
+            attached = replaceItemTagsInternal(itemId, tagIds);
         });
         return attached;
+    }
+
+    function saveItemWithTags(options) {
+        var itemId;
+        var created = false;
+        var changed = 0;
+        var tagCount = 0;
+        var contentType;
+        options = options || {};
+        requireReady();
+        contentType = normalizeContentType(options.contentType);
+        ClipHub.Database.transaction(function () {
+            if (options.itemId === null || options.itemId === undefined) {
+                itemId = Number(insertItem({
+                    content: options.content,
+                    contentType: contentType,
+                    normalizedHash: options.normalizedHash,
+                    sourcePackage: options.sourcePackage,
+                    sourceLabel: options.sourceLabel,
+                    sourceUid: options.sourceUid,
+                    sourceConfidence: options.sourceConfidence,
+                    isSensitive: options.isSensitive === true,
+                    isPinned: options.isPinned === true,
+                    manualOrder: options.manualOrder,
+                    copyCount: options.copyCount,
+                    createdAt: options.createdAt,
+                    lastCopiedAt: options.lastCopiedAt,
+                    updatedAt: options.updatedAt
+                }));
+                created = true;
+                changed = 1;
+            } else {
+                itemId = intValue(options.itemId, -1);
+                if (getItem(itemId, false) === null) {
+                    throw new Error("Clipboard item does not exist");
+                }
+                changed = updateItem(itemId, {
+                    content: options.content,
+                    content_type: contentType
+                });
+            }
+            tagCount = replaceItemTagsInternal(itemId, options.tagIds || []);
+        });
+        return {
+            ok: true,
+            id: Number(itemId),
+            created: created,
+            changed: Number(changed),
+            contentType: contentType,
+            tagCount: Number(tagCount)
+        };
     }
 
     function reorderTags(tagIds) {
@@ -642,7 +750,7 @@
 
     ClipHub.Repository = {
         MODULE_NAME: "ch_06_repository",
-        MODULE_VERSION: 10,
+        MODULE_VERSION: 13,
         init: function () {
             ready = !!(ClipHub.Database && ClipHub.Database.isOpen());
             if (!ready) { throw new Error("Database is unavailable"); }
@@ -653,6 +761,8 @@
         hashContent: function (content) { return sha256(normalizeContent(content)); },
         insertItem: insertItem,
         getItem: getItem,
+        getLatestActiveItem: getLatestActiveItem,
+        getLatestActiveItemByHash: getLatestActiveItemByHash,
         listItems: listItems,
         listSourceOptions: listSourceOptions,
         updateItem: updateItem,
@@ -663,11 +773,13 @@
         softDeleteItemsByTag: softDeleteItemsByTag,
         softDeleteAllItems: softDeleteAllItems,
         restoreItem: restoreItem,
+        restoreItemIfDeletedAt: restoreItemIfDeletedAt,
         countItems: countItems,
         purgeExpired: purgeExpired,
         trimHistory: trimHistory,
         cleanupHistory: cleanupHistory,
         normalizeTagName: normalizeTagName,
+        normalizeContentType: normalizeContentType,
         getTag: getTag,
         getTagByName: getTagByName,
         insertTag: insertTag,
@@ -680,6 +792,7 @@
         attachTag: attachTag,
         detachTag: detachTag,
         setItemTags: setItemTags,
+        saveItemWithTags: saveItemWithTags,
         reorderTags: reorderTags,
         insert: insertItem,
         update: updateItem,

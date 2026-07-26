@@ -174,6 +174,8 @@
         focusedInputBottomDp: 0,
         inputFocusCount: 0,
         inputAutoScrollCount: 0,
+        imeFocusReleaseCount: 0,
+        lastImeFocusReleaseReason: "",
         imeAnchorAdjustmentCount: 0,
         imeAnchorSpacerHeightDp: 0,
         delayedCallbackPostCount: 0,
@@ -608,7 +610,12 @@
         targetRoot = panelWindowRoot !== null ? panelWindowRoot : panelRoot;
         if (changed && uiState.attached && targetRoot !== null &&
                 targetRoot.isAttachedToWindow()) {
-            windowManager.updateViewLayout(targetRoot, panelParams);
+            if (!ClipHub.Window ||
+                    typeof ClipHub.Window.applyExternalLayout !== "function" ||
+                    ClipHub.Window.applyExternalLayout(targetRoot, panelParams,
+                        "ch_13_settings.js_external_layout") !== true) {
+                windowManager.updateViewLayout(targetRoot, panelParams);
+            }
             uiState.windowLayoutUpdateCount += 1;
         }
         if (!ime.visible || Number(ime.bottomPx) < thresholdPx) {
@@ -818,6 +825,7 @@
         uiState.imePollCount += 1;
         ime = readSettingsImeState();
         applySettingsImeLayout(ime);
+        releaseFocusedInputAfterImeHide(ime, "ime_poll_hidden");
         if (ime.visible && focusedInput !== null && focusedInput.hasFocus()) {
             scheduleFocusedInputVisibility();
         } else if (!ime.visible) {
@@ -885,6 +893,8 @@
                         try {
                             ime = readSettingsImeState();
                             applySettingsImeLayout(ime);
+                            releaseFocusedInputAfterImeHide(ime,
+                                "layout_ime_hidden");
                             if (ime.visible && focusedInput !== null &&
                                     focusedInput.hasFocus()) {
                                 scheduleFocusedInputVisibility();
@@ -976,6 +986,42 @@
             uiState.lastError = String(error);
             return false;
         }
+    }
+
+    function releaseSettingsInputFocus(reason) {
+        var target = focusedInput;
+        var hadFocus = false;
+        if (target === null) { return false; }
+        try { hadFocus = target.hasFocus() === true; }
+        catch (ignoredFocusRead) { hadFocus = true; }
+        if (hadFocus) {
+            try { target.clearFocus(); }
+            catch (error) {
+                uiState.lastError = String(error);
+                return false;
+            }
+        }
+        if (focusedInput === target) {
+            focusedInput = null;
+            focusedInputName = null;
+            uiState.focusedInputName = null;
+            uiState.focusedInputVisible = false;
+        }
+        focusedVisibilityScheduled = false;
+        resetImeAnchorSpacer();
+        if (hadFocus) {
+            uiState.imeFocusReleaseCount += 1;
+            uiState.lastImeFocusReleaseReason = String(reason || "ime_hidden");
+        }
+        return hadFocus;
+    }
+
+    function releaseFocusedInputAfterImeHide(ime, reason) {
+        if (uiState.keyboardVisible !== true || !ime ||
+                ime.visible === true || focusedInput === null) {
+            return false;
+        }
+        return releaseSettingsInputFocus(reason || "ime_hidden");
     }
 
     function closeQuietly(value) {
@@ -2570,6 +2616,15 @@
                         uiState.currentPanelHeightDp = uiState.panelHeightDp;
                     }
                 },
+                onRequestBack: function () {
+                    var ime = readSettingsImeState();
+                    if (ime.visible) {
+                        hideSettingsKeyboardOnMain();
+                        return true;
+                    }
+                    releaseSettingsInputFocus("managed_back");
+                    return closePage("managed_back");
+                },
                 onRequestClose: function () {
                     return closePage("managed_close");
                 }
@@ -2879,6 +2934,10 @@
             focusedInputBottomDp: Number(uiState.focusedInputBottomDp),
             inputFocusCount: Number(uiState.inputFocusCount),
             inputAutoScrollCount: Number(uiState.inputAutoScrollCount),
+            imeFocusReleaseCount:
+                Number(uiState.imeFocusReleaseCount),
+            lastImeFocusReleaseReason:
+                uiState.lastImeFocusReleaseReason,
             imeAnchorAdjustmentCount:
                 Number(uiState.imeAnchorAdjustmentCount),
             imeAnchorSpacerHeightDp:
@@ -2911,7 +2970,7 @@
 
     ClipHub.Settings = {
         MODULE_NAME: "ch_13_settings",
-        MODULE_VERSION: 20,
+        MODULE_VERSION: 21,
         DEFAULTS: defaultsCopy(),
         init: function (context) {
             if (!ClipHub.Database || !ClipHub.Database.isOpen()) {

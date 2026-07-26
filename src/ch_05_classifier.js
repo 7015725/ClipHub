@@ -1,9 +1,8 @@
 /*
- * ClipHub 入口兼容占位模块。
+ * ClipHub 分类器兼容占位模块。
  *
- * ENTRY_VERSION 5 的 ClipHub.js 使用固定的 15 文件模块表，并要求
- * module-manifest.json 中保留 ch_05_classifier.js。内容类型分类与筛选
- * 功能已经退休；此文件不导出 API、不创建状态，也不参与 App 初始化。
+ * ENTRY_VERSION 5 固定加载该文件。自动内容分类已取消。保留本文件
+ * 以维持 15 模块清单、离线缓存和旧入口兼容。
  */
 (function () {
     return true;

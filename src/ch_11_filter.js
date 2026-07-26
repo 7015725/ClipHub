@@ -45,6 +45,9 @@
     var SELECTION_ENABLED = false;
     var DELETE_UNDO_TIMEOUT_MS = 5000;
     var COPY_FEEDBACK_TIMEOUT_MS = 1600;
+    var INPUT_FOCUS_DELAY_MS = 160;
+    var INPUT_RETRY_DELAY_MS = 180;
+    var INPUT_MAX_ATTEMPTS = 2;
 
     var androidContext = null;
     var appContext = null;
@@ -113,6 +116,8 @@
     var searchToggleView = null;
     var searchClearView = null;
     var historyContainerView = null;
+    var inputDispatchGeneration = 0;
+    var inputDispatchPending = false;
 
     var state = {
         applyCount: 0,
@@ -193,6 +198,17 @@
         selectionMode: false,
         resultCardClickCount: 0,
         resultCardLongPressCount: 0,
+        inputActionCount: 0,
+        inputSuccessCount: 0,
+        inputFailureCount: 0,
+        inputRetryCount: 0,
+        inputDuplicateBlockedCount: 0,
+        lastInputItemId: null,
+        lastInputContentLength: 0,
+        lastInputAttemptCount: 0,
+        lastInputAt: 0,
+        lastInputOrigin: "",
+        lastInputError: null,
         copyActionCount: 0,
         pinActionCount: 0,
         editActionCount: 0,
@@ -1923,6 +1939,135 @@
         return true;
     }
 
+    function showInputToast(message) {
+        try {
+            Packages.android.widget.Toast.makeText(
+                appContext, String(message),
+                Packages.android.widget.Toast.LENGTH_SHORT).show();
+            return true;
+        } catch (ignored) {
+            return false;
+        }
+    }
+
+    function inputContextPendingError(error) {
+        return String(error || "").indexOf("No Input context") >= 0;
+    }
+
+    function executeInputText(text) {
+        var InputTextAction;
+        var action;
+        if (typeof shortx === "undefined" ||
+                typeof shortx.executeAction !== "function") {
+            throw new Error("ShortX executeAction unavailable");
+        }
+        InputTextAction =
+            Packages.tornaco.apps.shortx.core.proto.action.InputText;
+        action = InputTextAction.newBuilder()
+            .setText(String(text))
+            .setId("ClipHub#InputText")
+            .setNote("ClipHub 列表正文单击输入")
+            .build();
+        return shortx.executeAction(action);
+    }
+
+    function finishInputDispatch(success, error, attempt) {
+        inputDispatchPending = false;
+        state.lastInputAttemptCount = Number(attempt || 0);
+        state.lastInputAt = Number(
+            Packages.java.lang.System.currentTimeMillis());
+        if (success === true) {
+            state.inputSuccessCount += 1;
+            state.lastInputError = null;
+            state.lastError = null;
+            showInputToast("已输入");
+            return true;
+        }
+        state.inputFailureCount += 1;
+        state.lastInputError = String(error || "InputText failed");
+        state.lastError = "InputText failed: " + state.lastInputError;
+        showInputToast(inputContextPendingError(error) ?
+            "未找到可输入的文本框" : "输入失败");
+        return false;
+    }
+
+    function scheduleInputAttempt(text, generation, attempt, delayMs) {
+        var posted;
+        if (mainHandler === null) {
+            return finishInputDispatch(false,
+                "Main handler unavailable", attempt);
+        }
+        posted = mainHandler.postDelayed(new Packages.java.lang.Runnable({
+            run: function () {
+                if (!ready || generation !== inputDispatchGeneration) {
+                    return;
+                }
+                state.lastInputAttemptCount = Number(attempt);
+                try {
+                    executeInputText(text);
+                    finishInputDispatch(true, null, attempt);
+                } catch (error) {
+                    if (inputContextPendingError(error) &&
+                            attempt < INPUT_MAX_ATTEMPTS) {
+                        state.inputRetryCount += 1;
+                        scheduleInputAttempt(text, generation,
+                            attempt + 1, INPUT_RETRY_DELAY_MS);
+                        return;
+                    }
+                    finishInputDispatch(false, error, attempt);
+                }
+            }
+        }), Number(delayMs));
+        if (posted !== true) {
+            return finishInputDispatch(false,
+                "Input callback post failed", attempt);
+        }
+        return true;
+    }
+
+    function inputResultRow(row, origin) {
+        var text;
+        var generation;
+        var closeResult;
+        if (row === null || row === undefined) {
+            return false;
+        }
+        text = String(row.content || "");
+        if (text.length === 0) {
+            state.lastInputError = "Input text must not be empty";
+            showInputToast("文本为空");
+            return false;
+        }
+        if (inputDispatchPending) {
+            state.inputDuplicateBlockedCount += 1;
+            return false;
+        }
+        inputDispatchPending = true;
+        inputDispatchGeneration += 1;
+        generation = inputDispatchGeneration;
+        state.resultCardClickCount += 1;
+        state.inputActionCount += 1;
+        state.lastInputItemId = Number(row.id);
+        state.lastInputContentLength = text.length;
+        state.lastInputAttemptCount = 0;
+        state.lastInputOrigin = String(origin || "card_click");
+        state.lastInputError = null;
+        try {
+            closeResult = closePanel({
+                restoreList: false,
+                reason: "input_text_prepare"
+            });
+            if (closeResult && closeResult.ok === false) {
+                throw new Error("ClipHub panel close failed");
+            }
+        } catch (error) {
+            return finishInputDispatch(false, error, 0);
+        }
+        scheduleInputAttempt(text, generation, 1,
+            INPUT_FOCUS_DELAY_MS);
+        return true;
+    }
+
     function copyResultRow(row, origin) {
         var result;
         var copied = false;
@@ -2548,10 +2693,10 @@
         card.setClickable(true);
         card.setFocusable(true);
         card.setContentDescription((pinned ? "已置顶，" : "") +
-            "剪贴板记录，点击正文复制，左滑置顶，右滑删除，右侧提供编辑翻译复制删除图标");
+            "剪贴板记录，点击正文输入到当前文本框，左滑置顶，右滑删除，右侧提供编辑翻译复制删除图标");
         card.setOnClickListener(new JavaAdapter(
             View.OnClickListener, {
-                onClick: function () { copyResultRow(row, "card_click"); }
+                onClick: function () { inputResultRow(row, "card_click"); }
             }));
 
         params = new LinearLayout.LayoutParams(metrics.iconSizePx,
@@ -3768,7 +3913,12 @@
             params.y = Number(target.y);
             try {
                 if (rootView.isAttachedToWindow()) {
-                    windowManager.updateViewLayout(rootView, params);
+                    if (!ClipHub.Window ||
+                            typeof ClipHub.Window.applyExternalLayout !== "function" ||
+                            ClipHub.Window.applyExternalLayout(rootView, params,
+                                "ch_11_filter.js_external_layout") !== true) {
+                        windowManager.updateViewLayout(rootView, params);
+                    }
                     stateValue.updateCount += 1;
                 }
                 return true;
@@ -4424,6 +4574,21 @@
                 Number(state.resultCardClickCount),
             resultCardLongPressCount:
                 Number(state.resultCardLongPressCount),
+            inputActionCount: Number(state.inputActionCount),
+            inputSuccessCount: Number(state.inputSuccessCount),
+            inputFailureCount: Number(state.inputFailureCount),
+            inputRetryCount: Number(state.inputRetryCount),
+            inputDuplicateBlockedCount:
+                Number(state.inputDuplicateBlockedCount),
+            inputDispatchPending: inputDispatchPending === true,
+            lastInputItemId: state.lastInputItemId,
+            lastInputContentLength:
+                Number(state.lastInputContentLength),
+            lastInputAttemptCount:
+                Number(state.lastInputAttemptCount),
+            lastInputAt: Number(state.lastInputAt),
+            lastInputOrigin: state.lastInputOrigin,
+            lastInputError: state.lastInputError,
             copyActionCount: Number(state.copyActionCount),
             pinActionCount: Number(state.pinActionCount),
             editActionCount: Number(state.editActionCount),
@@ -4587,6 +4752,17 @@
         state.selectionMode = false;
         state.resultCardClickCount = 0;
         state.resultCardLongPressCount = 0;
+        state.inputActionCount = 0;
+        state.inputSuccessCount = 0;
+        state.inputFailureCount = 0;
+        state.inputRetryCount = 0;
+        state.inputDuplicateBlockedCount = 0;
+        state.lastInputItemId = null;
+        state.lastInputContentLength = 0;
+        state.lastInputAttemptCount = 0;
+        state.lastInputAt = 0;
+        state.lastInputOrigin = "";
+        state.lastInputError = null;
         state.copyActionCount = 0;
         state.pinActionCount = 0;
         state.editActionCount = 0;
@@ -4655,7 +4831,7 @@
 
     ClipHub.Filter = {
         MODULE_NAME: "ch_11_filter",
-        MODULE_VERSION: 34,
+        MODULE_VERSION: 35,
 
         init: function (context) {
             stopFilterImeAvoidance(false);
@@ -4709,6 +4885,8 @@
             searchToggleView = null;
             searchClearView = null;
             historyContainerView = null;
+            inputDispatchGeneration += 1;
+            inputDispatchPending = false;
             resetResultPaging();
             resetState();
             loadHistory();
@@ -4973,6 +5151,8 @@
             unregisterEvents();
             searchGeneration += 1;
             adaptiveRenderGeneration += 1;
+            inputDispatchGeneration += 1;
+            inputDispatchPending = false;
             clearDeleteUndo(true);
             clearCopyFeedback();
             rootMode = false;

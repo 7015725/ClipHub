@@ -325,14 +325,32 @@
         return closeFilter();
     }
 
-    function closeEditor() {
+    function closeEditor(reason, preserveDraft) {
+        if (ClipHub.Editor && preserveDraft === true &&
+                typeof ClipHub.Editor.captureDraft === "function") {
+            try {
+                ClipHub.Editor.captureDraft(String(reason || "navigation_hide"));
+            } catch (draftError) {
+                navState.lastError = String(draftError);
+            }
+        }
         try {
             if (ClipHub.Editor && ClipHub.Editor.close) {
                 ClipHub.Editor.close();
                 return true;
             }
-        } catch (error) { navState.lastError = String(error); }
+        } catch (closeError) { navState.lastError = String(closeError); }
         return false;
+    }
+
+    function backEditor() {
+        try {
+            if (ClipHub.Editor &&
+                    typeof ClipHub.Editor.handleBack === "function") {
+                return ClipHub.Editor.handleBack() === true;
+            }
+        } catch (error) { navState.lastError = String(error); }
+        return closeEditor("navigation_back_fallback", true);
     }
 
     function closeDetail() {
@@ -468,7 +486,7 @@
         navState.lastHideReason = String(reason || "hide");
         try {
             closeFilter();
-            closeEditor();
+            closeEditor(navState.lastHideReason, true);
             try {
                 if (ClipHub.List && ClipHub.List.hide) {
                     ClipHub.List.hide(true);
@@ -513,7 +531,7 @@
         }
         if ((owner === "editor" || owner === "tags") &&
                 moduleAttached(ClipHub.Editor, "getState")) {
-            return closeEditor();
+            return backEditor();
         }
         if (owner === "detail" &&
                 moduleAttached(ClipHub.List, "getDetailState")) {
@@ -523,7 +541,7 @@
             return backFilter();
         }
         if (moduleAttached(ClipHub.Editor, "getState")) {
-            return closeEditor();
+            return backEditor();
         }
         if (moduleAttached(ClipHub.List, "getDetailState")) {
             return closeDetail();
@@ -550,7 +568,7 @@
     function dispatchBack(owner, reason) {
         var timestamp = now();
         var signature = backSignature(owner, reason);
-        var handled;
+        var handled = false;
         if (timestamp - lastBackAt < 180 &&
                 signature === lastBackSignature) {
             navState.duplicateBackCount += 1;
@@ -562,7 +580,19 @@
         navState.lastBackOwner = String(owner || "");
         navState.lastBackReason = String(reason || "system_back");
         navState.lastBackSignature = signature;
-        handled = closeTop(owner, navState.lastBackReason);
+        try {
+            if (ClipHub.Window &&
+                    typeof ClipHub.Window.requestBack === "function") {
+                handled = ClipHub.Window.requestBack(
+                    navState.lastBackReason) === true;
+            }
+        } catch (windowBackError) {
+            navState.lastError = String(windowBackError);
+            handled = false;
+        }
+        if (!handled) {
+            handled = closeTop(owner, navState.lastBackReason);
+        }
         if (handled) { navState.backHandledCount += 1; }
         log("I", "navigation back owner=" + navState.lastBackOwner +
             " reason=" + navState.lastBackReason +
@@ -877,6 +907,24 @@
         return true;
     }
 
+    function registerManagedWindow(view, owner) {
+        if (!initialized || !view) { return false; }
+        return runOnMainSync(function () {
+            if (findEntry(view)) { return true; }
+            try {
+                if (!view.isAttachedToWindow()) {
+                    scheduleScan(owner);
+                    return false;
+                }
+            } catch (ignoredAttached) {
+                scheduleScan(owner);
+                return false;
+            }
+            return registerView(view,
+                String(owner || ownerFor(view, "unknown")), 0);
+        }, 2500);
+    }
+
     function scan(owner) {
         var views;
         var index;
@@ -940,6 +988,8 @@
         wrap(ClipHub.Editor, "openItem", "editor");
         wrap(ClipHub.Editor, "openTags", "tags");
         wrap(ClipHub.Filter, "showPanel", "filter");
+        wrap(ClipHub.Filter, "showRoot", "home");
+        wrap(ClipHub.Settings, "openPage", "settings");
         if (ClipHub.App) {
             originalAppHideUi = ClipHub.App.hideUi;
             ClipHub.App.hideUi = hideUi;
@@ -1072,7 +1122,7 @@
 
     ClipHub.Navigation = {
         MODULE_NAME: "ch_14_navigation_embedded",
-        MODULE_VERSION: 3,
+        MODULE_VERSION: 6,
         init: navigationInit,
         dispatchBack: function (reason) {
             return dispatchBack("", reason || "api_back");
@@ -1085,6 +1135,7 @@
             return checkBackground(reason || "api", fallback === true);
         },
         scanNow: function () { return scan(null); },
+        registerWindow: registerManagedWindow,
         getState: navigationState,
         shutdown: navigationShutdown
     };
@@ -1537,7 +1588,8 @@
             return false;
         }
         changed = ClipHub.Repository.updateItem(Number(translationState.itemId), {
-            content: translationState.translatedText
+            content: translationState.translatedText,
+            content_type: "text"
         });
         if (Number(changed) > 0) {
             translationState.replaceCount += 1;
@@ -1895,7 +1947,7 @@
     }
     ClipHub.Translation = {
         MODULE_NAME: "ch_12_translation",
-        MODULE_VERSION: 10,
+        MODULE_VERSION: 12,
         init: function (context) {
             translationConfig = { enabled: true, provider: "settings" };
             navigationInit(context || {});

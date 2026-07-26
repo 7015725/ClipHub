@@ -5,6 +5,7 @@
     var ClipboardManager = Packages.android.content.ClipboardManager;
     var Build = Packages.android.os.Build;
     var Thread = Packages.java.lang.Thread;
+    var ReentrantLock = Packages.java.util.concurrent.locks.ReentrantLock;
     var SENSITIVE_KEY = "android.content.extra.IS_SENSITIVE";
     var manager = null;
     var vibrator = null;
@@ -13,6 +14,7 @@
     var packageManager = null;
     var running = false;
     var sourceCache = {};
+    var processingLock = new ReentrantLock(true);
     var config = {
         callbackDedupMs: 750,
         mergeWindowMs: 2000,
@@ -41,7 +43,7 @@
         lastCopyHapticThreadId: null,
         lastCopyHapticThreadName: null,
         lastEvent: null,
-        lastObserved: { hash: "", at: 0 },
+        lastObserved: { hash: "", at: 0, seq: 0 },
         ownWrite: { hash: "", at: 0, expiresAt: 0, consumed: false },
         callbackThreadId: null,
         callbackThreadName: null
@@ -420,22 +422,19 @@
     }
 
     function recordText(text, hash, contentType, eventAt, metadata) {
-        var latest = ClipHub.Repository.listItems({limit: 1, offset: 0});
-        var row = latest && latest.length > 0 ? latest[0] : null;
-        var copiedAt;
-        var copyCount;
-        var id;
-        var patch;
-        var insert;
-        var sourceValues;
-        var key;
-        if (row !== null && String(row.normalized_hash) === hash) {
-            copiedAt = Number(row.last_copied_at || 0);
-            if (eventAt - copiedAt <= config.mergeWindowMs) {
+        return ClipHub.Database.transaction(function () {
+            var row = ClipHub.Repository.getLatestActiveItemByHash(hash);
+            var copyCount;
+            var id;
+            var patch;
+            var insert;
+            var sourceValues;
+            var key;
+            if (row !== null) {
                 copyCount = Number(row.copy_count || 1) + 1;
                 patch = {
                     content: text,
-                    content_type: contentType,
+                    content_type: "text",
                     is_sensitive: metadata.sensitive === true ? 1 : 0,
                     copy_count: copyCount,
                     last_copied_at: eventAt,
@@ -456,28 +455,27 @@
                     hash: hash
                 };
             }
-        }
-        insert = {
-            content: text,
-            contentType: contentType,
-            normalizedHash: hash,
-            lastCopiedAt: eventAt,
-            createdAt: eventAt,
-            updatedAt: eventAt,
-            sourcePackage: metadata.sourcePackage,
-            sourceLabel: metadata.sourceLabel,
-            sourceUid: metadata.sourceUid,
-            sourceConfidence: metadata.sourceConfidence,
-            isSensitive: metadata.sensitive === true
-        };
-        id = ClipHub.Repository.insertItem(insert);
-        return {
-            id: Number(id),
-            inserted: true,
-            merged: false,
-            copyCount: 1,
-            hash: hash
-        };
+            insert = {
+                content: text,
+                contentType: "text",
+                lastCopiedAt: eventAt,
+                createdAt: eventAt,
+                updatedAt: eventAt,
+                sourcePackage: metadata.sourcePackage,
+                sourceLabel: metadata.sourceLabel,
+                sourceUid: metadata.sourceUid,
+                sourceConfidence: metadata.sourceConfidence,
+                isSensitive: metadata.sensitive === true
+            };
+            id = ClipHub.Repository.insertItem(insert);
+            return {
+                id: Number(id),
+                inserted: true,
+                merged: false,
+                copyCount: 1,
+                hash: hash
+            };
+        });
     }
 
     function ignoredEvent(read, origin, eventAt) {
@@ -505,14 +503,14 @@
         return setLastEvent(event);
     }
 
-    function handlePrimaryClipChanged(origin) {
+    function handlePrimaryClipChangedUnlocked(origin) {
         var eventAt = now();
         var thread = Thread.currentThread();
         var read;
         var hash;
         var result;
-        var classified;
         var event;
+        var callbackDeltaMs;
         state.eventSeq += 1;
         state.callbackThreadId = Number(thread.getId());
         state.callbackThreadName = String(thread.getName());
@@ -523,10 +521,12 @@
             }
             hash = ClipHub.Repository.hashContent(read.text);
             if (state.ownWrite.hash === hash &&
-                    eventAt <= state.ownWrite.expiresAt) {
+                    eventAt >= Number(state.ownWrite.at || 0) &&
+                    eventAt <= Number(state.ownWrite.expiresAt || 0)) {
                 state.ownWrite.consumed = true;
                 state.lastObserved.hash = hash;
                 state.lastObserved.at = eventAt;
+                state.lastObserved.seq = state.eventSeq;
                 state.ignoredCount += 1;
                 event = {
                     seq: state.eventSeq,
@@ -542,9 +542,12 @@
                 emit("clipboard_ignored", event);
                 return setLastEvent(event);
             }
+            callbackDeltaMs = eventAt - Number(state.lastObserved.at || 0);
             if (state.lastObserved.hash === hash &&
-                    eventAt - state.lastObserved.at <= config.callbackDedupMs) {
+                    callbackDeltaMs >= 0 &&
+                    callbackDeltaMs <= Number(config.callbackDedupMs)) {
                 state.lastObserved.at = eventAt;
+                state.lastObserved.seq = state.eventSeq;
                 state.ignoredCount += 1;
                 event = {
                     seq: state.eventSeq,
@@ -562,14 +565,8 @@
             }
             state.lastObserved.hash = hash;
             state.lastObserved.at = eventAt;
-            classified = { type: "text", confidence: 100 };
-            result = recordText(
-                read.text,
-                hash,
-                "text",
-                eventAt,
-                read
-            );
+            state.lastObserved.seq = state.eventSeq;
+            result = recordText(read.text, hash, "text", eventAt, read);
             state.handledCount += 1;
             if (result.inserted) { state.insertedCount += 1; }
             if (result.merged) { state.mergedCount += 1; }
@@ -582,8 +579,7 @@
                 copyCount: Number(result.copyCount || 1),
                 hashPrefix: hash.substring(0, 12),
                 contentLength: read.contentLength,
-                contentType: classified && classified.type
-                    ? String(classified.type) : "text",
+                contentType: "text",
                 sensitive: read.sensitive === true,
                 sourcePackage: read.sourcePackage || null,
                 sourceLabel: read.sourceLabel || null,
@@ -599,6 +595,11 @@
             emit(result.inserted ? "clipboard_added" : "clipboard_merged", event);
             return setLastEvent(event);
         } catch (error) {
+            if (Number(state.lastObserved.seq || 0) === Number(state.eventSeq)) {
+                state.lastObserved.hash = "";
+                state.lastObserved.at = 0;
+                state.lastObserved.seq = 0;
+            }
             state.errorCount += 1;
             event = {
                 seq: state.eventSeq,
@@ -613,6 +614,15 @@
                 " error=" + event.error);
             emit("clipboard_error", event);
             return setLastEvent(event);
+        }
+    }
+
+    function handlePrimaryClipChanged(origin) {
+        processingLock.lock();
+        try {
+            return handlePrimaryClipChangedUnlocked(origin);
+        } finally {
+            processingLock.unlock();
         }
     }
 
@@ -748,7 +758,8 @@
             lastEvent: state.lastEvent,
             lastObserved: {
                 hash: state.lastObserved.hash,
-                at: state.lastObserved.at
+                at: state.lastObserved.at,
+                seq: Number(state.lastObserved.seq || 0)
             },
             ownWrite: copyOwnWrite(),
             callbackThreadId: state.callbackThreadId,
@@ -768,7 +779,7 @@
 
     ClipHub.Clipboard = {
         MODULE_NAME: "ch_04_clipboard",
-        MODULE_VERSION: 5,
+        MODULE_VERSION: 9,
         SENSITIVE_KEY: SENSITIVE_KEY,
         init: function (context) {
             androidContext = context && context.androidContext
