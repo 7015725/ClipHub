@@ -1,0 +1,53 @@
+name: Apply release review P2 merge fix
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - agent/release-review-p2
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'agent/release-review-p2-merge-fix'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/release-review-p2-merge-fix
+          fetch-depth: 0
+
+      - name: Apply controlled merge fix
+        run: python3 scripts/apply_release_review_p2_merge_fix.py
+
+      - name: Validate JavaScript and ES5
+        run: |
+          node --check ClipHub.js
+          for file in src/ch_*.js; do node --check "$file"; done
+          if [ -f scripts/validate_es5.py ]; then
+            python3 scripts/validate_es5.py
+          fi
+          git diff --check
+
+      - name: Validate source contracts
+        run: |
+          grep -q 'moduleSetVersion": "20260726.09"' module-manifest.json
+          grep -q 'sourceRef": "agent/release-review-p2-merge-fix"' module-manifest.json
+          grep -q 'getLatestActiveItemByHash' src/ch_06_repository.js
+          grep -q 'new ReentrantLock(true)' src/ch_04_clipboard.js
+          ! grep -q 'ClipHub.Classifier' src/ch_04_clipboard.js
+          ! grep -q 'ClipHub.Classifier' src/ch_10_editor.js
+          ! grep -q 'ClipHub.Classifier' src/ch_12_translation.js
+          ! grep -q '"Classifier"' src/ch_15_app.js
+
+      - name: Remove one-time files and commit
+        run: |
+          rm -f scripts/apply_release_review_p2_merge_fix.py
+          rm -f .github/workflows/apply-release-review-p2-merge-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: serialize exact-content clipboard merging"
+          git push origin HEAD:agent/release-review-p2-merge-fix
