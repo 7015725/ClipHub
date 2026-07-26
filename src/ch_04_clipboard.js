@@ -5,6 +5,7 @@
     var ClipboardManager = Packages.android.content.ClipboardManager;
     var Build = Packages.android.os.Build;
     var Thread = Packages.java.lang.Thread;
+    var ReentrantLock = Packages.java.util.concurrent.locks.ReentrantLock;
     var SENSITIVE_KEY = "android.content.extra.IS_SENSITIVE";
     var manager = null;
     var vibrator = null;
@@ -13,6 +14,7 @@
     var packageManager = null;
     var running = false;
     var sourceCache = {};
+    var processingLock = new ReentrantLock(true);
     var config = {
         callbackDedupMs: 750,
         mergeWindowMs: 2000,
@@ -421,48 +423,41 @@
 
     function recordText(text, hash, contentType, eventAt, metadata) {
         return ClipHub.Database.transaction(function () {
-            var row = ClipHub.Repository.getLatestActiveItem();
-            var copiedAt;
-            var copyDeltaMs;
+            var row = ClipHub.Repository.getLatestActiveItemByHash(hash);
             var copyCount;
             var id;
             var patch;
             var insert;
             var sourceValues;
             var key;
-            if (row !== null && String(row.normalized_hash) === hash) {
-                copiedAt = Number(row.last_copied_at || 0);
-                copyDeltaMs = Number(eventAt) - copiedAt;
-                if (copyDeltaMs >= 0 &&
-                        copyDeltaMs <= Number(config.mergeWindowMs)) {
-                    copyCount = Number(row.copy_count || 1) + 1;
-                    patch = {
-                        content: text,
-                        content_type: contentType,
-                        is_sensitive: metadata.sensitive === true ? 1 : 0,
-                        copy_count: copyCount,
-                        last_copied_at: eventAt,
-                        deleted_at: null
-                    };
-                    sourceValues = sourcePatch(metadata);
-                    for (key in sourceValues) {
-                        if (sourceValues.hasOwnProperty(key)) {
-                            patch[key] = sourceValues[key];
-                        }
+            if (row !== null) {
+                copyCount = Number(row.copy_count || 1) + 1;
+                patch = {
+                    content: text,
+                    content_type: "text",
+                    is_sensitive: metadata.sensitive === true ? 1 : 0,
+                    copy_count: copyCount,
+                    last_copied_at: eventAt,
+                    deleted_at: null
+                };
+                sourceValues = sourcePatch(metadata);
+                for (key in sourceValues) {
+                    if (sourceValues.hasOwnProperty(key)) {
+                        patch[key] = sourceValues[key];
                     }
-                    ClipHub.Repository.updateItem(Number(row.id), patch);
-                    return {
-                        id: Number(row.id),
-                        inserted: false,
-                        merged: true,
-                        copyCount: copyCount,
-                        hash: hash
-                    };
                 }
+                ClipHub.Repository.updateItem(Number(row.id), patch);
+                return {
+                    id: Number(row.id),
+                    inserted: false,
+                    merged: true,
+                    copyCount: copyCount,
+                    hash: hash
+                };
             }
             insert = {
                 content: text,
-                contentType: contentType,
+                contentType: "text",
                 lastCopiedAt: eventAt,
                 createdAt: eventAt,
                 updatedAt: eventAt,
@@ -508,13 +503,12 @@
         return setLastEvent(event);
     }
 
-    function handlePrimaryClipChanged(origin) {
+    function handlePrimaryClipChangedUnlocked(origin) {
         var eventAt = now();
         var thread = Thread.currentThread();
         var read;
         var hash;
         var result;
-        var classified;
         var event;
         var callbackDeltaMs;
         state.eventSeq += 1;
@@ -572,18 +566,7 @@
             state.lastObserved.hash = hash;
             state.lastObserved.at = eventAt;
             state.lastObserved.seq = state.eventSeq;
-            classified = ClipHub.Classifier &&
-                typeof ClipHub.Classifier.classify === "function" ?
-                ClipHub.Classifier.classify(read.text) :
-                { type: "text", confidence: 0 };
-            result = recordText(
-                read.text,
-                hash,
-                classified && classified.type ?
-                    String(classified.type) : "text",
-                eventAt,
-                read
-            );
+            result = recordText(read.text, hash, "text", eventAt, read);
             state.handledCount += 1;
             if (result.inserted) { state.insertedCount += 1; }
             if (result.merged) { state.mergedCount += 1; }
@@ -596,8 +579,7 @@
                 copyCount: Number(result.copyCount || 1),
                 hashPrefix: hash.substring(0, 12),
                 contentLength: read.contentLength,
-                contentType: classified && classified.type
-                    ? String(classified.type) : "text",
+                contentType: "text",
                 sensitive: read.sensitive === true,
                 sourcePackage: read.sourcePackage || null,
                 sourceLabel: read.sourceLabel || null,
@@ -632,6 +614,15 @@
                 " error=" + event.error);
             emit("clipboard_error", event);
             return setLastEvent(event);
+        }
+    }
+
+    function handlePrimaryClipChanged(origin) {
+        processingLock.lock();
+        try {
+            return handlePrimaryClipChangedUnlocked(origin);
+        } finally {
+            processingLock.unlock();
         }
     }
 
@@ -788,7 +779,7 @@
 
     ClipHub.Clipboard = {
         MODULE_NAME: "ch_04_clipboard",
-        MODULE_VERSION: 8,
+        MODULE_VERSION: 9,
         SENSITIVE_KEY: SENSITIVE_KEY,
         init: function (context) {
             androidContext = context && context.androidContext

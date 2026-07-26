@@ -183,6 +183,16 @@
         );
     }
 
+    function getLatestActiveItemByHash(normalizedHash) {
+        requireReady();
+        return ClipHub.Database.queryOne(
+            "SELECT * FROM clipboard_items WHERE deleted_at IS NULL " +
+            "AND normalized_hash = ? " +
+            "ORDER BY last_copied_at DESC, id DESC LIMIT 1",
+            [String(normalizedHash || "")]
+        );
+    }
+
     function listItems(options) {
         var where = [];
         var args = [];
@@ -740,7 +750,7 @@
 
     ClipHub.Repository = {
         MODULE_NAME: "ch_06_repository",
-        MODULE_VERSION: 12,
+        MODULE_VERSION: 13,
         init: function () {
             ready = !!(ClipHub.Database && ClipHub.Database.isOpen());
             if (!ready) { throw new Error("Database is unavailable"); }
@@ -752,6 +762,7 @@
         insertItem: insertItem,
         getItem: getItem,
         getLatestActiveItem: getLatestActiveItem,
+        getLatestActiveItemByHash: getLatestActiveItemByHash,
         listItems: listItems,
         listSourceOptions: listSourceOptions,
         updateItem: updateItem,

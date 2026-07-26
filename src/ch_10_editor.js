@@ -1643,7 +1643,6 @@
         var content;
         var id;
         var delivered;
-        var classified;
         var saved;
         if (contentInput === null) { return false; }
         try {
@@ -1654,15 +1653,10 @@
             if (content.length > 200000) {
                 throw new Error("内容长度不能超过 200000 字符");
             }
-            classified = ClipHub.Classifier &&
-                typeof ClipHub.Classifier.classify === "function" ?
-                ClipHub.Classifier.classify(content) :
-                { type: "text", confidence: 0 };
             saved = ClipHub.Repository.saveItemWithTags({
                 itemId: state.mode === "new" ? null : Number(state.itemId),
                 content: content,
-                contentType: classified && classified.type ?
-                    String(classified.type) : "text",
+                contentType: "text",
                 tagIds: editorDraftTagIds,
                 sourcePackage: null,
                 sourceLabel: "ClipHub 手动",
@@ -2784,7 +2778,7 @@
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 22,
+        MODULE_VERSION: 23,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;

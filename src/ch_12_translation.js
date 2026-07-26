@@ -1589,10 +1589,7 @@
         }
         changed = ClipHub.Repository.updateItem(Number(translationState.itemId), {
             content: translationState.translatedText,
-            content_type: ClipHub.Classifier &&
-                typeof ClipHub.Classifier.classify === "function" ?
-                ClipHub.Classifier.classify(
-                    translationState.translatedText).type : "text"
+            content_type: "text"
         });
         if (Number(changed) > 0) {
             translationState.replaceCount += 1;
@@ -1613,10 +1610,7 @@
         if (!translationState.translatedText) { return false; }
         id = Number(ClipHub.Repository.insertItem({
             content: translationState.translatedText,
-            contentType: ClipHub.Classifier &&
-                typeof ClipHub.Classifier.classify === "function" ?
-                ClipHub.Classifier.classify(
-                    translationState.translatedText).type : "text",
+            contentType: "text",
             sourcePackage: null,
             sourceLabel: "ClipHub 翻译",
             sourceUid: Number(Packages.android.os.Process.myUid()),
@@ -1953,7 +1947,7 @@
     }
     ClipHub.Translation = {
         MODULE_NAME: "ch_12_translation",
-        MODULE_VERSION: 11,
+        MODULE_VERSION: 12,
         init: function (context) {
             translationConfig = { enabled: true, provider: "settings" };
             navigationInit(context || {});
