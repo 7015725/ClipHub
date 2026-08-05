@@ -133,6 +133,7 @@
     var renderBatchCount = 0;
     var optionCountsCache = null;
     var optionCountsDirty = true;
+    var refreshGeneration = 0;
     var refreshScheduled = false;
     var refreshReason = "";
     var lastShowReused = false;
@@ -1485,6 +1486,7 @@
 
     function requestKeyboardOnMain() {
         var target = keywordInput;
+        var generation = searchGeneration;
         var focused = false;
         if (target === null) {
             return false;
@@ -1497,7 +1499,9 @@
         state.keyboardRequestCount += 1;
         mainHandler.postDelayed(new Packages.java.lang.Runnable({
             run: function () {
-                if (!state.panelAttached || target === null) {
+                if (!state.panelAttached || target === null ||
+                        target !== keywordInput || !searchExpanded ||
+                        generation !== searchGeneration) {
                     return;
                 }
                 try {
@@ -4452,6 +4456,7 @@
     function destroyPanelCache(reason) {
         stopFilterImeAvoidance(false);
         renderGeneration += 1;
+        refreshGeneration += 1;
         refreshScheduled = false;
         try {
             if (panelWindowRoot !== null && ClipHub.Window &&
@@ -4506,11 +4511,13 @@
     }
 
     function schedulePanelRefresh(origin, rebuildStructure, requestFocus) {
+        var generation = refreshGeneration;
         refreshReason = String(origin || refreshReason || "refresh");
         if (refreshScheduled || mainHandler === null) { return false; }
         refreshScheduled = true;
         mainHandler.post(new Packages.java.lang.Runnable({
             run: function () {
+                if (generation !== refreshGeneration) { return; }
                 refreshScheduled = false;
                 if (!state.panelAttached) { return; }
                 try {
@@ -4539,6 +4546,7 @@
     }
 
     function scheduleCoalescedRefresh(origin) {
+        var generation = refreshGeneration;
         refreshReason = String(origin || "event");
         if (refreshScheduled || mainHandler === null) {
             state.refreshCoalescedCount += 1;
@@ -4547,6 +4555,7 @@
         refreshScheduled = true;
         mainHandler.postDelayed(new Packages.java.lang.Runnable({
             run: function () {
+                if (generation !== refreshGeneration) { return; }
                 refreshScheduled = false;
                 if (state.panelAttached && panelDataDirty) {
                     schedulePanelRefresh(refreshReason, false, false);
@@ -4647,6 +4656,7 @@
         options = options || {};
         stopFilterImeAvoidance(false);
         renderGeneration += 1;
+        refreshGeneration += 1;
         refreshScheduled = false;
         hadTransientLayer = advancedVisible || searchExpanded;
         if (!state.panelAttached) {
@@ -4677,7 +4687,12 @@
             } finally {
                 if (panelWindowRoot !== null && ClipHub.Window &&
                         typeof ClipHub.Window.detachWindow === "function") {
-                    try { ClipHub.Window.detachWindow(panelWindowRoot); }
+                    try {
+                        ClipHub.Window.detachWindow(panelWindowRoot, {
+                            preservePreparedFrame:
+                                options.destroyCache !== true
+                        });
+                    }
                     catch (ignoredDetach) {}
                 }
                 searchGeneration += 1;
@@ -5136,7 +5151,7 @@
 
     ClipHub.Filter = {
         MODULE_NAME: "ch_11_filter",
-        MODULE_VERSION: 36,
+        MODULE_VERSION: 38,
 
         init: function (context) {
             stopFilterImeAvoidance(false);
@@ -5180,6 +5195,7 @@
             renderBatchCount = 0;
             optionCountsCache = null;
             optionCountsDirty = true;
+            refreshGeneration = 0;
             refreshScheduled = false;
             refreshReason = "";
             lastShowReused = false;

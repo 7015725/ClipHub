@@ -1790,11 +1790,13 @@
                 !options.windowManager) {
             throw new Error("Managed window binding is incomplete");
         }
-        detachWindow(options.rootView);
+        prepared = findPreparedFrame(options.rootView);
+        detachWindow(options.rootView, {
+            preservePreparedFrame: prepared !== null
+        });
         geometry = options.geometry || computeGeometry("shared", {
             useSaved: true
         });
-        prepared = findPreparedFrame(options.rootView);
         binding = {
             id: nextManagedId,
             role: String(options.role || "shared"),
@@ -1857,10 +1859,11 @@
         return getState();
     }
 
-    function detachWindow(rootView) {
+    function detachWindow(rootView, options) {
         var kept = [];
         var removed = null;
         var index;
+        options = options || {};
         if (!rootView) { return false; }
         for (index = 0; index < managedWindows.length; index += 1) {
             if (managedWindows[index].rootView === rootView) {
@@ -1886,7 +1889,9 @@
                         removed.rootView.setOnTouchListener(null);
                     }
                 } catch (ignoredOutside) {}
-                removePreparedFrame(removed.rootView);
+                if (options.preservePreparedFrame !== true) {
+                    removePreparedFrame(removed.rootView);
+                }
                 setResizeVisual(removed, false);
             } else {
                 kept.push(managedWindows[index]);
@@ -1900,7 +1905,9 @@
         state.primaryAttached = activeBinding !== null;
         state.primaryPinned = activeBinding !== null &&
             activeBinding.pinned === true;
-        removePreparedFrame(rootView);
+        if (options.preservePreparedFrame !== true) {
+            removePreparedFrame(rootView);
+        }
         return removed !== null;
     }
 
@@ -2188,7 +2195,7 @@
 
     ClipHub.Window = {
         MODULE_NAME: "ch_08_window",
-        MODULE_VERSION: 18,
+        MODULE_VERSION: 19,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
