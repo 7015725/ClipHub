@@ -26,6 +26,7 @@ jobs:
             .github/workflows/apply-startup-single-host-fix.yml \
             | base64 -d | gzip -d > tools/apply_cliphub_startup_finalizer.py
           python -m py_compile tools/apply_cliphub_startup_finalizer.py
+          nl -ba tools/apply_cliphub_startup_finalizer.py | sed -n '40,75p'
           python tools/apply_cliphub_startup_finalizer.py
 
       - name: Validate implementation
