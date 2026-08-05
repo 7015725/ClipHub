@@ -29,39 +29,48 @@ jobs:
           from pathlib import Path
           import hashlib
           import json
+          import re
 
           filter_path = Path("src/ch_11_filter.js")
           text = filter_path.read_text(encoding="utf-8")
 
-          old_remove = '''                if (panelWindowRoot !== null &&
-                          panelWindowRoot.isAttachedToWindow()) {
-                      windowManager.removeViewImmediate(panelWindowRoot);
-                  }'''
-          new_remove = '''                if (panelWindowRoot !== null) {
-                      /*
-                       * WindowManager.addView() registers the root before
-                       * View.isAttachedToWindow() necessarily becomes true.
-                       * A rapid hide must therefore submit removal
-                       * unconditionally instead of trusting that flag.
-                       */
-                      try {
-                          windowManager.removeViewImmediate(panelWindowRoot);
-                      } catch (removeError) {
-                          var stillAttached = false;
-                          try {
-                              stillAttached =
-                                  panelWindowRoot.isAttachedToWindow();
-                          } catch (ignoredAttachedCheck) {}
-                          if (stillAttached) { throw removeError; }
-                      }
-                  }'''
+          pattern = re.compile(
+              r'(?P<base>^[ \t]+)if \(panelWindowRoot !== null &&\n'
+              r'^[ \t]+panelWindowRoot\.isAttachedToWindow\(\)\) \{\n'
+              r'^[ \t]+windowManager\.removeViewImmediate\(panelWindowRoot\);\n'
+              r'(?P=base)\}',
+              re.MULTILINE
+          )
 
-          count = text.count(old_remove)
+          def replace_remove(match):
+              base = match.group("base")
+              return "\n".join([
+                  base + "if (panelWindowRoot !== null) {",
+                  base + "    /*",
+                  base + "     * WindowManager.addView() registers the root",
+                  base + "     * before View attachment is necessarily true.",
+                  base + "     * Rapid hide must request removal regardless",
+                  base + "     * of isAttachedToWindow().",
+                  base + "     */",
+                  base + "    try {",
+                  base + "        windowManager.removeViewImmediate(",
+                  base + "            panelWindowRoot);",
+                  base + "    } catch (removeError) {",
+                  base + "        var stillAttached = false;",
+                  base + "        try {",
+                  base + "            stillAttached =",
+                  base + "                panelWindowRoot.isAttachedToWindow();",
+                  base + "        } catch (ignoredAttachedCheck) {}",
+                  base + "        if (stillAttached) { throw removeError; }",
+                  base + "    }",
+                  base + "}"
+              ])
+
+          text, count = pattern.subn(replace_remove, text)
           if count != 2:
               raise SystemExit(
                   "Expected 2 guarded remove blocks, found %d" % count
               )
-          text = text.replace(old_remove, new_remove)
 
           old_version = '        MODULE_VERSION: 38,'
           new_version = '        MODULE_VERSION: 39,'
@@ -74,21 +83,21 @@ jobs:
           docs = docs_path.read_text(encoding="utf-8")
           section = '''
 
-          ## 快速显示后立即隐藏竞态修复（2026-08-06）
+## 快速显示后立即隐藏竞态修复（2026-08-06）
 
-          真机探针 004 的缓存预热、脏数据刷新和 5 批渲染均通过，但在连续 10 组“显示后立即隐藏”压力测试中，第 2–10 组出现窗口残留。
+真机探针 004 的缓存预热、脏数据刷新和 5 批渲染均通过，但在连续 10 组“显示后立即隐藏”压力测试中，第 2–10 组出现窗口残留。
 
-          根因是 `WindowManager.addView()` 已登记窗口后，`View.isAttachedToWindow()` 仍可能短暂为 `false`。旧关闭逻辑以该状态作为 `removeViewImmediate()` 的前置条件，导致极快关闭时跳过移除；随后窗口完成挂载并残留。
+根因是 `WindowManager.addView()` 已登记窗口后，`View.isAttachedToWindow()` 仍可能短暂为 `false`。旧关闭逻辑以该状态作为 `removeViewImmediate()` 的前置条件，导致极快关闭时跳过移除；随后窗口完成挂载并残留。
 
-          修复内容：
+修复内容：
 
-          - 关闭和销毁缓存时不再以 `isAttachedToWindow()` 决定是否请求移除。
-          - 只要缓存根 View 存在，就向 `WindowManager.removeViewImmediate()` 提交移除。
-          - 对已不在 WindowManager 中且确实未附着的 View 容错，避免重复关闭报错。
-          - `ch_11_filter.js` 模块版本升级为 39。
-          - 模块集版本升级为 `20260806.01`。
-          - 新增 `probes/cliphub_rapid_close_race_probe_005.js`，自动执行 20 组快速显示/隐藏并检查最终残留。
-          '''
+- 关闭和销毁缓存时不再以 `isAttachedToWindow()` 决定是否请求移除。
+- 只要缓存根 View 存在，就向 `WindowManager.removeViewImmediate()` 提交移除。
+- 对已不在 WindowManager 中且确实未附着的 View 容错，避免重复关闭报错。
+- `ch_11_filter.js` 模块版本升级为 39。
+- 模块集版本升级为 `20260806.01`。
+- 新增 `probes/cliphub_rapid_close_race_probe_005.js`，自动执行 20 组快速显示/隐藏并检查最终残留。
+'''
           if "## 快速显示后立即隐藏竞态修复（2026-08-06）" not in docs:
               docs_path.write_text(
                   docs.rstrip() + section + "\n",
@@ -147,8 +156,10 @@ jobs:
                   )
 
           text = Path("src/ch_11_filter.js").read_text(encoding="utf-8")
-          assert text.count("removeViewImmediate(panelWindowRoot)") == 2
+          assert text.count("removeViewImmediate(") >= 2
+          assert text.count("panelWindowRoot);") >= 2
           assert "MODULE_VERSION: 39" in text
+          assert "isAttachedToWindow()) {\n" not in text
           print("validation passed")
           PY
 
