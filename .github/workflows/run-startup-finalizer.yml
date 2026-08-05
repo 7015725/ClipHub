@@ -1,0 +1,63 @@
+name: Run ClipHub startup finalizer
+
+on:
+  push:
+    branches:
+      - tmp/cliphub-startup-finalizer-20260805
+    paths:
+      - .github/workflows/run-startup-finalizer.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: tmp/cliphub-startup-finalizer-20260805
+          fetch-depth: 0
+
+      - name: Extract and run finalizer
+        shell: bash
+        run: |
+          mkdir -p tools
+          sed -n '/^          H4sI/{s/^          //;p;q;}' \
+            .github/workflows/apply-startup-single-host-fix.yml \
+            | base64 -d | gzip -d > tools/apply_cliphub_startup_finalizer.py
+          python -m py_compile tools/apply_cliphub_startup_finalizer.py
+          python tools/apply_cliphub_startup_finalizer.py
+
+      - name: Validate implementation
+        shell: bash
+        run: |
+          node --check ClipHub.js
+          node --check src/ch_08_window.js
+          node --check src/ch_09_list.js
+          node --check src/ch_11_filter.js
+          node --check src/ch_15_app.js
+          node --check probes/cliphub_startup_performance_probe_001.js
+          python -m json.tool module-manifest.json >/dev/null
+          python - <<'PY'
+          import hashlib, json, pathlib
+          root = pathlib.Path('.')
+          manifest = json.loads((root / 'module-manifest.json').read_text())
+          for item in manifest['modules']:
+              data = (root / item['path']).read_bytes()
+              actual = hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+              assert actual == item['sha'], (item['name'], actual, item['sha'])
+          PY
+          grep -q "preservePreparedFrame" src/ch_08_window.js
+          grep -q "refreshGeneration" src/ch_11_filter.js
+
+      - name: Commit final implementation
+        shell: bash
+        run: |
+          rm -f .github/workflows/run-startup-finalizer.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "perf: finalize ClipHub window startup optimization"
+          git push origin HEAD:tmp/cliphub-startup-finalizer-20260805
