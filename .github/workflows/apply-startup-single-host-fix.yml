@@ -1,9 +1,9 @@
-name: Apply ClipHub startup single-host boundary fix
+name: Apply ClipHub startup finalizer
 
 on:
   push:
     branches:
-      - agent/optimize-cliphub-window-startup-v1-20260805
+      - tmp/cliphub-startup-finalizer-20260805
     paths:
       - .github/workflows/apply-startup-single-host-fix.yml
 
@@ -16,36 +16,49 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: agent/optimize-cliphub-window-startup-v1-20260805
+          ref: tmp/cliphub-startup-finalizer-20260805
           fetch-depth: 0
 
-      - name: Decode boundary patcher
+      - name: Decode finalizer
         shell: bash
         run: |
           mkdir -p tools
-          cat <<'PAYLOAD' | base64 -d | gzip -d > tools/apply_cliphub_single_host_fix.py
-          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
+          cat <<'PAYLOAD' | base64 -d | gzip -d > tools/apply_cliphub_startup_finalizer.py
+          H4sICFBcc2oAA2FwcGx5X2NsaXBodWJfc3RhcnR1cF9maW5hbGl6ZXIucHkA7TxrdxNHlt/9KwrlnFErkdsyHHKIvN4cMGbimRiztiGzBziirS5ZHbe6Nf0wdjI+h2SWATI8cibhmTCEPDYMs5hkN8kGDOHHjCXbn/IX5t6q6lb1S5aAYffD9Adb6r6vuvfWfVRVq+bYDdLUvLppzBGj0bQdjxyCrwPic11z8VHw9W3XtgYGDk1P7RuvzI7/ZpaMkvzQy2TMNJpv+HPkpOY0Bk8alm6fJK6nOZ7fJE3q1GynoVlVSpqOPUdJqTSskum6YdlkfGY3sS1zWSUvDx2zlJpvVT3Dtogyb9pzmlkg7x6zCFyLmkMOGCYFfoe06oI2T131bW1RUw1bxfsjEtjETBbUhNX0vRnPoVpDRpjKRJjyvTSMiZnpNAyJ/DTVdOpIKFMzb6WhyAzecgwvgrMvlcs+v1ajDtUTLPalcgjAE9Rn9iXATc2aV0EYw5rf5xtmlPxsHYTU03H4M5n4suvRRgYD9kxWp+VRy5OBNUt3bENXqzZ7pHIIQOkgMR8EnFwVfK/uz1WEv1Ukf6swf6uAv+VGYpiVI+PTMxNTB4HCsPRs7N/H3hxHd9hZku7uHft1ZXZicnzq8GxlEp/u2l2Sn49NHZwdPzgbhXm1xGA4VOjYln1SAa8mDvV8xyIH/cYcdRSuErXqOw6Mc9Zo0EnDNA1XKRRGyEqCSNW0XfpvvkE9c1lZ1EyfhhMFL6NG+F2yY3SUWL5pkl/8gnTu+JZOa4ZF9QgWXp6zDLIxSJUxUZA/qWpetU4UY96yHYa10kETH5NCUsexnVm65CnsU4QX4xNljUIzQJSVfWAuM75UpU2kl5AVL6FF7rJKCpY6T70xU3NBk/jxoNaAIRXIK0lSeOXKJEdeiZArjERB5ZF31UuKaAGtFF1Zru/Q/Yaj6IaTsOUOuKnSJcP1YBioHnajsQB/5RuGCwRo1bOdZRxj3LR1B4KyRU+ScZRFyY1plmV7pAoz16NED1CZCpLqQQagwL1zrm36HsUUgc6Z8ANp6ICSOWAMF4e92h6lBlE2IivOJ4eFNsJ9dyT6bI4HJnwIY5nZpxRiACZ49khXV+uQBwr7phX8ByGd/YfswWUqktzh2QODe3KFuAucrGMiUhRkBEQ4NRX/vQl3UPXBtEv1WTEAVWs2qaUzKoXgS+7YMSvXxeWSjhVQ82xxI2oUAvNcM82ECiIRhI8gxZhJu53ELBIarkg8mN8J8zGgFPOlmKIDiqZ4i5kAUiU3xdSM4FLTTLerRRgVlf1ThB6YZBmANdN360r/iuLovSlKM7wDMM2qQHQO0hqoCqK67XuTbkJfLHNRTK0sO0jkhavxpDEYAv5LkDc6NBOuhoEjYM7CQeA4nuPTkbhT8QSuuialTWVnqfvE7pDtOr/HLb1pG5anOL6Fgu6PhTYceo3XdMzc8FEJP3RwwOxVrVqnuUIxKnMOqwPHNitUMFKxOo1MHxY9kQcER0a2l7goallBnQTUieGShuG64FwZMZIx6jNI/mpm6qDa1BxItdGYmK1bFyQasxtQ4egRNQWCFkF09rQIoL/1KRRCCb0zjQIW6L6Te7oqPx5mHSTtehPotmLKMTeF5Epygwn9CBDhZ0Ghw77x1Dyhb4fbGYyACh6I4cYlBA89EHOvYNhZngQoFSTcGRywSroVUjeCopVlD/YlCD2hP2rMYAnVAZdkcERXFRKHuR5nbXBPpyb1eD0mIfHyGFqI8SXP0ZRcx3K5YqCezr0U54zMljg1odgOqUDTXbFC5QFe+HkbPkz9s/YCtTrMQjV6eD/Ck3eHvD1Y8lScEfscW9OrmuspnHwkjIpg3GkvpXgYKDiIEKDgYqzij4eUOEpGHc3tnDbDBYFCIRGIwzTU3fArCYHIaFbRkYxwIrIBFkxZk+rztIG+LLIJL4JTJlWSqWovsGIHc0rvfAVpSOswPj3CDudbRnQVXoFceZ/wu9+RnG/hEKzcNlEWkLLDqad5vjtVQ8qRMXRwscRGvhyUvC5/KUPVn0lb6kWBAcdI4yFoARv+SRXN7CFp7eT1qEqyAbtKhFNhjHfVuICwnJFBMhNHdq2SGdkEGg4w9Zm8QJQA0O24W3Ee2yfBHOeZK2a6UjShcHA5r/B8Fq8hw6FEHCcGFB1TqhvEMHBGCZtWJfuwaY3TC5wjvWmViKtu3T45ax+AvtDb72gnJ115BeBp0bOXC/CKeHD3ziVSZO7aHa2/M0vd5OKKjBidQBASuvi+5TeoY1RTVkz42shoUFZzgCQXjPcW9hiCwusCsSx7bcpyjW2a0FxPUg+5u1qjaVK3SBbocmJ6MXroXEePJ+oNnS6NpEBL98CQRGGAQKE0wnFAhYKlalJr3qsH918ZJcMJkwaaCHQlUI8ylONHQebjaZ4bXW4qBItILiR56LSEPjMSmIB0bceTMrRJazCJHWO+7knJGu+Cd7DbQC/FRpxat4hchbmFaZtDAg8NniQsEdc3ayWEecDNhNBco2ySliQxmTtECzVulEmoutQqNUwlSuDlwPW4MDgDhkcy0BvaklIqis+GFaMEiEUOX8jUjrBmdkr0IbA6xju0R2ft4uDxPOA3mGt213WWH0dG2tWNkQ88SBtuzPuEYuJtvw05pRxlGEskoHqj4Tcm3RgY+VdSCiKDe7R0XESHODbVDc1C5BSPLKm7481u87XdmcCvJaDBRbrIlgziQtiEJ2UIry1SR5unPZNnruqASnVFQcsMRdEK4P7DpRJMoCH2XzCVzJXpqQ0NJkBWkbLXyyhTIM853tK0bXud5pXfww5pBj/9BhviZNMbVhpyV9khB1WHWD5I9IvhMsJo5uJIvC7CzYveenQG6iabdJttL8W74IBwzKp8RwVKoYpUA4WqLHRrhQ3P0My9/RZmJCcwsygeMVxjjske1lodXgXVN0IAUSTF7cwjUa/pFMufvWGnENocy7CZeHkTFK4JYNezHcoanvRqFyB8E70gFnHshTJf54xPfDRWmRsn7dER6rgwE8rRba0YJI5hyjKX92ueVmaaigHoILfjw5xapFMwLExClpsuUHW5Cjqd5o09tm98zywVChyhid0rQJViAKFjlTsf41KH7lPuaS0jhs6dH5+F6J35sD268LTDgZOVY14ZD7m27pt0hnqhQTquqsYfYgWREldd24fwPk1rEeTwbhYW9/Jy8CH+mCXz5dRAztbDpqnv0jGe8OJWkluRDJBa0C50AxLzQp+QVGiYhrec7mOswU/LAp1vKZsJPYSeuqFTDDx4UMFvDrKv8Xo20qZAPko0gD1EOIgkEhv2NbEX0VsnLmgk0PsfLDzpaawx82bUYnzWdy3CmJg8pvaYGJja0vvUHIsocnvOi1zeu6cpGC8peIMIvam8P/5pXDExJNp+SZQ0nKBHYw1TiiLxYiKUA5VDoZ8OxnXusSAk9C+WojMiSHDxkztjYVDQy+lwMc2qCbwwIWcwksNKOUIqde0jg4oDJsOjLSLmBB2URC0CgYMvxaO8rLNZe6/nwSCwrg36X7ShGn3YnYS0epJKRXreA6F9eMKgGyUBsA0pMPk0U0UWKQkgixTXJeMXVTijE3/aVdnSxBjnkZ7RMDXXGw+WdqOxP7hW0qYOtua9uWNqiOKDw6pMjeVDFtZSGK5sL0OqH2/LPp5t+xRgG3frfi5BkiMlpfchSTCYaAWIGSC6DJUSA3vNaU+RIlJTPV6RFLgnke1X4glRDE+UVclCng1EChjltOWUXDSkJPa2O0RCA3ajI1l5O1Jsim5LS4SVbsTCkNGVmBRYcoWYZkdSFWsvsBY53YfAgcURvbT17IxZ3CNWYvL1hpc2WTqYkTVucV4seR5OIkdF6xg/PtfLYZWUmhgvDA3R3iUzAPRR24qSPrv2wqvXIlcQS6WzQih0CM8gcVAHBxJnhoLsYJbZv5DEwgMXWZha4B3QDNN30tUeWzLo2D2Gm1rdbisc664yc6bscT3mhsA/c9Oca2QXVx5LX/plkz5N1sThNzHnLMOtZ6zwSXC6z5cyJt1OTJFwBztLD/HmLDzn1lkyKPKtfJelFqO2LPRX5BU12cnyTPwAX3KlmWPFVzRjU1cccBCLiTOJTd5DuPRTKg1PB6tJfCE0oJodafom/CKXqUTbHw99iQWHwIBlbvvUheIVJf24h1c33BGyghu7vNmNGbVHzSBufmBgempqlh1c9+pKpYIHtyqVAk5I21ykSgHPfUDoc48OHx8YGNBpDaRomlqVVmygqOB7F0Vim3oRF2cL5QGmLqDHyA6x9zLYPTzlgg0lO2Va8ZhqrKqtg8yjed+rDe7JFxhglacfhqCyLwqQ589gyvPHO6CU47yYW2oGRNdpHjr5SY1a/l1kvQKmWGrSKmZe26LgY+BURVLDhXzyLqMFIO8Cg6Pl4Z2l4zucFSFGk5/F5JIyWcS4lWCwRTJcwCAdHwTX0rzhVebAUytuXeMnObm8uuZpwegYLlUiwxc2Fi+tQAmsDStzeaRE8jA7wcoKFJ8KkikUAgo4b+fyx0oIwZ6odbqkG/MQyxQQ6CVyCOxJnUVK2LksEJe8Cf+DJTrjHU0cywM38Yyqq5K3pNdg7CboNYDRbeqCz3pA1KKgVc8m1bpmzVOxwD2099AEmaN1bdGAIDtHaxhgvTrli2zk8AQrvtSBiBflXac6VK1XSq9VTJBLfdvNFwfy+fzk1P7Db4ZTrUx2lopwN/XR8Gv4qNAbXYf3NEHeAzs3wiV2+YxpwCwG79Aa6LOu8EO9SRym8rfEO0SgbKjo6zYMvkE9jdm/4cM313cWDTCJ7YD/YB2uUyylhyC9a6yozlLSngo3TDicYB5wApyxYrO3B1zVsW3viAFzUz58Rm2QhZX+AVh4CxrXKlSrvkd/KW4pUDBBEMDDcLFQCvXpjLaIqROHLgUxmVkTRoHomB5BtEPi6wEH32RIShno/CnRO3y7aiMxlKaYIRH65Q73oPHMGOQL0GgX9071iDB3RBQRaiq+47hAm17aNpNDG/YiPy6V3ApKPWIgsQjCGa+LyIps3O7yFQM9/mMEFcQ75oocvOlxKH2ZQ764qFFXFuKnunJwuRR6EBe6VCiQfc0McILXCxJzRx5L4Japjp59BPJZRU4pmHsYRd+aTRUvRaywguW+EszqoOiKK/AZFNerRGnldaZwfeslkSb3FONjzMqkkMOgZ8B3W9hqBC5ye1CiQw1lafMgXo2NH/oTLCfCJMbeNsnIXMPDWF/i6ytZEyO4RAmr8qCgRiJEU7OoyT/jgYVsr38KYol4HL/S00R3HLwCJ2K71PYyW9kNfScbPQj7YIsxrOBNrLJM0Do1tWWwgahEoCTTasxSqH2oIOwmtcjcMqQlS2yF92USdvCCScwWg1wubsQb4yD7DSe+lMCDMhNwBvBx/1iP9cgSyDTVXEgG0JbnIhZ97rL8MtSJdI7rmWTNmJXpupXSHnOFQ+iBbFC4+u7GXhN1PbvJZ+FEg+5dtA0d3aBTeQZwfPNCGlpssTtzbBkZ+cWL9nSy96X6F6LQDkhd02cdzXIN6J/fhOmKa06avoj89ODYD1QdLtWcan18CUKRTvVENPu/V/NzGNHTzRBXiML8cFo0XbZjzBsWvpfDXhydYYd+fIeGb+ocsKuJVxSiszY4SsMoocBRAHwrQ9xJvIqXUBIA48LVGzBUk0bWIOMFY1dNx1ZgJZJqE1pHdmgu5YcIpn3L0kDr8e12x7fKJLJ4lLZuua295ZHvwP6eqixh8k0fdpxejDKrtn9eJsTgOy8H7oQ7Jz35n/ZOGFFSIRYfCSVGDPpCXObZIsOYDdWQW8WfEpFdq7/Zn6OLEM+exfTR4fNRC/RQwsw96IjbZPQF/frPfl4f/j8IGykugC+JsRt4lpPVasCoa/ToxczPN0L80yf68YkXH1r6cKu+S0S8tuk40sBSuo4+B7dNJ/QPlS21K3ou8gcbEDihiBa2rgt0ec7WHD3I+aSGv+Ol8RZWl6eyVqvRKtu00MhvfaO6QHiD21dLK/2uA2P3a8F+yppMfQHD05x5iuuMIOdJ29HZL2PFFhVrWKZs10s9R36R8MaL7NToliHbU00EvLJyOUa/QO7t997Z1E9ZIOy2aNkjV7iVvYYiYDEoybpFMjuinUpXMrH4Flf/0w28b5PEF+t2vbrtet6uPeF63l5dZ3txDvVdjPX81+7YCQLSgFkLNTh7jZ7td6sD/LfH+OH9YIs4P+Q1mkM9/WIZCl8YADPKdFTDZZvMSrBXzJ4Fu8MyYLeNYjxOw/FfIhMW4UeFXTY2/gN9hktoY47qaNU56ho6ZdvmuB8NPuSoSd6dXwQU48b9485Gdp6/oNT7yCUqYg+d/96VIjbUR2fxWDDfkK3YC+xrQUaS9p87gqZuOL9EDjd1/AksA0+ZoQU18UttHqT4Ad2uxgcDt9whsS7a/n514+7V1of3Wx/caZ/6evP3j9cfXWudv3JkWG3oecQGxIBGV6uEoOFeOVNz/jWVtM5+tnX9S3ICt51V3HZWCifI+o/31n+8uPWfV7Zuf7915kLrywsbN/4Dvra+vdS+9dXm/c//dup98O2AxvqTmxuXr8dotC7ean96rnX2ZuvrP3Kknx+d33rvSev0hfbHD1qXrpETfGMaQP90vvXlla3f3yG4Rw2sOBYMdfP+vfUH535+9En7xhWuCK6C9R8vrP90c/N7APgKSLU/+Q4lyh7o8DCM9PM/tz74DDV66Yv2+fc3Hz/+26n3YFDt/7q9sXatdfYH8fXcg9aF2xvnzqBUq+fbl79r//jf7VsfbZ662r76Q+ve1fbq99Lwnz9lPPzBSe9Ug83q9p3brZtXW5/eaV9f3Tp1o3XhR2ACSELz4WYoW/oHPW/cXsVHjz5q3bsGBuRCtT68uL52Yf3xk42P78jb3wDP1b/x/oPWmTUU9r3Vjcd/QTFPf7v+8K+tM5+tP76MOn90Y+v6hY2HX0fE3IVe9L/tK9+sr621PrgNaFsfr258cq219sPmk1viJlPR+toXW9dPtz+7vXX3PHI9/T9bV++BWK0nf906dQs97dEpzqZ97uvN2+fbV7/m6Ny6Dc1ZYEtb+ZdeIq21h5urq+3v/7h5//LW7Yeth5dQIj4huRtAcAU4PnPaFz/f+tNZPJPDKZMTfYYN8NJL9zfP3AUXRNud/ZDsLBEwcOiY7Ws/bXz5cGjrxoebVy+1frq7cfE+GmLt1ubq7Z8f3UDWg+DykbO5J6R70jnbxG1xZDZyXzr9yu5zY+NU/fgOynX5GzBk6w+nW6sPWt98u7F2l99E60ieKT9i2mF64jbYvL/WunSlffbK5k8ftc48bJ27u/ndd+2bT9r3vmhfOYP2e/ADmuq9z4ErV2vrHEYKHri4QjY++KF96j2w38baR+0/f9r6w/XW6a82n3wIwBufrLYeXwZ4ckJEvCFhlBPMv8Ce+TymKWF3/ElBAw+6VHmGSTldhPHT78RZgSh+Wis1PnCQIuk4ziskuDdcCEO0HPThXka0n9QsowY1ZZnw93E9W5ywsTSTeFhLu1Dw4G/ROFScPCBQfjvL4hU/wo4TzbyxVwVf56TiCYIDDgaP2Vuz+RAaAPGGatqa7ioRGt0SRCEkcDQff58wfxyn0s7SzldLe0q71dKu/AC+t4VHcwjfdIwguvnj3Dr8a0x8xDqax3v54/zgGLvh1jXGJnI2SyLQm+wJQzFV6H6j2VFFUbzvXNHcqmGMHmDHDdkhBMsbZccs8+B2GeadstiRZI9ArbpQMyEuQ8wwalrVc/nJIfRQqNRwM9awREGHJ/qwRZpzIKbUVaY8h5oIcJQHUBWGDSFoKKDqDmnNprk8KELSoBSqB2vGkrrcMIPs49m2KcAr8UjGvM54BxcZlvMDwipRc4AcwfE9prvgx8E6J/jYbd8yDWtBKQz8HfnkmGrSWQAA
           PAYLOAD
-          python -m py_compile tools/apply_cliphub_single_host_fix.py
+          python -m py_compile tools/apply_cliphub_startup_finalizer.py
 
-      - name: Apply boundary fix
-        run: python tools/apply_cliphub_single_host_fix.py
+      - name: Apply finalizer
+        run: python tools/apply_cliphub_startup_finalizer.py
 
-      - name: Validate changes
+      - name: Validate Rhino ES5 files and manifest
         shell: bash
         run: |
+          node --check ClipHub.js
           node --check src/ch_08_window.js
+          node --check src/ch_09_list.js
           node --check src/ch_11_filter.js
+          node --check src/ch_15_app.js
+          node --check probes/cliphub_startup_performance_probe_001.js
           python -m json.tool module-manifest.json >/dev/null
+          python - <<'PY'
+          import hashlib, json, pathlib
+          root = pathlib.Path('.')
+          manifest = json.loads((root / 'module-manifest.json').read_text())
+          for item in manifest['modules']:
+              data = (root / item['path']).read_bytes()
+              actual = hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+              assert actual == item['sha'], (item['name'], actual, item['sha'])
+          PY
           grep -q "preservePreparedFrame" src/ch_08_window.js
-          grep -q "preservePreparedFrame" src/ch_11_filter.js
+          grep -q "refreshGeneration" src/ch_11_filter.js
 
-      - name: Commit boundary fix
+      - name: Commit final implementation
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git diff --cached --check
-          git commit -m "fix: preserve single-host window cache metadata"
-          git push origin HEAD:agent/optimize-cliphub-window-startup-v1-20260805
+          git commit -m "perf: finalize ClipHub window startup optimization"
+          git push origin HEAD:tmp/cliphub-startup-finalizer-20260805
