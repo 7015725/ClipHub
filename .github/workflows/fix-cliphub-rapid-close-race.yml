@@ -1,0 +1,171 @@
+name: Fix ClipHub rapid close race
+
+on:
+  push:
+    branches:
+      - agent/cliphub-rapid-close-race-fix-20260806
+  pull_request:
+    branches:
+      - agent/optimize-cliphub-window-startup-v1-20260805
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Apply rapid-close race fix
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import json
+
+          filter_path = Path("src/ch_11_filter.js")
+          text = filter_path.read_text(encoding="utf-8")
+
+          old_remove = '''                if (panelWindowRoot !== null &&
+                          panelWindowRoot.isAttachedToWindow()) {
+                      windowManager.removeViewImmediate(panelWindowRoot);
+                  }'''
+          new_remove = '''                if (panelWindowRoot !== null) {
+                      /*
+                       * WindowManager.addView() registers the root before
+                       * View.isAttachedToWindow() necessarily becomes true.
+                       * A rapid hide must therefore submit removal
+                       * unconditionally instead of trusting that flag.
+                       */
+                      try {
+                          windowManager.removeViewImmediate(panelWindowRoot);
+                      } catch (removeError) {
+                          var stillAttached = false;
+                          try {
+                              stillAttached =
+                                  panelWindowRoot.isAttachedToWindow();
+                          } catch (ignoredAttachedCheck) {}
+                          if (stillAttached) { throw removeError; }
+                      }
+                  }'''
+
+          count = text.count(old_remove)
+          if count != 2:
+              raise SystemExit(
+                  "Expected 2 guarded remove blocks, found %d" % count
+              )
+          text = text.replace(old_remove, new_remove)
+
+          old_version = '        MODULE_VERSION: 38,'
+          new_version = '        MODULE_VERSION: 39,'
+          if text.count(old_version) != 1:
+              raise SystemExit("Filter module version marker mismatch")
+          text = text.replace(old_version, new_version)
+          filter_path.write_text(text, encoding="utf-8")
+
+          docs_path = Path("docs/ClipHub浮窗启动性能优化V1.md")
+          docs = docs_path.read_text(encoding="utf-8")
+          section = '''
+
+          ## 快速显示后立即隐藏竞态修复（2026-08-06）
+
+          真机探针 004 的缓存预热、脏数据刷新和 5 批渲染均通过，但在连续 10 组“显示后立即隐藏”压力测试中，第 2–10 组出现窗口残留。
+
+          根因是 `WindowManager.addView()` 已登记窗口后，`View.isAttachedToWindow()` 仍可能短暂为 `false`。旧关闭逻辑以该状态作为 `removeViewImmediate()` 的前置条件，导致极快关闭时跳过移除；随后窗口完成挂载并残留。
+
+          修复内容：
+
+          - 关闭和销毁缓存时不再以 `isAttachedToWindow()` 决定是否请求移除。
+          - 只要缓存根 View 存在，就向 `WindowManager.removeViewImmediate()` 提交移除。
+          - 对已不在 WindowManager 中且确实未附着的 View 容错，避免重复关闭报错。
+          - `ch_11_filter.js` 模块版本升级为 39。
+          - 模块集版本升级为 `20260806.01`。
+          - 新增 `probes/cliphub_rapid_close_race_probe_005.js`，自动执行 20 组快速显示/隐藏并检查最终残留。
+          '''
+          if "## 快速显示后立即隐藏竞态修复（2026-08-06）" not in docs:
+              docs_path.write_text(
+                  docs.rstrip() + section + "\n",
+                  encoding="utf-8"
+              )
+
+          manifest_path = Path("module-manifest.json")
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          manifest["moduleSetVersion"] = "20260806.01"
+
+          def git_blob_sha(path):
+              data = Path(path).read_bytes()
+              header = ("blob %d\0" % len(data)).encode("ascii")
+              return hashlib.sha1(header + data).hexdigest()
+
+          for module in manifest["modules"]:
+              module["sha"] = git_blob_sha(module["path"])
+
+          manifest_path.write_text(
+              json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8"
+          )
+          PY
+
+      - name: Validate JavaScript and manifest
+        shell: bash
+        run: |
+          node --check src/ch_11_filter.js
+          node --check probes/cliphub_rapid_close_race_probe_005.js
+          if grep -nE '\b(let|const|class)\b|=>|`' \
+              src/ch_11_filter.js \
+              probes/cliphub_rapid_close_race_probe_005.js; then
+            echo "Rhino ES5 forbidden syntax detected"
+            exit 1
+          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import json
+
+          manifest = json.loads(
+              Path("module-manifest.json").read_text(encoding="utf-8")
+          )
+          assert manifest["moduleSetVersion"] == "20260806.01"
+          assert manifest["sourceRef"] == \
+              "agent/optimize-cliphub-window-startup-v1-20260805"
+
+          for module in manifest["modules"]:
+              data = Path(module["path"]).read_bytes()
+              header = ("blob %d\0" % len(data)).encode("ascii")
+              actual = hashlib.sha1(header + data).hexdigest()
+              if actual != module["sha"]:
+                  raise SystemExit(
+                      "%s SHA mismatch: %s != %s" %
+                      (module["name"], actual, module["sha"])
+                  )
+
+          text = Path("src/ch_11_filter.js").read_text(encoding="utf-8")
+          assert text.count("removeViewImmediate(panelWindowRoot)") == 2
+          assert "MODULE_VERSION: 39" in text
+          print("validation passed")
+          PY
+
+      - name: Commit patched branch
+        shell: bash
+        run: |
+          rm -f .github/workflows/fix-cliphub-rapid-close-race.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/ch_11_filter.js module-manifest.json \
+              docs/ClipHub浮窗启动性能优化V1.md \
+              probes/cliphub_rapid_close_race_probe_005.js \
+              .github/workflows/fix-cliphub-rapid-close-race.yml
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "修复浮窗快速显示后立即隐藏竞态"
+          branch="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          git push origin "HEAD:${branch}"
