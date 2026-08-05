@@ -1,3 +1,4 @@
+# Diagnostic rerun 2
 name: Run ClipHub startup finalizer
 
 on:
