@@ -3,7 +3,7 @@ name: Run ClipHub startup finalizer
 on:
   push:
     branches:
-      - tmp/cliphub-startup-finalizer-20260805
+      - agent/cliphub-startup-finalizer-run-20260805
     paths:
       - .github/workflows/run-startup-finalizer.yml
 
@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: tmp/cliphub-startup-finalizer-20260805
+          ref: agent/cliphub-startup-finalizer-run-20260805
           fetch-depth: 0
 
       - name: Extract and run finalizer
@@ -60,4 +60,4 @@ jobs:
           git add -A
           git diff --cached --check
           git commit -m "perf: finalize ClipHub window startup optimization"
-          git push origin HEAD:tmp/cliphub-startup-finalizer-20260805
+          git push origin HEAD:agent/cliphub-startup-finalizer-run-20260805
