@@ -7,6 +7,7 @@
     var CountDownLatch = Packages.java.util.concurrent.CountDownLatch;
     var TimeUnit = Packages.java.util.concurrent.TimeUnit;
     var Thread = Packages.java.lang.Thread;
+    var System = Packages.java.lang.System;
     var View = Packages.android.view.View;
     var MotionEvent = Packages.android.view.MotionEvent;
     var ViewConfiguration = Packages.android.view.ViewConfiguration;
@@ -48,6 +49,9 @@
     var INPUT_FOCUS_DELAY_MS = 160;
     var INPUT_RETRY_DELAY_MS = 180;
     var INPUT_MAX_ATTEMPTS = 2;
+    var FIRST_RENDER_COUNT = 6;
+    var RENDER_BATCH_COUNT = 4;
+    var REFRESH_COALESCE_MS = 80;
 
     var androidContext = null;
     var appContext = null;
@@ -118,6 +122,36 @@
     var historyContainerView = null;
     var inputDispatchGeneration = 0;
     var inputDispatchPending = false;
+    var panelBuilt = false;
+    var panelBuiltRootMode = null;
+    var panelStructureDirty = true;
+    var panelDataDirty = true;
+    var panelDataVersion = 1;
+    var renderedDataVersion = 0;
+    var renderGeneration = 0;
+    var renderCursor = 0;
+    var renderBatchCount = 0;
+    var optionCountsCache = null;
+    var optionCountsDirty = true;
+    var refreshScheduled = false;
+    var refreshReason = "";
+    var lastShowReused = false;
+    var timeFormatter = null;
+    var performance = {
+        showGeneration: 0,
+        showStartedAtNs: 0,
+        windowAttachedAtNs: 0,
+        firstDrawAtNs: 0,
+        firstBatchReadyAtNs: 0,
+        fullRenderReadyAtNs: 0,
+        showToAttachMs: null,
+        showToFirstDrawMs: null,
+        showToFirstBatchMs: null,
+        showToFullRenderMs: null,
+        renderBatchCount: 0,
+        lastRefreshOrigin: "",
+        lastError: null
+    };
 
     var state = {
         applyCount: 0,
@@ -271,9 +305,72 @@
         resultCardCount: 0,
         resultSourceIconCount: 0,
         advancedDrawerVisible: false,
-        searchPageStyle: "reference_search_v4",
+        searchPageStyle: "reference_search_v14_fast_start",
+        panelBuilt: false,
+        panelStructureDirty: true,
+        panelDataDirty: true,
+        panelDataVersion: 1,
+        renderedDataVersion: 0,
+        contentReady: false,
+        lastShowReused: false,
+        panelCacheReuseCount: 0,
+        panelCacheBuildCount: 0,
+        panelCacheDestroyCount: 0,
+        renderBatchCount: 0,
+        firstRenderCount: FIRST_RENDER_COUNT,
+        renderBatchSize: RENDER_BATCH_COUNT,
+        refreshCoalescedCount: 0,
         lastError: null
     };
+
+    function nowNanos() {
+        return Number(System.nanoTime());
+    }
+
+    function elapsedMs(startNs, endNs) {
+        if (!startNs || !endNs || endNs < startNs) { return null; }
+        return Math.round(((endNs - startNs) / 1000000) * 1000) / 1000;
+    }
+
+    function resetShowPerformance(origin) {
+        performance.showGeneration += 1;
+        performance.showStartedAtNs = nowNanos();
+        performance.windowAttachedAtNs = 0;
+        performance.firstDrawAtNs = 0;
+        performance.firstBatchReadyAtNs = 0;
+        performance.fullRenderReadyAtNs = 0;
+        performance.showToAttachMs = null;
+        performance.showToFirstDrawMs = null;
+        performance.showToFirstBatchMs = null;
+        performance.showToFullRenderMs = null;
+        performance.renderBatchCount = 0;
+        performance.lastRefreshOrigin = String(origin || "show");
+        performance.lastError = null;
+        return performance.showGeneration;
+    }
+
+    function copyPerformance() {
+        return {
+            showGeneration: Number(performance.showGeneration),
+            showToAttachMs: performance.showToAttachMs,
+            showToFirstDrawMs: performance.showToFirstDrawMs,
+            showToFirstBatchMs: performance.showToFirstBatchMs,
+            showToFullRenderMs: performance.showToFullRenderMs,
+            renderBatchCount: Number(performance.renderBatchCount),
+            lastRefreshOrigin: String(performance.lastRefreshOrigin || ""),
+            lastError: performance.lastError
+        };
+    }
+
+    function markPanelDataDirty(reason) {
+        panelDataVersion += 1;
+        panelDataDirty = true;
+        state.panelDataDirty = true;
+        state.panelDataVersion = panelDataVersion;
+        state.contentReady = false;
+        refreshReason = String(reason || "data_changed");
+        return panelDataVersion;
+    }
 
     function dp(number) {
         return Math.max(1, Math.floor(Number(number) * density + 0.5));
@@ -1115,8 +1212,12 @@
 
     function formatTime(valueTime) {
         try {
-            return String(new SimpleDateFormat("HH:mm", Locale.getDefault())
-                .format(new Date(Number(valueTime || 0))));
+            if (timeFormatter === null) {
+                timeFormatter = new SimpleDateFormat(
+                    "HH:mm", Locale.getDefault());
+            }
+            return String(timeFormatter.format(
+                new Date(Number(valueTime || 0))));
         } catch (ignored) {
             return "";
         }
@@ -1329,9 +1430,7 @@
         var nextIds;
         var index;
         var deletedId;
-        if (!ready) {
-            return;
-        }
+        if (!ready) { return; }
         wasActive = isActive(value);
         if (payload && String(payload.action || "") === "tag_deleted") {
             deletedId = Number(payload.tagId);
@@ -1343,20 +1442,15 @@
             }
             value.tagIds = nextIds;
         }
-        if (!wasActive && !isActive(value) && !state.panelAttached) {
+        optionCountsDirty = true;
+        markPanelDataDirty("clipboard_event");
+        if (!state.panelAttached) { return; }
+        if (!wasActive && !isActive(value) && payload &&
+                String(payload.action || "") === "clipboard_merged") {
+            scheduleCoalescedRefresh("clipboard_merged");
             return;
         }
-        try {
-            apply({ fromEvent: true, origin: "clipboard_event" });
-            if (state.panelAttached) {
-                requireMain(runOnMainSync(function () {
-                    refreshResultsOnMain();
-                    return true;
-                }, 2500));
-            }
-        } catch (error) {
-            state.lastError = String(error);
-        }
+        scheduleCoalescedRefresh("clipboard_event");
     }
 
     function registerEvent(name) {
@@ -1395,6 +1489,7 @@
         if (target === null) {
             return false;
         }
+        startFilterImeAvoidance();
         try {
             focused = target.requestFocus();
         } catch (ignoredFocus) {}
@@ -1775,9 +1870,15 @@
     }
 
     function optionCounts() {
-        var sources = ClipHub.Repository.listSourceOptions();
-        var tags = ClipHub.Repository.listTags();
-        return { sources: sources, tags: tags };
+        if (optionCountsCache !== null && !optionCountsDirty) {
+            return optionCountsCache;
+        }
+        optionCountsCache = {
+            sources: ClipHub.Repository.listSourceOptions(),
+            tags: ClipHub.Repository.listTags()
+        };
+        optionCountsDirty = false;
+        return optionCountsCache;
     }
 
     function displayMetrics() {
@@ -1824,6 +1925,7 @@
         var size;
         var targetRoot;
         if (panelRoot === null || panelParams === null) { return false; }
+        if (!state.panelAttached) { return true; }
         if (panelWindowRoot !== null && ClipHub.Window &&
                 typeof ClipHub.Window.refreshWindow === "function") {
             ClipHub.Window.refreshWindow(panelWindowRoot,
@@ -2788,15 +2890,107 @@
         return true;
     }
 
+    function appendLoadMoreControl(colors) {
+        var params;
+        loadMoreView = null;
+        if (!resultHasMore || resultContainer === null) { return false; }
+        loadMoreView = makeText("加载更多", 11,
+            colors.accentStrong, true);
+        loadMoreView.setGravity(Gravity.CENTER);
+        loadMoreView.setPadding(dp(10), dp(10), dp(10), dp(10));
+        loadMoreView.setBackground(roundedBackground(
+            colors.accentSoft, colors.accentBorder, 12));
+        loadMoreView.setClickable(true);
+        loadMoreView.setFocusable(true);
+        loadMoreView.setContentDescription("加载更多剪贴板记录");
+        loadMoreView.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, {
+                onClick: function () { loadMoreResults(); }
+            }));
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(44));
+        params.topMargin = dp(2);
+        params.bottomMargin = dp(4);
+        resultContainer.addView(loadMoreView, params);
+        return true;
+    }
+
+    function finishResultRender(generation, colors) {
+        if (generation !== renderGeneration) { return false; }
+        appendLoadMoreControl(colors);
+        state.loadedResultCount = previewRows.length;
+        state.resultHasMore = resultHasMore;
+        state.resultPageLimit = resultPageLimit;
+        state.contentReady = true;
+        state.renderedDataVersion = panelDataVersion;
+        state.renderBatchCount = renderBatchCount;
+        renderedDataVersion = panelDataVersion;
+        panelDataDirty = false;
+        performance.fullRenderReadyAtNs = nowNanos();
+        performance.showToFullRenderMs = elapsedMs(
+            performance.showStartedAtNs, performance.fullRenderReadyAtNs);
+        performance.renderBatchCount = renderBatchCount;
+        updateResultCountOnMain();
+        attachDeleteUndoBanner();
+        if (mainHandler !== null) {
+            mainHandler.post(new Packages.java.lang.Runnable({
+                run: function () { updateResultScrollState(); }
+            }));
+        }
+        return true;
+    }
+
+    function renderResultBatch(generation, batchSize, colors) {
+        var end;
+        var index;
+        var params;
+        if (generation !== renderGeneration ||
+                resultContainer === null || !state.panelAttached) {
+            return false;
+        }
+        end = Math.min(previewRows.length,
+            renderCursor + Math.max(1, Number(batchSize)));
+        for (index = renderCursor; index < end; index += 1) {
+            params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+            params.bottomMargin = dp(6);
+            resultContainer.addView(makeResultCard(
+                previewRows[index], colors), params);
+        }
+        renderCursor = end;
+        renderBatchCount += 1;
+        state.renderBatchCount = renderBatchCount;
+        if (performance.firstBatchReadyAtNs === 0) {
+            performance.firstBatchReadyAtNs = nowNanos();
+            performance.showToFirstBatchMs = elapsedMs(
+                performance.showStartedAtNs,
+                performance.firstBatchReadyAtNs);
+        }
+        if (renderCursor < previewRows.length && mainHandler !== null) {
+            mainHandler.post(new Packages.java.lang.Runnable({
+                run: function () {
+                    renderResultBatch(generation,
+                        RENDER_BATCH_COUNT, colors);
+                }
+            }));
+            return true;
+        }
+        return finishResultRender(generation, colors);
+    }
+
     function refreshResultsOnMain() {
         var colors = palette();
         var index;
         var empty;
-        var params;
         var ids = [];
-        if (resultContainer === null) {
-            return false;
-        }
+        var generation;
+        if (resultContainer === null) { return false; }
+        renderGeneration += 1;
+        generation = renderGeneration;
+        renderCursor = 0;
+        renderBatchCount = 0;
+        state.contentReady = false;
         cancelActiveSwipe(false);
         resultContainer.removeAllViews();
         state.resultCardCount = 0;
@@ -2822,43 +3016,14 @@
                 new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT));
-            attachDeleteUndoBanner();
-            return true;
+            performance.firstBatchReadyAtNs = nowNanos();
+            performance.showToFirstBatchMs = elapsedMs(
+                performance.showStartedAtNs,
+                performance.firstBatchReadyAtNs);
+            return finishResultRender(generation, colors);
         }
-        for (index = 0; index < previewRows.length; index += 1) {
-            params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-            params.bottomMargin = dp(6);
-            resultContainer.addView(makeResultCard(
-                previewRows[index], colors), params);
-        }
-        loadMoreView = null;
-        if (resultHasMore) {
-            loadMoreView = makeText("加载更多", 11,
-                colors.accentStrong, true);
-            loadMoreView.setGravity(Gravity.CENTER);
-            loadMoreView.setPadding(dp(10), dp(10), dp(10), dp(10));
-            loadMoreView.setBackground(roundedBackground(
-                colors.accentSoft, colors.accentBorder, 12));
-            loadMoreView.setClickable(true);
-            loadMoreView.setFocusable(true);
-            loadMoreView.setContentDescription("加载更多剪贴板记录");
-            loadMoreView.setOnClickListener(new JavaAdapter(
-                View.OnClickListener, {
-                    onClick: function () { loadMoreResults(); }
-                }));
-            params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(44));
-            params.topMargin = dp(2);
-            params.bottomMargin = dp(4);
-            resultContainer.addView(loadMoreView, params);
-        }
-        state.loadedResultCount = previewRows.length;
-        state.resultHasMore = resultHasMore;
-        state.resultPageLimit = resultPageLimit;
-        attachDeleteUndoBanner();
-        return true;
+        return renderResultBatch(generation,
+            FIRST_RENDER_COUNT, colors);
     }
 
     function updateResultCountOnMain() {
@@ -3102,6 +3267,7 @@
             requestKeyboardOnMain();
         } else if (!showInput) {
             hideKeyboardOnMain();
+            stopFilterImeAvoidance(true);
         }
         return showInput;
     }
@@ -3599,14 +3765,15 @@
 
     function buildPanelContent(requestFocus) {
         var colors = palette();
-        var counts = optionCounts();
+        var counts = advancedVisible ? optionCounts() :
+            { sources: [], tags: [] };
         var handle;
         var params;
         var history;
         var bodyFrame;
         var resultArea;
 
-        if (!state.panelAttached || panelRoot === null) {
+        if (panelRoot === null) {
             return false;
         }
         panelRoot.removeAllViews();
@@ -4146,16 +4313,258 @@
         } : filterImeController.getState();
     }
 
+    function installFirstDrawProbe(rootView, generation) {
+        var observer;
+        var listener;
+        if (rootView === null) { return false; }
+        try {
+            observer = rootView.getViewTreeObserver();
+            listener = new JavaAdapter(
+                Packages.android.view.ViewTreeObserver.OnPreDrawListener, {
+                onPreDraw: function () {
+                    var currentObserver;
+                    try {
+                        currentObserver = rootView.getViewTreeObserver();
+                        if (currentObserver !== null &&
+                                currentObserver.isAlive()) {
+                            currentObserver.removeOnPreDrawListener(listener);
+                        }
+                    } catch (ignoredRemove) {}
+                    if (generation === performance.showGeneration &&
+                            performance.firstDrawAtNs === 0) {
+                        performance.firstDrawAtNs = nowNanos();
+                        performance.showToFirstDrawMs = elapsedMs(
+                            performance.showStartedAtNs,
+                            performance.firstDrawAtNs);
+                    }
+                    return true;
+                }
+            });
+            observer.addOnPreDrawListener(listener);
+            return true;
+        } catch (error) {
+            performance.lastError = String(error);
+            return false;
+        }
+    }
+
+    function createPanelCache(size, type, colors) {
+        panelRoot = new LinearLayout(appContext);
+        panelRoot.setOrientation(LinearLayout.VERTICAL);
+        panelRoot.setPadding(dp(12), dp(8), dp(12), dp(10));
+        panelRoot.setBackground(roundedBackground(colors.surface,
+            colors.stroke, 24));
+        if (Build.VERSION.SDK_INT >= 21) {
+            panelRoot.setElevation(dp(20));
+        }
+        panelManagedFrame = ClipHub.Window.createManagedFrame(
+            panelRoot, { accentColor: colors.accentStrong });
+        panelWindowRoot = panelManagedFrame.rootView;
+        primaryDragView = panelManagedFrame.dragView;
+        primaryResizeView = panelManagedFrame.resizeView;
+        panelParams = new WindowManager.LayoutParams(
+            size.width, size.height, type,
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
+                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED |
+                WindowManager.LayoutParams.FLAG_DIM_BEHIND,
+            PixelFormat.TRANSLUCENT);
+        panelParams.gravity = Gravity.TOP | Gravity.START;
+        panelParams.dimAmount = 0.44;
+        panelParams.softInputMode =
+            WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE |
+            WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN;
+        try {
+            panelParams.setTitle(rootMode ?
+                "ClipHub Primary Window" : "ClipHub Filter Panel");
+        } catch (ignoredTitle) {}
+        panelBuilt = true;
+        panelBuiltRootMode = rootMode;
+        panelStructureDirty = true;
+        state.panelBuilt = true;
+        state.panelCacheBuildCount += 1;
+        return true;
+    }
+
+    function attachPanelCache(size, generation) {
+        var thread = nowThread();
+        panelParams.width = size.width;
+        panelParams.height = size.height;
+        panelParams.gravity = Gravity.TOP | Gravity.START;
+        panelParams.x = Number(size.x || 0);
+        panelParams.y = Number(size.y || 0);
+        windowManager.addView(panelWindowRoot, panelParams);
+        state.panelAttached = true;
+        state.panelOpenCount += 1;
+        state.panelWindowType = Number(panelParams.type);
+        state.panelFlags = Number(panelParams.flags);
+        state.panelX = Number(size.x || 0);
+        state.panelY = Number(size.y || 0);
+        state.panelWidthPx = size.width;
+        state.panelHeightPx = size.height;
+        state.panelWidthDp = size.widthDp;
+        state.panelHeightDp = size.heightDp;
+        state.dimAmount = Number(panelParams.dimAmount);
+        state.modalWindow = true;
+        state.opaqueBackground = true;
+        state.panelAddThreadId = thread.id;
+        state.panelAddThreadName = thread.name;
+        state.primaryGeometryManaged = rootMode;
+        state.primaryResizeViewPresent = primaryResizeView !== null;
+        ClipHub.Window.attachWindow({
+            role: rootMode ? "primary" : "filter_overlay",
+            rootView: panelWindowRoot,
+            contentView: panelRoot,
+            layoutParams: panelParams,
+            windowManager: windowManager,
+            dragView: primaryDragView,
+            resizeView: primaryResizeView,
+            resizeVisual: panelManagedFrame.resizeVisual,
+            geometry: size,
+            onGeometryChanged: function (geometry) {
+                var previousWidth;
+                var nextWidth;
+                if (!geometry) { return; }
+                previousWidth = Number(state.panelWidthPx || 0);
+                nextWidth = Number(geometry.width || 0);
+                state.panelX = Number(geometry.x || 0);
+                state.panelY = Number(geometry.y || 0);
+                state.panelWidthPx = nextWidth;
+                state.panelHeightPx = Number(geometry.height || 0);
+                state.panelWidthDp = Number(geometry.widthDp || 0);
+                state.panelHeightDp = Number(geometry.heightDp || 0);
+                scheduleAdaptiveResultRefresh(previousWidth, nextWidth);
+            },
+            onRequestClose: function (reason) {
+                return closePanel({ restoreList: false,
+                    reason: String(reason || "managed_close") }).ok === true;
+            }
+        });
+        state.primaryGeometryManaged = true;
+        state.primaryDragViewPresent = primaryDragView !== null;
+        state.primaryResizeViewPresent = primaryResizeView !== null;
+        performance.windowAttachedAtNs = nowNanos();
+        performance.showToAttachMs = elapsedMs(
+            performance.showStartedAtNs, performance.windowAttachedAtNs);
+        installFirstDrawProbe(panelWindowRoot, generation);
+        return true;
+    }
+
+    function destroyPanelCache(reason) {
+        stopFilterImeAvoidance(false);
+        renderGeneration += 1;
+        refreshScheduled = false;
+        try {
+            if (panelWindowRoot !== null && ClipHub.Window &&
+                    typeof ClipHub.Window.detachWindow === "function") {
+                ClipHub.Window.detachWindow(panelWindowRoot);
+            }
+        } catch (ignoredDetach) {}
+        try {
+            if (panelWindowRoot !== null &&
+                    panelWindowRoot.isAttachedToWindow()) {
+                windowManager.removeViewImmediate(panelWindowRoot);
+            }
+        } catch (ignoredRemove) {}
+        state.panelAttached = false;
+        panelRoot = null;
+        panelWindowRoot = null;
+        panelManagedFrame = null;
+        panelParams = null;
+        primaryDragView = null;
+        primaryResizeView = null;
+        keywordInput = null;
+        searchView = null;
+        searchStatusRow = null;
+        searchInputRow = null;
+        searchToggleView = null;
+        searchClearView = null;
+        historyContainerView = null;
+        resetView = null;
+        closeView = null;
+        settingsButton = null;
+        advancedView = null;
+        applyView = null;
+        clearHistoryView = null;
+        resultContainer = null;
+        resultCountView = null;
+        resultBodyFrame = null;
+        resultScrollView = null;
+        loadMoreView = null;
+        drawerContainer = null;
+        drawerScrollView = null;
+        drawerContentView = null;
+        drawerFooterView = null;
+        resultCardViews = [];
+        resultActionViews = [];
+        panelBuilt = false;
+        panelBuiltRootMode = null;
+        panelStructureDirty = true;
+        state.panelBuilt = false;
+        state.panelCacheDestroyCount += 1;
+        state.lastError = reason ? String(reason) : state.lastError;
+        return true;
+    }
+
+    function schedulePanelRefresh(origin, rebuildStructure, requestFocus) {
+        refreshReason = String(origin || refreshReason || "refresh");
+        if (refreshScheduled || mainHandler === null) { return false; }
+        refreshScheduled = true;
+        mainHandler.post(new Packages.java.lang.Runnable({
+            run: function () {
+                refreshScheduled = false;
+                if (!state.panelAttached) { return; }
+                try {
+                    performance.lastRefreshOrigin = refreshReason;
+                    if (panelDataDirty || rebuildStructure === true ||
+                            resultContainer === null) {
+                        resetResultPaging();
+                        apply({ origin: refreshReason });
+                    }
+                    if (rebuildStructure === true ||
+                            panelStructureDirty || resultContainer === null) {
+                        buildPanelContent(requestFocus === true);
+                        panelStructureDirty = false;
+                        state.panelStructureDirty = false;
+                    } else {
+                        refreshResultsOnMain();
+                        updateResultCountOnMain();
+                    }
+                } catch (error) {
+                    state.lastError = String(error);
+                    performance.lastError = String(error);
+                }
+            }
+        }));
+        return true;
+    }
+
+    function scheduleCoalescedRefresh(origin) {
+        refreshReason = String(origin || "event");
+        if (refreshScheduled || mainHandler === null) {
+            state.refreshCoalescedCount += 1;
+            return false;
+        }
+        refreshScheduled = true;
+        mainHandler.postDelayed(new Packages.java.lang.Runnable({
+            run: function () {
+                refreshScheduled = false;
+                if (state.panelAttached && panelDataDirty) {
+                    schedulePanelRefresh(refreshReason, false, false);
+                }
+            }
+        }), REFRESH_COALESCE_MS);
+        return true;
+    }
+
     function showPanel(options) {
         var result;
+        var generation;
         options = options || {};
         rootMode = options.rootMode === true;
         state.rootMode = rootMode;
         state.primarySurface = rootMode ?
             "filter_root" : "filter_overlay";
-        if (!ready) {
-            throw new Error("ClipHub filter is not ready");
-        }
+        if (!ready) { throw new Error("ClipHub filter is not ready"); }
         loadHistory();
         advancedVisible = options.showAdvanced === true;
         searchExpanded = options.requestKeyboard === true &&
@@ -4164,17 +4573,20 @@
         state.advancedDrawerVisible = advancedVisible;
         restoreListOnClose = false;
         state.homeWindowSuspended = false;
+        generation = resetShowPerformance("panel_show");
         if (state.panelAttached) {
-            requireMain(runOnMainSync(function () {
-                buildPanelContent(options.requestKeyboard === true);
-                return true;
-            }, 2500));
-            return {
-                ok: true,
-                attached: true,
-                reused: true,
-                state: getPanelState()
-            };
+            lastShowReused = true;
+            state.lastShowReused = true;
+            state.panelCacheReuseCount += 1;
+            if (advancedVisible || searchExpanded) {
+                requireMain(runOnMainSync(function () {
+                    buildPanelContent(options.requestKeyboard === true);
+                    return true;
+                }, 2500));
+            }
+            return { ok: true, attached: true, reused: true,
+                contentReady: state.contentReady === true,
+                state: getPanelState() };
         }
         try {
             result = requireMain(runOnMainSync(function () {
@@ -4182,181 +4594,80 @@
                 var type = Build.VERSION.SDK_INT >= 26 ?
                     WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY :
                     WindowManager.LayoutParams.TYPE_SYSTEM_ALERT;
-                var thread = nowThread();
                 var colors = palette();
-                var windowRoot;
-                var rootParams;
-                var resizeParams;
-                panelRoot = new LinearLayout(appContext);
-                panelRoot.setOrientation(LinearLayout.VERTICAL);
-                panelRoot.setPadding(dp(12), dp(8), dp(12), dp(10));
-                panelRoot.setBackground(roundedBackground(colors.surface,
-                    colors.stroke, 24));
-                if (Build.VERSION.SDK_INT >= 21) {
-                    panelRoot.setElevation(dp(20));
+                var reused = panelBuilt && panelWindowRoot !== null &&
+                    panelBuiltRootMode === rootMode;
+                if (panelBuilt && panelBuiltRootMode !== rootMode) {
+                    destroyPanelCache("root_mode_changed");
+                    reused = false;
                 }
-                panelManagedFrame = ClipHub.Window.createManagedFrame(
-                    panelRoot, { accentColor: colors.accentStrong });
-                panelWindowRoot = panelManagedFrame.rootView;
-                primaryDragView = panelManagedFrame.dragView;
-                primaryResizeView = panelManagedFrame.resizeView;
-                windowRoot = panelWindowRoot;
-                panelParams = new WindowManager.LayoutParams(
-                    size.width, size.height, type,
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
-                        WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED |
-                        WindowManager.LayoutParams.FLAG_DIM_BEHIND,
-                    PixelFormat.TRANSLUCENT);
-                panelParams.gravity = Gravity.TOP | Gravity.START;
-                panelParams.x = Number(size.x || 0);
-                panelParams.y = Number(size.y || 0);
-                panelParams.dimAmount = 0.44;
-                panelParams.softInputMode =
-                    WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE |
-                    (rootMode ?
-                        WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN :
-                        WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
-                try {
-                    panelParams.setTitle(rootMode ?
-                        "ClipHub Primary Window" : "ClipHub Filter Panel");
-                } catch (ignoredTitle) {}
-                windowManager.addView(windowRoot, panelParams);
-                state.panelAttached = true;
-                state.panelOpenCount += 1;
-                state.panelWindowType = Number(type);
-                state.panelFlags = Number(panelParams.flags);
-                state.panelX = Number(size.x || 0);
-                state.panelY = Number(size.y || 0);
-                state.panelWidthPx = size.width;
-                state.panelHeightPx = size.height;
-                state.panelWidthDp = size.widthDp;
-                state.panelHeightDp = size.heightDp;
-                state.dimAmount = Number(panelParams.dimAmount);
-                state.modalWindow = true;
-                state.opaqueBackground = true;
-                state.panelAddThreadId = thread.id;
-                state.panelAddThreadName = thread.name;
-                state.primaryGeometryManaged = rootMode;
-                state.primaryResizeViewPresent = primaryResizeView !== null;
-                state.lastError = null;
-                try {
-                    resetResultPaging();
-                    apply({ origin: "panel_open" });
-                } catch (previewError) {
-                    state.lastError = String(previewError);
-                    previewRows = [];
+                if (!panelBuilt || panelWindowRoot === null) {
+                    createPanelCache(size, type, colors);
                 }
-                buildPanelContent(options.requestKeyboard !== false);
-                ClipHub.Window.attachWindow({
-                    role: rootMode ? "primary" : "filter_overlay",
-                    rootView: panelWindowRoot,
-                    contentView: panelRoot,
-                    layoutParams: panelParams,
-                    windowManager: windowManager,
-                    dragView: primaryDragView,
-                    resizeView: primaryResizeView,
-                    resizeVisual: panelManagedFrame.resizeVisual,
-                    geometry: size,
-                    onGeometryChanged: function (geometry) {
-                        var previousWidth;
-                        var nextWidth;
-                        if (!geometry) { return; }
-                        previousWidth = Number(state.panelWidthPx || 0);
-                        nextWidth = Number(geometry.width || 0);
-                        state.panelX = Number(geometry.x || 0);
-                        state.panelY = Number(geometry.y || 0);
-                        state.panelWidthPx = nextWidth;
-                        state.panelHeightPx = Number(geometry.height || 0);
-                        state.panelWidthDp = Number(geometry.widthDp || 0);
-                        state.panelHeightDp = Number(geometry.heightDp || 0);
-                        scheduleAdaptiveResultRefresh(previousWidth, nextWidth);
-                    },
-                    onRequestClose: function (reason) {
-                        return closePanel({ restoreList: false,
-                            reason: String(reason || "managed_close") }).ok === true;
-                    }
-                });
-                startFilterImeAvoidance();
-                state.primaryGeometryManaged = true;
-                state.primaryDragViewPresent = primaryDragView !== null;
-                state.primaryResizeViewPresent = primaryResizeView !== null;
-                return {
-                    ok: true,
-                    attached: true,
-                    reused: false,
-                    state: getPanelState()
-                };
+                lastShowReused = reused;
+                state.lastShowReused = reused;
+                if (reused) { state.panelCacheReuseCount += 1; }
+                attachPanelCache(size, generation);
+                if (resultContainer === null || panelStructureDirty) {
+                    schedulePanelRefresh("panel_first_content", true,
+                        options.requestKeyboard === true);
+                } else if (panelDataDirty ||
+                        renderedDataVersion !== panelDataVersion) {
+                    schedulePanelRefresh("panel_data_refresh", false,
+                        false);
+                } else {
+                    state.contentReady = true;
+                    performance.firstBatchReadyAtNs = nowNanos();
+                    performance.fullRenderReadyAtNs =
+                        performance.firstBatchReadyAtNs;
+                    performance.showToFirstBatchMs = elapsedMs(
+                        performance.showStartedAtNs,
+                        performance.firstBatchReadyAtNs);
+                    performance.showToFullRenderMs =
+                        performance.showToFirstBatchMs;
+                }
+                return { ok: true, attached: true, reused: reused,
+                    contentReady: state.contentReady === true,
+                    state: getPanelState() };
             }, 3000));
             return result;
         } catch (error) {
-            stopFilterImeAvoidance(false);
-            try {
-                if (panelWindowRoot !== null && ClipHub.Window &&
-                        typeof ClipHub.Window.detachWindow === "function") {
-                    ClipHub.Window.detachWindow(panelWindowRoot);
-                } else if (rootMode && ClipHub.Window &&
-                        typeof ClipHub.Window.detachPrimaryWindow === "function") {
-                    ClipHub.Window.detachPrimaryWindow();
-                }
-            } catch (ignoredDetach) {}
-            try {
-                if (panelWindowRoot !== null &&
-                        panelWindowRoot.isAttachedToWindow()) {
-                    windowManager.removeViewImmediate(panelWindowRoot);
-                } else if (panelRoot !== null &&
-                        panelRoot.isAttachedToWindow()) {
-                    windowManager.removeViewImmediate(panelRoot);
-                }
-            } catch (ignoredRemove) {}
-            state.panelAttached = false;
-            panelRoot = null;
-            panelWindowRoot = null;
-            panelManagedFrame = null;
-            panelParams = null;
-            primaryDragView = null;
-            primaryResizeView = null;
+            performance.lastError = String(error);
+            destroyPanelCache("attach_failed: " + String(error));
             rootMode = false;
             state.rootMode = false;
             state.primarySurface = "filter_overlay";
-            state.primaryGeometryManaged = false;
             throw error;
         }
     }
 
     function closePanel(options) {
         var result;
-        var wasRootMode = rootMode;
+        var hadTransientLayer;
         options = options || {};
         stopFilterImeAvoidance(false);
-        if (!state.panelAttached && panelRoot === null &&
-                panelWindowRoot === null) {
+        renderGeneration += 1;
+        refreshScheduled = false;
+        hadTransientLayer = advancedVisible || searchExpanded;
+        if (!state.panelAttached) {
+            if (options.destroyCache === true) {
+                destroyPanelCache(options.reason || "destroy");
+            }
             rootMode = false;
             state.rootMode = false;
             state.primarySurface = "filter_overlay";
-            state.primaryGeometryManaged = false;
             clearSelectedResult();
             clearDeleteUndo(true);
-            return {
-                ok: true,
-                attached: false,
-                alreadyClosed: true,
-                state: getPanelState()
-            };
+            return { ok: true, attached: false, alreadyClosed: true,
+                state: getPanelState() };
         }
         result = requireMain(runOnMainSync(function () {
             var thread = nowThread();
-            var targetRoot = panelWindowRoot !== null ?
-                panelWindowRoot : panelRoot;
             try {
                 hideKeyboardOnMain();
-                if (targetRoot !== null) {
-                    try {
-                        windowManager.removeViewImmediate(targetRoot);
-                    } catch (error) {
-                        if (targetRoot.isAttachedToWindow()) {
-                            throw error;
-                        }
-                    }
+                if (panelWindowRoot !== null &&
+                        panelWindowRoot.isAttachedToWindow()) {
+                    windowManager.removeViewImmediate(panelWindowRoot);
                 }
                 state.panelCloseCount += 1;
                 state.panelRemoveThreadId = thread.id;
@@ -4375,66 +4686,32 @@
                 clearCopyFeedback();
                 state.panelAttached = false;
                 state.inputFocused = false;
-                advancedVisible = false;
-                state.advancedDrawerVisible = false;
-                panelRoot = null;
-                panelWindowRoot = null;
-                panelManagedFrame = null;
-                panelParams = null;
-                primaryDragView = null;
-                primaryResizeView = null;
-                keywordInput = null;
-                searchView = null;
-                searchStatusRow = null;
-                searchInputRow = null;
-                searchToggleView = null;
-                searchClearView = null;
-                historyContainerView = null;
-                resetView = null;
-                closeView = null;
-                settingsButton = null;
-                advancedView = null;
-                applyView = null;
-                clearHistoryView = null;
-                resultContainer = null;
-                resultCountView = null;
-                resultBodyFrame = null;
-                resultActionViews = [];
-                deleteUndoView = null;
-                copyFeedbackView = null;
-                resultScrollView = null;
-                loadMoreView = null;
-                drawerContainer = null;
-                drawerScrollView = null;
-                drawerContentView = null;
-                drawerFooterView = null;
-                sourceViews = {};
-                tagViews = {};
-                pinnedViews = {};
-                sensitiveViews = {};
-                sortViews = {};
-                historyViews = [];
                 state.primaryGeometryManaged = false;
                 state.primaryDragViewPresent = false;
                 state.primaryResizeViewPresent = false;
             }
         }, 3000));
-        rootMode = false;
+        if (hadTransientLayer) {
+            panelStructureDirty = true;
+            state.panelStructureDirty = true;
+        }
+        advancedVisible = false;
         searchExpanded = false;
         state.searchExpanded = false;
+        state.advancedDrawerVisible = false;
+        rootMode = false;
         state.rootMode = false;
         state.primarySurface = "filter_overlay";
         restoreListOnClose = false;
         state.homeWindowSuspended = false;
         clearSelectedResult();
-        resultCardViews = [];
-        toolbarActionViews = {};
-        return {
-            ok: result === true,
-            attached: false,
-            alreadyClosed: false,
-            state: getPanelState()
-        };
+        lastShowReused = false;
+        state.lastShowReused = false;
+        if (options.destroyCache === true) {
+            destroyPanelCache(options.reason || "destroy");
+        }
+        return { ok: result === true, attached: false,
+            alreadyClosed: false, state: getPanelState() };
     }
 
     function handleBack() {
@@ -4487,6 +4764,20 @@
         return {
             attached: state.panelAttached,
             attachedToWindow: attachedToWindow,
+            panelBuilt: panelBuilt === true,
+            panelStructureDirty: panelStructureDirty === true,
+            panelDataDirty: panelDataDirty === true,
+            panelDataVersion: Number(panelDataVersion),
+            renderedDataVersion: Number(renderedDataVersion),
+            contentReady: state.contentReady === true,
+            lastShowReused: lastShowReused === true,
+            panelCacheReuseCount: Number(state.panelCacheReuseCount),
+            panelCacheBuildCount: Number(state.panelCacheBuildCount),
+            panelCacheDestroyCount: Number(state.panelCacheDestroyCount),
+            renderBatchCount: Number(renderBatchCount),
+            firstRenderCount: FIRST_RENDER_COUNT,
+            renderBatchSize: RENDER_BATCH_COUNT,
+            performance: copyPerformance(),
             focusableWindow: !notFocusable,
             inputPresent: keywordInput !== null,
             advancedKeywordInputPresent: false,
@@ -4825,13 +5116,27 @@
         state.resultCardCount = 0;
         state.resultSourceIconCount = 0;
         state.advancedDrawerVisible = false;
-        state.searchPageStyle = "reference_search_v13_formal_filter";
+        state.searchPageStyle = "reference_search_v14_fast_start";
+        state.panelBuilt = panelBuilt === true;
+        state.panelStructureDirty = panelStructureDirty === true;
+        state.panelDataDirty = panelDataDirty === true;
+        state.panelDataVersion = panelDataVersion;
+        state.renderedDataVersion = renderedDataVersion;
+        state.contentReady = false;
+        state.lastShowReused = false;
+        state.panelCacheReuseCount = 0;
+        state.panelCacheBuildCount = 0;
+        state.panelCacheDestroyCount = 0;
+        state.renderBatchCount = 0;
+        state.firstRenderCount = FIRST_RENDER_COUNT;
+        state.renderBatchSize = RENDER_BATCH_COUNT;
+        state.refreshCoalescedCount = 0;
         state.lastError = null;
     }
 
     ClipHub.Filter = {
         MODULE_NAME: "ch_11_filter",
-        MODULE_VERSION: 35,
+        MODULE_VERSION: 36,
 
         init: function (context) {
             stopFilterImeAvoidance(false);
@@ -4859,7 +5164,26 @@
             ready = true;
             eventListeners = [];
             panelRoot = null;
+            panelWindowRoot = null;
+            panelManagedFrame = null;
             panelParams = null;
+            primaryDragView = null;
+            primaryResizeView = null;
+            panelBuilt = false;
+            panelBuiltRootMode = null;
+            panelStructureDirty = true;
+            panelDataDirty = true;
+            panelDataVersion = 1;
+            renderedDataVersion = 0;
+            renderGeneration = 0;
+            renderCursor = 0;
+            renderBatchCount = 0;
+            optionCountsCache = null;
+            optionCountsDirty = true;
+            refreshScheduled = false;
+            refreshReason = "";
+            lastShowReused = false;
+            timeFormatter = null;
             advancedVisible = false;
             previewRows = [];
             searchGeneration = 0;
@@ -5145,7 +5469,8 @@
             try {
                 closePanel({
                     restoreList: false,
-                    reason: "shutdown"
+                    reason: "shutdown",
+                    destroyCache: true
                 });
             } catch (ignoredClose) {}
             unregisterEvents();

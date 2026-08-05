@@ -861,7 +861,7 @@ state.lastError = null;
 }
 ClipHub.List = {
 MODULE_NAME: "ch_09_list",
-MODULE_VERSION: 19,
+MODULE_VERSION: 20,
 LONG_TEXT_THRESHOLD: LONG_TEXT_THRESHOLD,
 init: function (context) {
 androidContext = context && context.androidContext ?
@@ -892,7 +892,7 @@ detailWidthPx = 0;
 detailHeightPx = 0;
 resetState();
 ready = true;
-refresh(false);
+items = [];
 return true;
 },
 show: show,

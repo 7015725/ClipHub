@@ -1,0 +1,66 @@
+# ClipHub 浮窗启动性能优化 V1
+
+## 分支
+
+`agent/optimize-cliphub-window-startup-v1-20260805`
+
+该分支的 `ClipHub.js` 已将模块更新源指向当前测试分支。测试完成并合并到 `main` 前，必须把 `DEFAULT_REF` 和 `module-manifest.json.sourceRef` 恢复为 `main`。
+
+## 本次统一改动
+
+1. 普通关闭只从 `WindowManager` 移除浮窗，保留已构建的 View 树。
+2. 再次显示时复用窗口树并重新接入共享几何服务。
+3. 数据没有变化时不重新查询和重建卡片。
+4. 数据变化时先挂载窗口，再在下一轮主线程任务刷新内容。
+5. 首批创建 6 张卡片，后续每批创建 4 张。
+6. 来源应用和标签仅在高级筛选抽屉打开时查询，并进行缓存。
+7. 隐藏期间的剪贴板事件只标记数据版本，不构建 UI。
+8. 连续事件在 80ms 内合并为一次刷新。
+9. 删除 `List.init()` 中与首页重复的首屏查询。
+10. 输入法避让仅在搜索输入获得焦点时启动。
+11. 增加窗口挂载、首次绘制、首批卡片和完整渲染耗时字段。
+
+## 状态字段
+
+通过现有 `status` 控制命令读取：
+
+- `contentReady`
+- `windowCacheBuilt`
+- `windowCacheReused`
+- `startupPerformance.showToAttachMs`
+- `startupPerformance.showToFirstDrawMs`
+- `startupPerformance.showToFirstBatchMs`
+- `startupPerformance.showToFullRenderMs`
+- `startupPerformance.renderBatchCount`
+
+筛选模块的 `getPanelState()` 还会返回：
+
+- `panelBuilt`
+- `panelStructureDirty`
+- `panelDataDirty`
+- `panelDataVersion`
+- `renderedDataVersion`
+- `panelCacheReuseCount`
+- `panelCacheBuildCount`
+- `panelCacheDestroyCount`
+
+## 建议测试顺序
+
+1. 完全停止旧 ClipHub 后台。
+2. 使用本分支 `ClipHub.js` 启动后台。
+3. 第一次显示浮窗，确认窗口先出现，随后卡片分批补齐。
+4. 关闭后立即再次显示，确认 `windowCacheReused=true`。
+5. 关闭浮窗，连续复制多条内容，再次显示并确认结果更新。
+6. 测试搜索、筛选、编辑、翻译、删除撤销、系统返回、外部点击、拖动、缩放和 IME 避让。
+7. 连续显示/关闭至少 50 次，确认没有重复窗口、残留遮罩或全屏不可点击。
+
+## 验收参考
+
+- `showToAttachMs` 中位数不超过 120ms。
+- `showToFirstBatchMs` 中位数不超过 250ms。
+- `showToFullRenderMs` 中位数不超过 600ms。
+- 若设备负载导致绝对值未达到，暖启动首次绘制至少下降 50%。
+
+## 回退机制
+
+如果缓存窗口的 root mode 变化或重新挂载失败，模块会销毁缓存并在下一次显示时重新创建，不会无限重试。ClipHub 完全停止时会强制销毁窗口缓存。

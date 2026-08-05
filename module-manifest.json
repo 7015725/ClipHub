@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260726.11",
+  "moduleSetVersion": "20260805.01",
   "entryMinVersion": 5,
-  "sourceRef": "main",
+  "sourceRef": "agent/optimize-cliphub-window-startup-v1-20260805",
   "modules": [
     {
       "name": "ch_01_base.js",
@@ -47,7 +47,7 @@
     {
       "name": "ch_09_list.js",
       "path": "src/ch_09_list.js",
-      "sha": "274f1b1f08a711f72b5cace7dc4ff7e12f1a2758"
+      "sha": "905f405a606c6116c5370d7cd0d0e7da7ddf29db"
     },
     {
       "name": "ch_10_editor.js",
@@ -57,7 +57,7 @@
     {
       "name": "ch_11_filter.js",
       "path": "src/ch_11_filter.js",
-      "sha": "9f93a4b29085b1909cbfdb8be11b86e6f8b0e576"
+      "sha": "19ab09b49c1da756749b7ada89d905bdc1d3c070"
     },
     {
       "name": "ch_12_translation.js",
@@ -77,7 +77,7 @@
     {
       "name": "ch_15_app.js",
       "path": "src/ch_15_app.js",
-      "sha": "3c84d021217a016a5f5bd06062f497dab5db0bbc"
+      "sha": "653eb0905ccc7ba2a91981909d330b796918f4f9"
     }
   ]
 }
