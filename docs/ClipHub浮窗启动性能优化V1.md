@@ -16,9 +16,11 @@
 6. 来源应用和标签仅在高级筛选抽屉打开时查询，并进行缓存。
 7. 隐藏期间的剪贴板事件只标记数据版本，不构建 UI。
 8. 连续事件在 80ms 内合并为一次刷新。
-9. 删除 `List.init()` 中与首页重复的首屏查询。
+9. 保留 `List.init()` 原有初始查询，避免改变 `status` 和外部 API 的初始化语义；暖启动优化不依赖该变更。
 10. 输入法避让仅在搜索输入获得焦点时启动。
 11. 增加窗口挂载、首次绘制、首批卡片和完整渲染耗时字段。
+12. Window 模块在普通卸载时保留 prepared frame，确保缓存重挂载后仍使用 single-host，外部点击、遮罩和共享几何不会降级。
+13. 刷新任务和键盘延迟任务增加代际校验，关闭后快速重开不会执行旧任务。
 
 ## 状态字段
 
@@ -43,6 +45,18 @@
 - `panelCacheReuseCount`
 - `panelCacheBuildCount`
 - `panelCacheDestroyCount`
+
+## 性能探针
+
+执行 `probes/cliphub_startup_performance_probe_001.js` 可自动完成 20 次暖启动显示/隐藏循环，统计：
+
+- `showToAttachMs`
+- `showToFirstDrawMs`
+- `showToFirstBatchMs`
+- `showToFullRenderMs`
+- 缓存复用次数、内容就绪次数和首次绘制就绪次数
+
+探针不会读取或输出剪贴板正文，并会恢复执行前的浮窗显示状态。结果写入运行目录的 `ClipHub/probes/`。
 
 ## 建议测试顺序
 
