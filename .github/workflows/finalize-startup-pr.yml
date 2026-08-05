@@ -29,24 +29,22 @@ jobs:
           from pathlib import Path
           path = Path('tools/apply_cliphub_startup_finalizer.py')
           text = path.read_text(encoding='utf-8')
-          old = """replace_once('src/ch_11_filter.js',
-          '''                        ClipHub.Window.detachWindow(panelWindowRoot);''',
-          '''                        ClipHub.Window.detachWindow(panelWindowRoot, {
-                                      preservePreparedFrame:
-                                          options.destroyCache !== true
-                                  });''')"""
-          new = """replace_once('src/ch_11_filter.js',
-          '''                    try { ClipHub.Window.detachWindow(panelWindowRoot); }''',
-          '''                    try {
-                                      ClipHub.Window.detachWindow(panelWindowRoot, {
-                                          preservePreparedFrame:
-                                              options.destroyCache !== true
-                                      });
-                                  }''')"""
-          count = text.count(old)
-          if count != 1:
-              raise RuntimeError('finalizer detach rule count=' + str(count))
-          path.write_text(text.replace(old, new), encoding='utf-8')
+          pairs = [
+              (
+                  "'''                        ClipHub.Window.detachWindow(panelWindowRoot);'''",
+                  "'''                    try { ClipHub.Window.detachWindow(panelWindowRoot); }'''"
+              ),
+              (
+                  r"'''                        ClipHub.Window.detachWindow(panelWindowRoot, {\n                            preservePreparedFrame:\n                                options.destroyCache !== true\n                        });'''",
+                  r"'''                    try {\n                        ClipHub.Window.detachWindow(panelWindowRoot, {\n                            preservePreparedFrame:\n                                options.destroyCache !== true\n                        });\n                    }'''"
+              )
+          ]
+          for old, new in pairs:
+              count = text.count(old)
+              if count != 1:
+                  raise RuntimeError('finalizer detach literal count=' + str(count))
+              text = text.replace(old, new)
+          path.write_text(text, encoding='utf-8')
           PY
           python -m py_compile tools/apply_cliphub_startup_finalizer.py
           python tools/apply_cliphub_startup_finalizer.py
