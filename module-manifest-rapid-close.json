@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260805.03",
-  "entryMinVersion": 5,
+  "moduleSetVersion": "20260806.05",
+  "entryMinVersion": 9,
   "sourceRef": "agent/optimize-cliphub-window-startup-v1-20260805",
   "modules": [
     {
@@ -78,6 +78,11 @@
       "name": "ch_15_app.js",
       "path": "src/ch_15_app.js",
       "sha": "653eb0905ccc7ba2a91981909d330b796918f4f9"
+    },
+    {
+      "name": "ch_16_rapid_close_fix.js",
+      "path": "src/ch_16_rapid_close_fix.js",
+      "sha": "1bfedfd2edd5429ae8e7208dfc21f16351708376"
     }
   ]
 }
