@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260807.01",
+  "moduleSetVersion": "20260807.02",
   "entryMinVersion": 5,
   "sourceRef": "agent/add-pagination-lazy-prefetch-20260807",
   "modules": [
@@ -9,7 +9,7 @@
     {"name":"ch_03_database.js","path":"src/ch_03_database.js","sha":"3c3ea319844cf9470aff385def30cac11bf95e3c"},
     {"name":"ch_04_clipboard.js","path":"src/ch_04_clipboard.js","sha":"847f28b25e8aa6c27ab490d4f89fdd96169588d2"},
     {"name":"ch_05_classifier.js","path":"src/ch_05_classifier.js","sha":"6fe9b6968749a175d5ad10d8e157e17e68975919"},
-    {"name":"ch_06_repository.js","path":"src/ch_06_repository.js","sha":"baf302962a7a8aa436a59b263df790229c500b6d"},
+    {"name":"ch_06_repository.js","path":"src/ch_06_repository.js","sha":"a3fff931b15e0ac1a1cdd855ede69fb419486f0b"},
     {"name":"ch_07_theme.js","path":"src/ch_07_theme.js","sha":"2d26ee75a5216a8ba58d15010f439596c98d0b30"},
     {"name":"ch_08_window.js","path":"src/ch_08_window.js","sha":"4ccff8067656ae51602290c884081795ec0f65ea"},
     {"name":"ch_09_list.js","path":"src/ch_09_list.js","sha":"274f1b1f08a711f72b5cace7dc4ff7e12f1a2758"},

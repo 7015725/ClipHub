@@ -1,0 +1,306 @@
+/* ClipHub 分页阶段 1：Repository 稳定分页只读测试。
+ * ShortX / Rhino ES5。运行前请完全停止其他 ClipHub 实例。
+ */
+(function (global) {
+    var URL = Packages.java.net.URL;
+    var URLEncoder = Packages.java.net.URLEncoder;
+    var BAOS = Packages.java.io.ByteArrayOutputStream;
+    var ReflectArray = Packages.java.lang.reflect.Array;
+    var JavaByte = Packages.java.lang.Byte;
+    var JavaString = Packages.java.lang.String;
+    var System = Packages.java.lang.System;
+
+    var OWNER = "7015725";
+    var REPO = "ClipHub";
+    var REF = "agent/add-pagination-lazy-prefetch-20260807";
+    var ENTRY_PATH = "ClipHub.js";
+    var EXPECTED_MODULE_SET_VERSION = "20260807.02";
+    var TEST_ENTRY_VERSION = 1;
+    var RUNTIME_NAME = "ClipHubPaginationRepositoryStage1";
+    var PAGE_SIZE = 100;
+
+    function closeQuietly(value) {
+        if (value !== null && value !== undefined) {
+            try { value.close(); } catch (ignored) {}
+        }
+    }
+
+    function errorText(error) {
+        try {
+            if (error && error.javaException) {
+                return String(error.javaException.getClass().getName()) +
+                    ": " + String(error);
+            }
+        } catch (ignored) {}
+        return String(error);
+    }
+
+    function encodeSegment(value) {
+        return String(URLEncoder.encode(String(value), "UTF-8"))
+            .replace(/\+/g, "%20");
+    }
+
+    function readBytes(stream) {
+        var output = new BAOS();
+        var buffer = ReflectArray.newInstance(JavaByte.TYPE, 8192);
+        var count;
+        try {
+            while ((count = stream.read(buffer)) >= 0) {
+                if (count > 0) { output.write(buffer, 0, count); }
+            }
+            return output.toByteArray();
+        } finally {
+            closeQuietly(stream);
+            closeQuietly(output);
+        }
+    }
+
+    function fetchEntry() {
+        var url = "https://raw.githubusercontent.com/" + OWNER + "/" +
+            REPO + "/" + encodeSegment(REF) + "/" + ENTRY_PATH +
+            "?paginationRepositoryStage1=" +
+            Number(System.currentTimeMillis());
+        var connection = null;
+        var code;
+        var bytes;
+        var text;
+        try {
+            connection = new URL(url).openConnection();
+            connection.setConnectTimeout(10000);
+            connection.setReadTimeout(20000);
+            connection.setUseCaches(false);
+            connection.setRequestProperty("Accept-Encoding", "identity");
+            connection.setRequestProperty("Cache-Control", "no-cache");
+            connection.setRequestProperty(
+                "User-Agent",
+                "ClipHub-Pagination-Repository-Stage1/1"
+            );
+            code = Number(connection.getResponseCode());
+            bytes = readBytes(code >= 200 && code < 300 ?
+                connection.getInputStream() :
+                connection.getErrorStream());
+            text = String(new JavaString(bytes, "UTF-8"));
+            if (code < 200 || code >= 300) {
+                throw new Error("ClipHub entry HTTP " + code + ": " +
+                    text.substring(0, 400));
+            }
+            return text;
+        } finally {
+            if (connection !== null) {
+                try { connection.disconnect(); } catch (ignored) {}
+            }
+        }
+    }
+
+    function rowIds(rows) {
+        var output = [];
+        var index;
+        rows = rows || [];
+        for (index = 0; index < rows.length; index += 1) {
+            output.push(Number(rows[index].id));
+        }
+        return output;
+    }
+
+    function sameIds(left, right) {
+        var index;
+        if (left.length !== right.length) { return false; }
+        for (index = 0; index < left.length; index += 1) {
+            if (Number(left[index]) !== Number(right[index])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function uniqueCount(values) {
+        var seen = {};
+        var count = 0;
+        var index;
+        for (index = 0; index < values.length; index += 1) {
+            if (!seen[String(values[index])]) {
+                seen[String(values[index])] = true;
+                count += 1;
+            }
+        }
+        return count;
+    }
+
+    function readNumberPages(repository, pageSize) {
+        var first = repository.listItemPage({
+            mode: "number",
+            page: 1,
+            pageSize: pageSize,
+            includeTotal: true,
+            sortMode: "latest"
+        });
+        var output = rowIds(first.rows);
+        var page;
+        var result;
+        for (page = 2; page <= first.totalPages; page += 1) {
+            result = repository.listItemPage({
+                mode: "number",
+                page: page,
+                pageSize: pageSize,
+                sortMode: "latest"
+            });
+            output = output.concat(rowIds(result.rows));
+        }
+        return {
+            ids: output,
+            totalCount: Number(first.totalCount),
+            totalPages: Number(first.totalPages)
+        };
+    }
+
+    function readAppendPages(repository, pageSize) {
+        var output = [];
+        var cursor = null;
+        var result;
+        var loops = 0;
+        do {
+            result = repository.listItemPage({
+                mode: "append",
+                pageSize: pageSize,
+                cursor: cursor,
+                sortMode: "latest"
+            });
+            output = output.concat(rowIds(result.rows));
+            cursor = result.endCursor;
+            loops += 1;
+            if (loops > 100000) {
+                throw new Error("append pagination loop overflow");
+            }
+        } while (result.hasMore && cursor !== null);
+        return { ids: output, loops: loops };
+    }
+
+    function run() {
+        var previousOptions = global.ClipHubBootstrapOptions;
+        var bootstrap;
+        var repository;
+        var numberPages;
+        var appendPages;
+        var sample;
+        var hydrated;
+        var tagMap;
+        var validBounds;
+        var ok;
+
+        if (global.ClipHub && global.ClipHub.App &&
+                typeof global.ClipHub.App.isStarted === "function" &&
+                global.ClipHub.App.isStarted()) {
+            throw new Error("请先完全停止当前 ClipHub 后台");
+        }
+
+        try {
+            global.ClipHubBootstrapOptions = {
+                remoteRef: REF,
+                runtimeName: RUNTIME_NAME
+            };
+            global.ClipHubBootstrapResult = null;
+            eval(fetchEntry());
+            bootstrap = global.ClipHubBootstrapResult || {};
+            repository = global.ClipHub && global.ClipHub.Repository;
+            if (!bootstrap.ok || !repository ||
+                    Number(repository.MODULE_VERSION) !== 14 ||
+                    String(bootstrap.sync &&
+                        bootstrap.sync.moduleSetVersion || "") !==
+                        EXPECTED_MODULE_SET_VERSION) {
+                throw new Error("bootstrap identity mismatch");
+            }
+
+            numberPages = readNumberPages(repository, PAGE_SIZE);
+            appendPages = readAppendPages(repository, PAGE_SIZE);
+            sample = numberPages.ids.slice(0, 25).reverse();
+            hydrated = rowIds(repository.listItemsByIds(sample));
+            tagMap = repository.listItemTagMapChunked(
+                numberPages.ids.slice(0, 1000)
+            );
+            validBounds =
+                Number(repository.MIN_PAGE_SIZE) === 5 &&
+                Number(repository.DEFAULT_PAGE_SIZE) === 100 &&
+                Number(repository.MAX_PAGE_SIZE) === 1000 &&
+                Number(repository.TAG_ID_CHUNK_SIZE) === 400;
+
+            ok = numberPages.totalCount === numberPages.ids.length &&
+                uniqueCount(numberPages.ids) ===
+                    numberPages.ids.length &&
+                uniqueCount(appendPages.ids) ===
+                    appendPages.ids.length &&
+                sameIds(numberPages.ids, appendPages.ids) &&
+                sameIds(sample, hydrated) &&
+                validBounds;
+
+            return {
+                ok: ok,
+                project: "ClipHub",
+                testEntry: "pagination_repository_stage1",
+                testEntryVersion: TEST_ENTRY_VERSION,
+                sourceRef: REF,
+                expectedModuleSetVersion:
+                    EXPECTED_MODULE_SET_VERSION,
+                repositoryModuleVersionExpected: 14,
+                totalCount: numberPages.totalCount,
+                totalPagesAt100: numberPages.totalPages,
+                numberResultCount: numberPages.ids.length,
+                appendResultCount: appendPages.ids.length,
+                appendLoopCount: appendPages.loops,
+                duplicateNumberCount:
+                    numberPages.ids.length -
+                    uniqueCount(numberPages.ids),
+                duplicateAppendCount:
+                    appendPages.ids.length -
+                    uniqueCount(appendPages.ids),
+                orderMatches: sameIds(
+                    numberPages.ids, appendPages.ids),
+                hydrationOrderMatches:
+                    sameIds(sample, hydrated),
+                chunkedTagItemCount:
+                    Object.keys(tagMap).length,
+                pageSizeBounds: {
+                    minimum: repository.MIN_PAGE_SIZE,
+                    defaultValue: repository.DEFAULT_PAGE_SIZE,
+                    maximum: repository.MAX_PAGE_SIZE,
+                    tagChunk: repository.TAG_ID_CHUNK_SIZE
+                },
+                nextStage:
+                    "pagination_settings_and_ui_state_machine",
+                bootstrap: bootstrap
+            };
+        } finally {
+            try {
+                if (global.ClipHub && global.ClipHub.App &&
+                        global.ClipHub.App.isStarted()) {
+                    global.ClipHub.App.stop(
+                        "pagination_repository_stage1_finally");
+                }
+            } catch (ignoredStop) {}
+            if (previousOptions === undefined) {
+                try { delete global.ClipHubBootstrapOptions; }
+                catch (ignoredDelete) {
+                    global.ClipHubBootstrapOptions = undefined;
+                }
+            } else {
+                global.ClipHubBootstrapOptions = previousOptions;
+            }
+        }
+    }
+
+    try {
+        global.ClipHubPaginationRepositoryStage1Result = run();
+    } catch (error) {
+        global.ClipHubPaginationRepositoryStage1Result = {
+            ok: false,
+            project: "ClipHub",
+            testEntry: "pagination_repository_stage1",
+            testEntryVersion: TEST_ENTRY_VERSION,
+            sourceRef: REF,
+            expectedModuleSetVersion:
+                EXPECTED_MODULE_SET_VERSION,
+            error: errorText(error)
+        };
+    }
+}((function () { return this; }())));
+
+JSON.stringify(ClipHubPaginationRepositoryStage1Result);
