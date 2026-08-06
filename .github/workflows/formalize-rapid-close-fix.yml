@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - agent/cliphub-formalize-worker-20260806
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
