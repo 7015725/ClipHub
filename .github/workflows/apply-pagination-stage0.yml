@@ -1,0 +1,108 @@
+name: Apply ClipHub pagination stage 0
+
+on:
+  push:
+    branches:
+      - agent/add-pagination-lazy-prefetch-20260807
+    paths:
+      - .github/cliphub-pagination-stage0-trigger.txt
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout pagination branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/add-pagination-lazy-prefetch-20260807
+          fetch-depth: 0
+
+      - name: Apply guarded stage 0 patch
+        run: python3 scripts/apply_pagination_stage0.py
+
+      - name: Validate JavaScript syntax and ES5 boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in src/*.js; do
+            node --check "$file"
+          done
+          node --check "ClipHub_分页工作线程探针.txt"
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          files = [
+              Path('src/ch_11_filter.js'),
+              Path('src/ch_15_app.js'),
+              Path('ClipHub_分页工作线程探针.txt'),
+          ]
+          forbidden = re.compile(r'\b(?:let|const|class)\s+[A-Za-z_$]|=>')
+          for path in files:
+              text = path.read_text(encoding='utf-8')
+              match = forbidden.search(text)
+              assert match is None, (str(path), match.group(0))
+          PY
+
+      - name: Validate lifecycle guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'MODULE_VERSION: 39' src/ch_11_filter.js
+          grep -q 'function invalidateAsyncWork' src/ch_11_filter.js
+          grep -q 'function prepareForAppShutdown' src/ch_11_filter.js
+          grep -q 'staleCallbackDropCount' src/ch_11_filter.js
+          grep -q '!acceptLifecycle(lifecycle)' src/ch_11_filter.js
+          grep -q 'MODULE_VERSION: 19' src/ch_15_app.js
+          grep -q 'function prepareFilterForShutdown' src/ch_15_app.js
+          grep -q 'state.started = false;' src/ch_15_app.js
+          grep -q 'shutdownModules(stopReason)' src/ch_15_app.js
+          grep -q 'QUERY_LOOPS = 50' "ClipHub_分页工作线程探针.txt"
+          grep -q 'CLOSE_LOOPS = 20' "ClipHub_分页工作线程探针.txt"
+
+      - name: Validate manifest and frozen boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+
+          manifest = json.loads(Path('module-manifest.json').read_text(
+              encoding='utf-8'))
+          assert manifest['moduleSetVersion'] == '20260807.01'
+          assert manifest['sourceRef'] == \
+              'agent/add-pagination-lazy-prefetch-20260807'
+          assert manifest['entryMinVersion'] == 5
+          assert len(manifest['modules']) == 15
+          assert not list(Path('src').glob('ch_16_*.js'))
+          for module in manifest['modules']:
+              actual = subprocess.check_output(
+                  ['git', 'hash-object', module['path']],
+                  text=True).strip()
+              assert actual == module['sha'], (
+                  module['path'], actual, module['sha'])
+          window_hash = subprocess.check_output(
+              ['git', 'hash-object', 'src/ch_08_window.js'],
+              text=True).strip()
+          assert window_hash == \
+              '4ccff8067656ae51602290c884081795ec0f65ea'
+          PY
+          git diff --check
+
+      - name: Commit pagination stage 0
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f scripts/apply_pagination_stage0.py
+          rm -f .github/workflows/apply-pagination-stage0.yml
+          rm -f .github/cliphub-pagination-stage0-trigger.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m '实现分页阶段0快速关闭防护与线程探针'
+          git push origin HEAD:agent/add-pagination-lazy-prefetch-20260807
