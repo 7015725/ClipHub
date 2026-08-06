@@ -1,3 +1,4 @@
 trigger=2026-08-07T01:45:00+08:00
+retry=2
 branch=agent/add-pagination-lazy-prefetch-20260807
 stage=0
