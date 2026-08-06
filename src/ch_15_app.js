@@ -36,7 +36,13 @@
         controlEndpointFile: null,
         entryVersion: 0,
         moduleSetVersion: "",
-        sourceRef: ""
+        sourceRef: "",
+        stopping: false,
+        lifecycleGeneration: 0,
+        lastStopReason: "",
+        filterPreparedForShutdown: false,
+        filterStopping: false,
+        filterGuardInstalled: false
     };
 
     function closeQuietly(value) {
@@ -182,9 +188,116 @@
         state.lockFile = null;
     }
 
-    function shutdownModules() {
+    function installFilterLifecycleGuard() {
+        var filter = ClipHub.Filter;
+        var originalShowPanel;
+        var originalShowRoot;
+        var originalClosePanel;
+        var originalGetPanelState;
+        var originalShutdown;
+        if (!filter) { return false; }
+        if (filter.__paginationStage0GuardInstalled === true) {
+            state.filterGuardInstalled = true;
+            return true;
+        }
+        originalShowPanel = filter.showPanel;
+        originalShowRoot = filter.showRoot;
+        originalClosePanel = filter.closePanel;
+        originalGetPanelState = filter.getPanelState;
+        originalShutdown = filter.shutdown;
+
+        if (typeof originalShowPanel === "function") {
+            filter.showPanel = function (options) {
+                if (!state.started || state.stopping ||
+                        state.filterStopping) {
+                    throw new Error(
+                        "ClipHub filter show rejected during lifecycle stop");
+                }
+                return originalShowPanel(options);
+            };
+        }
+        if (typeof originalShowRoot === "function") {
+            filter.showRoot = function (options) {
+                if (!state.started || state.stopping ||
+                        state.filterStopping) {
+                    throw new Error(
+                        "ClipHub filter root rejected during lifecycle stop");
+                }
+                return originalShowRoot(options);
+            };
+        }
+        filter.prepareForAppShutdown = function (reason) {
+            var closeResult = null;
+            state.filterPreparedForShutdown = true;
+            state.filterStopping = true;
+            if (typeof originalClosePanel === "function") {
+                try {
+                    closeResult = originalClosePanel({
+                        restoreList: false,
+                        reason: String(reason || "app_shutdown"),
+                        destroyCache: true
+                    });
+                } catch (ignoredClose) {}
+            }
+            return {
+                ok: true,
+                prepared: true,
+                reason: String(reason || "app_shutdown"),
+                lifecycleGeneration:
+                    Number(state.lifecycleGeneration),
+                closeResult: closeResult
+            };
+        };
+        if (typeof originalGetPanelState === "function") {
+            filter.getPanelState = function () {
+                var panel = originalGetPanelState() || {};
+                panel.appLifecycleGeneration =
+                    Number(state.lifecycleGeneration);
+                panel.appStopping = state.stopping === true;
+                panel.filterStopping = state.filterStopping === true;
+                panel.rapidCloseGuardInline = true;
+                return panel;
+            };
+        }
+        if (typeof originalShutdown === "function") {
+            filter.shutdown = function () {
+                state.filterStopping = true;
+                return originalShutdown();
+            };
+        }
+        filter.__paginationStage0GuardInstalled = true;
+        state.filterGuardInstalled = true;
+        return true;
+    }
+
+    function prepareFilterForShutdown(reason) {
+        if (state.filterPreparedForShutdown) { return true; }
+        state.filterPreparedForShutdown = true;
+        state.filterStopping = true;
+        try {
+            if (ClipHub.Filter &&
+                    typeof ClipHub.Filter.prepareForAppShutdown ===
+                        "function") {
+                ClipHub.Filter.prepareForAppShutdown(
+                    reason || "app_shutdown");
+                return true;
+            }
+            if (ClipHub.Filter &&
+                    typeof ClipHub.Filter.closePanel === "function") {
+                ClipHub.Filter.closePanel({
+                    restoreList: false,
+                    reason: String(reason || "app_shutdown"),
+                    destroyCache: true
+                });
+            }
+        } catch (ignored) {}
+        return true;
+    }
+
+    function shutdownModules(reason) {
         var index;
         var item;
+        prepareFilterForShutdown(reason || "app_shutdown");
         for (index = state.initialized.length - 1; index >= 0; index -= 1) {
             item = state.initialized[index];
             try {
@@ -275,6 +388,15 @@
             translation.attached === true;
         return {
             started: state.started === true,
+            stopping: state.stopping === true,
+            lifecycleGeneration: Number(state.lifecycleGeneration),
+            lastStopReason: String(state.lastStopReason || ""),
+            filterPreparedForShutdown:
+                state.filterPreparedForShutdown === true,
+            filterStopping: state.filterStopping === true,
+            filterGuardInstalled: state.filterGuardInstalled === true,
+            rapidCloseGuardInline:
+                filter.rapidCloseGuardInline === true,
             uiVisible: detailAttached || editorAttached || filterAttached ||
                 settingsAttached || translationAttached,
             listVisible: false,
@@ -350,7 +472,11 @@
 
     function showUi() {
         var result;
-        var before = uiStatus();
+        var before;
+        if (!state.started || state.stopping || state.filterStopping) {
+            throw new Error("ClipHub is not available for show");
+        }
+        before = uiStatus();
         if (before.uiVisible) {
             return { result: null, reused: true, status: before };
         }
@@ -402,9 +528,9 @@
                 stopped: stopResult.stopped === true
             };
         }
-        if (!state.started) {
+        if (!state.started || state.stopping) {
             return { ok: false, command: command,
-                error: "ClipHub is not started" };
+                error: "ClipHub is not started or is stopping" };
         }
         if (command === "status") {
             return { ok: true, command: command, action: "status",
@@ -541,7 +667,7 @@
 
     ClipHub.App = {
         MODULE_NAME: "ch_15_app",
-        MODULE_VERSION: 18,
+        MODULE_VERSION: 19,
         CONTROL_ACTION_BASE: CONTROL_ACTION_BASE,
         CONTROL_ENDPOINT_SCHEMA: CONTROL_ENDPOINT_SCHEMA,
         CONTROL_COMMANDS: CONTROL_COMMANDS,
@@ -551,6 +677,15 @@
             if (state.started) {
                 return { ok: true, started: true, reused: true };
             }
+            if (state.stopping) {
+                throw new Error("ClipHub is stopping");
+            }
+            state.stopping = false;
+            state.filterPreparedForShutdown = false;
+            state.filterStopping = false;
+            state.filterGuardInstalled = false;
+            state.lastStopReason = "";
+            state.lifecycleGeneration += 1;
             state.context = context;
             state.entryVersion = Number(context && context.entryVersion || 0);
             state.moduleSetVersion = String(
@@ -568,6 +703,7 @@
                     if (typeof item.init === "function") { item.init(context); }
                     state.initialized.push(item);
                 }
+                installFilterLifecycleGuard();
                 state.started = true;
                 registerControlReceiver(context);
                 ClipHub.Log.info("application skeleton started");
@@ -594,32 +730,63 @@
                     )
                 };
             } catch (error) {
+                state.stopping = true;
+                state.started = false;
+                state.lifecycleGeneration += 1;
+                state.lastStopReason = "start_failed";
+                state.filterPreparedForShutdown = false;
+                prepareFilterForShutdown("start_failed");
                 unregisterControlReceiver();
-                shutdownModules();
+                shutdownModules("start_failed");
                 releaseLock();
                 state.context = null;
                 state.entryVersion = 0;
                 state.moduleSetVersion = "";
                 state.sourceRef = "";
                 state.started = false;
+                state.stopping = false;
                 throw error;
             }
         },
         stop: function (reason) {
             var wasStarted = state.started;
+            var stopReason = String(reason || "direct");
+            if (state.stopping) {
+                return {
+                    ok: true,
+                    stopped: true,
+                    reused: true,
+                    wasStarted: wasStarted,
+                    reason: stopReason,
+                    lifecycleGeneration:
+                        Number(state.lifecycleGeneration)
+                };
+            }
+            state.stopping = true;
+            state.started = false;
+            state.lifecycleGeneration += 1;
+            state.lastStopReason = stopReason;
+            state.filterPreparedForShutdown = false;
+            prepareFilterForShutdown(stopReason);
             unregisterControlReceiver();
-            shutdownModules();
+            shutdownModules(stopReason);
             releaseLock();
             state.context = null;
             state.entryVersion = 0;
             state.moduleSetVersion = "";
             state.sourceRef = "";
-            state.started = false;
+            state.stopping = false;
             return {
                 ok: true,
                 stopped: true,
+                reused: false,
                 wasStarted: wasStarted,
-                reason: String(reason || "direct")
+                reason: stopReason,
+                lifecycleGeneration:
+                    Number(state.lifecycleGeneration),
+                filterPreparedForShutdown:
+                    state.filterPreparedForShutdown === true,
+                filterStopping: state.filterStopping === true
             };
         },
         isStarted: function () { return state.started; },

@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260806.06",
+  "moduleSetVersion": "20260807.01",
   "entryMinVersion": 5,
-  "sourceRef": "agent/rebuild-performance-from-main-20260806",
+  "sourceRef": "agent/add-pagination-lazy-prefetch-20260807",
   "modules": [
     {"name":"ch_01_base.js","path":"src/ch_01_base.js","sha":"563791ff518078bfd57d7b73fc51b9c7482a3ffb"},
     {"name":"ch_02_log.js","path":"src/ch_02_log.js","sha":"581d7a9a0e47bdee2be0341cbfbe6b0308c207bb"},
@@ -18,6 +18,6 @@
     {"name":"ch_12_translation.js","path":"src/ch_12_translation.js","sha":"88d2bdc4658434ef9eb97fd25c3f3cab5ee14ec8"},
     {"name":"ch_13_settings.js","path":"src/ch_13_settings.js","sha":"ec3fd6b98548af82d4c1fd8bef1beaabd44ac69f"},
     {"name":"ch_14_event_bus.js","path":"src/ch_14_event_bus.js","sha":"a64b7973d02c42aea14ebfdfdd62de0886fa8057"},
-    {"name":"ch_15_app.js","path":"src/ch_15_app.js","sha":"653eb0905ccc7ba2a91981909d330b796918f4f9"}
+    {"name":"ch_15_app.js","path":"src/ch_15_app.js","sha":"ff60665e8ddd34bd96fa276cc7b632ca73a56845"}
   ]
 }
