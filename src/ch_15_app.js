@@ -297,7 +297,11 @@
             renderedCount: Number(filter.resultCardCount ||
                 list.renderedCount || 0),
             filterActive: filter.active === true ||
-                list.filterActive === true
+                list.filterActive === true,
+            contentReady: filter.contentReady === true,
+            windowCacheBuilt: filter.panelBuilt === true,
+            windowCacheReused: filter.lastShowReused === true,
+            startupPerformance: filter.performance || null
         };
     }
 
@@ -537,7 +541,7 @@
 
     ClipHub.App = {
         MODULE_NAME: "ch_15_app",
-        MODULE_VERSION: 17,
+        MODULE_VERSION: 18,
         CONTROL_ACTION_BASE: CONTROL_ACTION_BASE,
         CONTROL_ENDPOINT_SCHEMA: CONTROL_ENDPOINT_SCHEMA,
         CONTROL_COMMANDS: CONTROL_COMMANDS,

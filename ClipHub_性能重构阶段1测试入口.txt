@@ -1,0 +1,161 @@
+/* ClipHub 性能重构阶段 1 测试入口。ShortX / Rhino ES5。 */
+(function (global) {
+    var URL = Packages.java.net.URL;
+    var URLEncoder = Packages.java.net.URLEncoder;
+    var BAOS = Packages.java.io.ByteArrayOutputStream;
+    var ReflectArray = Packages.java.lang.reflect.Array;
+    var JavaByte = Packages.java.lang.Byte;
+    var JavaString = Packages.java.lang.String;
+    var System = Packages.java.lang.System;
+
+    var OWNER = "7015725";
+    var REPO = "ClipHub";
+    var REF = "agent/rebuild-performance-from-main-20260806";
+    var ENTRY_PATH = "ClipHub.js";
+    var TEST_ENTRY_VERSION = 1;
+    var EXPECTED_MODULE_SET_VERSION = "20260806.06";
+    var RUNTIME_NAME = "ClipHubPerformanceRebuildStage1";
+
+    function closeQuietly(value) {
+        if (value !== null && value !== undefined) {
+            try { value.close(); } catch (ignored) {}
+        }
+    }
+
+    function errorText(error) {
+        try {
+            if (error && error.javaException) {
+                return String(error.javaException.getClass().getName()) +
+                    ": " + String(error);
+            }
+        } catch (ignored) {}
+        return String(error);
+    }
+
+    function encodeSegment(value) {
+        return String(URLEncoder.encode(String(value), "UTF-8"))
+            .replace(/\+/g, "%20");
+    }
+
+    function readBytes(stream) {
+        var output = new BAOS();
+        var buffer = ReflectArray.newInstance(JavaByte.TYPE, 8192);
+        var count;
+        try {
+            while ((count = stream.read(buffer)) >= 0) {
+                if (count > 0) { output.write(buffer, 0, count); }
+            }
+            return output.toByteArray();
+        } finally {
+            closeQuietly(stream);
+            closeQuietly(output);
+        }
+    }
+
+    function fetchEntry() {
+        var url = "https://raw.githubusercontent.com/" + OWNER + "/" +
+            REPO + "/" + encodeSegment(REF) + "/" + ENTRY_PATH +
+            "?cliphubPerformanceRebuild=" +
+            Number(System.currentTimeMillis());
+        var connection = null;
+        var code;
+        var bytes;
+        var text;
+        try {
+            connection = new URL(url).openConnection();
+            connection.setConnectTimeout(10000);
+            connection.setReadTimeout(20000);
+            connection.setUseCaches(false);
+            connection.setRequestProperty("Accept", "text/plain, */*");
+            connection.setRequestProperty("Accept-Encoding", "identity");
+            connection.setRequestProperty("Cache-Control", "no-cache");
+            connection.setRequestProperty("Pragma", "no-cache");
+            connection.setRequestProperty(
+                "User-Agent", "ClipHub-Performance-Rebuild-Stage1/1"
+            );
+            code = Number(connection.getResponseCode());
+            bytes = readBytes(code >= 200 && code < 300 ?
+                connection.getInputStream() : connection.getErrorStream());
+            text = String(new JavaString(bytes, "UTF-8"));
+            if (code < 200 || code >= 300) {
+                throw new Error("ClipHub entry HTTP " + code + ": " +
+                    text.substring(0, 400));
+            }
+            return text;
+        } finally {
+            if (connection !== null) {
+                try { connection.disconnect(); } catch (ignored) {}
+            }
+        }
+    }
+
+    function run() {
+        var previousOptions = global.ClipHubBootstrapOptions;
+        var bootstrap;
+        var app;
+        var identityOk;
+        if (global.ClipHub && global.ClipHub.App &&
+                typeof global.ClipHub.App.isStarted === "function" &&
+                global.ClipHub.App.isStarted()) {
+            throw new Error("请先完全停止当前 ClipHub 后台，再运行阶段 1 测试入口");
+        }
+        try {
+            global.ClipHubBootstrapOptions = {
+                remoteRef: REF,
+                runtimeName: RUNTIME_NAME
+            };
+            eval(fetchEntry());
+            bootstrap = global.ClipHubBootstrapResult || {};
+            app = bootstrap.app || {};
+            identityOk = bootstrap.ok === true &&
+                bootstrap.started === true &&
+                bootstrap.sync &&
+                String(bootstrap.sync.sourceRef || "") === REF &&
+                String(bootstrap.sync.moduleSetVersion || "") ===
+                    EXPECTED_MODULE_SET_VERSION &&
+                Number(app.moduleFileCount || 0) === 15;
+            return {
+                ok: identityOk,
+                project: "ClipHub",
+                testEntry: "main_baseline_performance_cache_stage1",
+                testEntryVersion: TEST_ENTRY_VERSION,
+                sourceRef: REF,
+                expectedModuleSetVersion: EXPECTED_MODULE_SET_VERSION,
+                moduleFileCountExpected: 15,
+                newModuleAdded: false,
+                mainWindowModulePreserved: true,
+                windowBlobExpected: "4ccff8067656ae51602290c884081795ec0f65ea",
+                filterModuleVersionExpected: 38,
+                appModuleVersionExpected: 18,
+                rapidCloseInlineExpected: false,
+                nextStage: "inline_rapid_close_guard",
+                bootstrap: bootstrap
+            };
+        } finally {
+            if (previousOptions === undefined) {
+                try { delete global.ClipHubBootstrapOptions; }
+                catch (ignoredDelete) {
+                    global.ClipHubBootstrapOptions = undefined;
+                }
+            } else {
+                global.ClipHubBootstrapOptions = previousOptions;
+            }
+        }
+    }
+
+    try {
+        global.ClipHubPerformanceRebuildStage1Result = run();
+    } catch (error) {
+        global.ClipHubPerformanceRebuildStage1Result = {
+            ok: false,
+            project: "ClipHub",
+            testEntry: "main_baseline_performance_cache_stage1",
+            testEntryVersion: TEST_ENTRY_VERSION,
+            sourceRef: REF,
+            expectedModuleSetVersion: EXPECTED_MODULE_SET_VERSION,
+            error: errorText(error)
+        };
+    }
+}((function () { return this; }())));
+
+JSON.stringify(ClipHubPerformanceRebuildStage1Result);
