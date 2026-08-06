@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260806.04",
-  "entryMinVersion": 8,
+  "moduleSetVersion": "20260806.05",
+  "entryMinVersion": 9,
   "sourceRef": "agent/optimize-cliphub-window-startup-v1-20260805",
   "modules": [
     {
