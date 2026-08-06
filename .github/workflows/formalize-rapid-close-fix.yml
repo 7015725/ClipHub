@@ -1,0 +1,247 @@
+name: Formalize ClipHub rapid close fix
+
+on:
+  push:
+    branches:
+      - agent/cliphub-formalize-worker-20260806
+
+permissions:
+  contents: write
+
+jobs:
+  formalize-and-validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/cliphub-formalize-worker-20260806
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Fold rapid-close fix into official filter module
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import json
+
+          filter_path = Path("src/ch_11_filter.js")
+          text = filter_path.read_text(encoding="utf-8")
+
+          helper_marker = "\n    function destroyPanelCache(reason) {"
+          helper = '''
+
+    function removePanelWindowImmediate() {
+        var attached = false;
+        if (panelWindowRoot === null || windowManager === null) {
+            return false;
+        }
+        try {
+            windowManager.removeViewImmediate(panelWindowRoot);
+            return true;
+        } catch (error) {
+            try {
+                attached = panelWindowRoot.isAttachedToWindow() === true;
+            } catch (ignoredAttached) {
+                attached = false;
+            }
+            if (!attached) { return false; }
+            throw error;
+        }
+    }
+'''
+          if "function removePanelWindowImmediate()" in text:
+              raise SystemExit("Rapid-close helper already exists")
+          if text.count(helper_marker) != 1:
+              raise SystemExit("destroyPanelCache marker mismatch")
+          text = text.replace(helper_marker, helper + helper_marker, 1)
+
+          destroy_old = '''        try {
+            if (panelWindowRoot !== null &&
+                    panelWindowRoot.isAttachedToWindow()) {
+                windowManager.removeViewImmediate(panelWindowRoot);
+            }
+        } catch (ignoredRemove) {}'''
+          destroy_new = '''        try {
+            removePanelWindowImmediate();
+        } catch (removeError) {
+            state.lastError = String(removeError);
+        }'''
+          if text.count(destroy_old) != 1:
+              raise SystemExit("destroy remove block mismatch")
+          text = text.replace(destroy_old, destroy_new, 1)
+
+          close_old = '''                if (panelWindowRoot !== null &&
+                        panelWindowRoot.isAttachedToWindow()) {
+                    windowManager.removeViewImmediate(panelWindowRoot);
+                }'''
+          close_new = '''                removePanelWindowImmediate();'''
+          if text.count(close_old) != 1:
+              raise SystemExit("close remove block mismatch")
+          text = text.replace(close_old, close_new, 1)
+
+          old_version = "        MODULE_VERSION: 38,"
+          new_version = "        MODULE_VERSION: 39,"
+          if text.count(old_version) != 1:
+              raise SystemExit("filter module version marker mismatch")
+          text = text.replace(old_version, new_version, 1)
+          filter_path.write_text(text, encoding="utf-8")
+
+          probe_path = Path("probes/cliphub_rapid_close_race_probe_005.js")
+          probe = probe_path.read_text(encoding="utf-8")
+          old_probe_version = 'var EXPECTED_MODULE_SET_VERSION = "20260806.01";'
+          new_probe_version = 'var EXPECTED_MODULE_SET_VERSION = "20260806.02";'
+          if probe.count(old_probe_version) != 1:
+              raise SystemExit("probe module-set marker mismatch")
+          probe_path.write_text(
+              probe.replace(old_probe_version, new_probe_version, 1),
+              encoding="utf-8"
+          )
+
+          quick_doc = Path("docs/ClipHub快速关闭竞态测试V1.md")
+          quick_text = quick_doc.read_text(encoding="utf-8")
+          quick_section = '''
+
+## V5 真机结果与正式化（2026-08-06）
+
+V5 在 Android 14 / ShortX 真机完成 20 组快速显示后立即隐藏：
+
+- `rapidPairsCompleted=20`
+- `immediateHiddenCount=20`
+- `settledHiddenCount=20`
+- `maximumSettleMs=26`
+- `rapidRacePassed=true`
+- 最终隐藏状态无残留
+- 再次显示时缓存复用和内容就绪均正常
+
+验证通过后，防护逻辑已折叠进 `src/ch_11_filter.js` 正式关闭链：
+
+- 新增 `removePanelWindowImmediate()`。
+- 关闭与销毁缓存不再依赖 `isAttachedToWindow()` 决定是否提交移除。
+- 已不附着的重复移除作为幂等关闭处理；仍附着时的移除异常继续抛出。
+- 删除独立测试入口、独立清单与 `ch_16_rapid_close_fix.js`。
+- 保留 V5 探针作为正式回归探针。
+- 正式模块集版本升级为 `20260806.02`。
+'''
+          if "## V5 真机结果与正式化（2026-08-06）" not in quick_text:
+              quick_doc.write_text(
+                  quick_text.rstrip() + quick_section + "\n",
+                  encoding="utf-8"
+              )
+
+          perf_doc = Path("docs/ClipHub浮窗启动性能优化V1.md")
+          perf_text = perf_doc.read_text(encoding="utf-8")
+          perf_section = '''
+
+## 快速关闭竞态正式修复（2026-08-06）
+
+真机 V5 已完成 20/20 组快速显示后立即隐藏，立即隐藏与稳定隐藏均为 20/20，最大稳定等待 26ms；最终无窗口残留，重新显示仍可复用缓存。
+
+正式关闭链现已在 `ch_11_filter.js` 中无条件向 WindowManager 提交缓存根 View 的立即移除请求，不再以 `isAttachedToWindow()` 作为前置条件。模块版本升级为 39，模块集升级为 `20260806.02`。
+'''
+          if "## 快速关闭竞态正式修复（2026-08-06）" not in perf_text:
+              perf_doc.write_text(
+                  perf_text.rstrip() + perf_section + "\n",
+                  encoding="utf-8"
+              )
+
+          for obsolete in [
+              "ClipHub_RapidClose_Test_Entry.js",
+              "module-manifest-rapid-close.json",
+              "src/ch_16_rapid_close_fix.js"
+          ]:
+              path = Path(obsolete)
+              if path.exists():
+                  path.unlink()
+
+          manifest_path = Path("module-manifest.json")
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          manifest["moduleSetVersion"] = "20260806.02"
+
+          def git_blob_sha(path):
+              data = Path(path).read_bytes()
+              header = ("blob %d\0" % len(data)).encode("ascii")
+              return hashlib.sha1(header + data).hexdigest()
+
+          for module in manifest["modules"]:
+              module["sha"] = git_blob_sha(module["path"])
+
+          manifest_path.write_text(
+              json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8"
+          )
+          PY
+
+      - name: Validate formal module set
+        shell: bash
+        run: |
+          node --check ClipHub.js
+          node --check src/ch_08_window.js
+          node --check src/ch_11_filter.js
+          node --check src/ch_15_app.js
+          node --check probes/cliphub_rapid_close_race_probe_005.js
+          if grep -nE '\b(let|const|class)\b|=>|`' \
+              ClipHub.js \
+              src/ch_08_window.js \
+              src/ch_11_filter.js \
+              src/ch_15_app.js \
+              probes/cliphub_rapid_close_race_probe_005.js; then
+            echo "Rhino ES5 forbidden syntax detected"
+            exit 1
+          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import json
+
+          manifest = json.loads(
+              Path("module-manifest.json").read_text(encoding="utf-8")
+          )
+          assert manifest["moduleSetVersion"] == "20260806.02"
+          assert manifest["sourceRef"] == \
+              "agent/optimize-cliphub-window-startup-v1-20260805"
+          assert len(manifest["modules"]) == 15
+
+          for module in manifest["modules"]:
+              data = Path(module["path"]).read_bytes()
+              header = ("blob %d\0" % len(data)).encode("ascii")
+              actual = hashlib.sha1(header + data).hexdigest()
+              if actual != module["sha"]:
+                  raise SystemExit(
+                      "%s SHA mismatch: %s != %s" %
+                      (module["name"], actual, module["sha"])
+                  )
+
+          text = Path("src/ch_11_filter.js").read_text(encoding="utf-8")
+          assert text.count("function removePanelWindowImmediate()") == 1
+          assert text.count("removePanelWindowImmediate();") == 2
+          assert text.count("removeViewImmediate(panelWindowRoot)") == 1
+          assert "MODULE_VERSION: 39" in text
+
+          probe = Path(
+              "probes/cliphub_rapid_close_race_probe_005.js"
+          ).read_text(encoding="utf-8")
+          assert 'EXPECTED_MODULE_SET_VERSION = "20260806.02"' in probe
+
+          for removed in [
+              "ClipHub_RapidClose_Test_Entry.js",
+              "module-manifest-rapid-close.json",
+              "src/ch_16_rapid_close_fix.js"
+          ]:
+              assert not Path(removed).exists()
+
+          print("formal rapid-close validation passed")
+          PY
+
+      - name: Commit formal fix
+        shell: bash
+        run: |
+          rm -f .github/workflows/formalize-rapid-close-fix.yml
+          rm -f .github/formalize-rapid-close-trigger.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "正式修复浮窗快速关闭竞态"
+          git push origin HEAD:agent/cliphub-formalize-worker-20260806
