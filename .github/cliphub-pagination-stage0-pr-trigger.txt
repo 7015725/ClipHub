@@ -1,0 +1,4 @@
+trigger=pr
+stage=0
+source=agent/trigger-pagination-stage0-20260807
+target=agent/add-pagination-lazy-prefetch-20260807
