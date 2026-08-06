@@ -6,6 +6,15 @@ on:
       - agent/add-pagination-lazy-prefetch-20260807
     paths:
       - .github/cliphub-pagination-stage0-trigger.txt
+  pull_request:
+    branches:
+      - agent/add-pagination-lazy-prefetch-20260807
+    types:
+      - opened
+      - synchronize
+      - reopened
+    paths:
+      - .github/cliphub-pagination-stage0-pr-trigger.txt
 
 permissions:
   contents: write
@@ -101,6 +110,7 @@ jobs:
           rm -f scripts/apply_pagination_stage0.py
           rm -f .github/workflows/apply-pagination-stage0.yml
           rm -f .github/cliphub-pagination-stage0-trigger.txt
+          rm -f .github/cliphub-pagination-stage0-pr-trigger.txt
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
