@@ -7,7 +7,7 @@
 - `Filter.MODULE_VERSION = 48`
 - `Filter.PAGINATION_STAGE = 9`
 - 模块数量：15
-- Stage 10 测试入口版本：4
+- Stage 10 测试入口版本：5
 
 Stage 10 不修改生产模块和正式入口，仅新增隔离真机回归入口、压缩载荷及测试说明。
 
@@ -28,6 +28,12 @@ v3 仅将 IME 自动测试中的展开搜索与关闭搜索动作显式投递到
 v3 真机已经完成搜索展开、焦点获取、IME 避让应用和关闭恢复，`lastInsetPx = 1093`，各项错误字段为空。唯一失败原因是主线程回调通过 `AtomicReference` 返回 `java.lang.Boolean(true)` 后，测试使用 `=== true` 比较，误将成功动作记录为 `toggleWorked = false`。
 
 v4 仅把该返回值规范化为字符串布尔值后再判定，不改变任何执行路径或生产代码。
+
+## v5 修正
+
+v4 真机已通过 IME、系统侧滑返回和浮窗外部点击，失败点推进到真实拖动等待。当前拖动热区是浮窗最顶部正中间约 `86dp × 24dp` 的透明区域，并要求先保持超过长按阈值；提前移动会取消激活。
+
+v5 在提示条中显示根据当前窗口几何计算出的屏幕目标坐标，明确要求按住约 1 秒、感觉震动后再移动。同时在失败结果中保留 `dragPending`、`dragActivateCount`、移动计数和前后几何，便于区分未命中热区、长按未激活和激活后未移动。生产模块和版本不变。
 
 ## 回归目标
 
@@ -138,7 +144,7 @@ Home 与最近任务分别要求：
 
 ```text
 ok=true
-testEntryVersion=4
+testEntryVersion=5
 moduleSetVersion=20260807.13
 filterModuleVersion=48
 paginationStage=9

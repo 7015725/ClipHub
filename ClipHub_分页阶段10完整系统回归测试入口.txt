@@ -13,14 +13,14 @@ String((function (global) {
     var System = Packages.java.lang.System;
     var REF = "agent/add-pagination-lazy-prefetch-20260807";
     var PARTS = [
-        "stage-assets/pagination-stage10/test_payload_v4_00.b64",
-        "stage-assets/pagination-stage10/test_payload_v4_01.b64",
-        "stage-assets/pagination-stage10/test_payload_v4_02.b64"
+        "stage-assets/pagination-stage10/test_payload_v5_00.b64",
+        "stage-assets/pagination-stage10/test_payload_v5_01.b64",
+        "stage-assets/pagination-stage10/test_payload_v5_02.b64"
     ];
     var PACKED_SHA256 =
-        "d56e86ef4ba31c48835290c35520ec96b210b3dbe619beccc99245f234a04617";
+        "c902b3cf64ce65ae8bfc56ddff1a75e6c77c8fd661ea8592a91dd3e505d14698";
     var SOURCE_SHA256 =
-        "41def406e17c7c5e554a1dd679514931a615159b9673608e0dab233f1502610d";
+        "f074e58f9412a259fc45b5b0bdf690650dba53120e338bbce2d861b54344b77d";
 
     function closeQuietly(value) {
         if (value !== null && value !== undefined) {
@@ -72,7 +72,7 @@ String((function (global) {
             connection = new URL(
                 "https://raw.githubusercontent.com/7015725/ClipHub/" +
                 encodePath(REF) + "/" + encodePath(path) +
-                "?stage10testv4=" + Number(System.currentTimeMillis())
+                "?stage10testv5=" + Number(System.currentTimeMillis())
             ).openConnection();
             connection.setConnectTimeout(10000);
             connection.setReadTimeout(30000);
@@ -129,7 +129,7 @@ String((function (global) {
             ok: false,
             project: "ClipHub",
             stage: "pagination_stage10_system_regression",
-            testEntryVersion: 4,
+            testEntryVersion: 5,
             sourceRef: REF,
             error: String(error)
         }, null, 2);

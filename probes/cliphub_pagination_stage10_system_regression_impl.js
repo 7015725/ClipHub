@@ -30,7 +30,7 @@ var ClipHubPaginationStage10TestResult = (function (global) {
     var REF = "agent/add-pagination-lazy-prefetch-20260807";
     var RUNTIME_NAME = "ClipHubPaginationStage10SystemRegression";
     var EXPECTED_MODULE_SET_VERSION = "20260807.13";
-    var TEST_ENTRY_VERSION = 4;
+    var TEST_ENTRY_VERSION = 5;
     var FILTER_MODULE_VERSION = 48;
     var PAGINATION_STAGE = 9;
     var WARM_LOOPS = 20;
@@ -258,11 +258,16 @@ var ClipHubPaginationStage10TestResult = (function (global) {
             attached: value.attached === true,
             primaryAttached: value.primaryAttached === true,
             moving: value.moving === true,
+            dragPending: value.dragPending === true,
             resizing: value.resizing === true,
+            resizePending: value.resizePending === true,
+            activeRole: value.activeRole,
             geometry: value.geometry || null,
             safeBounds: value.safeBounds || null,
             orientation: value.orientation,
+            dragActivateCount: Number(value.dragActivateCount || 0),
             dragMoveCount: Number(value.dragMoveCount || 0),
+            resizeActivateCount: Number(value.resizeActivateCount || 0),
             resizeMoveCount: Number(value.resizeMoveCount || 0),
             resizeCommitCount: Number(value.resizeCommitCount || 0),
             boundsRefreshCount: Number(value.boundsRefreshCount || 0),
@@ -753,24 +758,41 @@ var ClipHubPaginationStage10TestResult = (function (global) {
     function runDrag() {
         var before;
         var after;
+        var geometry;
+        var target;
+        var dragError = null;
         showRoot("drag");
         before = windowState();
-        setInstruction("Stage 10 · 请长按浮窗顶部拖动条并移动窗口\n移动明显距离后松手");
-        waitFor("real window drag", function () {
-            var current = windowState();
-            return Number(current.dragMoveCount) >
-                    Number(before.dragMoveCount) &&
-                geometryChanged(before.geometry, current.geometry);
-        }, INTERACTION_TIMEOUT_MS);
-        waitFor("drag release", function () {
-            return windowState().moving === false;
-        }, 5000);
+        geometry = before.geometry || {};
+        target = {
+            x: Math.round(Number(geometry.x || 0) +
+                Number(geometry.width || 0) / 2),
+            y: Math.round(Number(geometry.y || 0) + dp(12))
+        };
+        setInstruction("Stage 10 · 拖动测试\n按住浮窗最顶部正中间不动约 1 秒，感觉震动后再拖动并松手\n屏幕目标约 x=" +
+            target.x + "，y=" + target.y);
+        try {
+            waitFor("real window drag", function () {
+                var current = windowState();
+                return Number(current.dragMoveCount) >
+                        Number(before.dragMoveCount) &&
+                    geometryChanged(before.geometry, current.geometry);
+            }, INTERACTION_TIMEOUT_MS);
+            waitFor("drag release", function () {
+                return windowState().moving === false;
+            }, 5000);
+        } catch (error) {
+            dragError = errorText(error);
+        }
         after = windowState();
         return {
             before: compactWindow(before),
             after: compactWindow(after),
+            target: target,
+            error: dragError,
             insideBounds: geometryInside(after),
-            ok: Number(after.dragMoveCount) >
+            ok: dragError === null &&
+                Number(after.dragMoveCount) >
                     Number(before.dragMoveCount) &&
                 geometryChanged(before.geometry, after.geometry) &&
                 after.moving === false && geometryInside(after) &&
