@@ -1,20 +1,205 @@
-/* ClipHub Stage 7 virtual window and anchor restore ES5 loader. */
-(function(g){
-var F=Packages.java.io.File,I=Packages.java.io.FileInputStream,O=Packages.java.io.FileOutputStream,B=Packages.java.io.ByteArrayOutputStream,G=Packages.java.util.zip.GZIPInputStream,A=Packages.android.util.Base64,R=Packages.java.lang.reflect.Array,Y=Packages.java.lang.Byte,S=Packages.java.lang.String,U=Packages.java.net.URL,E=Packages.java.net.URLEncoder,D=Packages.java.security.MessageDigest,T=Packages.java.lang.System;
-var C="f1fc8f44e64205dabdb18c9fd0f0465e0180c29d",P="src/ch_11_filter.js",H="adb4f246bfb5fcafd14a36f2a5d8bd412d0a19fe",N="ch_11_filter_stage2_base.js",V="agent/add-pagination-lazy-prefetch-20260807",K=["stage-assets/pagination-stage7/ch11_patch_00.b64","stage-assets/pagination-stage7/ch11_patch_01.b64","stage-assets/pagination-stage7/ch11_patch_02.b64","stage-assets/pagination-stage7/ch11_patch_03.b64","stage-assets/pagination-stage7/ch11_patch_04.b64","stage-assets/pagination-stage7/ch11_patch_05.b64","stage-assets/pagination-stage7/ch11_patch_06.b64","stage-assets/pagination-stage7/ch11_patch_07.b64","stage-assets/pagination-stage7/ch11_patch_08.b64"],J="caf4477b4fa65387666661bf9070474ead271242c6252c2b1a32880ae6fc0307",W="ch_11_filter_stage7_patch.b64";
-function c(x){if(x!==null&&x!==undefined){try{x.close();}catch(z){}}}
-function b(x){var o=new B(),a=R.newInstance(Y.TYPE,8192),n;try{while((n=x.read(a))>=0){if(n>0)o.write(a,0,n);}return o.toByteArray();}finally{c(x);c(o);}}
-function r(f){return String(new S(b(new I(f)),"UTF-8"));}
-function d(f){if(!f.exists()&&!f.mkdirs()&&!f.isDirectory())throw new Error("mkdir "+f);return f;}
-function w(f,s){var t=new F(d(f.getParentFile()),f.getName()+".tmp"),o=null;try{o=new O(t,false);o.write(new S(String(s)).getBytes("UTF-8"));o.flush();}finally{c(o);}if(f.exists()&&!f.delete()){t.delete();throw new Error("replace "+f);}if(!t.renameTo(f)){t.delete();throw new Error("commit "+f);}}
-function x(s,n){var q=new S(String(s)).getBytes("UTF-8"),m=D.getInstance(n),a=m.digest(q),o=[],i,v;for(i=0;i<a.length;i+=1){v=Number(a[i]);if(v<0)v+=256;o.push((v<16?"0":"")+v.toString(16));}return o.join("");}
-function h(s){var q=new S(String(s)).getBytes("UTF-8"),p=new S("blob "+String(q.length)+"\u0000").getBytes("UTF-8"),m=D.getInstance("SHA-1"),a,o=[],i,v;m.update(p);m.update(q);a=m.digest();for(i=0;i<a.length;i+=1){v=Number(a[i]);if(v<0)v+=256;o.push((v<16?"0":"")+v.toString(16));}return o.join("");}
-function n(){var o=g.ClipHubBootstrapOptions||{},q=o.runtimeName===undefined?"ClipHub":String(o.runtimeName);if(!/^[A-Za-z0-9._-]+$/.test(q)||q==="."||q==="..")throw new Error("runtime "+q);return q;}
-function u(v,p,t){var q=null,k,z;try{q=new U("https://raw.githubusercontent.com/7015725/ClipHub/"+String(E.encode(v,"UTF-8")).replace(/\+/g,"%20")+"/"+String(E.encode(p,"UTF-8")).replace(/%2F/g,"/").replace(/\+/g,"%20")+"?"+t+"="+Number(T.currentTimeMillis())).openConnection();q.setConnectTimeout(10000);q.setReadTimeout(30000);q.setUseCaches(false);q.setRequestProperty("Accept-Encoding","identity");k=Number(q.getResponseCode());z=String(new S(b(k>=200&&k<300?q.getInputStream():q.getErrorStream()),"UTF-8"));if(k<200||k>=300)throw new Error("HTTP "+k+" "+p);return z;}finally{if(q!==null)try{q.disconnect();}catch(e){}}}
-function v(f){var q;if(!f.isFile())return null;try{q=r(f);return h(q)===H?q:null;}catch(e){return null;}}
-function l(){if(typeof shortx==="undefined"||typeof shortx.getShortXDir!=="function")throw new Error("ShortX unavailable");var q=new F(String(shortx.getShortXDir()),n()),a=new F(new F(q,"modules.backup"),"ch_11_filter.js"),e=new F(d(new F(q,"cache")),N),z=v(a);if(z!==null){try{w(e,z);}catch(i){}return z;}z=v(e);if(z!==null)return z;z=u(C,P,"s7base");if(h(z)!==H)throw new Error("base sha");w(e,z);return z;}
-function j(){var q=new F(String(shortx.getShortXDir()),n()),e=new F(d(new F(q,"cache")),W),z="",i;if(e.isFile()){try{z=r(e);if(x(z,"SHA-256")===J)return z;}catch(a){}}z="";for(i=0;i<K.length;i+=1)z+=u(V,K[i],"s7patch");if(x(z,"SHA-256")!==J)throw new Error("patch sha");w(e,z);return z;}
-function z(){var q=new G(new Packages.java.io.ByteArrayInputStream(A.decode(j(),A.DEFAULT)));return String(new S(b(q),"UTF-8"));}
-function p(s){var a=JSON.parse(z()),i,k;for(i=0;i<a.length;i+=1){k=s.indexOf(a[i].find);if(k<0||s.indexOf(a[i].find,k+a[i].find.length)>=0)throw new Error("anchor "+a[i].label);s=s.substring(0,k)+a[i].replace+s.substring(k+a[i].find.length);}return s;}
-try{eval(p(l()));}catch(e){throw new Error("ch_11_filter.js Stage 7 loader failed: "+String(e));}
-}((function(){return this;}())));
+/* ClipHub Stage 8 data block dehydration and rehydration ES5 loader. */
+(function (global) {
+    var File = Packages.java.io.File;
+    var FIS = Packages.java.io.FileInputStream;
+    var FOS = Packages.java.io.FileOutputStream;
+    var BAIS = Packages.java.io.ByteArrayInputStream;
+    var BAOS = Packages.java.io.ByteArrayOutputStream;
+    var GZIPInputStream = Packages.java.util.zip.GZIPInputStream;
+    var Base64 = Packages.android.util.Base64;
+    var ReflectArray = Packages.java.lang.reflect.Array;
+    var JavaByte = Packages.java.lang.Byte;
+    var JavaString = Packages.java.lang.String;
+    var URL = Packages.java.net.URL;
+    var URLEncoder = Packages.java.net.URLEncoder;
+    var MessageDigest = Packages.java.security.MessageDigest;
+    var System = Packages.java.lang.System;
+
+    var REF = "agent/add-pagination-lazy-prefetch-20260807";
+    var PARTS = [
+        "stage-assets/pagination-stage8/ch11_full_00.b64",
+        "stage-assets/pagination-stage8/ch11_full_01.b64",
+        "stage-assets/pagination-stage8/ch11_full_02.b64",
+        "stage-assets/pagination-stage8/ch11_full_03.b64",
+        "stage-assets/pagination-stage8/ch11_full_04.b64",
+        "stage-assets/pagination-stage8/ch11_full_05.b64",
+        "stage-assets/pagination-stage8/ch11_full_06.b64",
+        "stage-assets/pagination-stage8/ch11_full_07.b64"
+    ];
+    var PACKED_SHA256 =
+        "6ce6b3c8e9f223904942769444b160d831091cd1fcb111af4cbf21b86472fdef";
+    var SOURCE_SHA256 =
+        "97403571d4adaa20f4d1775d9607d354d490f75da8fd6ea521f9f206bc334b13";
+    var CACHE_NAME = "ch_11_filter_stage8_full.b64";
+
+    function closeQuietly(value) {
+        if (value !== null && value !== undefined) {
+            try { value.close(); } catch (ignored) {}
+        }
+    }
+
+    function readBytes(stream) {
+        var output = new BAOS();
+        var buffer = ReflectArray.newInstance(JavaByte.TYPE, 8192);
+        var count;
+        try {
+            while ((count = stream.read(buffer)) >= 0) {
+                if (count > 0) { output.write(buffer, 0, count); }
+            }
+            return output.toByteArray();
+        } finally {
+            closeQuietly(stream);
+            closeQuietly(output);
+        }
+    }
+
+    function readUtf8(file) {
+        return String(new JavaString(
+            readBytes(new FIS(file)), "UTF-8"));
+    }
+
+    function ensureDir(dir) {
+        if (!dir.exists() && !dir.mkdirs() && !dir.isDirectory()) {
+            throw new Error("Cannot create directory: " +
+                String(dir.getAbsolutePath()));
+        }
+        return dir;
+    }
+
+    function writeUtf8Atomic(file, text) {
+        var parent = ensureDir(file.getParentFile());
+        var temp = new File(parent, file.getName() + ".tmp");
+        var output = null;
+        try {
+            output = new FOS(temp, false);
+            output.write(new JavaString(String(text))
+                .getBytes("UTF-8"));
+            output.flush();
+        } finally {
+            closeQuietly(output);
+        }
+        if (file.exists() && !file.delete()) {
+            temp.delete();
+            throw new Error("Cannot replace cache: " +
+                String(file.getAbsolutePath()));
+        }
+        if (!temp.renameTo(file)) {
+            temp.delete();
+            throw new Error("Cannot commit cache: " +
+                String(file.getAbsolutePath()));
+        }
+    }
+
+    function sha256(text) {
+        var digest = MessageDigest.getInstance("SHA-256");
+        var bytes = digest.digest(new JavaString(String(text))
+            .getBytes("UTF-8"));
+        var parts = [];
+        var index;
+        var value;
+        for (index = 0; index < bytes.length; index += 1) {
+            value = Number(bytes[index]);
+            if (value < 0) { value += 256; }
+            parts.push((value < 16 ? "0" : "") +
+                value.toString(16));
+        }
+        return parts.join("");
+    }
+
+    function runtimeName() {
+        var options = global.ClipHubBootstrapOptions || {};
+        var name = options.runtimeName === undefined ?
+            "ClipHub" : String(options.runtimeName);
+        if (!/^[A-Za-z0-9._-]+$/.test(name) ||
+                name === "." || name === "..") {
+            throw new Error("Invalid runtime name: " + name);
+        }
+        return name;
+    }
+
+    function encodePath(path) {
+        return String(URLEncoder.encode(String(path), "UTF-8"))
+            .replace(/%2F/g, "/").replace(/\+/g, "%20");
+    }
+
+    function fetchPart(path) {
+        var connection = null;
+        var code;
+        var text;
+        try {
+            connection = new URL(
+                "https://raw.githubusercontent.com/7015725/ClipHub/" +
+                encodePath(REF) + "/" + encodePath(path) +
+                "?stage8=" + Number(System.currentTimeMillis())
+            ).openConnection();
+            connection.setConnectTimeout(10000);
+            connection.setReadTimeout(30000);
+            connection.setUseCaches(false);
+            connection.setRequestProperty("Accept-Encoding", "identity");
+            code = Number(connection.getResponseCode());
+            text = String(new JavaString(readBytes(
+                code >= 200 && code < 300 ?
+                    connection.getInputStream() :
+                    connection.getErrorStream()), "UTF-8"));
+            if (code < 200 || code >= 300) {
+                throw new Error("HTTP " + code + " " + path);
+            }
+            return text;
+        } finally {
+            if (connection !== null) {
+                try { connection.disconnect(); } catch (ignored) {}
+            }
+        }
+    }
+
+    function loadPackedSource() {
+        var root;
+        var runtimeDir;
+        var cacheFile;
+        var packed = "";
+        var index;
+        if (typeof shortx === "undefined" ||
+                typeof shortx.getShortXDir !== "function") {
+            throw new Error("ShortX runtime unavailable");
+        }
+        root = new File(String(shortx.getShortXDir()));
+        runtimeDir = new File(root, runtimeName());
+        cacheFile = new File(
+            ensureDir(new File(runtimeDir, "cache")), CACHE_NAME);
+        if (cacheFile.isFile()) {
+            try {
+                packed = readUtf8(cacheFile);
+                if (sha256(packed) === PACKED_SHA256) {
+                    return packed;
+                }
+            } catch (ignoredCache) {}
+        }
+        packed = "";
+        for (index = 0; index < PARTS.length; index += 1) {
+            packed += fetchPart(PARTS[index]);
+        }
+        if (sha256(packed) !== PACKED_SHA256) {
+            throw new Error("Stage 8 packed source SHA-256 mismatch");
+        }
+        writeUtf8Atomic(cacheFile, packed);
+        return packed;
+    }
+
+    function decodeSource(packed) {
+        var input = new GZIPInputStream(new BAIS(
+            Base64.decode(String(packed), Base64.DEFAULT)));
+        var source = String(new JavaString(
+            readBytes(input), "UTF-8"));
+        if (sha256(source) !== SOURCE_SHA256) {
+            throw new Error("Stage 8 source SHA-256 mismatch");
+        }
+        return source;
+    }
+
+    try {
+        eval(decodeSource(loadPackedSource()));
+    } catch (error) {
+        throw new Error("ch_11_filter.js Stage 8 loader failed: " +
+            String(error));
+    }
+}((function () { return this; }())));

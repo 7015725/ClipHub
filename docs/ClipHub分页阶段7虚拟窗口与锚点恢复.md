@@ -222,3 +222,9 @@ ClipHub.Filter.performQuickResetClick()
 - AJAX 追加后仍维持 View 裁剪且预取命中
 - 数字分页顺序与 Repository 一致且预取命中
 - 所有分页、虚拟窗口和面板错误字段为 `null`
+
+## 真机结论
+
+2026-08-07 真机确认虚拟窗口、锚点恢复、新内容保持当前位置、回到最新及分页回归均正常，Stage 7 记为 PASS。
+
+ShortX 任务最终显示值仍为 `undefined`，但界面测试流程已完整执行。本问题按测试入口返回兼容性单独记录，不作为 Stage 7 分页功能阻断项。
