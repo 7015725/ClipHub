@@ -136,6 +136,8 @@ Stage 8 必须继续保持：
 
 `ClipHub_分页阶段8数据块脱水与重新水合测试入口.txt`
 
+测试入口版本：2。锚点目标选择靠前的首个已脱水记录，避免定位测试本身进入页尾懒加载阈值。
+
 隔离运行目录：
 
 `ClipHubPaginationStage8DataWindow`

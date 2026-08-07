@@ -17,7 +17,7 @@ String((function (global) {
         "stage-assets/pagination-stage8/test_payload_01.b64"
     ];
     var PACKED_SHA256 =
-        "7b212c6592722928ad14f4e7f745bf96280ffe72313270ae82e0734745161531";
+        "68cbdb2f90442bdb4933fd290c06d91226074fad01964a8f2db3c501386ad8cd";
 
     function closeQuietly(value) {
         if (value !== null && value !== undefined) {
@@ -120,7 +120,7 @@ String((function (global) {
             ok: false,
             project: "ClipHub",
             stage: "pagination_stage8_data_window",
-            testEntryVersion: 1,
+            testEntryVersion: 2,
             error: String(error)
         }, null, 2);
     }
