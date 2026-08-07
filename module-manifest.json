@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260807.06",
+  "moduleSetVersion": "20260807.07",
   "entryMinVersion": 5,
   "sourceRef": "agent/add-pagination-lazy-prefetch-20260807",
   "modules": [
@@ -57,7 +57,7 @@
     {
       "name": "ch_11_filter.js",
       "path": "src/ch_11_filter.js",
-      "sha": "754720ca14486d283a5f7ad23b2cd9f8d59e3d7e"
+      "sha": "1b42a8400d83faacd1be5588d6fa62b4761a1152"
     },
     {
       "name": "ch_12_translation.js",
