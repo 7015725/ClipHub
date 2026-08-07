@@ -6,7 +6,7 @@
 
 ## 模块集
 
-`20260807.05`
+`20260807.06`
 
 ## 目标
 
@@ -68,7 +68,7 @@ AJAX 模式 Footer 支持：
 - `getPaginationQueryOptions(request)`
 - `loadPaginationPage(request)`
 
-`Filter.MODULE_VERSION = 40`
+`Filter.MODULE_VERSION = 41`
 
 `Filter.PAGINATION_STAGE = 4`
 
@@ -108,7 +108,7 @@ AJAX 模式 Footer 支持：
 ## 通过条件
 
 - `ok = true`
-- `filterModuleVersion = 40`
+- `filterModuleVersion = 41`
 - `paginationStage = 4`
 - 首页 `5` 条
 - 第一次追加后 `10` 条
@@ -119,4 +119,19 @@ AJAX 模式 Footer 支持：
 - `clickCount = successCount = 2`
 - `positionPreserved = true`
 - 最终 `hasMore = false`
+- 最终 `totalCount = 13`
 - 临时记录全部清理
+
+
+## Stage 4 修正 1
+
+真机 V1 测试确认 AJAX 卡片追加、顺序、去重、Footer 终止状态及位置保持均正常，但后续页结果中的占位 `totalCount = 0` 覆盖了首屏总数。
+
+修正后：
+
+- 仅当请求包含 `includeTotal = true` 时采用 Repository 返回的总数；
+- 后续追加页保持首屏总数；
+- 最后一页使用累计记录数校准总数；
+- `totalPages` 始终根据有效总数重新计算；
+- Filter 模块版本提升到 `41`；
+- 测试入口版本提升到 `2`。
