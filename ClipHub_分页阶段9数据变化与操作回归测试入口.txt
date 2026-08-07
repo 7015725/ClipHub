@@ -13,11 +13,11 @@ String((function (global) {
     var System = Packages.java.lang.System;
     var REF = "agent/add-pagination-lazy-prefetch-20260807";
     var PARTS = [
-        "stage-assets/pagination-stage9/test_payload_v2_00.b64",
-        "stage-assets/pagination-stage9/test_payload_v2_01.b64"
+        "stage-assets/pagination-stage9/test_payload_v3_00.b64",
+        "stage-assets/pagination-stage9/test_payload_v3_01.b64"
     ];
     var PACKED_SHA256 =
-        "80c18a3240576824d8507624562dcd904c066246487f7d9d4e04c16ad493df66";
+        "e68ae29473fb0e0c2e8373b9992a409295eb4605bf4ff2b1d1d6043f4cb01e51";
 
     function closeQuietly(value) {
         if (value !== null && value !== undefined) {
@@ -69,7 +69,7 @@ String((function (global) {
             connection = new URL(
                 "https://raw.githubusercontent.com/7015725/ClipHub/" +
                 encodePath(REF) + "/" + encodePath(path) +
-                "?stage9testv2=" + Number(System.currentTimeMillis())
+                "?stage9testv3=" + Number(System.currentTimeMillis())
             ).openConnection();
             connection.setConnectTimeout(10000);
             connection.setReadTimeout(30000);
@@ -121,7 +121,7 @@ String((function (global) {
             ok: false,
             project: "ClipHub",
             stage: "pagination_stage9_mutation_regression",
-            testEntryVersion: 2,
+            testEntryVersion: 3,
             error: String(error)
         }, null, 2);
     }

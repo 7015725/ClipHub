@@ -3,8 +3,8 @@
 ## 分支与版本
 
 - 分支：`agent/add-pagination-lazy-prefetch-20260807`
-- 模块集：`20260807.12`
-- `Filter.MODULE_VERSION = 47`
+- 模块集：`20260807.13`
+- `Filter.MODULE_VERSION = 48`
 - `Filter.PAGINATION_STAGE = 9`
 - 模块数量：15
 
@@ -88,7 +88,7 @@ ClipHub.Filter.performMutationRefresh(origin)
 
 `ClipHub_分页阶段9数据变化与操作回归测试入口.txt`
 
-测试入口版本：2。隔离运行目录：
+测试入口版本：3。隔离运行目录：
 
 `ClipHubPaginationStage9Mutation`
 
@@ -105,8 +105,8 @@ ClipHub.Filter.performMutationRefresh(origin)
 
 ## 通过条件
 
-- `moduleSetVersion = 20260807.12`
-- `filterModuleVersion = 47`
+- `moduleSetVersion = 20260807.13`
+- `filterModuleVersion = 48`
 - `paginationStage = 9`
 - 新内容待处理期间当前位置完全不变
 - 删除、撤销、编辑、置顶、标签变化后保持相同 `anchorItemId`
@@ -121,3 +121,9 @@ ClipHub.Filter.performMutationRefresh(origin)
 v1 真机在切换为置顶排序时，查询和分页状态均正常，但结果重建过程中 `refreshResultsOnMain()` 使用旧 ScrollView 位置再次执行锚点捕获，把待恢复 ID 从 `163` 改写为 `187`。
 
 v2 在统一变化刷新期间锁定首次捕获的 `anchorItemId + anchorOffsetPx`。旧 View 的捕获请求只返回诊断状态，不再改写锚点；首次恢复完成后解锁，再由已排队的测量回调复核实际位置。生产载荷和测试载荷均改用独立 v2 分片，避免旧入口与新资源交叉校验。
+
+## v3 回到最新锚点清理修正
+
+v2 真机已通过删除、撤销、编辑、置顶、标签、筛选、搜索、排序和分页设置回归。唯一失败项是“回到最新”已到第一页顶部且首条正确，但旧窗口的异步捕获在 `scrollToTopPending` 期间重新写入了第一页末条 ID。
+
+v3 在显式回顶尚未完成时直接忽略锚点捕获，保持 `anchorItemId = null`。测试会等待虚拟更新结束，再额外延迟 180ms 复核锚点没有被异步回调重新写入。生产载荷和测试载荷改用独立 v3 分片。

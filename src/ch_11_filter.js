@@ -17,20 +17,20 @@
 
     var REF = "agent/add-pagination-lazy-prefetch-20260807";
     var PARTS = [
-        "stage-assets/pagination-stage9/ch11_full_v2_00.b64",
-        "stage-assets/pagination-stage9/ch11_full_v2_01.b64",
-        "stage-assets/pagination-stage9/ch11_full_v2_02.b64",
-        "stage-assets/pagination-stage9/ch11_full_v2_03.b64",
-        "stage-assets/pagination-stage9/ch11_full_v2_04.b64",
-        "stage-assets/pagination-stage9/ch11_full_v2_05.b64",
-        "stage-assets/pagination-stage9/ch11_full_v2_06.b64",
-        "stage-assets/pagination-stage9/ch11_full_v2_07.b64"
+        "stage-assets/pagination-stage9/ch11_full_v3_00.b64",
+        "stage-assets/pagination-stage9/ch11_full_v3_01.b64",
+        "stage-assets/pagination-stage9/ch11_full_v3_02.b64",
+        "stage-assets/pagination-stage9/ch11_full_v3_03.b64",
+        "stage-assets/pagination-stage9/ch11_full_v3_04.b64",
+        "stage-assets/pagination-stage9/ch11_full_v3_05.b64",
+        "stage-assets/pagination-stage9/ch11_full_v3_06.b64",
+        "stage-assets/pagination-stage9/ch11_full_v3_07.b64"
     ];
     var PACKED_SHA256 =
-        "8f554a39796bb071fa515aad4280e4cffe252acd871bd4c3a1e21f01a1f68aa7";
+        "07b0ae4b4a41700fe5abfb6338cf9d8ab825ecde05587a408667993179a59c6f";
     var SOURCE_SHA256 =
-        "37b8cf0a521721cf50dd9627449fcaf645f016605a8efce18615ce851d878fed";
-    var CACHE_NAME = "ch_11_filter_stage9_v2_full.b64";
+        "0205158c6c222383add5a9ad978883dba0d61145cd740fb1200d1c3011d38c01";
+    var CACHE_NAME = "ch_11_filter_stage9_v3_full.b64";
 
     function closeQuietly(value) {
         if (value !== null && value !== undefined) {
@@ -130,7 +130,7 @@
             connection = new URL(
                 "https://raw.githubusercontent.com/7015725/ClipHub/" +
                 encodePath(REF) + "/" + encodePath(path) +
-                "?stage9v2=" + Number(System.currentTimeMillis())
+                "?stage9v3=" + Number(System.currentTimeMillis())
             ).openConnection();
             connection.setConnectTimeout(10000);
             connection.setReadTimeout(30000);
