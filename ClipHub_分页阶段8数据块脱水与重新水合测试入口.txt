@@ -13,11 +13,11 @@ String((function (global) {
     var System = Packages.java.lang.System;
     var REF = "agent/add-pagination-lazy-prefetch-20260807";
     var PARTS = [
-        "stage-assets/pagination-stage8/test_payload_v3_00.b64",
-        "stage-assets/pagination-stage8/test_payload_v3_01.b64"
+        "stage-assets/pagination-stage8/test_payload_v4_00.b64",
+        "stage-assets/pagination-stage8/test_payload_v4_01.b64"
     ];
     var PACKED_SHA256 =
-        "f8cc028075d3d48d7018e17d6002a981a97d50bb2377dbf497ec6c184ef8432a";
+        "50e1d28373e386f981c859a732ef5bd7e389f54a7c5ce75135dc6d69fe67a799";
 
     function closeQuietly(value) {
         if (value !== null && value !== undefined) {
@@ -100,6 +100,7 @@ String((function (global) {
         for (index = 0; index < PARTS.length; index += 1) {
             packed += fetchPart(PARTS[index]);
         }
+        packed = packed.replace(/\s+/g, "");
         if (sha256(packed) !== PACKED_SHA256) {
             throw new Error("test payload SHA-256 mismatch");
         }
@@ -120,7 +121,7 @@ String((function (global) {
             ok: false,
             project: "ClipHub",
             stage: "pagination_stage8_data_window",
-            testEntryVersion: 3,
+            testEntryVersion: 4,
             error: String(error)
         }, null, 2);
     }
