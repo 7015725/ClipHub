@@ -13,11 +13,11 @@ String((function (global) {
     var System = Packages.java.lang.System;
     var REF = "agent/add-pagination-lazy-prefetch-20260807";
     var PARTS = [
-        "stage-assets/pagination-stage8/test_payload_00.b64",
-        "stage-assets/pagination-stage8/test_payload_01.b64"
+        "stage-assets/pagination-stage8/test_payload_v3_00.b64",
+        "stage-assets/pagination-stage8/test_payload_v3_01.b64"
     ];
     var PACKED_SHA256 =
-        "68cbdb2f90442bdb4933fd290c06d91226074fad01964a8f2db3c501386ad8cd";
+        "f8cc028075d3d48d7018e17d6002a981a97d50bb2377dbf497ec6c184ef8432a";
 
     function closeQuietly(value) {
         if (value !== null && value !== undefined) {
@@ -120,7 +120,7 @@ String((function (global) {
             ok: false,
             project: "ClipHub",
             stage: "pagination_stage8_data_window",
-            testEntryVersion: 2,
+            testEntryVersion: 3,
             error: String(error)
         }, null, 2);
     }
