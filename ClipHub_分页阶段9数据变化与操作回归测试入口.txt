@@ -1,0 +1,128 @@
+/* ClipHub Stage 9 mutation coordination and anchor regression test loader. */
+String((function (global) {
+    var Base64 = Packages.android.util.Base64;
+    var GZIPInputStream = Packages.java.util.zip.GZIPInputStream;
+    var BAIS = Packages.java.io.ByteArrayInputStream;
+    var BAOS = Packages.java.io.ByteArrayOutputStream;
+    var ReflectArray = Packages.java.lang.reflect.Array;
+    var JavaByte = Packages.java.lang.Byte;
+    var JavaString = Packages.java.lang.String;
+    var URL = Packages.java.net.URL;
+    var URLEncoder = Packages.java.net.URLEncoder;
+    var MessageDigest = Packages.java.security.MessageDigest;
+    var System = Packages.java.lang.System;
+    var REF = "agent/add-pagination-lazy-prefetch-20260807";
+    var PARTS = [
+        "stage-assets/pagination-stage9/test_payload_v1_00.b64",
+        "stage-assets/pagination-stage9/test_payload_v1_01.b64"
+    ];
+    var PACKED_SHA256 =
+        "ac5e0e08893eb56ea9dab4e8590f1bf72a28b8f7cf5e39fa397649b65342f474";
+
+    function closeQuietly(value) {
+        if (value !== null && value !== undefined) {
+            try { value.close(); } catch (ignored) {}
+        }
+    }
+
+    function readBytes(stream) {
+        var output = new BAOS();
+        var buffer = ReflectArray.newInstance(JavaByte.TYPE, 8192);
+        var count;
+        try {
+            while ((count = stream.read(buffer)) >= 0) {
+                if (count > 0) { output.write(buffer, 0, count); }
+            }
+            return output.toByteArray();
+        } finally {
+            closeQuietly(stream);
+            closeQuietly(output);
+        }
+    }
+
+    function sha256(text) {
+        var digest = MessageDigest.getInstance("SHA-256");
+        var bytes = digest.digest(new JavaString(String(text))
+            .getBytes("UTF-8"));
+        var parts = [];
+        var index;
+        var value;
+        for (index = 0; index < bytes.length; index += 1) {
+            value = Number(bytes[index]);
+            if (value < 0) { value += 256; }
+            parts.push((value < 16 ? "0" : "") +
+                value.toString(16));
+        }
+        return parts.join("");
+    }
+
+    function encodePath(path) {
+        return String(URLEncoder.encode(String(path), "UTF-8"))
+            .replace(/%2F/g, "/").replace(/\+/g, "%20");
+    }
+
+    function fetchPart(path) {
+        var connection = null;
+        var code;
+        var text;
+        try {
+            connection = new URL(
+                "https://raw.githubusercontent.com/7015725/ClipHub/" +
+                encodePath(REF) + "/" + encodePath(path) +
+                "?stage9test=" + Number(System.currentTimeMillis())
+            ).openConnection();
+            connection.setConnectTimeout(10000);
+            connection.setReadTimeout(30000);
+            connection.setUseCaches(false);
+            connection.setRequestProperty("Accept-Encoding", "identity");
+            code = Number(connection.getResponseCode());
+            text = String(new JavaString(readBytes(
+                code >= 200 && code < 300 ?
+                    connection.getInputStream() :
+                    connection.getErrorStream()), "UTF-8"));
+            if (code < 200 || code >= 300) {
+                throw new Error("HTTP " + code + " " + path);
+            }
+            return text;
+        } finally {
+            if (connection !== null) {
+                try { connection.disconnect(); } catch (ignored) {}
+            }
+        }
+    }
+
+    try {
+        var packed = "";
+        var index;
+        var input;
+        var source;
+        var result;
+        for (index = 0; index < PARTS.length; index += 1) {
+            packed += fetchPart(PARTS[index]);
+        }
+        packed = packed.replace(/\s+/g, "");
+        if (sha256(packed) !== PACKED_SHA256) {
+            throw new Error("test payload SHA-256 mismatch");
+        }
+        input = new GZIPInputStream(new BAIS(
+            Base64.decode(packed, Base64.DEFAULT)));
+        source = String(new JavaString(readBytes(input), "UTF-8"));
+        result = eval(source);
+        if (result === undefined &&
+                typeof ClipHubPaginationStage9TestResult !== "undefined") {
+            result = ClipHubPaginationStage9TestResult;
+        }
+        if (result === undefined) {
+            throw new Error("Stage 9 test payload returned undefined");
+        }
+        return String(result);
+    } catch (error) {
+        return JSON.stringify({
+            ok: false,
+            project: "ClipHub",
+            stage: "pagination_stage9_mutation_regression",
+            testEntryVersion: 1,
+            error: String(error)
+        }, null, 2);
+    }
+}((function () { return this; }()))));

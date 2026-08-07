@@ -1,4 +1,4 @@
-/* ClipHub Stage 8 data block dehydration and rehydration ES5 loader. */
+/* ClipHub Stage 9 mutation coordination and anchor regression ES5 loader. */
 (function (global) {
     var File = Packages.java.io.File;
     var FIS = Packages.java.io.FileInputStream;
@@ -17,20 +17,20 @@
 
     var REF = "agent/add-pagination-lazy-prefetch-20260807";
     var PARTS = [
-        "stage-assets/pagination-stage8/ch11_full_00.b64",
-        "stage-assets/pagination-stage8/ch11_full_01.b64",
-        "stage-assets/pagination-stage8/ch11_full_02.b64",
-        "stage-assets/pagination-stage8/ch11_full_03.b64",
-        "stage-assets/pagination-stage8/ch11_full_04.b64",
-        "stage-assets/pagination-stage8/ch11_full_05.b64",
-        "stage-assets/pagination-stage8/ch11_full_06.b64",
-        "stage-assets/pagination-stage8/ch11_full_07.b64"
+        "stage-assets/pagination-stage9/ch11_full_00.b64",
+        "stage-assets/pagination-stage9/ch11_full_01.b64",
+        "stage-assets/pagination-stage9/ch11_full_02.b64",
+        "stage-assets/pagination-stage9/ch11_full_03.b64",
+        "stage-assets/pagination-stage9/ch11_full_04.b64",
+        "stage-assets/pagination-stage9/ch11_full_05.b64",
+        "stage-assets/pagination-stage9/ch11_full_06.b64",
+        "stage-assets/pagination-stage9/ch11_full_07.b64"
     ];
     var PACKED_SHA256 =
-        "6ce6b3c8e9f223904942769444b160d831091cd1fcb111af4cbf21b86472fdef";
+        "6274f348727995924b41206187d10faff35b76ee9ab85cf1048706d14466d353";
     var SOURCE_SHA256 =
-        "97403571d4adaa20f4d1775d9607d354d490f75da8fd6ea521f9f206bc334b13";
-    var CACHE_NAME = "ch_11_filter_stage8_full.b64";
+        "5347be780042510deb2f8ae4a2944c61bfd7dd1b7a45f6c564fcab5b65995c8a";
+    var CACHE_NAME = "ch_11_filter_stage9_full.b64";
 
     function closeQuietly(value) {
         if (value !== null && value !== undefined) {
@@ -130,7 +130,7 @@
             connection = new URL(
                 "https://raw.githubusercontent.com/7015725/ClipHub/" +
                 encodePath(REF) + "/" + encodePath(path) +
-                "?stage8=" + Number(System.currentTimeMillis())
+                "?stage9=" + Number(System.currentTimeMillis())
             ).openConnection();
             connection.setConnectTimeout(10000);
             connection.setReadTimeout(30000);
@@ -168,7 +168,7 @@
             ensureDir(new File(runtimeDir, "cache")), CACHE_NAME);
         if (cacheFile.isFile()) {
             try {
-                packed = readUtf8(cacheFile);
+                packed = readUtf8(cacheFile).replace(/\s+/g, "");
                 if (sha256(packed) === PACKED_SHA256) {
                     return packed;
                 }
@@ -178,8 +178,9 @@
         for (index = 0; index < PARTS.length; index += 1) {
             packed += fetchPart(PARTS[index]);
         }
+        packed = packed.replace(/\s+/g, "");
         if (sha256(packed) !== PACKED_SHA256) {
-            throw new Error("Stage 8 packed source SHA-256 mismatch");
+            throw new Error("Stage 9 packed source SHA-256 mismatch");
         }
         writeUtf8Atomic(cacheFile, packed);
         return packed;
@@ -191,7 +192,7 @@
         var source = String(new JavaString(
             readBytes(input), "UTF-8"));
         if (sha256(source) !== SOURCE_SHA256) {
-            throw new Error("Stage 8 source SHA-256 mismatch");
+            throw new Error("Stage 9 source SHA-256 mismatch");
         }
         return source;
     }
@@ -199,7 +200,7 @@
     try {
         eval(decodeSource(loadPackedSource()));
     } catch (error) {
-        throw new Error("ch_11_filter.js Stage 8 loader failed: " +
+        throw new Error("ch_11_filter.js Stage 9 loader failed: " +
             String(error));
     }
 }((function () { return this; }())));
