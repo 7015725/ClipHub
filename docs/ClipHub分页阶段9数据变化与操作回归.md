@@ -88,7 +88,7 @@ ClipHub.Filter.performMutationRefresh(origin)
 
 `ClipHub_分页阶段9数据变化与操作回归测试入口.txt`
 
-测试入口版本：3。隔离运行目录：
+测试入口版本：4。隔离运行目录：
 
 `ClipHubPaginationStage9Mutation`
 
@@ -127,3 +127,9 @@ v2 在统一变化刷新期间锁定首次捕获的 `anchorItemId + anchorOffset
 v2 真机已通过删除、撤销、编辑、置顶、标签、筛选、搜索、排序和分页设置回归。唯一失败项是“回到最新”已到第一页顶部且首条正确，但旧窗口的异步捕获在 `scrollToTopPending` 期间重新写入了第一页末条 ID。
 
 v3 在显式回顶尚未完成时直接忽略锚点捕获，保持 `anchorItemId = null`。测试会等待虚拟更新结束，再额外延迟 180ms 复核锚点没有被异步回调重新写入。生产载荷和测试载荷改用独立 v3 分片。
+
+## v4 异步恢复稳定采样
+
+v3 真机确认回到最新后的锚点已保持为空，全部操作链和错误字段正常。最终 `ok` 仍为 `false` 的原因是测试在主线程已登记变化刷新、但布局测量与锚点恢复回调尚未完成时保存了中间快照，部分快照的临时 `anchorRestoreErrorPx` 超出门限。
+
+v4 不修改生产模块。变化刷新计数增加后先等待 180ms，再等待 `updateScheduled = false`、`anchorLocked = false`、相同锚点和恢复误差进入门限后保存测试快照。测试载荷使用独立 v4 分片。
