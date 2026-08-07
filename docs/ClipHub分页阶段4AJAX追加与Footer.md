@@ -118,8 +118,10 @@ AJAX 模式 Footer 支持：
 - 最终 Footer 为 `end`
 - `clickCount = successCount = 2`
 - `positionPreserved = true`
+- `nonZeroScrollVerified = true`
 - 最终 `hasMore = false`
 - 最终 `totalCount = 13`
+- 最终 `totalPages = 3`
 - 临时记录全部清理
 
 
@@ -135,3 +137,7 @@ AJAX 模式 Footer 支持：
 - `totalPages` 始终根据有效总数重新计算；
 - Filter 模块版本提升到 `41`；
 - 测试入口版本提升到 `2`。
+
+V2 会在第一次追加到 10 条后设置非零滚动偏移，再执行第二次追加，要求追加前后的滚动位置相同。
+
+- 测试记录使用双行长文本，确保非零滚动位置验证具备有效滚动范围。
