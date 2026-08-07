@@ -30,7 +30,7 @@ var ClipHubPaginationStage10TestResult = (function (global) {
     var REF = "agent/add-pagination-lazy-prefetch-20260807";
     var RUNTIME_NAME = "ClipHubPaginationStage10SystemRegression";
     var EXPECTED_MODULE_SET_VERSION = "20260807.13";
-    var TEST_ENTRY_VERSION = 1;
+    var TEST_ENTRY_VERSION = 2;
     var FILTER_MODULE_VERSION = 48;
     var PAGINATION_STAGE = 9;
     var WARM_LOOPS = 20;
@@ -363,7 +363,8 @@ var ClipHubPaginationStage10TestResult = (function (global) {
         var valueRef;
         var errorRef;
         var posted;
-        if (Looper.myLooper() === Looper.getMainLooper()) {
+        if (Number(Looper.getMainLooper().getThread().getId()) ===
+                Number(Thread.currentThread().getId())) {
             return callback();
         }
         handler = new Handler(Looper.getMainLooper());
@@ -924,6 +925,7 @@ var ClipHubPaginationStage10TestResult = (function (global) {
             stop: null,
             cleanup: false,
             restoredOriginalSettings: false,
+            lastCheckpoint: "initial",
             error: null
         };
         try {
@@ -981,53 +983,66 @@ var ClipHubPaginationStage10TestResult = (function (global) {
                     bootstrap.app.moduleFileCount || 0)
             };
 
+            result.lastCheckpoint = "automatic_warm_starts";
             result.automatic.warmStarts = runWarmStarts();
             if (!result.automatic.warmStarts.ok) {
                 throw new Error("20 warm starts failed");
             }
+            result.lastCheckpoint = "automatic_rapid_close";
             result.automatic.rapidClose = runRapidClose();
             if (!result.automatic.rapidClose.ok) {
                 throw new Error("20 rapid closes failed");
             }
+            result.lastCheckpoint = "automatic_normal_hide_restore";
             result.automatic.normalHideRestore = runNormalRestore();
             if (!result.automatic.normalHideRestore.ok) {
                 throw new Error("Normal hide/restore failed");
             }
 
+            result.lastCheckpoint = "interactive_instruction_create";
             createInstruction();
+            result.lastCheckpoint = "interactive_ime";
             result.interactive.ime = runIme();
             if (!result.interactive.ime.ok) {
                 throw new Error("IME regression failed");
             }
+            result.lastCheckpoint = "interactive_system_back";
             result.interactive.systemBack = runSystemBack();
             if (!result.interactive.systemBack.ok) {
                 throw new Error("System back regression failed");
             }
+            result.lastCheckpoint = "interactive_outside_tap";
             result.interactive.outsideTap = runOutsideTap();
             if (!result.interactive.outsideTap.ok) {
                 throw new Error("Outside tap regression failed");
             }
+            result.lastCheckpoint = "interactive_drag";
             result.interactive.drag = runDrag();
             if (!result.interactive.drag.ok) {
                 throw new Error("Window drag regression failed");
             }
+            result.lastCheckpoint = "interactive_resize";
             result.interactive.resize = runResize();
             if (!result.interactive.resize.ok) {
                 throw new Error("Window resize regression failed");
             }
+            result.lastCheckpoint = "interactive_orientation";
             result.interactive.orientation = runOrientation();
             if (!result.interactive.orientation.ok) {
                 throw new Error("Orientation regression failed");
             }
+            result.lastCheckpoint = "interactive_home";
             result.interactive.home = runHome();
             if (!result.interactive.home.ok) {
                 throw new Error("Home regression failed");
             }
+            result.lastCheckpoint = "interactive_recents";
             result.interactive.recents = runRecents();
             if (!result.interactive.recents.ok) {
                 throw new Error("Recent tasks regression failed");
             }
 
+            result.lastCheckpoint = "final_stop_cleanup";
             setInstruction("Stage 10 · 全部交互已完成，正在清理并停止后台");
             removeInstruction();
             deleteRows(database, insertedIds);
@@ -1062,6 +1077,9 @@ var ClipHubPaginationStage10TestResult = (function (global) {
                 result.interactive.recents.ok === true &&
                 result.stop.ok === true &&
                 result.restoredOriginalSettings === true;
+            if (result.ok === true) {
+                result.lastCheckpoint = "completed";
+            }
         } catch (error) {
             result.error = errorText(error);
         } finally {
@@ -1117,6 +1135,7 @@ var ClipHubPaginationStage10TestResult = (function (global) {
             stage: "pagination_stage10_system_regression",
             testEntryVersion: TEST_ENTRY_VERSION,
             sourceRef: REF,
+            lastCheckpoint: "outer_error",
             error: errorText(error)
         }, null, 2);
     }

@@ -7,9 +7,15 @@
 - `Filter.MODULE_VERSION = 48`
 - `Filter.PAGINATION_STAGE = 9`
 - 模块数量：15
-- Stage 10 测试入口版本：1
+- Stage 10 测试入口版本：2
 
 Stage 10 不修改生产模块和正式入口，仅新增隔离真机回归入口、压缩载荷及测试说明。
+
+## v2 修正
+
+v1 真机结果确认 20 轮暖启动、20 轮快速显示/关闭及普通隐藏恢复全部通过，随后在创建顶部交互提示条时因主线程快速路径误判而中止；清理、设置恢复和完全停止均成功。该结果不涉及生产模块失败。
+
+v2 仅修正测试实现：使用主 Looper 所属线程 ID 判定当前是否处于 Android 主线程，并在结果中增加 `lastCheckpoint`，用于准确定位后续交互阶段。生产版本、正式入口及冻结模块保持不变。
 
 ## 回归目标
 
@@ -120,7 +126,7 @@ Home 与最近任务分别要求：
 
 ```text
 ok=true
-testEntryVersion=1
+testEntryVersion=2
 moduleSetVersion=20260807.13
 filterModuleVersion=48
 paginationStage=9
