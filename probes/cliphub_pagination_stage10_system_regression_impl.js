@@ -30,7 +30,7 @@ var ClipHubPaginationStage10TestResult = (function (global) {
     var REF = "agent/add-pagination-lazy-prefetch-20260807";
     var RUNTIME_NAME = "ClipHubPaginationStage10SystemRegression";
     var EXPECTED_MODULE_SET_VERSION = "20260807.13";
-    var TEST_ENTRY_VERSION = 3;
+    var TEST_ENTRY_VERSION = 4;
     var FILTER_MODULE_VERSION = 48;
     var PAGINATION_STAGE = 9;
     var WARM_LOOPS = 20;
@@ -648,9 +648,9 @@ var ClipHubPaginationStage10TestResult = (function (global) {
         var active;
         var closed;
         setInstruction("Stage 10 · 正在自动验证输入法避让，请不要操作");
-        opened = runOnAndroidMain(function () {
+        opened = String(runOnAndroidMain(function () {
             return filter.performSearchToggleClick();
-        }, 3000);
+        }, 3000)) === "true";
         waitFor("IME visible", function () {
             var panel = panelState();
             var ime = filter.getImeAvoidanceState();

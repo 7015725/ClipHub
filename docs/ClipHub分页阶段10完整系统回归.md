@@ -7,7 +7,7 @@
 - `Filter.MODULE_VERSION = 48`
 - `Filter.PAGINATION_STAGE = 9`
 - 模块数量：15
-- Stage 10 测试入口版本：3
+- Stage 10 测试入口版本：4
 
 Stage 10 不修改生产模块和正式入口，仅新增隔离真机回归入口、压缩载荷及测试说明。
 
@@ -22,6 +22,12 @@ v2 仅修正测试实现：使用主 Looper 所属线程 ID 判定当前是否�
 v2 真机结果再次确认全部自动回归、最终停止、设置恢复和隔离清理通过；提示条已正常创建，失败点推进到 `interactive_ime`。原因是测试从工作线程调用 `Filter.performSearchToggleClick()` 和 `Filter.handleBack()` 时，模块内部的 Looper 包装对象快速判断误走直接调用路径。
 
 v3 仅将 IME 自动测试中的展开搜索与关闭搜索动作显式投递到真实 Android 主线程，等待与状态采样仍留在工作线程，避免阻塞主线程。生产模块和版本不变。
+
+## v4 修正
+
+v3 真机已经完成搜索展开、焦点获取、IME 避让应用和关闭恢复，`lastInsetPx = 1093`，各项错误字段为空。唯一失败原因是主线程回调通过 `AtomicReference` 返回 `java.lang.Boolean(true)` 后，测试使用 `=== true` 比较，误将成功动作记录为 `toggleWorked = false`。
+
+v4 仅把该返回值规范化为字符串布尔值后再判定，不改变任何执行路径或生产代码。
 
 ## 回归目标
 
@@ -132,7 +138,7 @@ Home 与最近任务分别要求：
 
 ```text
 ok=true
-testEntryVersion=3
+testEntryVersion=4
 moduleSetVersion=20260807.13
 filterModuleVersion=48
 paginationStage=9
