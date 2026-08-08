@@ -1,4 +1,4 @@
-/* ClipHub Stage 15 rebuild peak diagnostics ES5 loader. */
+/* ClipHub Stage 16A CardHolder safe-binding ES5 loader. */
 (function (global) {
     var File = Packages.java.io.File;
     var FIS = Packages.java.io.FileInputStream;
@@ -130,7 +130,7 @@
             connection = new URL(
                 "https://raw.githubusercontent.com/7015725/ClipHub/" +
                 encodePath(REF) + "/" + encodePath(path) +
-                "?stage15v11=" + Number(System.currentTimeMillis())
+                "?stage16av12=" + Number(System.currentTimeMillis())
             ).openConnection();
             connection.setConnectTimeout(10000);
             connection.setReadTimeout(30000);
@@ -443,10 +443,161 @@
         return source;
     }
 
+
+    function transformCardHolderSource(source) {
+        var info;
+        var value;
+
+        source = replaceOnceStrict(source,
+  "MODULE_VERSION: 57", "MODULE_VERSION: 58",
+  "Stage16A module version");
+
+        source = replaceOnceStrict(source,
+  "    function buildCardActionGrid(row, colors, metrics) {\n",
+  "    function currentCardHolderRow(holder) {\n" +
+  "        if (holder === null || holder === undefined ||\n" +
+  "                holder.row === null || holder.row === undefined) {\n" +
+  "            return null;\n" +
+  "        }\n" +
+  "        holder.itemId = Number(holder.row.id);\n" +
+  "        return holder.row;\n" +
+  "    }\n\n" +
+  "    function buildCardActionGrid(holder, colors, metrics) {\n",
+  "Stage16A holder helper");
+
+        info = section(source,
+  "    function buildCardActionGrid(holder, colors, metrics) {",
+  "\n    function ",
+  "Stage16A card actions");
+        value = info.text;
+        value = replaceOnceStrict(value,
+  "                editResultRow(row, \"card_action_edit\");\n",
+  "                editResultRow(currentCardHolderRow(holder),\n" +
+  "                    \"card_action_edit\");\n",
+  "Stage16A edit action");
+        value = replaceOnceStrict(value,
+  "                translateResultRow(row, \"card_action_translate\");\n",
+  "                translateResultRow(currentCardHolderRow(holder),\n" +
+  "                    \"card_action_translate\");\n",
+  "Stage16A translate action");
+        value = replaceOnceStrict(value,
+  "                copyResultRow(row, \"card_action_copy\");\n",
+  "                copyResultRow(currentCardHolderRow(holder),\n" +
+  "                    \"card_action_copy\");\n",
+  "Stage16A copy action");
+        value = replaceOnceStrict(value,
+  "                deleteResultRow(row, \"card_action_delete\");\n",
+  "                deleteResultRow(currentCardHolderRow(holder),\n" +
+  "                    \"card_action_delete\");\n",
+  "Stage16A delete action");
+        value = replaceOnceStrict(value,
+  "        resultActionViews.push({\n" +
+  "            edit: edit,\n" +
+  "            translate: translate,\n" +
+  "            copy: copy,\n" +
+  "            delete: remove\n" +
+  "        });\n",
+  "        holder.editButton = edit;\n" +
+  "        holder.translateButton = translate;\n" +
+  "        holder.copyButton = copy;\n" +
+  "        holder.deleteButton = remove;\n" +
+  "        resultActionViews.push({\n" +
+  "            edit: edit,\n" +
+  "            translate: translate,\n" +
+  "            copy: copy,\n" +
+  "            delete: remove\n" +
+  "        });\n",
+  "Stage16A holder action refs");
+        source = replaceSection(source, info, value);
+
+        info = section(source,
+  "    function bindSwipeGesture(row, wrapper, foreground, deleteAction,",
+  "\n    function ",
+  "Stage16A swipe binding");
+        value = info.text;
+        value = replaceOnceStrict(value,
+  "    function bindSwipeGesture(row, wrapper, foreground, deleteAction,\n" +
+  "            pinAction, metrics) {\n",
+  "    function bindSwipeGesture(holder, wrapper, foreground, deleteAction,\n" +
+  "            pinAction, metrics) {\n",
+  "Stage16A swipe signature");
+        value = replaceOnceStrict(value,
+  "                            performSwipeAction(row, direction, foreground);\n",
+  "                            performSwipeAction(\n" +
+  "                                currentCardHolderRow(holder),\n" +
+  "                                direction, foreground);\n",
+  "Stage16A swipe action");
+        source = replaceSection(source, info, value);
+
+        info = section(source,
+  "    function makeResultCard(row, colors) {",
+  "\n    function ",
+  "Stage16A result card");
+        value = info.text;
+        value = replaceOnceStrict(value,
+  "        var actionGrid = buildCardActionGrid(row, colors, metrics);\n",
+  "        var holder = {\n" +
+  "            itemId: Number(row.id),\n" +
+  "            row: row,\n" +
+  "            wrapper: wrapper,\n" +
+  "            actionLayer: actionLayer,\n" +
+  "            deleteAction: deleteAction,\n" +
+  "            pinAction: pinAction,\n" +
+  "            card: card,\n" +
+  "            iconView: icon,\n" +
+  "            center: center,\n" +
+  "            contentRow: contentRow,\n" +
+  "            contentView: content,\n" +
+  "            metaRow: metaRow,\n" +
+  "            tagBadge: tagBadge,\n" +
+  "            sourceView: source,\n" +
+  "            pinBadge: null,\n" +
+  "            actionGrid: null,\n" +
+  "            selected: selected,\n" +
+  "            pinned: pinned,\n" +
+  "            metrics: metrics\n" +
+  "        };\n" +
+  "        var actionGrid = buildCardActionGrid(holder, colors, metrics);\n" +
+  "        holder.actionGrid = actionGrid;\n",
+  "Stage16A holder creation");
+        value = replaceOnceStrict(value,
+  "                onClick: function () { inputResultRow(row, \"card_click\"); }\n",
+  "                onClick: function () {\n" +
+  "                    inputResultRow(currentCardHolderRow(holder),\n" +
+  "                        \"card_click\");\n" +
+  "                }\n",
+  "Stage16A card click");
+        value = replaceOnceStrict(value,
+  "            pinBadge = makePinnedBadge(colors, metrics);\n",
+  "            pinBadge = makePinnedBadge(colors, metrics);\n" +
+  "            holder.pinBadge = pinBadge;\n",
+  "Stage16A pin badge ref");
+        value = replaceOnceStrict(value,
+  "        bindSwipeGesture(row, wrapper, card, deleteAction, pinAction, metrics);\n",
+  "        bindSwipeGesture(holder, wrapper, card, deleteAction, pinAction, metrics);\n",
+  "Stage16A swipe holder");
+        source = replaceSection(source, info, value);
+
+        if (source.indexOf("buildCardActionGrid(row, colors, metrics)") >= 0 ||
+      source.indexOf("bindSwipeGesture(row, wrapper") >= 0 ||
+      source.indexOf("inputResultRow(row, \"card_click\")") >= 0 ||
+      source.indexOf("                            performSwipeAction(row, direction, foreground);") >= 0) {
+  throw new Error("Stage16A stale row listener binding detected");
+        }
+        if (source.indexOf("function currentCardHolderRow(holder)") < 0 ||
+      source.indexOf("var holder = {") < 0 ||
+      source.indexOf("holder.editButton = edit;") < 0 ||
+      source.indexOf("holder.pinBadge = pinBadge;") < 0) {
+  throw new Error("Stage16A holder wiring incomplete");
+        }
+        return source;
+    }
+
     try {
-        eval(transformSource(decodeSource(loadPackedSource())));
+        eval(transformCardHolderSource(
+            transformSource(decodeSource(loadPackedSource()))));
     } catch (error) {
-        throw new Error("ch_11_filter.js Stage 15 loader failed: " +
+        throw new Error("ch_11_filter.js Stage 16A loader failed: " +
             String(error));
     }
 }((function () { return this; }())));
