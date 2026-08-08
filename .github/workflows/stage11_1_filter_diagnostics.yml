@@ -24,6 +24,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 .github/stage11_1_patch_builder.py
           python3 .github/stage11_1_build.py
           cat /tmp/stage11_1_build_report.json
 
@@ -65,7 +66,7 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git rm .github/stage11_1_build.py .github/workflows/stage11_1_filter_diagnostics.yml
+          git rm .github/stage11_1_build.py .github/stage11_1_patch_builder.py .github/workflows/stage11_1_filter_diagnostics.yml
           git add src/ch_11_filter.js module-manifest.json \
             'ClipHub_分页阶段11首页预览按需正文测试入口.txt' \
             stage-assets/pagination-stage9/ch11_full_v5_*.b64
