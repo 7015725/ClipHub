@@ -46,7 +46,7 @@ jobs:
               )
 
           source = mutate_function(source, "paginationQueryOptions", patch_query_options)'''
-          s2, count = pattern.subn(replacement, s, count=1)
+          s2, count = pattern.subn(lambda match: replacement, s, count=1)
           if count != 1:
               raise SystemExit('builder patch_query_options replacement failed')
           p.write_text(s2, encoding='utf-8', newline='\n')
