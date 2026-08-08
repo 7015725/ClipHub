@@ -11,33 +11,44 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Decode Filter 50 and write view paths
+      - name: Decode Filter 50 and write focused functions
         shell: bash
         run: |
           python - <<'PY'
-          import base64,gzip,glob
+          import base64,gzip,glob,re
           parts=sorted(glob.glob('stage-assets/pagination-stage9/ch11_full_v5_*.b64'))
           packed=base64.b64decode(''.join(open(p,encoding='utf-8').read().strip() for p in parts))
           src=gzip.decompress(packed).decode('utf-8')
           lines=src.splitlines()
-          keys=['virtualCardHost','rebuildVirtualWindow','scheduleVirtualUpdate','createResultCard','buildResultCard','renderResult','resultCard','bind','removeAllViews','addView','dehydrateDataWindowOutside']
-          hit=[i for i,line in enumerate(lines) if any(k in line for k in keys)]
-          ranges=[]
-          for i in hit:
-              a=max(0,i-45); b=min(len(lines),i+110)
-              if ranges and a<=ranges[-1][1]+5: ranges[-1]=(ranges[-1][0],max(ranges[-1][1],b))
-              else: ranges.append((a,b))
-          with open('stage12_view_diag.txt','w',encoding='utf-8') as f:
-              f.write('SOURCE_LINES %d\n'%len(lines))
-              for n,(a,b) in enumerate(ranges[:24],1):
-                  f.write('\n===== RANGE %d L%d-L%d =====\n'%(n,a+1,b))
-                  for j in range(a,b): f.write('%05d %s\n'%(j+1,lines[j]))
+          starts=[]
+          for i,line in enumerate(lines):
+              m=re.match(r'    function ([A-Za-z0-9_]+)\(',line)
+              if m: starts.append((i,m.group(1)))
+          wanted={'makeResultCard','rebuildVirtualWindow','scheduleVirtualUpdate','updateResultScrollState','buildResultArea','dehydrateDataWindowOutside','hydrateDataWindowRange','applyHydrationWorkerResult','submitHydrationRequest','calculateVirtualRange','updateVirtualSpacers'}
+          out=[]
+          for n,(i,name) in enumerate(starts):
+              if name not in wanted: continue
+              j=starts[n+1][0] if n+1<len(starts) else len(lines)
+              out.append('\n===== FUNCTION %s L%d-L%d =====\n'%(name,i+1,j))
+              out.extend('%05d %s\n'%(k+1,lines[k]) for k in range(i,j))
+          # include neighboring top-level functions around makeResultCard/rebuildVirtualWindow
+          name_to_idx={name:n for n,(i,name) in enumerate(starts)}
+          for anchor in ['makeResultCard','rebuildVirtualWindow']:
+              n=name_to_idx.get(anchor)
+              if n is None: continue
+              for x in range(max(0,n-4),min(len(starts),n+5)):
+                  i,name=starts[x]; j=starts[x+1][0] if x+1<len(starts) else len(lines)
+                  tag='NEIGHBOR %s around %s'%(name,anchor)
+                  block='\n===== %s L%d-L%d =====\n'%(tag,i+1,j)
+                  if block in out: continue
+                  out.append(block); out.extend('%05d %s\n'%(k+1,lines[k]) for k in range(i,j))
+          open('stage12_focus.txt','w',encoding='utf-8').writelines(out)
           PY
       - name: Commit diagnostics
         shell: bash
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add stage12_view_diag.txt
-          git commit -m "记录 Stage12 View 诊断" || exit 0
+          git add stage12_focus.txt
+          git commit -m "记录 Stage12 聚焦诊断" || exit 0
           git push
