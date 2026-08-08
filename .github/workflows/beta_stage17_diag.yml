@@ -39,17 +39,17 @@ jobs:
           import pathlib,re
           src=pathlib.Path('/tmp/filter64.js').read_text(encoding='utf-8')
           out=['MODULE64='+str(src.count('MODULE_VERSION: 64'))]
-          needles=['"ajax_append"','ajax_append','function rebuildVirtualWindow','scheduleVirtualWindowUpdate','function requestVirtualWindowUpdate','mainHandler.post','paginationState.loadCount','append','loadNext','prefetch']
+          needles=['function startAjaxAppendRender','function finishAjaxAppendRender','function rebuildVirtualWindow','function scheduleVirtualUpdate','function closePanel','function resetVirtualState','var ajaxAppendGeneration','slowRebuildSamples: []','holderRecyclePoolPeakCount','resetVirtualState(true)','ajaxAppendGeneration += 1']
           seen=[]
           for needle in needles:
               out.append('\n===== '+needle+' =====')
               for i,m in enumerate(re.finditer(re.escape(needle),src)):
                   fs=src.rfind('\n    function ',0,m.start())
                   fe=src.find('\n    function ',m.end())
-                  if fs>=0 and fe>fs and fe-fs<30000:
+                  if fs>=0 and fe>fs and fe-fs<40000:
                       block=src[fs:fe]
                   else:
-                      a=max(0,m.start()-3000); b=min(len(src),m.end()+5000); block=src[a:b]
+                      a=max(0,m.start()-2500); b=min(len(src),m.end()+4500); block=src[a:b]
                   if block in seen: continue
                   seen.append(block)
                   out.append('\n--- #%d at %d ---\n%s' % (i+1,m.start(),block))
@@ -58,5 +58,5 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add stage17_diag.txt
-          git commit -m "记录 Stage17 AJAX 分帧路径诊断"
+          git commit -m "扩展 Stage17 生命周期诊断"
           git push
