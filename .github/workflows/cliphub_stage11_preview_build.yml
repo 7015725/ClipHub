@@ -30,10 +30,11 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import re
+          import textwrap
           p = Path('tools/cliphub_stage11_preview_build.py')
           s = p.read_text(encoding='utf-8')
           pattern = re.compile(r'    def patch_query_options\(block: str\) -> str:\n.*?\n    source = mutate_function\(source, "paginationQueryOptions", patch_query_options\)', re.S)
-          replacement = '''    def patch_query_options(block: str) -> str:
+          nested = '''def patch_query_options(block: str) -> str:
               if "previewOnly" in block:
                   return block
               marker = "        return options;\\n"
@@ -46,6 +47,7 @@ jobs:
               )
 
           source = mutate_function(source, "paginationQueryOptions", patch_query_options)'''
+          replacement = textwrap.indent(textwrap.dedent(nested), '    ')
           s2, count = pattern.subn(lambda match: replacement, s, count=1)
           if count != 1:
               raise SystemExit('builder patch_query_options replacement failed')
