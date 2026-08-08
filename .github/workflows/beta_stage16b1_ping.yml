@@ -1,0 +1,24 @@
+name: Beta Stage16B1 Ping
+on:
+  push:
+    branches:
+      - beta-pagination-stage10-20260808
+    paths:
+      - .github/stage16b1-ping.txt
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ping
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'ok\n' > stage16b1_ping_result.txt
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add stage16b1_ping_result.txt
+          git commit -m "验证 Stage16B.1 Actions 通道"
+          git push
