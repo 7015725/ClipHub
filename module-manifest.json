@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260808.02",
+  "moduleSetVersion": "20260808.03",
   "entryMinVersion": 6,
   "sourceRef": "agent/beta-list-preview-on-demand-20260808",
   "modules": [
@@ -57,7 +57,7 @@
     {
       "name": "ch_11_filter.js",
       "path": "src/ch_11_filter.js",
-      "sha": "c337347fc99187556fb565a0fad9eed60d6be1c4"
+      "sha": "e59cb8d4ecf5a529477301e49346db94fba29cdd"
     },
     {
       "name": "ch_12_translation.js",

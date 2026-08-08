@@ -1,4 +1,4 @@
-/* ClipHub Stage 9 mutation coordination and anchor regression ES5 loader. */
+/* ClipHub Stage 11.1 async hydration worker ES5 loader. */
 (function (global) {
     var File = Packages.java.io.File;
     var FIS = Packages.java.io.FileInputStream;
@@ -17,20 +17,20 @@
 
     var REF = "agent/beta-list-preview-on-demand-20260808";
     var PARTS = [
-        "stage-assets/pagination-stage9/ch11_full_v4_00.b64",
-        "stage-assets/pagination-stage9/ch11_full_v4_01.b64",
-        "stage-assets/pagination-stage9/ch11_full_v4_02.b64",
-        "stage-assets/pagination-stage9/ch11_full_v4_03.b64",
-        "stage-assets/pagination-stage9/ch11_full_v4_04.b64",
-        "stage-assets/pagination-stage9/ch11_full_v4_05.b64",
-        "stage-assets/pagination-stage9/ch11_full_v4_06.b64",
-        "stage-assets/pagination-stage9/ch11_full_v4_07.b64"
+        "stage-assets/pagination-stage9/ch11_full_v5_00.b64",
+        "stage-assets/pagination-stage9/ch11_full_v5_01.b64",
+        "stage-assets/pagination-stage9/ch11_full_v5_02.b64",
+        "stage-assets/pagination-stage9/ch11_full_v5_03.b64",
+        "stage-assets/pagination-stage9/ch11_full_v5_04.b64",
+        "stage-assets/pagination-stage9/ch11_full_v5_05.b64",
+        "stage-assets/pagination-stage9/ch11_full_v5_06.b64",
+        "stage-assets/pagination-stage9/ch11_full_v5_07.b64"
     ];
     var PACKED_SHA256 =
-        "77deb0225545af17da7f9a0eac6f43ce4a623440d1e053e4276441deb18b01f4";
+        "15ad7ac4df8b4b1ecb9491ceb547da9d865d4474b8493e7e7b2b46e12909e6c5";
     var SOURCE_SHA256 =
-        "6d85719de45449ac1d029081a50554b8592bf21e7717fa3ecbfce18c8aa913e7";
-    var CACHE_NAME = "ch_11_filter_stage9_v4_full.b64";
+        "605fdf2bc41d4db6a2ac4deacd060e0a331043fb205e7eef1b45c67f4973da7e";
+    var CACHE_NAME = "ch_11_filter_stage11_1_v5_full.b64";
 
     function closeQuietly(value) {
         if (value !== null && value !== undefined) {
@@ -130,7 +130,7 @@
             connection = new URL(
                 "https://raw.githubusercontent.com/7015725/ClipHub/" +
                 encodePath(REF) + "/" + encodePath(path) +
-                "?stage9v4=" + Number(System.currentTimeMillis())
+                "?stage11_1v5=" + Number(System.currentTimeMillis())
             ).openConnection();
             connection.setConnectTimeout(10000);
             connection.setReadTimeout(30000);
@@ -180,7 +180,7 @@
         }
         packed = packed.replace(/\s+/g, "");
         if (sha256(packed) !== PACKED_SHA256) {
-            throw new Error("Stage 9 packed source SHA-256 mismatch");
+            throw new Error("Stage 11.1 packed source SHA-256 mismatch");
         }
         writeUtf8Atomic(cacheFile, packed);
         return packed;
@@ -192,7 +192,7 @@
         var source = String(new JavaString(
             readBytes(input), "UTF-8"));
         if (sha256(source) !== SOURCE_SHA256) {
-            throw new Error("Stage 9 source SHA-256 mismatch");
+            throw new Error("Stage 11.1 source SHA-256 mismatch");
         }
         return source;
     }
@@ -200,7 +200,7 @@
     try {
         eval(decodeSource(loadPackedSource()));
     } catch (error) {
-        throw new Error("ch_11_filter.js Stage 9 loader failed: " +
+        throw new Error("ch_11_filter.js Stage 11.1 loader failed: " +
             String(error));
     }
 }((function () { return this; }())));

@@ -16,7 +16,7 @@
     var REPO = "ClipHub";
     var REF = "agent/beta-list-preview-on-demand-20260808";
     var ENTRY_PATH = "ClipHub.js";
-    var EXPECTED_MODULE_SET_VERSION = "20260808.02";
+    var EXPECTED_MODULE_SET_VERSION = "20260808.03";
     var TEST_ENTRY_VERSION = 1;
     var RUNTIME_NAME = "ClipHubPaginationStage11PreviewOnDemand";
     var PREVIEW_LIMIT = 200;
@@ -241,7 +241,7 @@
                     Number(repository.MODULE_VERSION) !== 16 ||
                     Number(repository.LIST_PREVIEW_CHAR_LIMIT) !== PREVIEW_LIMIT ||
                     Number(global.ClipHub.List.MODULE_VERSION) !== 20 ||
-                    Number(global.ClipHub.Filter.MODULE_VERSION) !== 49 ||
+                    Number(global.ClipHub.Filter.MODULE_VERSION) !== 50 ||
                     Number(global.ClipHub.Filter.PAGINATION_STAGE) !== 9) {
                 throw new Error("Stage 11 bootstrap identity mismatch: " +
                     JSON.stringify(bootstrap));
