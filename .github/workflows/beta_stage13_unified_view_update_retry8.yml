@@ -1,0 +1,131 @@
+name: Beta Stage13 Unified View Update Retry8
+on:
+  push:
+    branches: [beta-pagination-stage10-20260808]
+    paths:
+      - .github/workflows/beta_stage13_unified_view_update_retry8.yml
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rebuild Filter 55 safely
+        id: build
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            python - <<'PY'
+          import pathlib
+          old=pathlib.Path('.github/workflows/beta_stage13_unified_view_update.yml')
+          text=old.read_text(encoding='utf-8')
+          marker="          python - <<'PY'\n"
+          end_marker="\n          PY\n"
+          body=text.split(marker,1)[1].split(end_marker,1)[0]
+          script='\n'.join(line[10:] if line.startswith('          ') else line
+              for line in body.splitlines())+'\n'
+
+          if script.count('scrollVirtualToItem')!=1:
+              raise SystemExit('old schedule next-function token mismatch')
+          script=script.replace('scrollVirtualToItem','scrollToVirtualItem',1)
+
+          # Exact duplicate cache-reset anchors.
+          start=script.index('# Reset icon cache on init/shutdown only.')
+          end=script.index('# Safety invariants.',start)
+          corrected="""# Reset icon cache on init/shutdown only. Both init and shutdown use the same anchor.
+          anchor='''            resultActionViews = [];\\n            deleteUndoView = null;\\n'''
+          repl='''            resultActionViews = [];\\n            sourceIconConstantStateCache = {};\\n            deleteUndoView = null;\\n'''
+          if src.count(anchor)!=2: raise SystemExit('icon cache reset anchors expected twice')
+          src=src.replace(anchor,repl)
+
+          """
+          corrected='\n'.join(line[10:] if line.startswith('          ') else line
+              for line in corrected.splitlines())+'\n'
+          script=script[:start]+corrected+script[end:]
+
+          # Exact .08 fallback boundaries.
+          start=script.index('# 6) Replace removeAllViews full fallback')
+          end=script.index('# Keep diagnostics accurate after edge path too.',start)
+          corrected="""# 6) Replace removeAllViews full fallback with keyed same-ID/signature reconcile.
+          rebuild_start=src.index('    function rebuildVirtualWindow(origin, force, preferredIndex) {')
+          fallback_marker=src.index('            scrollPerformanceState.removedViewCount += oldCount;',rebuild_start)
+          fallback_start=src.rfind('        } else {',rebuild_start,fallback_marker)
+          if fallback_start < 0: raise SystemExit('fallback else boundary missing')
+          fallback_end=src.index('        viewRebuildElapsed = Math.max(0,',fallback_start)
+          fallback_block=src[fallback_start:fallback_end]
+          if fallback_block.count('virtualCardHost.removeAllViews();')!=1:
+              raise SystemExit('fallback removeAllViews boundary mismatch')
+          new='''        } else {\n            keyedReconcileVirtualWindow(range, colors);\n            recycledCount = Math.max(0, oldCount -\n                Number(virtualCardHost.getChildCount()));\n        }\n'''
+          src=src[:fallback_start]+new+src[fallback_end:]
+
+          """
+          corrected='\n'.join(line[10:] if line.startswith('          ') else line
+              for line in corrected.splitlines())+'\n'
+          script=script[:start]+corrected+script[end:]
+
+          # Replace old #8 exact-string matcher with makeSourceIcon function-boundary patch.
+          start=script.index('# 8) Cache application icon')
+          end=script.index('# Reset icon cache on init/shutdown only.',start)
+          corrected="""# 8) Cache application icon ConstantState; preserve ImageView/fallback behavior.
+          icon_start=src.index('    function makeSourceIcon(row, colors) {')
+          icon_end=src.index('\\n    function tagsForResult(row) {',icon_start)
+          icon=src[icon_start:icon_end]
+          vars_old='''        var image;\n        var drawable;\n        var fallback;\n'''
+          vars_new='''        var image;\n        var drawable = null;\n        var constantState = null;\n        var fallback;\n'''
+          if icon.count(vars_old)!=1: raise SystemExit('source icon vars boundary mismatch')
+          icon=icon.replace(vars_old,vars_new,1)
+          body_start=icon.index('            if (packageName.length > 0) {')
+          image_start=icon.index('                image = new ImageView(appContext);',body_start)
+          new_prefix='''            if (packageName.length > 0) {\n                constantState = sourceIconConstantStateCache[packageName];\n                if (constantState !== null &&\n                        constantState !== undefined) {\n                    try { drawable = constantState.newDrawable(); }\n                    catch (ignoredCachedDrawable) { drawable = null; }\n                }\n                if (drawable === null) {\n                    drawable = appContext.getPackageManager()\n                        .getApplicationIcon(packageName);\n                    try {\n                        constantState = drawable.getConstantState();\n                        if (constantState !== null) {\n                            sourceIconConstantStateCache[packageName] =\n                                constantState;\n                        }\n                    } catch (ignoredConstantState) {}\n                }\n'''
+          icon=icon[:body_start]+new_prefix+icon[image_start:]
+          src=src[:icon_start]+icon+src[icon_end:]
+
+          """
+          corrected='\n'.join(line[10:] if line.startswith('          ') else line
+              for line in corrected.splitlines())+'\n'
+          script=script[:start]+corrected+script[end:]
+
+          exec(compile(script,'stage13_embedded_builder.py','exec'),{'__name__':'__main__'})
+          PY
+            node --check /tmp/filter55.js
+            node --check src/ch_11_filter.js
+            ! grep -Eq '(^|[^A-Za-z0-9_])(let|const|class)[[:space:]]|=>' /tmp/filter55.js
+            grep -Fq 'MODULE_VERSION: 55' /tmp/filter55.js
+            grep -Fq 'var VIRTUAL_BEFORE_SCREENS = 3;' /tmp/filter55.js
+            grep -Fq 'var VIRTUAL_AFTER_SCREENS = 5;' /tmp/filter55.js
+            grep -Fq 'var VIRTUAL_UPDATE_DELAY_MS = 24;' /tmp/filter55.js
+            grep -Fq 'keyedReconcileVirtualWindow(range, colors);' /tmp/filter55.js
+            grep -Fq 'virtualRenderedSignatures' /tmp/filter55.js
+            grep -Fq 'updateCoalescedCount' /tmp/filter55.js
+            grep -Fq 'forceEscalationCount' /tmp/filter55.js
+            grep -Fq 'sourceIconConstantStateCache' /tmp/filter55.js
+            grep -Fq '"moduleSetVersion": "20260808.09"' module-manifest.json
+            git diff --check
+          } 2>&1 | tee /tmp/stage13_build.log
+      - name: Commit failure diagnostics
+        if: steps.build.outcome == 'failure'
+        shell: bash
+        run: |
+          tail -n 400 /tmp/stage13_build.log > stage13_build_error.txt || true
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add stage13_build_error.txt
+          git commit -m "记录 Stage13 统一 View 更新构建失败" || true
+          git push || true
+      - name: Commit unified Filter 55
+        if: steps.build.outcome == 'success'
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          for f in .github/workflows/beta_stage13_unified_view_update.yml .github/workflows/beta_stage13_unified_view_update_retry.yml .github/workflows/beta_stage13_unified_view_update_retry2.yml .github/workflows/beta_stage13_unified_view_update_retry3.yml .github/workflows/beta_stage13_unified_view_update_retry4.yml .github/workflows/beta_stage13_unified_view_update_retry5.yml .github/workflows/beta_stage13_unified_view_update_retry6.yml .github/workflows/beta_stage13_unified_view_update_retry7.yml .github/workflows/beta_stage13_unified_view_update_retry8.yml; do
+            if [ -f "$f" ]; then git rm -f "$f"; fi
+          done
+          if [ -f stage13_build_error.txt ]; then git rm -f stage13_build_error.txt; fi
+          if [ -f stage13_exact_source_diag.txt ]; then git rm -f stage13_exact_source_diag.txt; fi
+          git add src/ch_11_filter.js module-manifest.json stage-assets/pagination-stage9/ch11_full_v8s_*.b64
+          git commit -m "统一优化 Beta 列表 View 更新与复用"
+          git push
