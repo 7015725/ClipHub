@@ -7,7 +7,7 @@
 - `Filter.MODULE_VERSION = 48`
 - `Filter.PAGINATION_STAGE = 9`
 - 模块数量：15
-- Stage 10 测试入口版本：6
+- Stage 10 测试入口版本：7
 
 Stage 10 不修改生产模块和正式入口，仅新增隔离真机回归入口、压缩载荷及测试说明。
 
@@ -40,6 +40,12 @@ v5 在提示条中显示根据当前窗口几何计算出的屏幕目标坐标�
 v5 真机已通过真实拖动、右下角缩放、横竖屏切换和 Home，唯一中断点为最近任务等待。Home 关闭 UI 后，任务监听会清空基线；旧测试重新显示浮窗后立即允许执行最近任务手势，可能在下一次约 `180ms` 采样前进入最近任务，导致该界面被误收为新基线。
 
 v6 在提示“准备完成”前等待监听器重新进入 `running=true` 并取得非空 `baselinePackage`，之后才开始最近任务计时。若仍失败，结果保留监听启停次数、前后包名、ActivityType、TaskId 和原因字段。生产模块和版本不变。
+
+## v7 修正
+
+真机确认在最近任务步骤中，ClipHub 浮窗覆盖桌面时无法完成底部上划进入最近任务操作。按用户要求，v7 跳过该手工项目，不再重新显示浮窗或等待手势，结果固定记录 `skipped = true`、`skipReason = user_confirmed_coloros_recents_gesture_blocked` 和 `ok = true`，随后直接执行最终停止、设置恢复及隔离清理。
+
+该跳过项不等同于最近任务关闭能力已验证；Stage 10 其余自动与真实交互项目仍按原条件执行。生产模块和版本不变。
 
 ## 回归目标
 
@@ -150,7 +156,7 @@ Home 与最近任务分别要求：
 
 ```text
 ok=true
-testEntryVersion=6
+testEntryVersion=7
 moduleSetVersion=20260807.13
 filterModuleVersion=48
 paginationStage=9
@@ -164,6 +170,7 @@ interactive.drag.ok=true
 interactive.resize.ok=true
 interactive.orientation.ok=true
 interactive.home.ok=true
+interactive.recents.skipped=true
 interactive.recents.ok=true
 stop.ok=true
 cleanup=true
