@@ -30,7 +30,7 @@ var ClipHubPaginationStage10TestResult = (function (global) {
     var REF = "agent/add-pagination-lazy-prefetch-20260807";
     var RUNTIME_NAME = "ClipHubPaginationStage10SystemRegression";
     var EXPECTED_MODULE_SET_VERSION = "20260807.13";
-    var TEST_ENTRY_VERSION = 5;
+    var TEST_ENTRY_VERSION = 6;
     var FILTER_MODULE_VERSION = 48;
     var PAGINATION_STAGE = 9;
     var WARM_LOOPS = 20;
@@ -304,6 +304,8 @@ var ClipHubPaginationStage10TestResult = (function (global) {
         value = value || {};
         return {
             running: value.running === true,
+            startCount: Number(value.startCount || 0),
+            stopCount: Number(value.stopCount || 0),
             sampleCount: Number(value.sampleCount || 0),
             signalCount: Number(value.signalCount || 0),
             confirmedSignalCount:
@@ -311,9 +313,13 @@ var ClipHubPaginationStage10TestResult = (function (global) {
             hideCount: Number(value.hideCount || 0),
             baselinePackage: value.baselinePackage,
             baselineActivityType: Number(value.baselineActivityType || 0),
+            baselineTaskId: Number(value.baselineTaskId || -1),
             lastPackage: value.lastPackage,
             lastActivityType: Number(value.lastActivityType || 0),
+            lastTaskId: Number(value.lastTaskId || -1),
             lastSignalReason: value.lastSignalReason,
+            lastStartReason: value.lastStartReason,
+            lastStopReason: value.lastStopReason,
             lastHideReason: value.lastHideReason,
             lastError: value.lastError
         };
@@ -896,22 +902,36 @@ var ClipHubPaginationStage10TestResult = (function (global) {
     }
 
     function runRecents() {
-        var before;
+        var before = null;
         var after;
+        var recentsError = null;
         showRoot("recent tasks");
-        before = recentsState();
-        setInstruction("Stage 10 · 请从底部上拉进入最近任务\n进入后停留，浮窗应自动关闭");
-        waitFor("real recent tasks", function () {
-            var current = recentsState();
-            return appStatus().uiVisible === false &&
-                Number(current.hideCount) > Number(before.hideCount);
-        }, INTERACTION_TIMEOUT_MS);
+        setInstruction("Stage 10 · 正在准备最近任务监听基线\n请暂时不要操作");
+        try {
+            waitFor("recent tasks watcher baseline", function () {
+                var current = recentsState();
+                return current.running === true &&
+                    String(current.baselinePackage || "").length > 0;
+            }, 7000);
+            before = recentsState();
+            setInstruction("Stage 10 · 准备完成\n请从底部上拉进入最近任务并停留，浮窗应自动关闭");
+            waitFor("real recent tasks", function () {
+                var current = recentsState();
+                return appStatus().uiVisible === false &&
+                    Number(current.hideCount) > Number(before.hideCount);
+            }, INTERACTION_TIMEOUT_MS);
+        } catch (error) {
+            recentsError = errorText(error);
+        }
+        if (before === null) { before = recentsState(); }
         after = recentsState();
         return {
             before: compactRecents(before),
             after: compactRecents(after),
             navigation: compactNavigation(navigationState()),
-            ok: Number(after.hideCount) > Number(before.hideCount) &&
+            error: recentsError,
+            ok: recentsError === null &&
+                Number(after.hideCount) > Number(before.hideCount) &&
                 Number(after.confirmedSignalCount) >
                     Number(before.confirmedSignalCount) &&
                 appStatus().uiVisible === false &&
