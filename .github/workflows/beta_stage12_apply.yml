@@ -11,37 +11,24 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Diagnose builder anchors
+      - name: Diagnose exact anchors
         shell: bash
         run: |
           python - <<'PY'
-          import base64,gzip,glob,hashlib,json,pathlib,re
+          import base64,gzip,glob,pathlib,re
+          parts=sorted(glob.glob('stage-assets/pagination-stage9/ch11_full_v5_*.b64'))
+          packed=''.join(pathlib.Path(p).read_text(encoding='utf-8').strip() for p in parts)
+          src=gzip.decompress(base64.b64decode(packed)).decode('utf-8')
+          lines=src.splitlines()
           report=[]
-          try:
-              parts=sorted(glob.glob('stage-assets/pagination-stage9/ch11_full_v5_*.b64'))
-              report.append('v5_parts=%d'%len(parts))
-              packed=''.join(pathlib.Path(p).read_text(encoding='utf-8').strip() for p in parts)
-              src=gzip.decompress(base64.b64decode(packed)).decode('utf-8')
-              report.append('source_sha='+hashlib.sha256(src.encode()).hexdigest())
-              report.append('module50_count=%d'%src.count('var MODULE_VERSION = 50;'))
-              old='''        range = virtualTargetRange(preferredIndex);\n        hydration = hydrateDataWindowRange(\n            range.start, range.end,\n            String(origin || "virtual_rebuild") + "_hydrate");\n        virtualState.firstVisibleIndex = range.first;\n        virtualState.lastVisibleIndex = range.last;\n'''
-              report.append('rebuild_anchor_count=%d'%src.count(old))
-              report.append('before3_count=%d'%src.count('var VIRTUAL_BEFORE_SCREENS = 3;'))
-              report.append('after5_count=%d'%src.count('var VIRTUAL_AFTER_SCREENS = 5;'))
-              report.append('delay24_count=%d'%src.count('var VIRTUAL_UPDATE_DELAY_MS = 24;'))
-              report.append('executor_count=%d'%src.count('Executors.newSingleThreadExecutor()'))
-              lp=pathlib.Path('src/ch_11_filter.js').read_text(encoding='utf-8')
-              report.append('loader_parts_regex=%d'%len(re.findall(r'    var PARTS = \[.*?\n    \];',lp,flags=re.S)))
-              report.append('loader_packed_regex=%d'%len(re.findall(r'    var PACKED_SHA256 =\n        "[0-9a-f]+";',lp)))
-              report.append('loader_source_regex=%d'%len(re.findall(r'    var SOURCE_SHA256 =\n        "[0-9a-f]+";',lp)))
-              report.append('loader_cache_regex=%d'%len(re.findall(r'    var CACHE_NAME = "[^"]+";',lp)))
-              manifest=json.loads(pathlib.Path('module-manifest.json').read_text(encoding='utf-8'))
-              report.append('moduleSetVersion='+str(manifest.get('moduleSetVersion')))
-              test=pathlib.Path('ClipHub_分页阶段11首页预览按需正文测试入口.txt').read_text(encoding='utf-8')
-              report.append('test_filter50_count=%d'%test.count('EXPECTED_FILTER_MODULE_VERSION = 50'))
-              report.append('test_dot04_count=%d'%test.count('20260808.04'))
-          except Exception as e:
-              report.append('EXCEPTION='+repr(e))
+          for i,line in enumerate(lines,1):
+              if 'MODULE_VERSION' in line or 'newSingleThreadExecutor' in line or 'Executors' in line and 'concurrent' not in line:
+                  report.append('%05d %s'%(i,line))
+          test=pathlib.Path('ClipHub_分页阶段11首页预览按需正文测试入口.txt').read_text(encoding='utf-8')
+          report.append('--- TEST IDENTITY ---')
+          for i,line in enumerate(test.splitlines(),1):
+              if 'FILTER' in line and ('VERSION' in line or 'MODULE' in line) or '20260808.04' in line:
+                  report.append('%05d %s'%(i,line))
           pathlib.Path('stage12_build_report.txt').write_text('\n'.join(report)+'\n',encoding='utf-8')
           PY
       - name: Commit report
@@ -50,5 +37,5 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add stage12_build_report.txt
-          git commit -m "记录 Stage12 构建断言报告" || exit 0
+          git commit -m "补充 Stage12 真实锚点报告" || exit 0
           git push
