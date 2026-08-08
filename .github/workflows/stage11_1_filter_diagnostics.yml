@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Print Stage11.1 remaining implementation ranges
+      - name: Print virtual rebuild and refresh anchors
         shell: bash
         run: |
           python3 - <<'PY'
@@ -21,7 +21,7 @@ jobs:
           import base64, gzip
           packed=''.join(''.join(Path('stage-assets/pagination-stage9/ch11_full_v4_%02d.b64'%i).read_text().split()) for i in range(8))
           lines=gzip.decompress(base64.b64decode(packed)).decode().splitlines()
-          for a,b in [(3045,3245),(2480,2585),(3845,3935),(8690,8835)]:
+          for a,b in [(3300,3845),(2140,2305),(8165,8255),(9195,9268)]:
               print('\n===== %d-%d ====='%(a,b))
               for n in range(a,b+1): print('%05d|%s'%(n,lines[n-1]))
           PY
