@@ -25,7 +25,7 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
 
-      - name: Align builder with actual Filter query-options shape
+      - name: Align builder with actual Filter source shape
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -33,25 +33,52 @@ jobs:
           import textwrap
           p = Path('tools/cliphub_stage11_preview_build.py')
           s = p.read_text(encoding='utf-8')
-          pattern = re.compile(r'    def patch_query_options\(block: str\) -> str:\n.*?\n    source = mutate_function\(source, "paginationQueryOptions", patch_query_options\)', re.S)
-          nested = '''def patch_query_options(block: str) -> str:
-              if "previewOnly" in block:
-                  return block
-              marker = "        return options;\\n"
-              if block.count(marker) != 1:
-                  raise RuntimeError("paginationQueryOptions return options anchor missing\\n" + block[:2400])
-              return block.replace(
-                  marker,
-                  "        options.previewOnly = true;\\n" + marker,
-                  1,
-              )
 
-          source = mutate_function(source, "paginationQueryOptions", patch_query_options)'''
-          replacement = textwrap.indent(textwrap.dedent(nested), '    ')
-          s2, count = pattern.subn(lambda match: replacement, s, count=1)
-          if count != 1:
-              raise SystemExit('builder patch_query_options replacement failed')
-          p.write_text(s2, encoding='utf-8', newline='\n')
+          def replace_nested(name, body, following):
+              global s
+              pattern = re.compile(
+                  r'    def ' + re.escape(name) + r'\(block: str\) -> str:\n.*?\n    ' + re.escape(following),
+                  re.S,
+              )
+              replacement = textwrap.indent(textwrap.dedent(body), '    ') + '\n\n    ' + following
+              s2, count = pattern.subn(lambda match: replacement, s, count=1)
+              if count != 1:
+                  raise SystemExit('builder ' + name + ' replacement failed')
+              s = s2
+
+          replace_nested(
+              'patch_query_options',
+              '''def patch_query_options(block: str) -> str:
+                  if "previewOnly" in block:
+                      return block
+                  marker = "        return options;\\n"
+                  if block.count(marker) != 1:
+                      raise RuntimeError("paginationQueryOptions return options anchor missing\\n" + block[:2400])
+                  return block.replace(
+                      marker,
+                      "        options.previewOnly = true;\\n" + marker,
+                      1,
+                  )''',
+              'source = mutate_function(source, "paginationQueryOptions", patch_query_options)'
+          )
+
+          replace_nested(
+              'patch_apply',
+              '''def patch_apply(block: str) -> str:
+                  if "previewOnly: true" in block:
+                      return block
+                  marker = "toQueryOptions({\\n                        limit: requestedLimit,"
+                  if block.count(marker) != 1:
+                      raise RuntimeError("Filter.apply toQueryOptions anchor mismatch\\n" + block[:3600])
+                  return block.replace(
+                      marker,
+                      "toQueryOptions({\\n                        previewOnly: true,\\n                        limit: requestedLimit,",
+                      1,
+                  )''',
+              'source = mutate_function(source, "apply", patch_apply)'
+          )
+
+          p.write_text(s, encoding='utf-8', newline='\n')
           PY
 
       - name: Build preview-on-demand implementation
