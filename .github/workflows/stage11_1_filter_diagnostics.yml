@@ -1,9 +1,6 @@
 name: Stage 11.1 Filter diagnostics
 
 on:
-  push:
-    branches:
-      - agent/beta-list-preview-on-demand-20260808
   pull_request:
     branches:
       - beta-pagination-stage10-20260808
@@ -16,59 +13,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Decode Filter v49 and print exact Stage11.1 anchors
+      - name: Print Stage11.1 remaining implementation ranges
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import base64, gzip, hashlib
-
-          parts = [Path('stage-assets/pagination-stage9/ch11_full_v4_%02d.b64' % i) for i in range(8)]
-          packed = ''.join(p.read_text(encoding='utf-8') for p in parts)
-          packed = ''.join(packed.split())
-          assert hashlib.sha256(packed.encode()).hexdigest() == '77deb0225545af17da7f9a0eac6f43ce4a623440d1e053e4276441deb18b01f4'
-          source = gzip.decompress(base64.b64decode(packed)).decode('utf-8')
-          assert hashlib.sha256(source.encode()).hexdigest() == '6d85719de45449ac1d029081a50554b8592bf21e7717fa3ecbfce18c8aa913e7'
-          lines = source.splitlines()
-          patterns = [
-              'var dataWindowState',
-              'var virtualState',
-              'function hydrateDataWindow',
-              'function maintainDataWindow',
-              'function rebuildVirtualWindow',
-              'function bindLazyScrollListener',
-              'virtualCardHost.remove',
-              'virtualCardHost.addView',
-              'makeResultCard(',
-              'function resetState',
-              'getDataWindowState:',
-              'getVirtualWindowState:',
-              'function prepareMutation',
-              'function refreshMutation',
-              'mutationRefreshPlan',
-              'function resetUnifiedPagination',
-              'function closePanel',
-              'shutdown: function'
-          ]
-          print('===== IMPORTS 1-42 =====')
-          for idx in range(0, min(42, len(lines))):
-              print('%05d|%s' % (idx + 1, lines[idx]))
-          hits = []
-          for pat in patterns:
-              found = [i for i, line in enumerate(lines) if pat in line]
-              print('ANCHOR', repr(pat), [i + 1 for i in found])
-              hits.extend(found)
-          ranges = []
-          for i in sorted(set(hits)):
-              start = max(0, i - 55)
-              end = min(len(lines), i + 100)
-              if ranges and start <= ranges[-1][1] + 12:
-                  ranges[-1] = (ranges[-1][0], max(ranges[-1][1], end))
-              else:
-                  ranges.append((start, end))
-          for start, end in ranges:
-              print('\n===== FILTER SOURCE LINES %d-%d =====' % (start + 1, end))
-              for idx in range(start, end):
-                  print('%05d|%s' % (idx + 1, lines[idx]))
-          print('\nSOURCE_LINES', len(lines))
+          import base64, gzip
+          packed=''.join(''.join(Path('stage-assets/pagination-stage9/ch11_full_v4_%02d.b64'%i).read_text().split()) for i in range(8))
+          lines=gzip.decompress(base64.b64decode(packed)).decode().splitlines()
+          for a,b in [(3045,3245),(2480,2585),(3845,3935),(8690,8835)]:
+              print('\n===== %d-%d ====='%(a,b))
+              for n in range(a,b+1): print('%05d|%s'%(n,lines[n-1]))
           PY
