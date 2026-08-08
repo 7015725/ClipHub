@@ -1,0 +1,62 @@
+name: Beta Stage17 Diagnostic
+on:
+  push:
+    branches: [beta-pagination-stage10-20260808]
+    paths:
+      - .github/stage17-diag-trigger.txt
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Generate Filter64 and inspect AJAX path
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64,gzip,glob,json,pathlib,re,subprocess
+          loader=pathlib.Path('src/ch_11_filter.js').read_text(encoding='utf-8')
+          if 'Stage 16C compatibility-key recycle selection' not in loader:
+              raise SystemExit('expected Stage16C baseline')
+          m=re.search(r'var PATCH_B64 =\n((?:\s*"[A-Za-z0-9+/=]+"\s*\+?\n?)+);',loader)
+          if not m: raise SystemExit('PATCH_B64 missing')
+          patch=base64.b64decode(''.join(re.findall(r'"([A-Za-z0-9+/=]+)"',m.group(1)))).decode('utf-8')
+          baseline=subprocess.check_output(['git','show','338a811e538ab526b59eed05102d4f4b66f19953:src/ch_11_filter.js'],text=True)
+          s=baseline.index('    function replaceOnceStrict('); e=baseline.index('\n    try {',s)
+          pure=baseline[s:e]
+          packed=''.join(pathlib.Path(p).read_text(encoding='utf-8').strip() for p in sorted(glob.glob('stage-assets/pagination-stage9/ch11_full_v8s_*.b64')))
+          stable=gzip.decompress(base64.b64decode(packed)).decode('utf-8')
+          harness='var __source='+json.dumps(stable)+';\n'+pure+'\n'+patch+'\nvar __out=transformStage16CSource(transformStage16B4Source(transformStage16B3Source(transformStage16B2Source(transformRecycleFixSource(transformRecycleSource(transformCardHolderSource(transformSource(__source))))))));\nrequire("fs").writeFileSync("/tmp/filter64.js",__out);\n'
+          pathlib.Path('/tmp/stage17_diag.js').write_text(harness,encoding='utf-8')
+          PY
+          node /tmp/stage17_diag.js
+          node --check /tmp/filter64.js
+          python - <<'PY'
+          import pathlib,re
+          src=pathlib.Path('/tmp/filter64.js').read_text(encoding='utf-8')
+          out=['MODULE64='+str(src.count('MODULE_VERSION: 64'))]
+          needles=['"ajax_append"','ajax_append','function rebuildVirtualWindow','scheduleVirtualWindowUpdate','function requestVirtualWindowUpdate','mainHandler.post','paginationState.loadCount','append','loadNext','prefetch']
+          seen=[]
+          for needle in needles:
+              out.append('\n===== '+needle+' =====')
+              for i,m in enumerate(re.finditer(re.escape(needle),src)):
+                  fs=src.rfind('\n    function ',0,m.start())
+                  fe=src.find('\n    function ',m.end())
+                  if fs>=0 and fe>fs and fe-fs<30000:
+                      block=src[fs:fe]
+                  else:
+                      a=max(0,m.start()-3000); b=min(len(src),m.end()+5000); block=src[a:b]
+                  if block in seen: continue
+                  seen.append(block)
+                  out.append('\n--- #%d at %d ---\n%s' % (i+1,m.start(),block))
+          pathlib.Path('stage17_diag.txt').write_text('\n'.join(out),encoding='utf-8')
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add stage17_diag.txt
+          git commit -m "记录 Stage17 AJAX 分帧路径诊断"
+          git push
