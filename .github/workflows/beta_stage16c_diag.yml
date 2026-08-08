@@ -1,0 +1,58 @@
+name: Beta Stage16C Diagnostic
+on:
+  push:
+    branches: [beta-pagination-stage10-20260808]
+    paths:
+      - .github/stage16c-diag-trigger.txt
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Generate Filter63 and inspect overlap recycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64,gzip,glob,json,pathlib,re,subprocess
+          loader=pathlib.Path('src/ch_11_filter.js').read_text(encoding='utf-8')
+          if 'Stage 16B.4 tag-color int rebind and full-refresh samples' not in loader:
+              raise SystemExit('expected Stage16B.4 baseline')
+          m=re.search(r'var PATCH_B64 =\n((?:\s*"[A-Za-z0-9+/=]+"\s*\+?\n?)+);',loader)
+          if not m: raise SystemExit('PATCH_B64 missing')
+          patch=base64.b64decode(''.join(re.findall(r'"([A-Za-z0-9+/=]+)"',m.group(1)))).decode('utf-8')
+          baseline=subprocess.check_output(['git','show','338a811e538ab526b59eed05102d4f4b66f19953:src/ch_11_filter.js'],text=True)
+          s=baseline.index('    function replaceOnceStrict('); e=baseline.index('\n    try {',s)
+          pure=baseline[s:e]
+          packed=''.join(pathlib.Path(p).read_text(encoding='utf-8').strip() for p in sorted(glob.glob('stage-assets/pagination-stage9/ch11_full_v8s_*.b64')))
+          stable=gzip.decompress(base64.b64decode(packed)).decode('utf-8')
+          harness='var __source='+json.dumps(stable)+';\n'+pure+'\n'+patch+'\nvar __out=transformStage16B4Source(transformStage16B3Source(transformStage16B2Source(transformRecycleFixSource(transformRecycleSource(transformCardHolderSource(transformSource(__source)))))));\nrequire("fs").writeFileSync("/tmp/filter63.js",__out);\n'
+          pathlib.Path('/tmp/stage16c_diag.js').write_text(harness,encoding='utf-8')
+          PY
+          node /tmp/stage16c_diag.js
+          node --check /tmp/filter63.js
+          python - <<'PY'
+          import pathlib,re
+          src=pathlib.Path('/tmp/filter63.js').read_text(encoding='utf-8')
+          out=['MODULE63='+str(src.count('MODULE_VERSION: 63'))]
+          needles=['recyclePool','holderRecycleReuseCount','holderRecycleMissCount','holderRecycleDiscardCount','slowRebuildSamples.push','slowRebuildSamples','created:','removed:','mode: "overlap"']
+          seen=[]
+          for needle in needles:
+              out.append('\n===== '+needle+' =====')
+              for i,m in enumerate(re.finditer(re.escape(needle),src)):
+                  a=max(0,m.start()-1500); b=min(len(src),m.end()+2200)
+                  block=src[a:b]
+                  if block in seen: continue
+                  seen.append(block)
+                  out.append('\n--- #%d at %d ---\n%s' % (i+1,m.start(),block))
+          pathlib.Path('stage16c_diag.txt').write_text('\n'.join(out),encoding='utf-8')
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add stage16c_diag.txt
+          git commit -m "记录 Stage16C 分桶复用路径诊断"
+          git push
