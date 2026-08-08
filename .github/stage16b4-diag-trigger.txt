@@ -1,1 +1,1 @@
-trigger=stage16b4-diag-v1
+trigger=stage16b4-build-v1
