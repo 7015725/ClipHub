@@ -1,0 +1,3110 @@
+MODULE63=1
+
+===== recyclePool =====
+
+--- #1 at 179110 ---
+veVirtualEntryAt(
+      Number(virtualCardHost.getChildCount()) - 1);
+        }
+        syncRenderedResultCounters(range);
+        keyedStructureElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) - keyedStructureStartedAt);
+        keyedElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) - keyedStartedAt);
+        scrollPerformanceState.keyedReconcileLastMs = keyedElapsed;
+        scrollPerformanceState.keyedReconcileMaxMs = Math.max(
+            Number(scrollPerformanceState.keyedReconcileMaxMs), keyedElapsed);
+        scrollPerformanceState.keyedSignatureLastMs = keyedSignatureElapsed;
+        scrollPerformanceState.keyedSignatureMaxMs = Math.max(
+            Number(scrollPerformanceState.keyedSignatureMaxMs), keyedSignatureElapsed);
+        scrollPerformanceState.keyedStructureLastMs = keyedStructureElapsed;
+        scrollPerformanceState.keyedStructureMaxMs = Math.max(
+            Number(scrollPerformanceState.keyedStructureMaxMs), keyedStructureElapsed);
+        return true;
+    }
+
+    function rebuildVirtualWindow(origin, force, preferredIndex) {
+        var colors = palette();
+        var range;
+        var oldCount;
+        var index;
+        var params;
+        var generation;
+        var hydration;
+        var oldStart;
+        var oldEnd;
+        var overlap;
+        var removeTop;
+        var removeBottom;
+        var removeIndex;
+        var wrapper;
+        var cardRef;
+        var actionRef;
+        var holderRef;
+        var recyclePool = [];
+        var recycleEnabled = String(origin || "") === "result_scroll" ||
+            String(origin || "") === "hydration_apply";
+        var recycledCount;
+        var rebuildCreatedBefore;
+        var rebuildRemovedBefore;
+        var rebuildReusedBefore;
+        var overlapStartedAt;
+        var overlapElapsed = 0;
+        if (virtualCardHost === null || !state.panelAttached) {
+            return false;
+        }
+        if (activeSwipeCard !== null) {
+            virtualState.updateDeferred = true;
+            return false;
+        }
+        range = virtualTargetRange(preferredIndex);
+        virtualState.firstVisibleIndex = range.first;
+        virtualState.lastVisibleIndex = range.last;
+        if (force !== true &&
+                String(origin || "") === "result_scroll" &&
+                range.start === Number(
+                    virtualState.firstRenderedIndex) &&
+                range.end === Number(
+                    virtualState.lastRenderedIndex)) {
+            scrollPerformanceState.sameRangeNoLayoutCount += 1;
+            virtualState.lastOrigin =
+                "result_scroll_same_range_fast";
+            virtualState.lastError = null;
+            return false;
+        }
+        hydration = hydrateDataWindowRange(
+            range.start, range.end,
+            String(origin || "virtual_rebuild") + "_hydrate");
+        if (hydration.pending === true &&
+                hydration.requiresRows === true) {
+            virtualState.lastOrigin = String(
+                origin || "virtual_rebuild") +
+                "_hydrate_pending";
+            return false;
+        }
+        dehydrateDataWindowOutside(
+            range.start, range.end,
+            String(origin || "virtual_rebuild") + "_dehydrate");
+        if (force !== true &&
+                range.start === Number(
+                    virtualState.firstRenderedIndex) &&
+                range.end === Number(
+                    virtualState.lastRenderedIndex)) {
+            virtualState.topSpacerPx = setVirtualSpacerHeight(
+                virtualTopSpacer,
+                virtualHeightRange(0, range.start));
+            virtualState.bottomSpacerPx = setVirtualSpacerHeight(
+          
+
+--- #2 at 183247 ---
+= Number(scrollPerformanceState.sameIdReuseCount);
+        var viewRebuildElapsed;
+        scrollPerformanceState.viewRebuildCount += 1;
+        measureVirtualCards();
+        oldCount = Number(virtualCardHost.getChildCount());
+        oldStart = Number(virtualState.firstRenderedIndex);
+        oldEnd = Number(virtualState.lastRenderedIndex);
+        recycledCount = oldCount;
+        overlap = force !== true && oldCount > 0 &&
+            oldEnd >= oldStart && range.start <= oldEnd &&
+            range.end >= oldStart &&
+            virtualRenderedItemIds.length === oldCount &&
+            virtualRenderedSignatures.length === oldCount &&
+            resultCardViews.length === oldCount &&
+            resultCardHolders.length === oldCount &&
+            resultActionViews.length === oldCount;
+        if (overlap) {
+            overlapStartedAt = Number(System.currentTimeMillis());
+            recycledCount = 0;
+            removeTop = Math.max(0, range.start - oldStart);
+            for (removeIndex = 0;
+                    removeIndex < removeTop; removeIndex += 1) {
+                virtualCardHost.removeViewAt(0);
+                virtualRenderedItemIds.shift();
+                virtualRenderedSignatures.shift();
+                resultCardViews.shift();
+                holderRef = resultCardHolders.shift();
+                resultActionViews.shift();
+                if (recycleEnabled && holderRef !== null &&
+                        holderRef !== undefined) {
+                    recyclePool.push(holderRef);
+                    scrollPerformanceState.holderRecycleReleaseCount += 1;
+                }
+                recycledCount += 1;
+                scrollPerformanceState.structuralRemoveCount += 1;
+            }
+            removeBottom = Math.max(0, oldEnd - range.end);
+            for (removeIndex = 0;
+                    removeIndex < removeBottom; removeIndex += 1) {
+                virtualCardHost.removeViewAt(
+                    Number(virtualCardHost.getChildCount()) - 1);
+                virtualRenderedItemIds.pop();
+                virtualRenderedSignatures.pop();
+                resultCardViews.pop();
+                holderRef = resultCardHolders.pop();
+                resultActionViews.pop();
+                if (recycleEnabled && holderRef !== null &&
+                        holderRef !== undefined) {
+                    recyclePool.push(holderRef);
+                    scrollPerformanceState.holderRecycleReleaseCount += 1;
+                }
+                recycledCount += 1;
+                scrollPerformanceState.structuralRemoveCount += 1;
+            }
+            scrollPerformanceState.removedViewCount += recycledCount;
+            if (range.start < oldStart) {
+                for (index = oldStart - 1;
+                        index >= range.start; index -= 1) {
+                    params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                    params.bottomMargin = dp(6);
+                    holderRef = null;
+                    if (recycleEnabled && recyclePool.length > 0) {
+                        holderRef = recyclePool.pop();
+                        if (rebindResultCardHolder(holderRef,
+                                previewRows[index], colors)) {
+                            wrapper = holderRef.wrapper;
+                            cardRef = holderRef.card;
+                            actionRef = cardHolderActionRefs(holderRef);
+                            scrollPerformanceState.holderRecycleReuseCount += 1;
+                        } else {
+                            scrollPerformanceState.holderRecycl
+
+--- #3 at 184119 ---
+rentTimeMillis());
+            recycledCount = 0;
+            removeTop = Math.max(0, range.start - oldStart);
+            for (removeIndex = 0;
+                    removeIndex < removeTop; removeIndex += 1) {
+                virtualCardHost.removeViewAt(0);
+                virtualRenderedItemIds.shift();
+                virtualRenderedSignatures.shift();
+                resultCardViews.shift();
+                holderRef = resultCardHolders.shift();
+                resultActionViews.shift();
+                if (recycleEnabled && holderRef !== null &&
+                        holderRef !== undefined) {
+                    recyclePool.push(holderRef);
+                    scrollPerformanceState.holderRecycleReleaseCount += 1;
+                }
+                recycledCount += 1;
+                scrollPerformanceState.structuralRemoveCount += 1;
+            }
+            removeBottom = Math.max(0, oldEnd - range.end);
+            for (removeIndex = 0;
+                    removeIndex < removeBottom; removeIndex += 1) {
+                virtualCardHost.removeViewAt(
+                    Number(virtualCardHost.getChildCount()) - 1);
+                virtualRenderedItemIds.pop();
+                virtualRenderedSignatures.pop();
+                resultCardViews.pop();
+                holderRef = resultCardHolders.pop();
+                resultActionViews.pop();
+                if (recycleEnabled && holderRef !== null &&
+                        holderRef !== undefined) {
+                    recyclePool.push(holderRef);
+                    scrollPerformanceState.holderRecycleReleaseCount += 1;
+                }
+                recycledCount += 1;
+                scrollPerformanceState.structuralRemoveCount += 1;
+            }
+            scrollPerformanceState.removedViewCount += recycledCount;
+            if (range.start < oldStart) {
+                for (index = oldStart - 1;
+                        index >= range.start; index -= 1) {
+                    params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                    params.bottomMargin = dp(6);
+                    holderRef = null;
+                    if (recycleEnabled && recyclePool.length > 0) {
+                        holderRef = recyclePool.pop();
+                        if (rebindResultCardHolder(holderRef,
+                                previewRows[index], colors)) {
+                            wrapper = holderRef.wrapper;
+                            cardRef = holderRef.card;
+                            actionRef = cardHolderActionRefs(holderRef);
+                            scrollPerformanceState.holderRecycleReuseCount += 1;
+                        } else {
+                            scrollPerformanceState.holderRecycleDiscardCount += 1;
+                            holderRef = null;
+                        }
+                    }
+                    if (holderRef === null) {
+                        wrapper = makeResultCard(previewRows[index], colors);
+                        cardRef = resultCardViews.pop();
+                        holderRef = resultCardHolders.pop();
+                        actionRef = resultActionViews.pop();
+                        if (recycleEnabled) {
+                            scrollPerformanceState.holderRecycleMissCount += 1;
+                        }
+                    }
+                    virtualCardHost.addView(wrapper, 0, params);
+                    resultCardViews.unshift(cardRef);
+                    resultCardHolders.unshift(holderRef);
+                    resultActionViews.unshift(actionRef);
+                    virtualRenderedItemIds.uns
+
+--- #4 at 184891 ---
+edCount += 1;
+                scrollPerformanceState.structuralRemoveCount += 1;
+            }
+            removeBottom = Math.max(0, oldEnd - range.end);
+            for (removeIndex = 0;
+                    removeIndex < removeBottom; removeIndex += 1) {
+                virtualCardHost.removeViewAt(
+                    Number(virtualCardHost.getChildCount()) - 1);
+                virtualRenderedItemIds.pop();
+                virtualRenderedSignatures.pop();
+                resultCardViews.pop();
+                holderRef = resultCardHolders.pop();
+                resultActionViews.pop();
+                if (recycleEnabled && holderRef !== null &&
+                        holderRef !== undefined) {
+                    recyclePool.push(holderRef);
+                    scrollPerformanceState.holderRecycleReleaseCount += 1;
+                }
+                recycledCount += 1;
+                scrollPerformanceState.structuralRemoveCount += 1;
+            }
+            scrollPerformanceState.removedViewCount += recycledCount;
+            if (range.start < oldStart) {
+                for (index = oldStart - 1;
+                        index >= range.start; index -= 1) {
+                    params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                    params.bottomMargin = dp(6);
+                    holderRef = null;
+                    if (recycleEnabled && recyclePool.length > 0) {
+                        holderRef = recyclePool.pop();
+                        if (rebindResultCardHolder(holderRef,
+                                previewRows[index], colors)) {
+                            wrapper = holderRef.wrapper;
+                            cardRef = holderRef.card;
+                            actionRef = cardHolderActionRefs(holderRef);
+                            scrollPerformanceState.holderRecycleReuseCount += 1;
+                        } else {
+                            scrollPerformanceState.holderRecycleDiscardCount += 1;
+                            holderRef = null;
+                        }
+                    }
+                    if (holderRef === null) {
+                        wrapper = makeResultCard(previewRows[index], colors);
+                        cardRef = resultCardViews.pop();
+                        holderRef = resultCardHolders.pop();
+                        actionRef = resultActionViews.pop();
+                        if (recycleEnabled) {
+                            scrollPerformanceState.holderRecycleMissCount += 1;
+                        }
+                    }
+                    virtualCardHost.addView(wrapper, 0, params);
+                    resultCardViews.unshift(cardRef);
+                    resultCardHolders.unshift(holderRef);
+                    resultActionViews.unshift(actionRef);
+                    virtualRenderedItemIds.unshift(
+                        Number(previewRows[index].id));
+                    virtualRenderedSignatures.unshift(
+                        virtualRenderSignature(previewRows[index], colors));
+                    scrollPerformanceState.createdViewCount += 1;
+                    scrollPerformanceState.structuralInsertCount += 1;
+                }
+            }
+            if (range.end > oldEnd) {
+                for (index = oldEnd + 1;
+                        index <= range.end; index += 1) {
+                    params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                    params.bottomMargin = dp(6);
+                    holderRef = nu
+
+--- #5 at 184953 ---
+lRemoveCount += 1;
+            }
+            removeBottom = Math.max(0, oldEnd - range.end);
+            for (removeIndex = 0;
+                    removeIndex < removeBottom; removeIndex += 1) {
+                virtualCardHost.removeViewAt(
+                    Number(virtualCardHost.getChildCount()) - 1);
+                virtualRenderedItemIds.pop();
+                virtualRenderedSignatures.pop();
+                resultCardViews.pop();
+                holderRef = resultCardHolders.pop();
+                resultActionViews.pop();
+                if (recycleEnabled && holderRef !== null &&
+                        holderRef !== undefined) {
+                    recyclePool.push(holderRef);
+                    scrollPerformanceState.holderRecycleReleaseCount += 1;
+                }
+                recycledCount += 1;
+                scrollPerformanceState.structuralRemoveCount += 1;
+            }
+            scrollPerformanceState.removedViewCount += recycledCount;
+            if (range.start < oldStart) {
+                for (index = oldStart - 1;
+                        index >= range.start; index -= 1) {
+                    params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                    params.bottomMargin = dp(6);
+                    holderRef = null;
+                    if (recycleEnabled && recyclePool.length > 0) {
+                        holderRef = recyclePool.pop();
+                        if (rebindResultCardHolder(holderRef,
+                                previewRows[index], colors)) {
+                            wrapper = holderRef.wrapper;
+                            cardRef = holderRef.card;
+                            actionRef = cardHolderActionRefs(holderRef);
+                            scrollPerformanceState.holderRecycleReuseCount += 1;
+                        } else {
+                            scrollPerformanceState.holderRecycleDiscardCount += 1;
+                            holderRef = null;
+                        }
+                    }
+                    if (holderRef === null) {
+                        wrapper = makeResultCard(previewRows[index], colors);
+                        cardRef = resultCardViews.pop();
+                        holderRef = resultCardHolders.pop();
+                        actionRef = resultActionViews.pop();
+                        if (recycleEnabled) {
+                            scrollPerformanceState.holderRecycleMissCount += 1;
+                        }
+                    }
+                    virtualCardHost.addView(wrapper, 0, params);
+                    resultCardViews.unshift(cardRef);
+                    resultCardHolders.unshift(holderRef);
+                    resultActionViews.unshift(actionRef);
+                    virtualRenderedItemIds.unshift(
+                        Number(previewRows[index].id));
+                    virtualRenderedSignatures.unshift(
+                        virtualRenderSignature(previewRows[index], colors));
+                    scrollPerformanceState.createdViewCount += 1;
+                    scrollPerformanceState.structuralInsertCount += 1;
+                }
+            }
+            if (range.end > oldEnd) {
+                for (index = oldEnd + 1;
+                        index <= range.end; index += 1) {
+                    params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                    params.bottomMargin = dp(6);
+                    holderRef = null;
+                    if (recycleEnabled && recyclePool.leng
+
+--- #6 at 187148 ---
+r = makeResultCard(previewRows[index], colors);
+                        cardRef = resultCardViews.pop();
+                        holderRef = resultCardHolders.pop();
+                        actionRef = resultActionViews.pop();
+                        if (recycleEnabled) {
+                            scrollPerformanceState.holderRecycleMissCount += 1;
+                        }
+                    }
+                    virtualCardHost.addView(wrapper, 0, params);
+                    resultCardViews.unshift(cardRef);
+                    resultCardHolders.unshift(holderRef);
+                    resultActionViews.unshift(actionRef);
+                    virtualRenderedItemIds.unshift(
+                        Number(previewRows[index].id));
+                    virtualRenderedSignatures.unshift(
+                        virtualRenderSignature(previewRows[index], colors));
+                    scrollPerformanceState.createdViewCount += 1;
+                    scrollPerformanceState.structuralInsertCount += 1;
+                }
+            }
+            if (range.end > oldEnd) {
+                for (index = oldEnd + 1;
+                        index <= range.end; index += 1) {
+                    params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                    params.bottomMargin = dp(6);
+                    holderRef = null;
+                    if (recycleEnabled && recyclePool.length > 0) {
+                        holderRef = recyclePool.pop();
+                        if (rebindResultCardHolder(holderRef,
+                                previewRows[index], colors)) {
+                            wrapper = holderRef.wrapper;
+                            cardRef = holderRef.card;
+                            actionRef = cardHolderActionRefs(holderRef);
+                            scrollPerformanceState.holderRecycleReuseCount += 1;
+                        } else {
+                            scrollPerformanceState.holderRecycleDiscardCount += 1;
+                            holderRef = null;
+                        }
+                    }
+                    if (holderRef === null) {
+                        wrapper = makeResultCard(previewRows[index], colors);
+                        cardRef = resultCardViews.pop();
+                        holderRef = resultCardHolders.pop();
+                        actionRef = resultActionViews.pop();
+                        if (recycleEnabled) {
+                            scrollPerformanceState.holderRecycleMissCount += 1;
+                        }
+                    }
+                    virtualCardHost.addView(wrapper, params);
+                    resultCardViews.push(cardRef);
+                    resultCardHolders.push(holderRef);
+                    resultActionViews.push(actionRef);
+                    virtualRenderedItemIds.push(
+                        Number(previewRows[index].id));
+                    virtualRenderedSignatures.push(
+                        virtualRenderSignature(previewRows[index], colors));
+                    scrollPerformanceState.createdViewCount += 1;
+                    scrollPerformanceState.structuralInsertCount += 1;
+                }
+            }
+            if (recycleEnabled && recyclePool.length > 0) {
+                scrollPerformanceState.holderRecycleDiscardCount +=
+                    recyclePool.length;
+                recyclePool = [];
+            }
+            state.resultCardCount = Number(
+                virtualCardHost.getChildCount());
+            overlapElapsed = Math.max(0,
+                Number(System.currentTimeMillis()) - overlapStartedAt);
+    
+
+--- #7 at 187210 ---
+          cardRef = resultCardViews.pop();
+                        holderRef = resultCardHolders.pop();
+                        actionRef = resultActionViews.pop();
+                        if (recycleEnabled) {
+                            scrollPerformanceState.holderRecycleMissCount += 1;
+                        }
+                    }
+                    virtualCardHost.addView(wrapper, 0, params);
+                    resultCardViews.unshift(cardRef);
+                    resultCardHolders.unshift(holderRef);
+                    resultActionViews.unshift(actionRef);
+                    virtualRenderedItemIds.unshift(
+                        Number(previewRows[index].id));
+                    virtualRenderedSignatures.unshift(
+                        virtualRenderSignature(previewRows[index], colors));
+                    scrollPerformanceState.createdViewCount += 1;
+                    scrollPerformanceState.structuralInsertCount += 1;
+                }
+            }
+            if (range.end > oldEnd) {
+                for (index = oldEnd + 1;
+                        index <= range.end; index += 1) {
+                    params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                    params.bottomMargin = dp(6);
+                    holderRef = null;
+                    if (recycleEnabled && recyclePool.length > 0) {
+                        holderRef = recyclePool.pop();
+                        if (rebindResultCardHolder(holderRef,
+                                previewRows[index], colors)) {
+                            wrapper = holderRef.wrapper;
+                            cardRef = holderRef.card;
+                            actionRef = cardHolderActionRefs(holderRef);
+                            scrollPerformanceState.holderRecycleReuseCount += 1;
+                        } else {
+                            scrollPerformanceState.holderRecycleDiscardCount += 1;
+                            holderRef = null;
+                        }
+                    }
+                    if (holderRef === null) {
+                        wrapper = makeResultCard(previewRows[index], colors);
+                        cardRef = resultCardViews.pop();
+                        holderRef = resultCardHolders.pop();
+                        actionRef = resultActionViews.pop();
+                        if (recycleEnabled) {
+                            scrollPerformanceState.holderRecycleMissCount += 1;
+                        }
+                    }
+                    virtualCardHost.addView(wrapper, params);
+                    resultCardViews.push(cardRef);
+                    resultCardHolders.push(holderRef);
+                    resultActionViews.push(actionRef);
+                    virtualRenderedItemIds.push(
+                        Number(previewRows[index].id));
+                    virtualRenderedSignatures.push(
+                        virtualRenderSignature(previewRows[index], colors));
+                    scrollPerformanceState.createdViewCount += 1;
+                    scrollPerformanceState.structuralInsertCount += 1;
+                }
+            }
+            if (recycleEnabled && recyclePool.length > 0) {
+                scrollPerformanceState.holderRecycleDiscardCount +=
+                    recyclePool.length;
+                recyclePool = [];
+            }
+            state.resultCardCount = Number(
+                virtualCardHost.getChildCount());
+            overlapElapsed = Math.max(0,
+                Number(System.currentTimeMillis()) - overlapStartedAt);
+            scrollPerformanceState.overlapUpdateLastMs = overlapEl
+
+--- #8 at 188966 ---
+                           actionRef = cardHolderActionRefs(holderRef);
+                            scrollPerformanceState.holderRecycleReuseCount += 1;
+                        } else {
+                            scrollPerformanceState.holderRecycleDiscardCount += 1;
+                            holderRef = null;
+                        }
+                    }
+                    if (holderRef === null) {
+                        wrapper = makeResultCard(previewRows[index], colors);
+                        cardRef = resultCardViews.pop();
+                        holderRef = resultCardHolders.pop();
+                        actionRef = resultActionViews.pop();
+                        if (recycleEnabled) {
+                            scrollPerformanceState.holderRecycleMissCount += 1;
+                        }
+                    }
+                    virtualCardHost.addView(wrapper, params);
+                    resultCardViews.push(cardRef);
+                    resultCardHolders.push(holderRef);
+                    resultActionViews.push(actionRef);
+                    virtualRenderedItemIds.push(
+                        Number(previewRows[index].id));
+                    virtualRenderedSignatures.push(
+                        virtualRenderSignature(previewRows[index], colors));
+                    scrollPerformanceState.createdViewCount += 1;
+                    scrollPerformanceState.structuralInsertCount += 1;
+                }
+            }
+            if (recycleEnabled && recyclePool.length > 0) {
+                scrollPerformanceState.holderRecycleDiscardCount +=
+                    recyclePool.length;
+                recyclePool = [];
+            }
+            state.resultCardCount = Number(
+                virtualCardHost.getChildCount());
+            overlapElapsed = Math.max(0,
+                Number(System.currentTimeMillis()) - overlapStartedAt);
+            scrollPerformanceState.overlapUpdateLastMs = overlapElapsed;
+            scrollPerformanceState.overlapUpdateMaxMs = Math.max(
+                Number(scrollPerformanceState.overlapUpdateMaxMs), overlapElapsed);
+        } else {
+  keyedReconcileVirtualWindow(range, colors);
+  recycledCount = Math.max(0, oldCount -
+      Number(virtualCardHost.getChildCount()));
+        }
+        syncRenderedResultCounters(range);
+        viewRebuildElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) -
+                viewRebuildStartedAt);
+        scrollPerformanceState.viewRebuildLastMs =
+            viewRebuildElapsed;
+        scrollPerformanceState.viewRebuildMaxMs = Math.max(
+            Number(scrollPerformanceState.viewRebuildMaxMs),
+            viewRebuildElapsed);
+        if (viewRebuildElapsed > 32) {
+            scrollPerformanceState.slowRebuildCount += 1;
+            scrollPerformanceState.slowRebuildSamples.push({
+                origin: String(origin || "virtual_rebuild"),
+                force: force === true,
+                mode: overlap ? "overlap" : "keyed",
+                elapsedMs: viewRebuildElapsed,
+                rangeStart: Number(range.start),
+                rangeEnd: Number(range.end),
+                oldCount: oldCount,
+                newCount: Number(virtualCardHost.getChildCount()),
+                created: Number(scrollPerformanceState.createdViewCount) -
+                    rebuildCreatedBefore,
+                removed: Number(scrollPerformanceState.removedViewCount) -
+                    rebuildRemovedBefore,
+                reused: Number(scrollPerformanceState.sameIdReuseCount) -
+                    rebuildReusedBefore,
+                measureMs: Number(scrollPerformanceState.measureLastMs),
+                keyedMs: overlap ? 0 :
+            
+
+--- #9 at 189080 ---
+nceState.holderRecycleReuseCount += 1;
+                        } else {
+                            scrollPerformanceState.holderRecycleDiscardCount += 1;
+                            holderRef = null;
+                        }
+                    }
+                    if (holderRef === null) {
+                        wrapper = makeResultCard(previewRows[index], colors);
+                        cardRef = resultCardViews.pop();
+                        holderRef = resultCardHolders.pop();
+                        actionRef = resultActionViews.pop();
+                        if (recycleEnabled) {
+                            scrollPerformanceState.holderRecycleMissCount += 1;
+                        }
+                    }
+                    virtualCardHost.addView(wrapper, params);
+                    resultCardViews.push(cardRef);
+                    resultCardHolders.push(holderRef);
+                    resultActionViews.push(actionRef);
+                    virtualRenderedItemIds.push(
+                        Number(previewRows[index].id));
+                    virtualRenderedSignatures.push(
+                        virtualRenderSignature(previewRows[index], colors));
+                    scrollPerformanceState.createdViewCount += 1;
+                    scrollPerformanceState.structuralInsertCount += 1;
+                }
+            }
+            if (recycleEnabled && recyclePool.length > 0) {
+                scrollPerformanceState.holderRecycleDiscardCount +=
+                    recyclePool.length;
+                recyclePool = [];
+            }
+            state.resultCardCount = Number(
+                virtualCardHost.getChildCount());
+            overlapElapsed = Math.max(0,
+                Number(System.currentTimeMillis()) - overlapStartedAt);
+            scrollPerformanceState.overlapUpdateLastMs = overlapElapsed;
+            scrollPerformanceState.overlapUpdateMaxMs = Math.max(
+                Number(scrollPerformanceState.overlapUpdateMaxMs), overlapElapsed);
+        } else {
+  keyedReconcileVirtualWindow(range, colors);
+  recycledCount = Math.max(0, oldCount -
+      Number(virtualCardHost.getChildCount()));
+        }
+        syncRenderedResultCounters(range);
+        viewRebuildElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) -
+                viewRebuildStartedAt);
+        scrollPerformanceState.viewRebuildLastMs =
+            viewRebuildElapsed;
+        scrollPerformanceState.viewRebuildMaxMs = Math.max(
+            Number(scrollPerformanceState.viewRebuildMaxMs),
+            viewRebuildElapsed);
+        if (viewRebuildElapsed > 32) {
+            scrollPerformanceState.slowRebuildCount += 1;
+            scrollPerformanceState.slowRebuildSamples.push({
+                origin: String(origin || "virtual_rebuild"),
+                force: force === true,
+                mode: overlap ? "overlap" : "keyed",
+                elapsedMs: viewRebuildElapsed,
+                rangeStart: Number(range.start),
+                rangeEnd: Number(range.end),
+                oldCount: oldCount,
+                newCount: Number(virtualCardHost.getChildCount()),
+                created: Number(scrollPerformanceState.createdViewCount) -
+                    rebuildCreatedBefore,
+                removed: Number(scrollPerformanceState.removedViewCount) -
+                    rebuildRemovedBefore,
+                reused: Number(scrollPerformanceState.sameIdReuseCount) -
+                    rebuildReusedBefore,
+                measureMs: Number(scrollPerformanceState.measureLastMs),
+                keyedMs: overlap ? 0 :
+                    Number(scrollPerformanceState.keyedReconcileLastMs),
+                signatureMs: overlap ? 0 :
+          
+
+--- #10 at 189116 ---
+1;
+                        } else {
+                            scrollPerformanceState.holderRecycleDiscardCount += 1;
+                            holderRef = null;
+                        }
+                    }
+                    if (holderRef === null) {
+                        wrapper = makeResultCard(previewRows[index], colors);
+                        cardRef = resultCardViews.pop();
+                        holderRef = resultCardHolders.pop();
+                        actionRef = resultActionViews.pop();
+                        if (recycleEnabled) {
+                            scrollPerformanceState.holderRecycleMissCount += 1;
+                        }
+                    }
+                    virtualCardHost.addView(wrapper, params);
+                    resultCardViews.push(cardRef);
+                    resultCardHolders.push(holderRef);
+                    resultActionViews.push(actionRef);
+                    virtualRenderedItemIds.push(
+                        Number(previewRows[index].id));
+                    virtualRenderedSignatures.push(
+                        virtualRenderSignature(previewRows[index], colors));
+                    scrollPerformanceState.createdViewCount += 1;
+                    scrollPerformanceState.structuralInsertCount += 1;
+                }
+            }
+            if (recycleEnabled && recyclePool.length > 0) {
+                scrollPerformanceState.holderRecycleDiscardCount +=
+                    recyclePool.length;
+                recyclePool = [];
+            }
+            state.resultCardCount = Number(
+                virtualCardHost.getChildCount());
+            overlapElapsed = Math.max(0,
+                Number(System.currentTimeMillis()) - overlapStartedAt);
+            scrollPerformanceState.overlapUpdateLastMs = overlapElapsed;
+            scrollPerformanceState.overlapUpdateMaxMs = Math.max(
+                Number(scrollPerformanceState.overlapUpdateMaxMs), overlapElapsed);
+        } else {
+  keyedReconcileVirtualWindow(range, colors);
+  recycledCount = Math.max(0, oldCount -
+      Number(virtualCardHost.getChildCount()));
+        }
+        syncRenderedResultCounters(range);
+        viewRebuildElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) -
+                viewRebuildStartedAt);
+        scrollPerformanceState.viewRebuildLastMs =
+            viewRebuildElapsed;
+        scrollPerformanceState.viewRebuildMaxMs = Math.max(
+            Number(scrollPerformanceState.viewRebuildMaxMs),
+            viewRebuildElapsed);
+        if (viewRebuildElapsed > 32) {
+            scrollPerformanceState.slowRebuildCount += 1;
+            scrollPerformanceState.slowRebuildSamples.push({
+                origin: String(origin || "virtual_rebuild"),
+                force: force === true,
+                mode: overlap ? "overlap" : "keyed",
+                elapsedMs: viewRebuildElapsed,
+                rangeStart: Number(range.start),
+                rangeEnd: Number(range.end),
+                oldCount: oldCount,
+                newCount: Number(virtualCardHost.getChildCount()),
+                created: Number(scrollPerformanceState.createdViewCount) -
+                    rebuildCreatedBefore,
+                removed: Number(scrollPerformanceState.removedViewCount) -
+                    rebuildRemovedBefore,
+                reused: Number(scrollPerformanceState.sameIdReuseCount) -
+                    rebuildReusedBefore,
+                measureMs: Number(scrollPerformanceState.measureLastMs),
+                keyedMs: overlap ? 0 :
+                    Number(scrollPerformanceState.keyedReconcileLastMs),
+                signatureMs: overlap ? 0 :
+                    Number(scrollPerformanceSt
+
+===== holderRecycleReuseCount =====
+
+--- #1 at 115152 ---
+ationCount: 0,
+        keyedReconcileCount: 0,
+        sameIdReuseCount: 0,
+        signatureRebuildCount: 0,
+        movedViewCount: 0,
+        structuralInsertCount: 0,
+        structuralRemoveCount: 0,
+        alignmentFallbackCount: 0,
+        alignmentFallbackLastReason: "",
+        alignmentFallbackReasonCounts: {},
+        alignmentFallbackLastSnapshot: null,
+        fullRefreshCallCount: 0,
+        fullRefreshLastPerformanceOrigin: "",
+        fullRefreshLastPreferredIndex: -1,
+        fullRefreshLastPreviewRowCount: 0,
+        fullRefreshLastRenderedCount: 0,
+        fullRefreshLastChildCount: 0,
+        fullRefreshRequestCount: 0,
+        fullRefreshDuplicateSuppressedCount: 0,
+        fullRefreshLastDataKey: "",
+        fullRefreshPendingDataKey: "",
+        fullRefreshLastAppliedDataKey: "",
+        virtualBookkeepingAtomicClearCount: 0,
+        fullRefreshSamples: [],
+        spacerApplyCount: 0,
+        spacerNoopCount: 0,
+        sameRangeNoLayoutCount: 0,
+        anchorScrollApplyCount: 0,
+        anchorScrollNoopCount: 0,
+        measurePassCount: 0,
+        measureLastMs: 0,
+        measureMaxMs: 0,
+        keyedReconcileLastMs: 0,
+        keyedReconcileMaxMs: 0,
+        keyedSignatureLastMs: 0,
+        keyedSignatureMaxMs: 0,
+        keyedStructureLastMs: 0,
+        keyedStructureMaxMs: 0,
+        overlapUpdateLastMs: 0,
+        overlapUpdateMaxMs: 0,
+        slowRebuildCount: 0,
+        slowRebuildSamples: [],
+        holderRecycleReleaseCount: 0,
+        holderRecycleReuseCount: 0,
+        holderRecycleMissCount: 0,
+        holderRecycleDiscardCount: 0,
+        holderRebindCount: 0,
+        holderRebindLastMs: 0,
+        holderRebindMaxMs: 0,
+        holderNewBuildCount: 0,
+        holderRebindAttemptCount: 0,
+        holderRebindEligibleCount: 0,
+        holderRebindIneligibleCount: 0,
+        holderRebindFailureCount: 0,
+        holderRebindLastRejectReason: "",
+        holderRebindLastFailureStage: "",
+        holderRebindLastError: "",
+        holderRebindRejectReasons: {},
+        holderRebindFailureStages: {}
+    };
+
+    function resetHydrationWorkerDiagnostics() {
+        hydrationWorkerStoppingFlag.set(false);
+        hydrationLatestRequestRef.set(null);
+        hydrationResultQueue.clear();
+        hydrationWorkerBusyFlag.set(false);
+        hydrationWorkerState.enabled = true;
+        hydrationWorkerState.requestCount = 0;
+        hydrationWorkerState.queryCount = 0;
+        hydrationWorkerState.successCount = 0;
+        hydrationWorkerState.failureCount = 0;
+        hydrationWorkerState.latestRequestReplaceCount = 0;
+        hydrationWorkerState.staleResultDropCount = 0;
+        hydrationWorkerState.postCloseDropCount = 0;
+        hydrationWorkerState.workerQueryLastMs = 0;
+        hydrationWorkerState.workerQueryMaxMs = 0;
+        hydrationWorkerState.mainApplyLastMs = 0;
+        hydrationWorkerState.mainApplyMaxMs = 0;
+        hydrationWorkerState.lastRequestId = 0;
+        hydrationWorkerState.lastOrigin = "";
+        hydrationWorkerState.lastError = null;
+        hydrationWorkerState.lastInvalidateReason = "";
+        hydrationWorkerState.pendingSignature = null;
+        scrollPerformanceState.scrollEventCount = 0;
+        scrollPerformanceState.virtualScheduleCount = 0;
+        scrollPerformanceState.virtualUpdateCount = 0;
+        scrollPerformanceState.virtualUpdateLastMs = 0;
+        scrollPerformanceState.virtualUpdateMaxMs = 0;
+        scrollPerformanceState.viewRebuildCount = 0;
+        scrollPerformanceState.viewRebuildLastMs = 0;
+        scrollPerformanceState.viewRebuildMaxMs = 0;
+        scrollPerformanceState.createdViewCount = 0;
+        scrollPerformanceState.removedViewCount = 0;
+        scrollPerformance
+
+--- #2 at 120093 ---
+lRefreshRequestCount = 0;
+        scrollPerformanceState.fullRefreshDuplicateSuppressedCount = 0;
+        scrollPerformanceState.fullRefreshLastDataKey = "";
+        scrollPerformanceState.fullRefreshPendingDataKey = "";
+        scrollPerformanceState.fullRefreshLastAppliedDataKey = "";
+        scrollPerformanceState.virtualBookkeepingAtomicClearCount = 0;
+        scrollPerformanceState.fullRefreshSamples = [];
+        scrollPerformanceState.spacerApplyCount = 0;
+        scrollPerformanceState.spacerNoopCount = 0;
+        scrollPerformanceState.sameRangeNoLayoutCount = 0;
+        scrollPerformanceState.anchorScrollApplyCount = 0;
+        scrollPerformanceState.anchorScrollNoopCount = 0;
+        scrollPerformanceState.measurePassCount = 0;
+        scrollPerformanceState.measureLastMs = 0;
+        scrollPerformanceState.measureMaxMs = 0;
+        scrollPerformanceState.keyedReconcileLastMs = 0;
+        scrollPerformanceState.keyedReconcileMaxMs = 0;
+        scrollPerformanceState.keyedSignatureLastMs = 0;
+        scrollPerformanceState.keyedSignatureMaxMs = 0;
+        scrollPerformanceState.keyedStructureLastMs = 0;
+        scrollPerformanceState.keyedStructureMaxMs = 0;
+        scrollPerformanceState.overlapUpdateLastMs = 0;
+        scrollPerformanceState.overlapUpdateMaxMs = 0;
+        scrollPerformanceState.slowRebuildCount = 0;
+        scrollPerformanceState.slowRebuildSamples = [];
+        scrollPerformanceState.holderRecycleReleaseCount = 0;
+        scrollPerformanceState.holderRecycleReuseCount = 0;
+        scrollPerformanceState.holderRecycleMissCount = 0;
+        scrollPerformanceState.holderRecycleDiscardCount = 0;
+        scrollPerformanceState.holderRebindCount = 0;
+        scrollPerformanceState.holderRebindLastMs = 0;
+        scrollPerformanceState.holderRebindMaxMs = 0;
+        scrollPerformanceState.holderNewBuildCount = 0;
+        scrollPerformanceState.holderRebindAttemptCount = 0;
+        scrollPerformanceState.holderRebindEligibleCount = 0;
+        scrollPerformanceState.holderRebindIneligibleCount = 0;
+        scrollPerformanceState.holderRebindFailureCount = 0;
+        scrollPerformanceState.holderRebindLastRejectReason = "";
+        scrollPerformanceState.holderRebindLastFailureStage = "";
+        scrollPerformanceState.holderRebindLastError = "";
+        scrollPerformanceState.holderRebindRejectReasons = {};
+        scrollPerformanceState.holderRebindFailureStages = {};
+        virtualPendingOrigin = "";
+        virtualPendingForce = false;
+    }
+
+    function copyHydrationWorkerState() {
+        return {
+            enabled: hydrationWorkerState.enabled === true,
+            executorCreated: hydrationExecutor !== null,
+            workerBusy: hydrationWorkerBusyFlag.get() === true,
+            requestCount: Number(hydrationWorkerState.requestCount),
+            queryCount: Number(hydrationWorkerState.queryCount),
+            successCount: Number(hydrationWorkerState.successCount),
+            failureCount: Number(hydrationWorkerState.failureCount),
+            latestRequestReplaceCount:
+                Number(hydrationWorkerState.latestRequestReplaceCount),
+            staleResultDropCount:
+                Number(hydrationWorkerState.staleResultDropCount),
+            postCloseDropCount:
+                Number(hydrationWorkerState.postCloseDropCount),
+            workerQueryLastMs:
+                Number(hydrationWorkerState.workerQueryLastMs),
+            workerQueryMaxMs:
+                Number(hydrationWorkerState.workerQueryMaxMs),
+            mainApplyLastMs:
+                Number(hydrationWorkerState.mainApplyLastMs),
+            mainApplyMaxMs:
+                Number(hydrationWorkerState.mainApplyMaxMs),
+            lastReque
+
+--- #3 at 128611 ---
+    anchorScrollNoopCount:
+                Number(scrollPerformanceState.anchorScrollNoopCount),
+            measurePassCount:
+                Number(scrollPerformanceState.measurePassCount),
+            measureLastMs:
+                Number(scrollPerformanceState.measureLastMs),
+            measureMaxMs:
+                Number(scrollPerformanceState.measureMaxMs),
+            keyedReconcileLastMs:
+                Number(scrollPerformanceState.keyedReconcileLastMs),
+            keyedReconcileMaxMs:
+                Number(scrollPerformanceState.keyedReconcileMaxMs),
+            keyedSignatureLastMs:
+                Number(scrollPerformanceState.keyedSignatureLastMs),
+            keyedSignatureMaxMs:
+                Number(scrollPerformanceState.keyedSignatureMaxMs),
+            keyedStructureLastMs:
+                Number(scrollPerformanceState.keyedStructureLastMs),
+            keyedStructureMaxMs:
+                Number(scrollPerformanceState.keyedStructureMaxMs),
+            overlapUpdateLastMs:
+                Number(scrollPerformanceState.overlapUpdateLastMs),
+            overlapUpdateMaxMs:
+                Number(scrollPerformanceState.overlapUpdateMaxMs),
+            slowRebuildCount:
+                Number(scrollPerformanceState.slowRebuildCount),
+            slowRebuildSamples:
+                scrollPerformanceState.slowRebuildSamples.slice(0),
+            holderRecycleReleaseCount:
+                Number(scrollPerformanceState.holderRecycleReleaseCount),
+            holderRecycleReuseCount:
+                Number(scrollPerformanceState.holderRecycleReuseCount),
+            holderRecycleMissCount:
+                Number(scrollPerformanceState.holderRecycleMissCount),
+            holderRecycleDiscardCount:
+                Number(scrollPerformanceState.holderRecycleDiscardCount),
+            holderRebindCount:
+                Number(scrollPerformanceState.holderRebindCount),
+            holderRebindLastMs:
+                Number(scrollPerformanceState.holderRebindLastMs),
+            holderRebindMaxMs:
+                Number(scrollPerformanceState.holderRebindMaxMs),
+            holderNewBuildCount:
+                Number(scrollPerformanceState.holderNewBuildCount),
+            holderRebindAttemptCount:
+                Number(scrollPerformanceState.holderRebindAttemptCount),
+            holderRebindEligibleCount:
+                Number(scrollPerformanceState.holderRebindEligibleCount),
+            holderRebindIneligibleCount:
+                Number(scrollPerformanceState.holderRebindIneligibleCount),
+            holderRebindFailureCount:
+                Number(scrollPerformanceState.holderRebindFailureCount),
+            holderRebindLastRejectReason:
+                String(scrollPerformanceState.holderRebindLastRejectReason || ""),
+            holderRebindLastFailureStage:
+                String(scrollPerformanceState.holderRebindLastFailureStage || ""),
+            holderRebindLastError:
+                String(scrollPerformanceState.holderRebindLastError || ""),
+            holderRebindRejectReasons:
+                scrollPerformanceState.holderRebindRejectReasons,
+            holderRebindFailureStages:
+                scrollPerformanceState.holderRebindFailureStages,
+            pendingOrigin: virtualPendingOrigin,
+            pendingForce: virtualPendingForce === true
+        };
+    }
+
+    function invalidateHydrationWorker(reason) {
+        hydrationEpochSequence.incrementAndGet();
+        hydrationLatestRequestRef.set(null);
+        hydrationWorkerState.pendingSignature = null;
+        hydrationWorkerState.lastInvalidateReason =
+            String(reason || "invalidate");
+        return Number(hydrationEpochSequence.get());
+    }
+
+    function 
+
+--- #4 at 128682 ---
+e.anchorScrollNoopCount),
+            measurePassCount:
+                Number(scrollPerformanceState.measurePassCount),
+            measureLastMs:
+                Number(scrollPerformanceState.measureLastMs),
+            measureMaxMs:
+                Number(scrollPerformanceState.measureMaxMs),
+            keyedReconcileLastMs:
+                Number(scrollPerformanceState.keyedReconcileLastMs),
+            keyedReconcileMaxMs:
+                Number(scrollPerformanceState.keyedReconcileMaxMs),
+            keyedSignatureLastMs:
+                Number(scrollPerformanceState.keyedSignatureLastMs),
+            keyedSignatureMaxMs:
+                Number(scrollPerformanceState.keyedSignatureMaxMs),
+            keyedStructureLastMs:
+                Number(scrollPerformanceState.keyedStructureLastMs),
+            keyedStructureMaxMs:
+                Number(scrollPerformanceState.keyedStructureMaxMs),
+            overlapUpdateLastMs:
+                Number(scrollPerformanceState.overlapUpdateLastMs),
+            overlapUpdateMaxMs:
+                Number(scrollPerformanceState.overlapUpdateMaxMs),
+            slowRebuildCount:
+                Number(scrollPerformanceState.slowRebuildCount),
+            slowRebuildSamples:
+                scrollPerformanceState.slowRebuildSamples.slice(0),
+            holderRecycleReleaseCount:
+                Number(scrollPerformanceState.holderRecycleReleaseCount),
+            holderRecycleReuseCount:
+                Number(scrollPerformanceState.holderRecycleReuseCount),
+            holderRecycleMissCount:
+                Number(scrollPerformanceState.holderRecycleMissCount),
+            holderRecycleDiscardCount:
+                Number(scrollPerformanceState.holderRecycleDiscardCount),
+            holderRebindCount:
+                Number(scrollPerformanceState.holderRebindCount),
+            holderRebindLastMs:
+                Number(scrollPerformanceState.holderRebindLastMs),
+            holderRebindMaxMs:
+                Number(scrollPerformanceState.holderRebindMaxMs),
+            holderNewBuildCount:
+                Number(scrollPerformanceState.holderNewBuildCount),
+            holderRebindAttemptCount:
+                Number(scrollPerformanceState.holderRebindAttemptCount),
+            holderRebindEligibleCount:
+                Number(scrollPerformanceState.holderRebindEligibleCount),
+            holderRebindIneligibleCount:
+                Number(scrollPerformanceState.holderRebindIneligibleCount),
+            holderRebindFailureCount:
+                Number(scrollPerformanceState.holderRebindFailureCount),
+            holderRebindLastRejectReason:
+                String(scrollPerformanceState.holderRebindLastRejectReason || ""),
+            holderRebindLastFailureStage:
+                String(scrollPerformanceState.holderRebindLastFailureStage || ""),
+            holderRebindLastError:
+                String(scrollPerformanceState.holderRebindLastError || ""),
+            holderRebindRejectReasons:
+                scrollPerformanceState.holderRebindRejectReasons,
+            holderRebindFailureStages:
+                scrollPerformanceState.holderRebindFailureStages,
+            pendingOrigin: virtualPendingOrigin,
+            pendingForce: virtualPendingForce === true
+        };
+    }
+
+    function invalidateHydrationWorker(reason) {
+        hydrationEpochSequence.incrementAndGet();
+        hydrationLatestRequestRef.set(null);
+        hydrationWorkerState.pendingSignature = null;
+        hydrationWorkerState.lastInvalidateReason =
+            String(reason || "invalidate");
+        return Number(hydrationEpochSequence.get());
+    }
+
+    function ensureHydrationWorker() {
+        if (hydrationWorkerStoppingFlag.get()
+
+--- #5 at 185332 ---
+deredSignatures.pop();
+                resultCardViews.pop();
+                holderRef = resultCardHolders.pop();
+                resultActionViews.pop();
+                if (recycleEnabled && holderRef !== null &&
+                        holderRef !== undefined) {
+                    recyclePool.push(holderRef);
+                    scrollPerformanceState.holderRecycleReleaseCount += 1;
+                }
+                recycledCount += 1;
+                scrollPerformanceState.structuralRemoveCount += 1;
+            }
+            scrollPerformanceState.removedViewCount += recycledCount;
+            if (range.start < oldStart) {
+                for (index = oldStart - 1;
+                        index >= range.start; index -= 1) {
+                    params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                    params.bottomMargin = dp(6);
+                    holderRef = null;
+                    if (recycleEnabled && recyclePool.length > 0) {
+                        holderRef = recyclePool.pop();
+                        if (rebindResultCardHolder(holderRef,
+                                previewRows[index], colors)) {
+                            wrapper = holderRef.wrapper;
+                            cardRef = holderRef.card;
+                            actionRef = cardHolderActionRefs(holderRef);
+                            scrollPerformanceState.holderRecycleReuseCount += 1;
+                        } else {
+                            scrollPerformanceState.holderRecycleDiscardCount += 1;
+                            holderRef = null;
+                        }
+                    }
+                    if (holderRef === null) {
+                        wrapper = makeResultCard(previewRows[index], colors);
+                        cardRef = resultCardViews.pop();
+                        holderRef = resultCardHolders.pop();
+                        actionRef = resultActionViews.pop();
+                        if (recycleEnabled) {
+                            scrollPerformanceState.holderRecycleMissCount += 1;
+                        }
+                    }
+                    virtualCardHost.addView(wrapper, 0, params);
+                    resultCardViews.unshift(cardRef);
+                    resultCardHolders.unshift(holderRef);
+                    resultActionViews.unshift(actionRef);
+                    virtualRenderedItemIds.unshift(
+                        Number(previewRows[index].id));
+                    virtualRenderedSignatures.unshift(
+                        virtualRenderSignature(previewRows[index], colors));
+                    scrollPerformanceState.createdViewCount += 1;
+                    scrollPerformanceState.structuralInsertCount += 1;
+                }
+            }
+            if (range.end > oldEnd) {
+                for (index = oldEnd + 1;
+                        index <= range.end; index += 1) {
+                    params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                    params.bottomMargin = dp(6);
+                    holderRef = null;
+                    if (recycleEnabled && recyclePool.length > 0) {
+                        holderRef = recyclePool.pop();
+                        if (rebindResultCardHolder(holderRef,
+                                previewRows[index], colors)) {
+                            wrapper = holderRef.wrapper;
+                            cardRef = holderRef.card;
+                            actionRef = cardHolderActionRefs(holderRef);
+                 
+
+--- #6 at 187589 ---
+iew(wrapper, 0, params);
+                    resultCardViews.unshift(cardRef);
+                    resultCardHolders.unshift(holderRef);
+                    resultActionViews.unshift(actionRef);
+                    virtualRenderedItemIds.unshift(
+                        Number(previewRows[index].id));
+                    virtualRenderedSignatures.unshift(
+                        virtualRenderSignature(previewRows[index], colors));
+                    scrollPerformanceState.createdViewCount += 1;
+                    scrollPerformanceState.structuralInsertCount += 1;
+                }
+            }
+            if (range.end > oldEnd) {
+                for (index = oldEnd + 1;
+                        index <= range.end; index += 1) {
+                    params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                    params.bottomMargin = dp(6);
+                    holderRef = null;
+                    if (recycleEnabled && recyclePool.length > 0) {
+                        holderRef = recyclePool.pop();
+                        if (rebindResultCardHolder(holderRef,
+                                previewRows[index], colors)) {
+                            wrapper = holderRef.wrapper;
+                            cardRef = holderRef.card;
+                            actionRef = cardHolderActionRefs(holderRef);
+                            scrollPerformanceState.holderRecycleReuseCount += 1;
+                        } else {
+                            scrollPerformanceState.holderRecycleDiscardCount += 1;
+                            holderRef = null;
+                        }
+                    }
+                    if (holderRef === null) {
+                        wrapper = makeResultCard(previewRows[index], colors);
+                        cardRef = resultCardViews.pop();
+                        holderRef = resultCardHolders.pop();
+                        actionRef = resultActionViews.pop();
+                        if (recycleEnabled) {
+                            scrollPerformanceState.holderRecycleMissCount += 1;
+                        }
+                    }
+                    virtualCardHost.addView(wrapper, params);
+                    resultCardViews.push(cardRef);
+                    resultCardHolders.push(holderRef);
+                    resultActionViews.push(actionRef);
+                    virtualRenderedItemIds.push(
+                        Number(previewRows[index].id));
+                    virtualRenderedSignatures.push(
+                        virtualRenderSignature(previewRows[index], colors));
+                    scrollPerformanceState.createdViewCount += 1;
+                    scrollPerformanceState.structuralInsertCount += 1;
+                }
+            }
+            if (recycleEnabled && recyclePool.length > 0) {
+                scrollPerformanceState.holderRecycleDiscardCount +=
+                    recyclePool.length;
+                recyclePool = [];
+            }
+            state.resultCardCount = Number(
+                virtualCardHost.getChildCount());
+            overlapElapsed = Math.max(0,
+                Number(System.currentTimeMillis()) - overlapStartedAt);
+            scrollPerformanceState.overlapUpdateLastMs = overlapElapsed;
+            scrollPerformanceState.overlapUpdateMaxMs = Math.max(
+                Number(scrollPerformanceState.overlapUpdateMaxMs), overlapElapsed);
+        } else {
+  keyedReconcileVirtualWindow(range, colors);
+  recycledCount = Math.max(0, oldCount -
+      Number(virtualCardHost.getChildCount()));
+        }
+        syncRenderedResultCounters(range);
+        viewRebuildElapsed = 
+
+===== holderRecycleMissCount =====
+
+--- #1 at 115188 ---
+eCount: 0,
+        sameIdReuseCount: 0,
+        signatureRebuildCount: 0,
+        movedViewCount: 0,
+        structuralInsertCount: 0,
+        structuralRemoveCount: 0,
+        alignmentFallbackCount: 0,
+        alignmentFallbackLastReason: "",
+        alignmentFallbackReasonCounts: {},
+        alignmentFallbackLastSnapshot: null,
+        fullRefreshCallCount: 0,
+        fullRefreshLastPerformanceOrigin: "",
+        fullRefreshLastPreferredIndex: -1,
+        fullRefreshLastPreviewRowCount: 0,
+        fullRefreshLastRenderedCount: 0,
+        fullRefreshLastChildCount: 0,
+        fullRefreshRequestCount: 0,
+        fullRefreshDuplicateSuppressedCount: 0,
+        fullRefreshLastDataKey: "",
+        fullRefreshPendingDataKey: "",
+        fullRefreshLastAppliedDataKey: "",
+        virtualBookkeepingAtomicClearCount: 0,
+        fullRefreshSamples: [],
+        spacerApplyCount: 0,
+        spacerNoopCount: 0,
+        sameRangeNoLayoutCount: 0,
+        anchorScrollApplyCount: 0,
+        anchorScrollNoopCount: 0,
+        measurePassCount: 0,
+        measureLastMs: 0,
+        measureMaxMs: 0,
+        keyedReconcileLastMs: 0,
+        keyedReconcileMaxMs: 0,
+        keyedSignatureLastMs: 0,
+        keyedSignatureMaxMs: 0,
+        keyedStructureLastMs: 0,
+        keyedStructureMaxMs: 0,
+        overlapUpdateLastMs: 0,
+        overlapUpdateMaxMs: 0,
+        slowRebuildCount: 0,
+        slowRebuildSamples: [],
+        holderRecycleReleaseCount: 0,
+        holderRecycleReuseCount: 0,
+        holderRecycleMissCount: 0,
+        holderRecycleDiscardCount: 0,
+        holderRebindCount: 0,
+        holderRebindLastMs: 0,
+        holderRebindMaxMs: 0,
+        holderNewBuildCount: 0,
+        holderRebindAttemptCount: 0,
+        holderRebindEligibleCount: 0,
+        holderRebindIneligibleCount: 0,
+        holderRebindFailureCount: 0,
+        holderRebindLastRejectReason: "",
+        holderRebindLastFailureStage: "",
+        holderRebindLastError: "",
+        holderRebindRejectReasons: {},
+        holderRebindFailureStages: {}
+    };
+
+    function resetHydrationWorkerDiagnostics() {
+        hydrationWorkerStoppingFlag.set(false);
+        hydrationLatestRequestRef.set(null);
+        hydrationResultQueue.clear();
+        hydrationWorkerBusyFlag.set(false);
+        hydrationWorkerState.enabled = true;
+        hydrationWorkerState.requestCount = 0;
+        hydrationWorkerState.queryCount = 0;
+        hydrationWorkerState.successCount = 0;
+        hydrationWorkerState.failureCount = 0;
+        hydrationWorkerState.latestRequestReplaceCount = 0;
+        hydrationWorkerState.staleResultDropCount = 0;
+        hydrationWorkerState.postCloseDropCount = 0;
+        hydrationWorkerState.workerQueryLastMs = 0;
+        hydrationWorkerState.workerQueryMaxMs = 0;
+        hydrationWorkerState.mainApplyLastMs = 0;
+        hydrationWorkerState.mainApplyMaxMs = 0;
+        hydrationWorkerState.lastRequestId = 0;
+        hydrationWorkerState.lastOrigin = "";
+        hydrationWorkerState.lastError = null;
+        hydrationWorkerState.lastInvalidateReason = "";
+        hydrationWorkerState.pendingSignature = null;
+        scrollPerformanceState.scrollEventCount = 0;
+        scrollPerformanceState.virtualScheduleCount = 0;
+        scrollPerformanceState.virtualUpdateCount = 0;
+        scrollPerformanceState.virtualUpdateLastMs = 0;
+        scrollPerformanceState.virtualUpdateMaxMs = 0;
+        scrollPerformanceState.viewRebuildCount = 0;
+        scrollPerformanceState.viewRebuildLastMs = 0;
+        scrollPerformanceState.viewRebuildMaxMs = 0;
+        scrollPerformanceState.createdViewCount = 0;
+        scrollPerformanceState.removedViewCount = 0;
+        scrollPerformanceState.hydrateRequestedCount = 0;
+  
+
+--- #2 at 120153 ---
+lRefreshDuplicateSuppressedCount = 0;
+        scrollPerformanceState.fullRefreshLastDataKey = "";
+        scrollPerformanceState.fullRefreshPendingDataKey = "";
+        scrollPerformanceState.fullRefreshLastAppliedDataKey = "";
+        scrollPerformanceState.virtualBookkeepingAtomicClearCount = 0;
+        scrollPerformanceState.fullRefreshSamples = [];
+        scrollPerformanceState.spacerApplyCount = 0;
+        scrollPerformanceState.spacerNoopCount = 0;
+        scrollPerformanceState.sameRangeNoLayoutCount = 0;
+        scrollPerformanceState.anchorScrollApplyCount = 0;
+        scrollPerformanceState.anchorScrollNoopCount = 0;
+        scrollPerformanceState.measurePassCount = 0;
+        scrollPerformanceState.measureLastMs = 0;
+        scrollPerformanceState.measureMaxMs = 0;
+        scrollPerformanceState.keyedReconcileLastMs = 0;
+        scrollPerformanceState.keyedReconcileMaxMs = 0;
+        scrollPerformanceState.keyedSignatureLastMs = 0;
+        scrollPerformanceState.keyedSignatureMaxMs = 0;
+        scrollPerformanceState.keyedStructureLastMs = 0;
+        scrollPerformanceState.keyedStructureMaxMs = 0;
+        scrollPerformanceState.overlapUpdateLastMs = 0;
+        scrollPerformanceState.overlapUpdateMaxMs = 0;
+        scrollPerformanceState.slowRebuildCount = 0;
+        scrollPerformanceState.slowRebuildSamples = [];
+        scrollPerformanceState.holderRecycleReleaseCount = 0;
+        scrollPerformanceState.holderRecycleReuseCount = 0;
+        scrollPerformanceState.holderRecycleMissCount = 0;
+        scrollPerformanceState.holderRecycleDiscardCount = 0;
+        scrollPerformanceState.holderRebindCount = 0;
+        scrollPerformanceState.holderRebindLastMs = 0;
+        scrollPerformanceState.holderRebindMaxMs = 0;
+        scrollPerformanceState.holderNewBuildCount = 0;
+        scrollPerformanceState.holderRebindAttemptCount = 0;
+        scrollPerformanceState.holderRebindEligibleCount = 0;
+        scrollPerformanceState.holderRebindIneligibleCount = 0;
+        scrollPerformanceState.holderRebindFailureCount = 0;
+        scrollPerformanceState.holderRebindLastRejectReason = "";
+        scrollPerformanceState.holderRebindLastFailureStage = "";
+        scrollPerformanceState.holderRebindLastError = "";
+        scrollPerformanceState.holderRebindRejectReasons = {};
+        scrollPerformanceState.holderRebindFailureStages = {};
+        virtualPendingOrigin = "";
+        virtualPendingForce = false;
+    }
+
+    function copyHydrationWorkerState() {
+        return {
+            enabled: hydrationWorkerState.enabled === true,
+            executorCreated: hydrationExecutor !== null,
+            workerBusy: hydrationWorkerBusyFlag.get() === true,
+            requestCount: Number(hydrationWorkerState.requestCount),
+            queryCount: Number(hydrationWorkerState.queryCount),
+            successCount: Number(hydrationWorkerState.successCount),
+            failureCount: Number(hydrationWorkerState.failureCount),
+            latestRequestReplaceCount:
+                Number(hydrationWorkerState.latestRequestReplaceCount),
+            staleResultDropCount:
+                Number(hydrationWorkerState.staleResultDropCount),
+            postCloseDropCount:
+                Number(hydrationWorkerState.postCloseDropCount),
+            workerQueryLastMs:
+                Number(hydrationWorkerState.workerQueryLastMs),
+            workerQueryMaxMs:
+                Number(hydrationWorkerState.workerQueryMaxMs),
+            mainApplyLastMs:
+                Number(hydrationWorkerState.mainApplyLastMs),
+            mainApplyMaxMs:
+                Number(hydrationWorkerState.mainApplyMaxMs),
+            lastRequestId: Number(hydrationWorkerState.lastRequestId),
+         
+
+--- #3 at 128720 ---
+measurePassCount:
+                Number(scrollPerformanceState.measurePassCount),
+            measureLastMs:
+                Number(scrollPerformanceState.measureLastMs),
+            measureMaxMs:
+                Number(scrollPerformanceState.measureMaxMs),
+            keyedReconcileLastMs:
+                Number(scrollPerformanceState.keyedReconcileLastMs),
+            keyedReconcileMaxMs:
+                Number(scrollPerformanceState.keyedReconcileMaxMs),
+            keyedSignatureLastMs:
+                Number(scrollPerformanceState.keyedSignatureLastMs),
+            keyedSignatureMaxMs:
+                Number(scrollPerformanceState.keyedSignatureMaxMs),
+            keyedStructureLastMs:
+                Number(scrollPerformanceState.keyedStructureLastMs),
+            keyedStructureMaxMs:
+                Number(scrollPerformanceState.keyedStructureMaxMs),
+            overlapUpdateLastMs:
+                Number(scrollPerformanceState.overlapUpdateLastMs),
+            overlapUpdateMaxMs:
+                Number(scrollPerformanceState.overlapUpdateMaxMs),
+            slowRebuildCount:
+                Number(scrollPerformanceState.slowRebuildCount),
+            slowRebuildSamples:
+                scrollPerformanceState.slowRebuildSamples.slice(0),
+            holderRecycleReleaseCount:
+                Number(scrollPerformanceState.holderRecycleReleaseCount),
+            holderRecycleReuseCount:
+                Number(scrollPerformanceState.holderRecycleReuseCount),
+            holderRecycleMissCount:
+                Number(scrollPerformanceState.holderRecycleMissCount),
+            holderRecycleDiscardCount:
+                Number(scrollPerformanceState.holderRecycleDiscardCount),
+            holderRebindCount:
+                Number(scrollPerformanceState.holderRebindCount),
+            holderRebindLastMs:
+                Number(scrollPerformanceState.holderRebindLastMs),
+            holderRebindMaxMs:
+                Number(scrollPerformanceState.holderRebindMaxMs),
+            holderNewBuildCount:
+                Number(scrollPerformanceState.holderNewBuildCount),
+            holderRebindAttemptCount:
+                Number(scrollPerformanceState.holderRebindAttemptCount),
+            holderRebindEligibleCount:
+                Number(scrollPerformanceState.holderRebindEligibleCount),
+            holderRebindIneligibleCount:
+                Number(scrollPerformanceState.holderRebindIneligibleCount),
+            holderRebindFailureCount:
+                Number(scrollPerformanceState.holderRebindFailureCount),
+            holderRebindLastRejectReason:
+                String(scrollPerformanceState.holderRebindLastRejectReason || ""),
+            holderRebindLastFailureStage:
+                String(scrollPerformanceState.holderRebindLastFailureStage || ""),
+            holderRebindLastError:
+                String(scrollPerformanceState.holderRebindLastError || ""),
+            holderRebindRejectReasons:
+                scrollPerformanceState.holderRebindRejectReasons,
+            holderRebindFailureStages:
+                scrollPerformanceState.holderRebindFailureStages,
+            pendingOrigin: virtualPendingOrigin,
+            pendingForce: virtualPendingForce === true
+        };
+    }
+
+    function invalidateHydrationWorker(reason) {
+        hydrationEpochSequence.incrementAndGet();
+        hydrationLatestRequestRef.set(null);
+        hydrationWorkerState.pendingSignature = null;
+        hydrationWorkerState.lastInvalidateReason =
+            String(reason || "invalidate");
+        return Number(hydrationEpochSequence.get());
+    }
+
+    function ensureHydrationWorker() {
+        if (hydrationWorkerStoppingFlag.get() === true ||
+                !hydrati
+
+--- #4 at 128790 ---
+ePassCount),
+            measureLastMs:
+                Number(scrollPerformanceState.measureLastMs),
+            measureMaxMs:
+                Number(scrollPerformanceState.measureMaxMs),
+            keyedReconcileLastMs:
+                Number(scrollPerformanceState.keyedReconcileLastMs),
+            keyedReconcileMaxMs:
+                Number(scrollPerformanceState.keyedReconcileMaxMs),
+            keyedSignatureLastMs:
+                Number(scrollPerformanceState.keyedSignatureLastMs),
+            keyedSignatureMaxMs:
+                Number(scrollPerformanceState.keyedSignatureMaxMs),
+            keyedStructureLastMs:
+                Number(scrollPerformanceState.keyedStructureLastMs),
+            keyedStructureMaxMs:
+                Number(scrollPerformanceState.keyedStructureMaxMs),
+            overlapUpdateLastMs:
+                Number(scrollPerformanceState.overlapUpdateLastMs),
+            overlapUpdateMaxMs:
+                Number(scrollPerformanceState.overlapUpdateMaxMs),
+            slowRebuildCount:
+                Number(scrollPerformanceState.slowRebuildCount),
+            slowRebuildSamples:
+                scrollPerformanceState.slowRebuildSamples.slice(0),
+            holderRecycleReleaseCount:
+                Number(scrollPerformanceState.holderRecycleReleaseCount),
+            holderRecycleReuseCount:
+                Number(scrollPerformanceState.holderRecycleReuseCount),
+            holderRecycleMissCount:
+                Number(scrollPerformanceState.holderRecycleMissCount),
+            holderRecycleDiscardCount:
+                Number(scrollPerformanceState.holderRecycleDiscardCount),
+            holderRebindCount:
+                Number(scrollPerformanceState.holderRebindCount),
+            holderRebindLastMs:
+                Number(scrollPerformanceState.holderRebindLastMs),
+            holderRebindMaxMs:
+                Number(scrollPerformanceState.holderRebindMaxMs),
+            holderNewBuildCount:
+                Number(scrollPerformanceState.holderNewBuildCount),
+            holderRebindAttemptCount:
+                Number(scrollPerformanceState.holderRebindAttemptCount),
+            holderRebindEligibleCount:
+                Number(scrollPerformanceState.holderRebindEligibleCount),
+            holderRebindIneligibleCount:
+                Number(scrollPerformanceState.holderRebindIneligibleCount),
+            holderRebindFailureCount:
+                Number(scrollPerformanceState.holderRebindFailureCount),
+            holderRebindLastRejectReason:
+                String(scrollPerformanceState.holderRebindLastRejectReason || ""),
+            holderRebindLastFailureStage:
+                String(scrollPerformanceState.holderRebindLastFailureStage || ""),
+            holderRebindLastError:
+                String(scrollPerformanceState.holderRebindLastError || ""),
+            holderRebindRejectReasons:
+                scrollPerformanceState.holderRebindRejectReasons,
+            holderRebindFailureStages:
+                scrollPerformanceState.holderRebindFailureStages,
+            pendingOrigin: virtualPendingOrigin,
+            pendingForce: virtualPendingForce === true
+        };
+    }
+
+    function invalidateHydrationWorker(reason) {
+        hydrationEpochSequence.incrementAndGet();
+        hydrationLatestRequestRef.set(null);
+        hydrationWorkerState.pendingSignature = null;
+        hydrationWorkerState.lastInvalidateReason =
+            String(reason || "invalidate");
+        return Number(hydrationEpochSequence.get());
+    }
+
+    function ensureHydrationWorker() {
+        if (hydrationWorkerStoppingFlag.get() === true ||
+                !hydrationWorkerState.enabled) {
+            return false;
+        }
+        i
+
+--- #5 at 185972 ---
+              for (index = oldStart - 1;
+                        index >= range.start; index -= 1) {
+                    params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                    params.bottomMargin = dp(6);
+                    holderRef = null;
+                    if (recycleEnabled && recyclePool.length > 0) {
+                        holderRef = recyclePool.pop();
+                        if (rebindResultCardHolder(holderRef,
+                                previewRows[index], colors)) {
+                            wrapper = holderRef.wrapper;
+                            cardRef = holderRef.card;
+                            actionRef = cardHolderActionRefs(holderRef);
+                            scrollPerformanceState.holderRecycleReuseCount += 1;
+                        } else {
+                            scrollPerformanceState.holderRecycleDiscardCount += 1;
+                            holderRef = null;
+                        }
+                    }
+                    if (holderRef === null) {
+                        wrapper = makeResultCard(previewRows[index], colors);
+                        cardRef = resultCardViews.pop();
+                        holderRef = resultCardHolders.pop();
+                        actionRef = resultActionViews.pop();
+                        if (recycleEnabled) {
+                            scrollPerformanceState.holderRecycleMissCount += 1;
+                        }
+                    }
+                    virtualCardHost.addView(wrapper, 0, params);
+                    resultCardViews.unshift(cardRef);
+                    resultCardHolders.unshift(holderRef);
+                    resultActionViews.unshift(actionRef);
+                    virtualRenderedItemIds.unshift(
+                        Number(previewRows[index].id));
+                    virtualRenderedSignatures.unshift(
+                        virtualRenderSignature(previewRows[index], colors));
+                    scrollPerformanceState.createdViewCount += 1;
+                    scrollPerformanceState.structuralInsertCount += 1;
+                }
+            }
+            if (range.end > oldEnd) {
+                for (index = oldEnd + 1;
+                        index <= range.end; index += 1) {
+                    params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                    params.bottomMargin = dp(6);
+                    holderRef = null;
+                    if (recycleEnabled && recyclePool.length > 0) {
+                        holderRef = recyclePool.pop();
+                        if (rebindResultCardHolder(holderRef,
+                                previewRows[index], colors)) {
+                            wrapper = holderRef.wrapper;
+                            cardRef = holderRef.card;
+                            actionRef = cardHolderActionRefs(holderRef);
+                            scrollPerformanceState.holderRecycleReuseCount += 1;
+                        } else {
+                            scrollPerformanceState.holderRecycleDiscardCount += 1;
+                            holderRef = null;
+                        }
+                    }
+                    if (holderRef === null) {
+                        wrapper = makeResultCard(previewRows[index], colors);
+                        cardRef = resultCardViews.pop();
+                        holderRef = resultCardHolders.pop();
+                        actionRef = resultActionViews.pop();
+                        if (recycleEnabled) {
+                
+
+--- #6 at 188229 ---
+{
+                for (index = oldEnd + 1;
+                        index <= range.end; index += 1) {
+                    params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                    params.bottomMargin = dp(6);
+                    holderRef = null;
+                    if (recycleEnabled && recyclePool.length > 0) {
+                        holderRef = recyclePool.pop();
+                        if (rebindResultCardHolder(holderRef,
+                                previewRows[index], colors)) {
+                            wrapper = holderRef.wrapper;
+                            cardRef = holderRef.card;
+                            actionRef = cardHolderActionRefs(holderRef);
+                            scrollPerformanceState.holderRecycleReuseCount += 1;
+                        } else {
+                            scrollPerformanceState.holderRecycleDiscardCount += 1;
+                            holderRef = null;
+                        }
+                    }
+                    if (holderRef === null) {
+                        wrapper = makeResultCard(previewRows[index], colors);
+                        cardRef = resultCardViews.pop();
+                        holderRef = resultCardHolders.pop();
+                        actionRef = resultActionViews.pop();
+                        if (recycleEnabled) {
+                            scrollPerformanceState.holderRecycleMissCount += 1;
+                        }
+                    }
+                    virtualCardHost.addView(wrapper, params);
+                    resultCardViews.push(cardRef);
+                    resultCardHolders.push(holderRef);
+                    resultActionViews.push(actionRef);
+                    virtualRenderedItemIds.push(
+                        Number(previewRows[index].id));
+                    virtualRenderedSignatures.push(
+                        virtualRenderSignature(previewRows[index], colors));
+                    scrollPerformanceState.createdViewCount += 1;
+                    scrollPerformanceState.structuralInsertCount += 1;
+                }
+            }
+            if (recycleEnabled && recyclePool.length > 0) {
+                scrollPerformanceState.holderRecycleDiscardCount +=
+                    recyclePool.length;
+                recyclePool = [];
+            }
+            state.resultCardCount = Number(
+                virtualCardHost.getChildCount());
+            overlapElapsed = Math.max(0,
+                Number(System.currentTimeMillis()) - overlapStartedAt);
+            scrollPerformanceState.overlapUpdateLastMs = overlapElapsed;
+            scrollPerformanceState.overlapUpdateMaxMs = Math.max(
+                Number(scrollPerformanceState.overlapUpdateMaxMs), overlapElapsed);
+        } else {
+  keyedReconcileVirtualWindow(range, colors);
+  recycledCount = Math.max(0, oldCount -
+      Number(virtualCardHost.getChildCount()));
+        }
+        syncRenderedResultCounters(range);
+        viewRebuildElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) -
+                viewRebuildStartedAt);
+        scrollPerformanceState.viewRebuildLastMs =
+            viewRebuildElapsed;
+        scrollPerformanceState.viewRebuildMaxMs = Math.max(
+            Number(scrollPerformanceState.viewRebuildMaxMs),
+            viewRebuildElapsed);
+        if (viewRebuildElapsed > 32) {
+            scrollPerformanceState.slowRebuildCount += 1;
+            scrollPerformanceState.slowRebuildSamples.push({
+                origin: String(origin || "virtual_rebuild"),
+                force: force === true,
+                mode: overlap ? "overlap" : 
+
+===== holderRecycleDiscardCount =====
+
+--- #1 at 115223 ---
+: 0,
+        signatureRebuildCount: 0,
+        movedViewCount: 0,
+        structuralInsertCount: 0,
+        structuralRemoveCount: 0,
+        alignmentFallbackCount: 0,
+        alignmentFallbackLastReason: "",
+        alignmentFallbackReasonCounts: {},
+        alignmentFallbackLastSnapshot: null,
+        fullRefreshCallCount: 0,
+        fullRefreshLastPerformanceOrigin: "",
+        fullRefreshLastPreferredIndex: -1,
+        fullRefreshLastPreviewRowCount: 0,
+        fullRefreshLastRenderedCount: 0,
+        fullRefreshLastChildCount: 0,
+        fullRefreshRequestCount: 0,
+        fullRefreshDuplicateSuppressedCount: 0,
+        fullRefreshLastDataKey: "",
+        fullRefreshPendingDataKey: "",
+        fullRefreshLastAppliedDataKey: "",
+        virtualBookkeepingAtomicClearCount: 0,
+        fullRefreshSamples: [],
+        spacerApplyCount: 0,
+        spacerNoopCount: 0,
+        sameRangeNoLayoutCount: 0,
+        anchorScrollApplyCount: 0,
+        anchorScrollNoopCount: 0,
+        measurePassCount: 0,
+        measureLastMs: 0,
+        measureMaxMs: 0,
+        keyedReconcileLastMs: 0,
+        keyedReconcileMaxMs: 0,
+        keyedSignatureLastMs: 0,
+        keyedSignatureMaxMs: 0,
+        keyedStructureLastMs: 0,
+        keyedStructureMaxMs: 0,
+        overlapUpdateLastMs: 0,
+        overlapUpdateMaxMs: 0,
+        slowRebuildCount: 0,
+        slowRebuildSamples: [],
+        holderRecycleReleaseCount: 0,
+        holderRecycleReuseCount: 0,
+        holderRecycleMissCount: 0,
+        holderRecycleDiscardCount: 0,
+        holderRebindCount: 0,
+        holderRebindLastMs: 0,
+        holderRebindMaxMs: 0,
+        holderNewBuildCount: 0,
+        holderRebindAttemptCount: 0,
+        holderRebindEligibleCount: 0,
+        holderRebindIneligibleCount: 0,
+        holderRebindFailureCount: 0,
+        holderRebindLastRejectReason: "",
+        holderRebindLastFailureStage: "",
+        holderRebindLastError: "",
+        holderRebindRejectReasons: {},
+        holderRebindFailureStages: {}
+    };
+
+    function resetHydrationWorkerDiagnostics() {
+        hydrationWorkerStoppingFlag.set(false);
+        hydrationLatestRequestRef.set(null);
+        hydrationResultQueue.clear();
+        hydrationWorkerBusyFlag.set(false);
+        hydrationWorkerState.enabled = true;
+        hydrationWorkerState.requestCount = 0;
+        hydrationWorkerState.queryCount = 0;
+        hydrationWorkerState.successCount = 0;
+        hydrationWorkerState.failureCount = 0;
+        hydrationWorkerState.latestRequestReplaceCount = 0;
+        hydrationWorkerState.staleResultDropCount = 0;
+        hydrationWorkerState.postCloseDropCount = 0;
+        hydrationWorkerState.workerQueryLastMs = 0;
+        hydrationWorkerState.workerQueryMaxMs = 0;
+        hydrationWorkerState.mainApplyLastMs = 0;
+        hydrationWorkerState.mainApplyMaxMs = 0;
+        hydrationWorkerState.lastRequestId = 0;
+        hydrationWorkerState.lastOrigin = "";
+        hydrationWorkerState.lastError = null;
+        hydrationWorkerState.lastInvalidateReason = "";
+        hydrationWorkerState.pendingSignature = null;
+        scrollPerformanceState.scrollEventCount = 0;
+        scrollPerformanceState.virtualScheduleCount = 0;
+        scrollPerformanceState.virtualUpdateCount = 0;
+        scrollPerformanceState.virtualUpdateLastMs = 0;
+        scrollPerformanceState.virtualUpdateMaxMs = 0;
+        scrollPerformanceState.viewRebuildCount = 0;
+        scrollPerformanceState.viewRebuildLastMs = 0;
+        scrollPerformanceState.viewRebuildMaxMs = 0;
+        scrollPerformanceState.createdViewCount = 0;
+        scrollPerformanceState.removedViewCount = 0;
+        scrollPerformanceState.hydrateRequestedCount = 0;
+        scrollPerformanceState.updateReq
+
+--- #2 at 120212 ---
+anceState.fullRefreshLastDataKey = "";
+        scrollPerformanceState.fullRefreshPendingDataKey = "";
+        scrollPerformanceState.fullRefreshLastAppliedDataKey = "";
+        scrollPerformanceState.virtualBookkeepingAtomicClearCount = 0;
+        scrollPerformanceState.fullRefreshSamples = [];
+        scrollPerformanceState.spacerApplyCount = 0;
+        scrollPerformanceState.spacerNoopCount = 0;
+        scrollPerformanceState.sameRangeNoLayoutCount = 0;
+        scrollPerformanceState.anchorScrollApplyCount = 0;
+        scrollPerformanceState.anchorScrollNoopCount = 0;
+        scrollPerformanceState.measurePassCount = 0;
+        scrollPerformanceState.measureLastMs = 0;
+        scrollPerformanceState.measureMaxMs = 0;
+        scrollPerformanceState.keyedReconcileLastMs = 0;
+        scrollPerformanceState.keyedReconcileMaxMs = 0;
+        scrollPerformanceState.keyedSignatureLastMs = 0;
+        scrollPerformanceState.keyedSignatureMaxMs = 0;
+        scrollPerformanceState.keyedStructureLastMs = 0;
+        scrollPerformanceState.keyedStructureMaxMs = 0;
+        scrollPerformanceState.overlapUpdateLastMs = 0;
+        scrollPerformanceState.overlapUpdateMaxMs = 0;
+        scrollPerformanceState.slowRebuildCount = 0;
+        scrollPerformanceState.slowRebuildSamples = [];
+        scrollPerformanceState.holderRecycleReleaseCount = 0;
+        scrollPerformanceState.holderRecycleReuseCount = 0;
+        scrollPerformanceState.holderRecycleMissCount = 0;
+        scrollPerformanceState.holderRecycleDiscardCount = 0;
+        scrollPerformanceState.holderRebindCount = 0;
+        scrollPerformanceState.holderRebindLastMs = 0;
+        scrollPerformanceState.holderRebindMaxMs = 0;
+        scrollPerformanceState.holderNewBuildCount = 0;
+        scrollPerformanceState.holderRebindAttemptCount = 0;
+        scrollPerformanceState.holderRebindEligibleCount = 0;
+        scrollPerformanceState.holderRebindIneligibleCount = 0;
+        scrollPerformanceState.holderRebindFailureCount = 0;
+        scrollPerformanceState.holderRebindLastRejectReason = "";
+        scrollPerformanceState.holderRebindLastFailureStage = "";
+        scrollPerformanceState.holderRebindLastError = "";
+        scrollPerformanceState.holderRebindRejectReasons = {};
+        scrollPerformanceState.holderRebindFailureStages = {};
+        virtualPendingOrigin = "";
+        virtualPendingForce = false;
+    }
+
+    function copyHydrationWorkerState() {
+        return {
+            enabled: hydrationWorkerState.enabled === true,
+            executorCreated: hydrationExecutor !== null,
+            workerBusy: hydrationWorkerBusyFlag.get() === true,
+            requestCount: Number(hydrationWorkerState.requestCount),
+            queryCount: Number(hydrationWorkerState.queryCount),
+            successCount: Number(hydrationWorkerState.successCount),
+            failureCount: Number(hydrationWorkerState.failureCount),
+            latestRequestReplaceCount:
+                Number(hydrationWorkerState.latestRequestReplaceCount),
+            staleResultDropCount:
+                Number(hydrationWorkerState.staleResultDropCount),
+            postCloseDropCount:
+                Number(hydrationWorkerState.postCloseDropCount),
+            workerQueryLastMs:
+                Number(hydrationWorkerState.workerQueryLastMs),
+            workerQueryMaxMs:
+                Number(hydrationWorkerState.workerQueryMaxMs),
+            mainApplyLastMs:
+                Number(hydrationWorkerState.mainApplyLastMs),
+            mainApplyMaxMs:
+                Number(hydrationWorkerState.mainApplyMaxMs),
+            lastRequestId: Number(hydrationWorkerState.lastRequestId),
+            lastOrigin: hydrationWorkerState.lastOrigin,
+            la
+
+--- #3 at 128827 ---
+s:
+                Number(scrollPerformanceState.measureLastMs),
+            measureMaxMs:
+                Number(scrollPerformanceState.measureMaxMs),
+            keyedReconcileLastMs:
+                Number(scrollPerformanceState.keyedReconcileLastMs),
+            keyedReconcileMaxMs:
+                Number(scrollPerformanceState.keyedReconcileMaxMs),
+            keyedSignatureLastMs:
+                Number(scrollPerformanceState.keyedSignatureLastMs),
+            keyedSignatureMaxMs:
+                Number(scrollPerformanceState.keyedSignatureMaxMs),
+            keyedStructureLastMs:
+                Number(scrollPerformanceState.keyedStructureLastMs),
+            keyedStructureMaxMs:
+                Number(scrollPerformanceState.keyedStructureMaxMs),
+            overlapUpdateLastMs:
+                Number(scrollPerformanceState.overlapUpdateLastMs),
+            overlapUpdateMaxMs:
+                Number(scrollPerformanceState.overlapUpdateMaxMs),
+            slowRebuildCount:
+                Number(scrollPerformanceState.slowRebuildCount),
+            slowRebuildSamples:
+                scrollPerformanceState.slowRebuildSamples.slice(0),
+            holderRecycleReleaseCount:
+                Number(scrollPerformanceState.holderRecycleReleaseCount),
+            holderRecycleReuseCount:
+                Number(scrollPerformanceState.holderRecycleReuseCount),
+            holderRecycleMissCount:
+                Number(scrollPerformanceState.holderRecycleMissCount),
+            holderRecycleDiscardCount:
+                Number(scrollPerformanceState.holderRecycleDiscardCount),
+            holderRebindCount:
+                Number(scrollPerformanceState.holderRebindCount),
+            holderRebindLastMs:
+                Number(scrollPerformanceState.holderRebindLastMs),
+            holderRebindMaxMs:
+                Number(scrollPerformanceState.holderRebindMaxMs),
+            holderNewBuildCount:
+                Number(scrollPerformanceState.holderNewBuildCount),
+            holderRebindAttemptCount:
+                Number(scrollPerformanceState.holderRebindAttemptCount),
+            holderRebindEligibleCount:
+                Number(scrollPerformanceState.holderRebindEligibleCount),
+            holderRebindIneligibleCount:
+                Number(scrollPerformanceState.holderRebindIneligibleCount),
+            holderRebindFailureCount:
+                Number(scrollPerformanceState.holderRebindFailureCount),
+            holderRebindLastRejectReason:
+                String(scrollPerformanceState.holderRebindLastRejectReason || ""),
+            holderRebindLastFailureStage:
+                String(scrollPerformanceState.holderRebindLastFailureStage || ""),
+            holderRebindLastError:
+                String(scrollPerformanceState.holderRebindLastError || ""),
+            holderRebindRejectReasons:
+                scrollPerformanceState.holderRebindRejectReasons,
+            holderRebindFailureStages:
+                scrollPerformanceState.holderRebindFailureStages,
+            pendingOrigin: virtualPendingOrigin,
+            pendingForce: virtualPendingForce === true
+        };
+    }
+
+    function invalidateHydrationWorker(reason) {
+        hydrationEpochSequence.incrementAndGet();
+        hydrationLatestRequestRef.set(null);
+        hydrationWorkerState.pendingSignature = null;
+        hydrationWorkerState.lastInvalidateReason =
+            String(reason || "invalidate");
+        return Number(hydrationEpochSequence.get());
+    }
+
+    function ensureHydrationWorker() {
+        if (hydrationWorkerStoppingFlag.get() === true ||
+                !hydrationWorkerState.enabled) {
+            return false;
+        }
+        if (hydrationExecutor === null ||
+       
+
+--- #4 at 128900 ---
+    measureMaxMs:
+                Number(scrollPerformanceState.measureMaxMs),
+            keyedReconcileLastMs:
+                Number(scrollPerformanceState.keyedReconcileLastMs),
+            keyedReconcileMaxMs:
+                Number(scrollPerformanceState.keyedReconcileMaxMs),
+            keyedSignatureLastMs:
+                Number(scrollPerformanceState.keyedSignatureLastMs),
+            keyedSignatureMaxMs:
+                Number(scrollPerformanceState.keyedSignatureMaxMs),
+            keyedStructureLastMs:
+                Number(scrollPerformanceState.keyedStructureLastMs),
+            keyedStructureMaxMs:
+                Number(scrollPerformanceState.keyedStructureMaxMs),
+            overlapUpdateLastMs:
+                Number(scrollPerformanceState.overlapUpdateLastMs),
+            overlapUpdateMaxMs:
+                Number(scrollPerformanceState.overlapUpdateMaxMs),
+            slowRebuildCount:
+                Number(scrollPerformanceState.slowRebuildCount),
+            slowRebuildSamples:
+                scrollPerformanceState.slowRebuildSamples.slice(0),
+            holderRecycleReleaseCount:
+                Number(scrollPerformanceState.holderRecycleReleaseCount),
+            holderRecycleReuseCount:
+                Number(scrollPerformanceState.holderRecycleReuseCount),
+            holderRecycleMissCount:
+                Number(scrollPerformanceState.holderRecycleMissCount),
+            holderRecycleDiscardCount:
+                Number(scrollPerformanceState.holderRecycleDiscardCount),
+            holderRebindCount:
+                Number(scrollPerformanceState.holderRebindCount),
+            holderRebindLastMs:
+                Number(scrollPerformanceState.holderRebindLastMs),
+            holderRebindMaxMs:
+                Number(scrollPerformanceState.holderRebindMaxMs),
+            holderNewBuildCount:
+                Number(scrollPerformanceState.holderNewBuildCount),
+            holderRebindAttemptCount:
+                Number(scrollPerformanceState.holderRebindAttemptCount),
+            holderRebindEligibleCount:
+                Number(scrollPerformanceState.holderRebindEligibleCount),
+            holderRebindIneligibleCount:
+                Number(scrollPerformanceState.holderRebindIneligibleCount),
+            holderRebindFailureCount:
+                Number(scrollPerformanceState.holderRebindFailureCount),
+            holderRebindLastRejectReason:
+                String(scrollPerformanceState.holderRebindLastRejectReason || ""),
+            holderRebindLastFailureStage:
+                String(scrollPerformanceState.holderRebindLastFailureStage || ""),
+            holderRebindLastError:
+                String(scrollPerformanceState.holderRebindLastError || ""),
+            holderRebindRejectReasons:
+                scrollPerformanceState.holderRebindRejectReasons,
+            holderRebindFailureStages:
+                scrollPerformanceState.holderRebindFailureStages,
+            pendingOrigin: virtualPendingOrigin,
+            pendingForce: virtualPendingForce === true
+        };
+    }
+
+    function invalidateHydrationWorker(reason) {
+        hydrationEpochSequence.incrementAndGet();
+        hydrationLatestRequestRef.set(null);
+        hydrationWorkerState.pendingSignature = null;
+        hydrationWorkerState.lastInvalidateReason =
+            String(reason || "invalidate");
+        return Number(hydrationEpochSequence.get());
+    }
+
+    function ensureHydrationWorker() {
+        if (hydrationWorkerStoppingFlag.get() === true ||
+                !hydrationWorkerState.enabled) {
+            return false;
+        }
+        if (hydrationExecutor === null ||
+                hydrationExecutor.isShutdown() ||
+                hydrationExecu
+
+--- #5 at 185446 ---
+
+                resultActionViews.pop();
+                if (recycleEnabled && holderRef !== null &&
+                        holderRef !== undefined) {
+                    recyclePool.push(holderRef);
+                    scrollPerformanceState.holderRecycleReleaseCount += 1;
+                }
+                recycledCount += 1;
+                scrollPerformanceState.structuralRemoveCount += 1;
+            }
+            scrollPerformanceState.removedViewCount += recycledCount;
+            if (range.start < oldStart) {
+                for (index = oldStart - 1;
+                        index >= range.start; index -= 1) {
+                    params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                    params.bottomMargin = dp(6);
+                    holderRef = null;
+                    if (recycleEnabled && recyclePool.length > 0) {
+                        holderRef = recyclePool.pop();
+                        if (rebindResultCardHolder(holderRef,
+                                previewRows[index], colors)) {
+                            wrapper = holderRef.wrapper;
+                            cardRef = holderRef.card;
+                            actionRef = cardHolderActionRefs(holderRef);
+                            scrollPerformanceState.holderRecycleReuseCount += 1;
+                        } else {
+                            scrollPerformanceState.holderRecycleDiscardCount += 1;
+                            holderRef = null;
+                        }
+                    }
+                    if (holderRef === null) {
+                        wrapper = makeResultCard(previewRows[index], colors);
+                        cardRef = resultCardViews.pop();
+                        holderRef = resultCardHolders.pop();
+                        actionRef = resultActionViews.pop();
+                        if (recycleEnabled) {
+                            scrollPerformanceState.holderRecycleMissCount += 1;
+                        }
+                    }
+                    virtualCardHost.addView(wrapper, 0, params);
+                    resultCardViews.unshift(cardRef);
+                    resultCardHolders.unshift(holderRef);
+                    resultActionViews.unshift(actionRef);
+                    virtualRenderedItemIds.unshift(
+                        Number(previewRows[index].id));
+                    virtualRenderedSignatures.unshift(
+                        virtualRenderSignature(previewRows[index], colors));
+                    scrollPerformanceState.createdViewCount += 1;
+                    scrollPerformanceState.structuralInsertCount += 1;
+                }
+            }
+            if (range.end > oldEnd) {
+                for (index = oldEnd + 1;
+                        index <= range.end; index += 1) {
+                    params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                    params.bottomMargin = dp(6);
+                    holderRef = null;
+                    if (recycleEnabled && recyclePool.length > 0) {
+                        holderRef = recyclePool.pop();
+                        if (rebindResultCardHolder(holderRef,
+                                previewRows[index], colors)) {
+                            wrapper = holderRef.wrapper;
+                            cardRef = holderRef.card;
+                            actionRef = cardHolderActionRefs(holderRef);
+                            scrollPerformanceState.holderRecycleReuseCount += 1;
+                        } else {
+                   
+
+--- #6 at 187703 ---
+rs.unshift(holderRef);
+                    resultActionViews.unshift(actionRef);
+                    virtualRenderedItemIds.unshift(
+                        Number(previewRows[index].id));
+                    virtualRenderedSignatures.unshift(
+                        virtualRenderSignature(previewRows[index], colors));
+                    scrollPerformanceState.createdViewCount += 1;
+                    scrollPerformanceState.structuralInsertCount += 1;
+                }
+            }
+            if (range.end > oldEnd) {
+                for (index = oldEnd + 1;
+                        index <= range.end; index += 1) {
+                    params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                    params.bottomMargin = dp(6);
+                    holderRef = null;
+                    if (recycleEnabled && recyclePool.length > 0) {
+                        holderRef = recyclePool.pop();
+                        if (rebindResultCardHolder(holderRef,
+                                previewRows[index], colors)) {
+                            wrapper = holderRef.wrapper;
+                            cardRef = holderRef.card;
+                            actionRef = cardHolderActionRefs(holderRef);
+                            scrollPerformanceState.holderRecycleReuseCount += 1;
+                        } else {
+                            scrollPerformanceState.holderRecycleDiscardCount += 1;
+                            holderRef = null;
+                        }
+                    }
+                    if (holderRef === null) {
+                        wrapper = makeResultCard(previewRows[index], colors);
+                        cardRef = resultCardViews.pop();
+                        holderRef = resultCardHolders.pop();
+                        actionRef = resultActionViews.pop();
+                        if (recycleEnabled) {
+                            scrollPerformanceState.holderRecycleMissCount += 1;
+                        }
+                    }
+                    virtualCardHost.addView(wrapper, params);
+                    resultCardViews.push(cardRef);
+                    resultCardHolders.push(holderRef);
+                    resultActionViews.push(actionRef);
+                    virtualRenderedItemIds.push(
+                        Number(previewRows[index].id));
+                    virtualRenderedSignatures.push(
+                        virtualRenderSignature(previewRows[index], colors));
+                    scrollPerformanceState.createdViewCount += 1;
+                    scrollPerformanceState.structuralInsertCount += 1;
+                }
+            }
+            if (recycleEnabled && recyclePool.length > 0) {
+                scrollPerformanceState.holderRecycleDiscardCount +=
+                    recyclePool.length;
+                recyclePool = [];
+            }
+            state.resultCardCount = Number(
+                virtualCardHost.getChildCount());
+            overlapElapsed = Math.max(0,
+                Number(System.currentTimeMillis()) - overlapStartedAt);
+            scrollPerformanceState.overlapUpdateLastMs = overlapElapsed;
+            scrollPerformanceState.overlapUpdateMaxMs = Math.max(
+                Number(scrollPerformanceState.overlapUpdateMaxMs), overlapElapsed);
+        } else {
+  keyedReconcileVirtualWindow(range, colors);
+  recycledCount = Math.max(0, oldCount -
+      Number(virtualCardHost.getChildCount()));
+        }
+        syncRenderedResultCounters(range);
+        viewRebuildElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) -
+                viewRebuildStartedAt);
+        scrollPe
+
+--- #7 at 189031 ---
+rRef);
+                            scrollPerformanceState.holderRecycleReuseCount += 1;
+                        } else {
+                            scrollPerformanceState.holderRecycleDiscardCount += 1;
+                            holderRef = null;
+                        }
+                    }
+                    if (holderRef === null) {
+                        wrapper = makeResultCard(previewRows[index], colors);
+                        cardRef = resultCardViews.pop();
+                        holderRef = resultCardHolders.pop();
+                        actionRef = resultActionViews.pop();
+                        if (recycleEnabled) {
+                            scrollPerformanceState.holderRecycleMissCount += 1;
+                        }
+                    }
+                    virtualCardHost.addView(wrapper, params);
+                    resultCardViews.push(cardRef);
+                    resultCardHolders.push(holderRef);
+                    resultActionViews.push(actionRef);
+                    virtualRenderedItemIds.push(
+                        Number(previewRows[index].id));
+                    virtualRenderedSignatures.push(
+                        virtualRenderSignature(previewRows[index], colors));
+                    scrollPerformanceState.createdViewCount += 1;
+                    scrollPerformanceState.structuralInsertCount += 1;
+                }
+            }
+            if (recycleEnabled && recyclePool.length > 0) {
+                scrollPerformanceState.holderRecycleDiscardCount +=
+                    recyclePool.length;
+                recyclePool = [];
+            }
+            state.resultCardCount = Number(
+                virtualCardHost.getChildCount());
+            overlapElapsed = Math.max(0,
+                Number(System.currentTimeMillis()) - overlapStartedAt);
+            scrollPerformanceState.overlapUpdateLastMs = overlapElapsed;
+            scrollPerformanceState.overlapUpdateMaxMs = Math.max(
+                Number(scrollPerformanceState.overlapUpdateMaxMs), overlapElapsed);
+        } else {
+  keyedReconcileVirtualWindow(range, colors);
+  recycledCount = Math.max(0, oldCount -
+      Number(virtualCardHost.getChildCount()));
+        }
+        syncRenderedResultCounters(range);
+        viewRebuildElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) -
+                viewRebuildStartedAt);
+        scrollPerformanceState.viewRebuildLastMs =
+            viewRebuildElapsed;
+        scrollPerformanceState.viewRebuildMaxMs = Math.max(
+            Number(scrollPerformanceState.viewRebuildMaxMs),
+            viewRebuildElapsed);
+        if (viewRebuildElapsed > 32) {
+            scrollPerformanceState.slowRebuildCount += 1;
+            scrollPerformanceState.slowRebuildSamples.push({
+                origin: String(origin || "virtual_rebuild"),
+                force: force === true,
+                mode: overlap ? "overlap" : "keyed",
+                elapsedMs: viewRebuildElapsed,
+                rangeStart: Number(range.start),
+                rangeEnd: Number(range.end),
+                oldCount: oldCount,
+                newCount: Number(virtualCardHost.getChildCount()),
+                created: Number(scrollPerformanceState.createdViewCount) -
+                    rebuildCreatedBefore,
+                removed: Number(scrollPerformanceState.removedViewCount) -
+                    rebuildRemovedBefore,
+                reused: Number(scrollPerformanceState.sameIdReuseCount) -
+                    rebuildReusedBefore,
+                measureMs: Number(scrollPerformanceState.measureLastMs),
+                keyedMs: overlap ? 0 :
+                    Number(scrollPerformanceState.keyedReconcileLastMs),
+                si
+
+===== slowRebuildSamples.push =====
+
+--- #1 at 190281 ---
+  scrollPerformanceState.createdViewCount += 1;
+                    scrollPerformanceState.structuralInsertCount += 1;
+                }
+            }
+            if (recycleEnabled && recyclePool.length > 0) {
+                scrollPerformanceState.holderRecycleDiscardCount +=
+                    recyclePool.length;
+                recyclePool = [];
+            }
+            state.resultCardCount = Number(
+                virtualCardHost.getChildCount());
+            overlapElapsed = Math.max(0,
+                Number(System.currentTimeMillis()) - overlapStartedAt);
+            scrollPerformanceState.overlapUpdateLastMs = overlapElapsed;
+            scrollPerformanceState.overlapUpdateMaxMs = Math.max(
+                Number(scrollPerformanceState.overlapUpdateMaxMs), overlapElapsed);
+        } else {
+  keyedReconcileVirtualWindow(range, colors);
+  recycledCount = Math.max(0, oldCount -
+      Number(virtualCardHost.getChildCount()));
+        }
+        syncRenderedResultCounters(range);
+        viewRebuildElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) -
+                viewRebuildStartedAt);
+        scrollPerformanceState.viewRebuildLastMs =
+            viewRebuildElapsed;
+        scrollPerformanceState.viewRebuildMaxMs = Math.max(
+            Number(scrollPerformanceState.viewRebuildMaxMs),
+            viewRebuildElapsed);
+        if (viewRebuildElapsed > 32) {
+            scrollPerformanceState.slowRebuildCount += 1;
+            scrollPerformanceState.slowRebuildSamples.push({
+                origin: String(origin || "virtual_rebuild"),
+                force: force === true,
+                mode: overlap ? "overlap" : "keyed",
+                elapsedMs: viewRebuildElapsed,
+                rangeStart: Number(range.start),
+                rangeEnd: Number(range.end),
+                oldCount: oldCount,
+                newCount: Number(virtualCardHost.getChildCount()),
+                created: Number(scrollPerformanceState.createdViewCount) -
+                    rebuildCreatedBefore,
+                removed: Number(scrollPerformanceState.removedViewCount) -
+                    rebuildRemovedBefore,
+                reused: Number(scrollPerformanceState.sameIdReuseCount) -
+                    rebuildReusedBefore,
+                measureMs: Number(scrollPerformanceState.measureLastMs),
+                keyedMs: overlap ? 0 :
+                    Number(scrollPerformanceState.keyedReconcileLastMs),
+                signatureMs: overlap ? 0 :
+                    Number(scrollPerformanceState.keyedSignatureLastMs),
+                structureMs: overlap ? overlapElapsed :
+                    Number(scrollPerformanceState.keyedStructureLastMs)
+            });
+            while (scrollPerformanceState.slowRebuildSamples.length > 8) {
+                scrollPerformanceState.slowRebuildSamples.shift();
+            }
+        }
+        virtualState.firstRenderedIndex = range.start;
+        virtualState.lastRenderedIndex = range.end;
+        virtualState.topSpacerPx = setVirtualSpacerHeight(
+            virtualTopSpacer,
+            virtualHeightRange(0, range.start));
+        virtualState.bottomSpacerPx = setVirtualSpacerHeight(
+            virtualBottomSpacer,
+            virtualHeightRange(range.end + 1,
+                previewRows.length));
+        virtualState.updateCount += 1;
+        virtualState.rebuildCount += 1;
+        virtualState.recycleCount += recycledCount;
+        virtualState.updateDeferred = false;
+        virtualState.lastOrigin = String(origin || "virtual_rebuild");
+        virtualState.lastError = null;
+        virtualGeneration += 1;
+        generation = virtualGeneration;
+        if (mainHandler !== null) {
+            mainHandle
+
+===== slowRebuildSamples =====
+
+--- #1 at 115082 ---
+teRequestCount: 0,
+        updateCoalescedCount: 0,
+        forceEscalationCount: 0,
+        keyedReconcileCount: 0,
+        sameIdReuseCount: 0,
+        signatureRebuildCount: 0,
+        movedViewCount: 0,
+        structuralInsertCount: 0,
+        structuralRemoveCount: 0,
+        alignmentFallbackCount: 0,
+        alignmentFallbackLastReason: "",
+        alignmentFallbackReasonCounts: {},
+        alignmentFallbackLastSnapshot: null,
+        fullRefreshCallCount: 0,
+        fullRefreshLastPerformanceOrigin: "",
+        fullRefreshLastPreferredIndex: -1,
+        fullRefreshLastPreviewRowCount: 0,
+        fullRefreshLastRenderedCount: 0,
+        fullRefreshLastChildCount: 0,
+        fullRefreshRequestCount: 0,
+        fullRefreshDuplicateSuppressedCount: 0,
+        fullRefreshLastDataKey: "",
+        fullRefreshPendingDataKey: "",
+        fullRefreshLastAppliedDataKey: "",
+        virtualBookkeepingAtomicClearCount: 0,
+        fullRefreshSamples: [],
+        spacerApplyCount: 0,
+        spacerNoopCount: 0,
+        sameRangeNoLayoutCount: 0,
+        anchorScrollApplyCount: 0,
+        anchorScrollNoopCount: 0,
+        measurePassCount: 0,
+        measureLastMs: 0,
+        measureMaxMs: 0,
+        keyedReconcileLastMs: 0,
+        keyedReconcileMaxMs: 0,
+        keyedSignatureLastMs: 0,
+        keyedSignatureMaxMs: 0,
+        keyedStructureLastMs: 0,
+        keyedStructureMaxMs: 0,
+        overlapUpdateLastMs: 0,
+        overlapUpdateMaxMs: 0,
+        slowRebuildCount: 0,
+        slowRebuildSamples: [],
+        holderRecycleReleaseCount: 0,
+        holderRecycleReuseCount: 0,
+        holderRecycleMissCount: 0,
+        holderRecycleDiscardCount: 0,
+        holderRebindCount: 0,
+        holderRebindLastMs: 0,
+        holderRebindMaxMs: 0,
+        holderNewBuildCount: 0,
+        holderRebindAttemptCount: 0,
+        holderRebindEligibleCount: 0,
+        holderRebindIneligibleCount: 0,
+        holderRebindFailureCount: 0,
+        holderRebindLastRejectReason: "",
+        holderRebindLastFailureStage: "",
+        holderRebindLastError: "",
+        holderRebindRejectReasons: {},
+        holderRebindFailureStages: {}
+    };
+
+    function resetHydrationWorkerDiagnostics() {
+        hydrationWorkerStoppingFlag.set(false);
+        hydrationLatestRequestRef.set(null);
+        hydrationResultQueue.clear();
+        hydrationWorkerBusyFlag.set(false);
+        hydrationWorkerState.enabled = true;
+        hydrationWorkerState.requestCount = 0;
+        hydrationWorkerState.queryCount = 0;
+        hydrationWorkerState.successCount = 0;
+        hydrationWorkerState.failureCount = 0;
+        hydrationWorkerState.latestRequestReplaceCount = 0;
+        hydrationWorkerState.staleResultDropCount = 0;
+        hydrationWorkerState.postCloseDropCount = 0;
+        hydrationWorkerState.workerQueryLastMs = 0;
+        hydrationWorkerState.workerQueryMaxMs = 0;
+        hydrationWorkerState.mainApplyLastMs = 0;
+        hydrationWorkerState.mainApplyMaxMs = 0;
+        hydrationWorkerState.lastRequestId = 0;
+        hydrationWorkerState.lastOrigin = "";
+        hydrationWorkerState.lastError = null;
+        hydrationWorkerState.lastInvalidateReason = "";
+        hydrationWorkerState.pendingSignature = null;
+        scrollPerformanceState.scrollEventCount = 0;
+        scrollPerformanceState.virtualScheduleCount = 0;
+        scrollPerformanceState.virtualUpdateCount = 0;
+        scrollPerformanceState.virtualUpdateLastMs = 0;
+        scrollPerformanceState.virtualUpdateMaxMs = 0;
+        scrollPerformanceState.viewRebuildCount = 0;
+        scrollPerformanceState.viewRebuildLastMs = 0;
+        scrollPerformanceState.viewRebuildMaxMs = 0;
+        scrollPerformanceState.createdViewCount = 0;
+   
+
+--- #2 at 119975 ---
+astRenderedCount = 0;
+        scrollPerformanceState.fullRefreshLastChildCount = 0;
+        scrollPerformanceState.fullRefreshRequestCount = 0;
+        scrollPerformanceState.fullRefreshDuplicateSuppressedCount = 0;
+        scrollPerformanceState.fullRefreshLastDataKey = "";
+        scrollPerformanceState.fullRefreshPendingDataKey = "";
+        scrollPerformanceState.fullRefreshLastAppliedDataKey = "";
+        scrollPerformanceState.virtualBookkeepingAtomicClearCount = 0;
+        scrollPerformanceState.fullRefreshSamples = [];
+        scrollPerformanceState.spacerApplyCount = 0;
+        scrollPerformanceState.spacerNoopCount = 0;
+        scrollPerformanceState.sameRangeNoLayoutCount = 0;
+        scrollPerformanceState.anchorScrollApplyCount = 0;
+        scrollPerformanceState.anchorScrollNoopCount = 0;
+        scrollPerformanceState.measurePassCount = 0;
+        scrollPerformanceState.measureLastMs = 0;
+        scrollPerformanceState.measureMaxMs = 0;
+        scrollPerformanceState.keyedReconcileLastMs = 0;
+        scrollPerformanceState.keyedReconcileMaxMs = 0;
+        scrollPerformanceState.keyedSignatureLastMs = 0;
+        scrollPerformanceState.keyedSignatureMaxMs = 0;
+        scrollPerformanceState.keyedStructureLastMs = 0;
+        scrollPerformanceState.keyedStructureMaxMs = 0;
+        scrollPerformanceState.overlapUpdateLastMs = 0;
+        scrollPerformanceState.overlapUpdateMaxMs = 0;
+        scrollPerformanceState.slowRebuildCount = 0;
+        scrollPerformanceState.slowRebuildSamples = [];
+        scrollPerformanceState.holderRecycleReleaseCount = 0;
+        scrollPerformanceState.holderRecycleReuseCount = 0;
+        scrollPerformanceState.holderRecycleMissCount = 0;
+        scrollPerformanceState.holderRecycleDiscardCount = 0;
+        scrollPerformanceState.holderRebindCount = 0;
+        scrollPerformanceState.holderRebindLastMs = 0;
+        scrollPerformanceState.holderRebindMaxMs = 0;
+        scrollPerformanceState.holderNewBuildCount = 0;
+        scrollPerformanceState.holderRebindAttemptCount = 0;
+        scrollPerformanceState.holderRebindEligibleCount = 0;
+        scrollPerformanceState.holderRebindIneligibleCount = 0;
+        scrollPerformanceState.holderRebindFailureCount = 0;
+        scrollPerformanceState.holderRebindLastRejectReason = "";
+        scrollPerformanceState.holderRebindLastFailureStage = "";
+        scrollPerformanceState.holderRebindLastError = "";
+        scrollPerformanceState.holderRebindRejectReasons = {};
+        scrollPerformanceState.holderRebindFailureStages = {};
+        virtualPendingOrigin = "";
+        virtualPendingForce = false;
+    }
+
+    function copyHydrationWorkerState() {
+        return {
+            enabled: hydrationWorkerState.enabled === true,
+            executorCreated: hydrationExecutor !== null,
+            workerBusy: hydrationWorkerBusyFlag.get() === true,
+            requestCount: Number(hydrationWorkerState.requestCount),
+            queryCount: Number(hydrationWorkerState.queryCount),
+            successCount: Number(hydrationWorkerState.successCount),
+            failureCount: Number(hydrationWorkerState.failureCount),
+            latestRequestReplaceCount:
+                Number(hydrationWorkerState.latestRequestReplaceCount),
+            staleResultDropCount:
+                Number(hydrationWorkerState.staleResultDropCount),
+            postCloseDropCount:
+                Number(hydrationWorkerState.postCloseDropCount),
+            workerQueryLastMs:
+                Number(hydrationWorkerState.workerQueryLastMs),
+            workerQueryMaxMs:
+                Number(hydrationWorkerState.workerQueryMaxMs),
+            mainApplyLastMs:
+                Number(hydrationWorkerState.mainA
+
+--- #3 at 128398 ---
+   sameRangeNoLayoutCount:
+                Number(scrollPerformanceState.sameRangeNoLayoutCount),
+            anchorScrollApplyCount:
+                Number(scrollPerformanceState.anchorScrollApplyCount),
+            anchorScrollNoopCount:
+                Number(scrollPerformanceState.anchorScrollNoopCount),
+            measurePassCount:
+                Number(scrollPerformanceState.measurePassCount),
+            measureLastMs:
+                Number(scrollPerformanceState.measureLastMs),
+            measureMaxMs:
+                Number(scrollPerformanceState.measureMaxMs),
+            keyedReconcileLastMs:
+                Number(scrollPerformanceState.keyedReconcileLastMs),
+            keyedReconcileMaxMs:
+                Number(scrollPerformanceState.keyedReconcileMaxMs),
+            keyedSignatureLastMs:
+                Number(scrollPerformanceState.keyedSignatureLastMs),
+            keyedSignatureMaxMs:
+                Number(scrollPerformanceState.keyedSignatureMaxMs),
+            keyedStructureLastMs:
+                Number(scrollPerformanceState.keyedStructureLastMs),
+            keyedStructureMaxMs:
+                Number(scrollPerformanceState.keyedStructureMaxMs),
+            overlapUpdateLastMs:
+                Number(scrollPerformanceState.overlapUpdateLastMs),
+            overlapUpdateMaxMs:
+                Number(scrollPerformanceState.overlapUpdateMaxMs),
+            slowRebuildCount:
+                Number(scrollPerformanceState.slowRebuildCount),
+            slowRebuildSamples:
+                scrollPerformanceState.slowRebuildSamples.slice(0),
+            holderRecycleReleaseCount:
+                Number(scrollPerformanceState.holderRecycleReleaseCount),
+            holderRecycleReuseCount:
+                Number(scrollPerformanceState.holderRecycleReuseCount),
+            holderRecycleMissCount:
+                Number(scrollPerformanceState.holderRecycleMissCount),
+            holderRecycleDiscardCount:
+                Number(scrollPerformanceState.holderRecycleDiscardCount),
+            holderRebindCount:
+                Number(scrollPerformanceState.holderRebindCount),
+            holderRebindLastMs:
+                Number(scrollPerformanceState.holderRebindLastMs),
+            holderRebindMaxMs:
+                Number(scrollPerformanceState.holderRebindMaxMs),
+            holderNewBuildCount:
+                Number(scrollPerformanceState.holderNewBuildCount),
+            holderRebindAttemptCount:
+                Number(scrollPerformanceState.holderRebindAttemptCount),
+            holderRebindEligibleCount:
+                Number(scrollPerformanceState.holderRebindEligibleCount),
+            holderRebindIneligibleCount:
+                Number(scrollPerformanceState.holderRebindIneligibleCount),
+            holderRebindFailureCount:
+                Number(scrollPerformanceState.holderRebindFailureCount),
+            holderRebindLastRejectReason:
+                String(scrollPerformanceState.holderRebindLastRejectReason || ""),
+            holderRebindLastFailureStage:
+                String(scrollPerformanceState.holderRebindLastFailureStage || ""),
+            holderRebindLastError:
+                String(scrollPerformanceState.holderRebindLastError || ""),
+            holderRebindRejectReasons:
+                scrollPerformanceState.holderRebindRejectReasons,
+            holderRebindFailureStages:
+                scrollPerformanceState.holderRebindFailureStages,
+            pendingOrigin: virtualPendingOrigin,
+            pendingForce: virtualPendingForce === true
+        };
+    }
+
+    function invalidateHydrationWorker(reason) {
+        hydrationEpochSequence.incrementAndGet();
+        hydrationLatestRequestRef.set(null);
+     
+
+--- #4 at 128457 ---
+formanceState.sameRangeNoLayoutCount),
+            anchorScrollApplyCount:
+                Number(scrollPerformanceState.anchorScrollApplyCount),
+            anchorScrollNoopCount:
+                Number(scrollPerformanceState.anchorScrollNoopCount),
+            measurePassCount:
+                Number(scrollPerformanceState.measurePassCount),
+            measureLastMs:
+                Number(scrollPerformanceState.measureLastMs),
+            measureMaxMs:
+                Number(scrollPerformanceState.measureMaxMs),
+            keyedReconcileLastMs:
+                Number(scrollPerformanceState.keyedReconcileLastMs),
+            keyedReconcileMaxMs:
+                Number(scrollPerformanceState.keyedReconcileMaxMs),
+            keyedSignatureLastMs:
+                Number(scrollPerformanceState.keyedSignatureLastMs),
+            keyedSignatureMaxMs:
+                Number(scrollPerformanceState.keyedSignatureMaxMs),
+            keyedStructureLastMs:
+                Number(scrollPerformanceState.keyedStructureLastMs),
+            keyedStructureMaxMs:
+                Number(scrollPerformanceState.keyedStructureMaxMs),
+            overlapUpdateLastMs:
+                Number(scrollPerformanceState.overlapUpdateLastMs),
+            overlapUpdateMaxMs:
+                Number(scrollPerformanceState.overlapUpdateMaxMs),
+            slowRebuildCount:
+                Number(scrollPerformanceState.slowRebuildCount),
+            slowRebuildSamples:
+                scrollPerformanceState.slowRebuildSamples.slice(0),
+            holderRecycleReleaseCount:
+                Number(scrollPerformanceState.holderRecycleReleaseCount),
+            holderRecycleReuseCount:
+                Number(scrollPerformanceState.holderRecycleReuseCount),
+            holderRecycleMissCount:
+                Number(scrollPerformanceState.holderRecycleMissCount),
+            holderRecycleDiscardCount:
+                Number(scrollPerformanceState.holderRecycleDiscardCount),
+            holderRebindCount:
+                Number(scrollPerformanceState.holderRebindCount),
+            holderRebindLastMs:
+                Number(scrollPerformanceState.holderRebindLastMs),
+            holderRebindMaxMs:
+                Number(scrollPerformanceState.holderRebindMaxMs),
+            holderNewBuildCount:
+                Number(scrollPerformanceState.holderNewBuildCount),
+            holderRebindAttemptCount:
+                Number(scrollPerformanceState.holderRebindAttemptCount),
+            holderRebindEligibleCount:
+                Number(scrollPerformanceState.holderRebindEligibleCount),
+            holderRebindIneligibleCount:
+                Number(scrollPerformanceState.holderRebindIneligibleCount),
+            holderRebindFailureCount:
+                Number(scrollPerformanceState.holderRebindFailureCount),
+            holderRebindLastRejectReason:
+                String(scrollPerformanceState.holderRebindLastRejectReason || ""),
+            holderRebindLastFailureStage:
+                String(scrollPerformanceState.holderRebindLastFailureStage || ""),
+            holderRebindLastError:
+                String(scrollPerformanceState.holderRebindLastError || ""),
+            holderRebindRejectReasons:
+                scrollPerformanceState.holderRebindRejectReasons,
+            holderRebindFailureStages:
+                scrollPerformanceState.holderRebindFailureStages,
+            pendingOrigin: virtualPendingOrigin,
+            pendingForce: virtualPendingForce === true
+        };
+    }
+
+    function invalidateHydrationWorker(reason) {
+        hydrationEpochSequence.incrementAndGet();
+        hydrationLatestRequestRef.set(null);
+        hydrationWorkerState.pendingSignature = null;
+        hy
+
+--- #5 at 190281 ---
+  scrollPerformanceState.createdViewCount += 1;
+                    scrollPerformanceState.structuralInsertCount += 1;
+                }
+            }
+            if (recycleEnabled && recyclePool.length > 0) {
+                scrollPerformanceState.holderRecycleDiscardCount +=
+                    recyclePool.length;
+                recyclePool = [];
+            }
+            state.resultCardCount = Number(
+                virtualCardHost.getChildCount());
+            overlapElapsed = Math.max(0,
+                Number(System.currentTimeMillis()) - overlapStartedAt);
+            scrollPerformanceState.overlapUpdateLastMs = overlapElapsed;
+            scrollPerformanceState.overlapUpdateMaxMs = Math.max(
+                Number(scrollPerformanceState.overlapUpdateMaxMs), overlapElapsed);
+        } else {
+  keyedReconcileVirtualWindow(range, colors);
+  recycledCount = Math.max(0, oldCount -
+      Number(virtualCardHost.getChildCount()));
+        }
+        syncRenderedResultCounters(range);
+        viewRebuildElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) -
+                viewRebuildStartedAt);
+        scrollPerformanceState.viewRebuildLastMs =
+            viewRebuildElapsed;
+        scrollPerformanceState.viewRebuildMaxMs = Math.max(
+            Number(scrollPerformanceState.viewRebuildMaxMs),
+            viewRebuildElapsed);
+        if (viewRebuildElapsed > 32) {
+            scrollPerformanceState.slowRebuildCount += 1;
+            scrollPerformanceState.slowRebuildSamples.push({
+                origin: String(origin || "virtual_rebuild"),
+                force: force === true,
+                mode: overlap ? "overlap" : "keyed",
+                elapsedMs: viewRebuildElapsed,
+                rangeStart: Number(range.start),
+                rangeEnd: Number(range.end),
+                oldCount: oldCount,
+                newCount: Number(virtualCardHost.getChildCount()),
+                created: Number(scrollPerformanceState.createdViewCount) -
+                    rebuildCreatedBefore,
+                removed: Number(scrollPerformanceState.removedViewCount) -
+                    rebuildRemovedBefore,
+                reused: Number(scrollPerformanceState.sameIdReuseCount) -
+                    rebuildReusedBefore,
+                measureMs: Number(scrollPerformanceState.measureLastMs),
+                keyedMs: overlap ? 0 :
+                    Number(scrollPerformanceState.keyedReconcileLastMs),
+                signatureMs: overlap ? 0 :
+                    Number(scrollPerformanceState.keyedSignatureLastMs),
+                structureMs: overlap ? overlapElapsed :
+                    Number(scrollPerformanceState.keyedStructureLastMs)
+            });
+            while (scrollPerformanceState.slowRebuildSamples.length > 8) {
+                scrollPerformanceState.slowRebuildSamples.shift();
+            }
+        }
+        virtualState.firstRenderedIndex = range.start;
+        virtualState.lastRenderedIndex = range.end;
+        virtualState.topSpacerPx = setVirtualSpacerHeight(
+            virtualTopSpacer,
+            virtualHeightRange(0, range.start));
+        virtualState.bottomSpacerPx = setVirtualSpacerHeight(
+            virtualBottomSpacer,
+            virtualHeightRange(range.end + 1,
+                previewRows.length));
+        virtualState.updateCount += 1;
+        virtualState.rebuildCount += 1;
+        virtualState.recycleCount += recycledCount;
+        virtualState.updateDeferred = false;
+        virtualState.lastOrigin = String(origin || "virtual_rebuild");
+        virtualState.lastError = null;
+        virtualGeneration += 1;
+        generation = virtualGeneration;
+        if (mainHandler !== null) {
+            mainH
+
+--- #6 at 191540 ---
+Ms = Math.max(
+            Number(scrollPerformanceState.viewRebuildMaxMs),
+            viewRebuildElapsed);
+        if (viewRebuildElapsed > 32) {
+            scrollPerformanceState.slowRebuildCount += 1;
+            scrollPerformanceState.slowRebuildSamples.push({
+                origin: String(origin || "virtual_rebuild"),
+                force: force === true,
+                mode: overlap ? "overlap" : "keyed",
+                elapsedMs: viewRebuildElapsed,
+                rangeStart: Number(range.start),
+                rangeEnd: Number(range.end),
+                oldCount: oldCount,
+                newCount: Number(virtualCardHost.getChildCount()),
+                created: Number(scrollPerformanceState.createdViewCount) -
+                    rebuildCreatedBefore,
+                removed: Number(scrollPerformanceState.removedViewCount) -
+                    rebuildRemovedBefore,
+                reused: Number(scrollPerformanceState.sameIdReuseCount) -
+                    rebuildReusedBefore,
+                measureMs: Number(scrollPerformanceState.measureLastMs),
+                keyedMs: overlap ? 0 :
+                    Number(scrollPerformanceState.keyedReconcileLastMs),
+                signatureMs: overlap ? 0 :
+                    Number(scrollPerformanceState.keyedSignatureLastMs),
+                structureMs: overlap ? overlapElapsed :
+                    Number(scrollPerformanceState.keyedStructureLastMs)
+            });
+            while (scrollPerformanceState.slowRebuildSamples.length > 8) {
+                scrollPerformanceState.slowRebuildSamples.shift();
+            }
+        }
+        virtualState.firstRenderedIndex = range.start;
+        virtualState.lastRenderedIndex = range.end;
+        virtualState.topSpacerPx = setVirtualSpacerHeight(
+            virtualTopSpacer,
+            virtualHeightRange(0, range.start));
+        virtualState.bottomSpacerPx = setVirtualSpacerHeight(
+            virtualBottomSpacer,
+            virtualHeightRange(range.end + 1,
+                previewRows.length));
+        virtualState.updateCount += 1;
+        virtualState.rebuildCount += 1;
+        virtualState.recycleCount += recycledCount;
+        virtualState.updateDeferred = false;
+        virtualState.lastOrigin = String(origin || "virtual_rebuild");
+        virtualState.lastError = null;
+        virtualGeneration += 1;
+        generation = virtualGeneration;
+        if (mainHandler !== null) {
+            mainHandler.post(new Packages.java.lang.Runnable({
+                run: function () {
+                    if (!state.panelAttached ||
+                            virtualCardHost === null) {
+                        virtualState.staleUpdateCount += 1;
+                        return;
+                    }
+                    measureVirtualCards();
+                    restoreScrollAnchor();
+                    captureScrollAnchor();
+                    updateQuickResetView();
+                }
+            }));
+        }
+        return true;
+    }
+
+    function scheduleVirtualUpdate(origin, force) {
+        var generation;
+        var requestedOrigin = String(origin || "virtual_scroll");
+        var requestedForce = force === true;
+        scrollPerformanceState.updateRequestCount += 1;
+        if (requestedOrigin.indexOf("scroll") >= 0) {
+  scrollPerformanceState.scrollEventCount += 1;
+        }
+        if (mainHandler === null) { return false; }
+        if (virtualPendingOrigin.length === 0 || requestedForce === true ||
+      virtualPendingOrigin === "result_scroll") {
+  virtualPendingOrigin = requestedOrigin;
+        }
+        if (requestedForce === true && virtualPendingForce !== true) {
+  if (virtualState.updateScheduled) {
+      scrollPerforma
+
+--- #7 at 191612 ---
+s),
+            viewRebuildElapsed);
+        if (viewRebuildElapsed > 32) {
+            scrollPerformanceState.slowRebuildCount += 1;
+            scrollPerformanceState.slowRebuildSamples.push({
+                origin: String(origin || "virtual_rebuild"),
+                force: force === true,
+                mode: overlap ? "overlap" : "keyed",
+                elapsedMs: viewRebuildElapsed,
+                rangeStart: Number(range.start),
+                rangeEnd: Number(range.end),
+                oldCount: oldCount,
+                newCount: Number(virtualCardHost.getChildCount()),
+                created: Number(scrollPerformanceState.createdViewCount) -
+                    rebuildCreatedBefore,
+                removed: Number(scrollPerformanceState.removedViewCount) -
+                    rebuildRemovedBefore,
+                reused: Number(scrollPerformanceState.sameIdReuseCount) -
+                    rebuildReusedBefore,
+                measureMs: Number(scrollPerformanceState.measureLastMs),
+                keyedMs: overlap ? 0 :
+                    Number(scrollPerformanceState.keyedReconcileLastMs),
+                signatureMs: overlap ? 0 :
+                    Number(scrollPerformanceState.keyedSignatureLastMs),
+                structureMs: overlap ? overlapElapsed :
+                    Number(scrollPerformanceState.keyedStructureLastMs)
+            });
+            while (scrollPerformanceState.slowRebuildSamples.length > 8) {
+                scrollPerformanceState.slowRebuildSamples.shift();
+            }
+        }
+        virtualState.firstRenderedIndex = range.start;
+        virtualState.lastRenderedIndex = range.end;
+        virtualState.topSpacerPx = setVirtualSpacerHeight(
+            virtualTopSpacer,
+            virtualHeightRange(0, range.start));
+        virtualState.bottomSpacerPx = setVirtualSpacerHeight(
+            virtualBottomSpacer,
+            virtualHeightRange(range.end + 1,
+                previewRows.length));
+        virtualState.updateCount += 1;
+        virtualState.rebuildCount += 1;
+        virtualState.recycleCount += recycledCount;
+        virtualState.updateDeferred = false;
+        virtualState.lastOrigin = String(origin || "virtual_rebuild");
+        virtualState.lastError = null;
+        virtualGeneration += 1;
+        generation = virtualGeneration;
+        if (mainHandler !== null) {
+            mainHandler.post(new Packages.java.lang.Runnable({
+                run: function () {
+                    if (!state.panelAttached ||
+                            virtualCardHost === null) {
+                        virtualState.staleUpdateCount += 1;
+                        return;
+                    }
+                    measureVirtualCards();
+                    restoreScrollAnchor();
+                    captureScrollAnchor();
+                    updateQuickResetView();
+                }
+            }));
+        }
+        return true;
+    }
+
+    function scheduleVirtualUpdate(origin, force) {
+        var generation;
+        var requestedOrigin = String(origin || "virtual_scroll");
+        var requestedForce = force === true;
+        scrollPerformanceState.updateRequestCount += 1;
+        if (requestedOrigin.indexOf("scroll") >= 0) {
+  scrollPerformanceState.scrollEventCount += 1;
+        }
+        if (mainHandler === null) { return false; }
+        if (virtualPendingOrigin.length === 0 || requestedForce === true ||
+      virtualPendingOrigin === "result_scroll") {
+  virtualPendingOrigin = requestedOrigin;
+        }
+        if (requestedForce === true && virtualPendingForce !== true) {
+  if (virtualState.updateScheduled) {
+      scrollPerformanceState.forceEscalationCount += 1;
+  }
+  virtualPendingForce = true;
+  
+
+===== created: =====
+
+--- #1 at 190720 ---
+ost.getChildCount());
+            overlapElapsed = Math.max(0,
+                Number(System.currentTimeMillis()) - overlapStartedAt);
+            scrollPerformanceState.overlapUpdateLastMs = overlapElapsed;
+            scrollPerformanceState.overlapUpdateMaxMs = Math.max(
+                Number(scrollPerformanceState.overlapUpdateMaxMs), overlapElapsed);
+        } else {
+  keyedReconcileVirtualWindow(range, colors);
+  recycledCount = Math.max(0, oldCount -
+      Number(virtualCardHost.getChildCount()));
+        }
+        syncRenderedResultCounters(range);
+        viewRebuildElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) -
+                viewRebuildStartedAt);
+        scrollPerformanceState.viewRebuildLastMs =
+            viewRebuildElapsed;
+        scrollPerformanceState.viewRebuildMaxMs = Math.max(
+            Number(scrollPerformanceState.viewRebuildMaxMs),
+            viewRebuildElapsed);
+        if (viewRebuildElapsed > 32) {
+            scrollPerformanceState.slowRebuildCount += 1;
+            scrollPerformanceState.slowRebuildSamples.push({
+                origin: String(origin || "virtual_rebuild"),
+                force: force === true,
+                mode: overlap ? "overlap" : "keyed",
+                elapsedMs: viewRebuildElapsed,
+                rangeStart: Number(range.start),
+                rangeEnd: Number(range.end),
+                oldCount: oldCount,
+                newCount: Number(virtualCardHost.getChildCount()),
+                created: Number(scrollPerformanceState.createdViewCount) -
+                    rebuildCreatedBefore,
+                removed: Number(scrollPerformanceState.removedViewCount) -
+                    rebuildRemovedBefore,
+                reused: Number(scrollPerformanceState.sameIdReuseCount) -
+                    rebuildReusedBefore,
+                measureMs: Number(scrollPerformanceState.measureLastMs),
+                keyedMs: overlap ? 0 :
+                    Number(scrollPerformanceState.keyedReconcileLastMs),
+                signatureMs: overlap ? 0 :
+                    Number(scrollPerformanceState.keyedSignatureLastMs),
+                structureMs: overlap ? overlapElapsed :
+                    Number(scrollPerformanceState.keyedStructureLastMs)
+            });
+            while (scrollPerformanceState.slowRebuildSamples.length > 8) {
+                scrollPerformanceState.slowRebuildSamples.shift();
+            }
+        }
+        virtualState.firstRenderedIndex = range.start;
+        virtualState.lastRenderedIndex = range.end;
+        virtualState.topSpacerPx = setVirtualSpacerHeight(
+            virtualTopSpacer,
+            virtualHeightRange(0, range.start));
+        virtualState.bottomSpacerPx = setVirtualSpacerHeight(
+            virtualBottomSpacer,
+            virtualHeightRange(range.end + 1,
+                previewRows.length));
+        virtualState.updateCount += 1;
+        virtualState.rebuildCount += 1;
+        virtualState.recycleCount += recycledCount;
+        virtualState.updateDeferred = false;
+        virtualState.lastOrigin = String(origin || "virtual_rebuild");
+        virtualState.lastError = null;
+        virtualGeneration += 1;
+        generation = virtualGeneration;
+        if (mainHandler !== null) {
+            mainHandler.post(new Packages.java.lang.Runnable({
+                run: function () {
+                    if (!state.panelAttached ||
+                            virtualCardHost === null) {
+                        virtualState.staleUpdateCount += 1;
+                        return;
+                    }
+                    measureVirtualCards();
+                    restoreScrollAnchor();
+                    captureScrollAnchor();
+ 
+
+===== removed: =====
+
+--- #1 at 190837 ---
+verlapStartedAt);
+            scrollPerformanceState.overlapUpdateLastMs = overlapElapsed;
+            scrollPerformanceState.overlapUpdateMaxMs = Math.max(
+                Number(scrollPerformanceState.overlapUpdateMaxMs), overlapElapsed);
+        } else {
+  keyedReconcileVirtualWindow(range, colors);
+  recycledCount = Math.max(0, oldCount -
+      Number(virtualCardHost.getChildCount()));
+        }
+        syncRenderedResultCounters(range);
+        viewRebuildElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) -
+                viewRebuildStartedAt);
+        scrollPerformanceState.viewRebuildLastMs =
+            viewRebuildElapsed;
+        scrollPerformanceState.viewRebuildMaxMs = Math.max(
+            Number(scrollPerformanceState.viewRebuildMaxMs),
+            viewRebuildElapsed);
+        if (viewRebuildElapsed > 32) {
+            scrollPerformanceState.slowRebuildCount += 1;
+            scrollPerformanceState.slowRebuildSamples.push({
+                origin: String(origin || "virtual_rebuild"),
+                force: force === true,
+                mode: overlap ? "overlap" : "keyed",
+                elapsedMs: viewRebuildElapsed,
+                rangeStart: Number(range.start),
+                rangeEnd: Number(range.end),
+                oldCount: oldCount,
+                newCount: Number(virtualCardHost.getChildCount()),
+                created: Number(scrollPerformanceState.createdViewCount) -
+                    rebuildCreatedBefore,
+                removed: Number(scrollPerformanceState.removedViewCount) -
+                    rebuildRemovedBefore,
+                reused: Number(scrollPerformanceState.sameIdReuseCount) -
+                    rebuildReusedBefore,
+                measureMs: Number(scrollPerformanceState.measureLastMs),
+                keyedMs: overlap ? 0 :
+                    Number(scrollPerformanceState.keyedReconcileLastMs),
+                signatureMs: overlap ? 0 :
+                    Number(scrollPerformanceState.keyedSignatureLastMs),
+                structureMs: overlap ? overlapElapsed :
+                    Number(scrollPerformanceState.keyedStructureLastMs)
+            });
+            while (scrollPerformanceState.slowRebuildSamples.length > 8) {
+                scrollPerformanceState.slowRebuildSamples.shift();
+            }
+        }
+        virtualState.firstRenderedIndex = range.start;
+        virtualState.lastRenderedIndex = range.end;
+        virtualState.topSpacerPx = setVirtualSpacerHeight(
+            virtualTopSpacer,
+            virtualHeightRange(0, range.start));
+        virtualState.bottomSpacerPx = setVirtualSpacerHeight(
+            virtualBottomSpacer,
+            virtualHeightRange(range.end + 1,
+                previewRows.length));
+        virtualState.updateCount += 1;
+        virtualState.rebuildCount += 1;
+        virtualState.recycleCount += recycledCount;
+        virtualState.updateDeferred = false;
+        virtualState.lastOrigin = String(origin || "virtual_rebuild");
+        virtualState.lastError = null;
+        virtualGeneration += 1;
+        generation = virtualGeneration;
+        if (mainHandler !== null) {
+            mainHandler.post(new Packages.java.lang.Runnable({
+                run: function () {
+                    if (!state.panelAttached ||
+                            virtualCardHost === null) {
+                        virtualState.staleUpdateCount += 1;
+                        return;
+                    }
+                    measureVirtualCards();
+                    restoreScrollAnchor();
+                    captureScrollAnchor();
+                    updateQuickResetView();
+                }
+            }));
+        }
+        return true;
+    }
+
+ 
+
+===== mode: "overlap" =====
