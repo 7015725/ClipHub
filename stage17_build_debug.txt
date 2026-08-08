@@ -1,24 +1,2 @@
-/tmp/stage17_build.js:1583
-        return String(new JavaString(
-                          ^
-
-ReferenceError: JavaString is not defined
-    at stage17DecodeText (/tmp/stage17_build.js:1583:27)
-    at transformStage17Source (/tmp/stage17_build.js:1596:7)
-    at Object.<anonymous> (/tmp/stage17_build.js:1672:11)
-    at Module._compile (node:internal/modules/cjs/loader:1781:14)
-    at Object..js (node:internal/modules/cjs/loader:1913:10)
-    at Module.load (node:internal/modules/cjs/loader:1505:32)
-    at Function._load (node:internal/modules/cjs/loader:1309:12)
-    at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
-    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
-    at node:internal/main/run_main_module:36:49
-
-Node.js v22.23.1
-Traceback (most recent call last):
-  File "<stdin>", line 153, in <module>
-  File "/usr/lib/python3.12/subprocess.py", line 413, in check_call
-    raise CalledProcessError(retcode, cmd)
-subprocess.CalledProcessError: Command '['node', '/tmp/stage17_build.js']' returned non-zero exit status 1.
-
-EXIT_CODE=1
+RUNNER_SETUP_ERROR: RuntimeError('Stage17 decode anchor mismatch: 0')
+EXIT_CODE=90
