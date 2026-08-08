@@ -1,0 +1,280 @@
+/* ClipHub Stage 11.1 数据窗口 Worker 专项探针。
+ * ShortX / Rhino ES5。使用隔离 runtime / 数据库，不修改正式 ClipHub 数据。
+ * 目标：验证 Repository.listItemsByIds(ids, true) + listItemTagMap(ids)
+ *      在单线程 Worker 中连续 50 轮执行，并以 JSON 字符串跨线程返回。
+ */
+(function (global) {
+    var URL = Packages.java.net.URL;
+    var URLEncoder = Packages.java.net.URLEncoder;
+    var BAOS = Packages.java.io.ByteArrayOutputStream;
+    var ReflectArray = Packages.java.lang.reflect.Array;
+    var JavaByte = Packages.java.lang.Byte;
+    var JavaString = Packages.java.lang.String;
+    var System = Packages.java.lang.System;
+    var Executors = Packages.java.util.concurrent.Executors;
+    var CountDownLatch = Packages.java.util.concurrent.CountDownLatch;
+    var TimeUnit = Packages.java.util.concurrent.TimeUnit;
+    var AtomicReference = Packages.java.util.concurrent.atomic.AtomicReference;
+
+    var OWNER = "7015725";
+    var REPO = "ClipHub";
+    var REF = "agent/beta-list-preview-on-demand-20260808";
+    var RUNTIME_NAME = "ClipHubStage11_1HydrationWorkerProbe";
+    var ROUNDS = 50;
+
+    function now() {
+        return Number(System.currentTimeMillis());
+    }
+
+    function closeQuietly(value) {
+        if (value !== null && value !== undefined) {
+            try { value.close(); } catch (ignored) {}
+        }
+    }
+
+    function readBytes(stream) {
+        var output = new BAOS();
+        var buffer = ReflectArray.newInstance(JavaByte.TYPE, 8192);
+        var count;
+        try {
+            while ((count = stream.read(buffer)) >= 0) {
+                if (count > 0) { output.write(buffer, 0, count); }
+            }
+            return output.toByteArray();
+        } finally {
+            closeQuietly(stream);
+            closeQuietly(output);
+        }
+    }
+
+    function encodeSegment(value) {
+        return String(URLEncoder.encode(String(value), "UTF-8"))
+            .replace(/\+/g, "%20");
+    }
+
+    function fetchEntry() {
+        var url = "https://raw.githubusercontent.com/" + OWNER + "/" +
+            REPO + "/" + encodeSegment(REF) + "/ClipHub.js" +
+            "?stage11_1WorkerProbe=" + now();
+        var connection = null;
+        var code;
+        var text;
+        try {
+            connection = new URL(url).openConnection();
+            connection.setConnectTimeout(10000);
+            connection.setReadTimeout(30000);
+            connection.setUseCaches(false);
+            connection.setRequestProperty("Accept-Encoding", "identity");
+            connection.setRequestProperty("Cache-Control", "no-cache");
+            code = Number(connection.getResponseCode());
+            text = String(new JavaString(readBytes(
+                code >= 200 && code < 300 ?
+                    connection.getInputStream() :
+                    connection.getErrorStream()), "UTF-8"));
+            if (code < 200 || code >= 300) {
+                throw new Error("ClipHub entry HTTP " + code + ": " +
+                    text.substring(0, 300));
+            }
+            return text;
+        } finally {
+            if (connection !== null) {
+                try { connection.disconnect(); } catch (ignored) {}
+            }
+        }
+    }
+
+    function repeatText(value, count) {
+        var output = "";
+        var index;
+        for (index = 0; index < count; index += 1) {
+            output += value;
+        }
+        return output;
+    }
+
+    function insertFixture(database, content, label, timestamp) {
+        return Number(database.executeInsert(
+            "INSERT INTO clipboard_items(" +
+            "content, normalized_hash, content_type, source_package, " +
+            "source_label, source_uid, source_confidence, is_pinned, " +
+            "manual_order, copy_count, created_at, last_copied_at, " +
+            "updated_at, deleted_at, is_sensitive) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                String(content),
+                "stage11-1-worker-" + String(label) + "-" + timestamp,
+                "text",
+                "cliphub.stage11_1.worker.probe",
+                "Stage11.1 " + String(label),
+                null,
+                100,
+                0,
+                0,
+                1,
+                timestamp,
+                timestamp,
+                timestamp,
+                null,
+                0
+            ]
+        ));
+    }
+
+    function cleanup(database, ids) {
+        var index;
+        if (!database || !database.isOpen()) { return; }
+        for (index = 0; index < ids.length; index += 1) {
+            try {
+                database.executeUpdateDelete(
+                    "DELETE FROM clipboard_items WHERE id = ?",
+                    [Number(ids[index])]
+                );
+            } catch (ignored) {}
+        }
+    }
+
+    function run() {
+        var previousOptions = global.ClipHubBootstrapOptions;
+        var bootstrap;
+        var database = null;
+        var repository = null;
+        var executor = null;
+        var latch = new CountDownLatch(1);
+        var resultRef = new AtomicReference();
+        var errorRef = new AtomicReference();
+        var fixtureIds = [];
+        var timestamp = now() - 10000;
+        var parsed;
+
+        try {
+            global.ClipHubBootstrapOptions = {
+                remoteRef: REF,
+                runtimeName: RUNTIME_NAME
+            };
+            global.ClipHubBootstrapResult = null;
+            eval(fetchEntry());
+            bootstrap = global.ClipHubBootstrapResult || {};
+            database = global.ClipHub && global.ClipHub.Database;
+            repository = global.ClipHub && global.ClipHub.Repository;
+            if (!bootstrap.ok || !database || !repository ||
+                    Number(repository.MODULE_VERSION) !== 16) {
+                throw new Error("Stage11.1 bootstrap identity mismatch: " +
+                    JSON.stringify(bootstrap));
+            }
+
+            fixtureIds.push(insertFixture(
+                database, repeatText("A", 199), "199", timestamp + 1));
+            fixtureIds.push(insertFixture(
+                database, repeatText("B", 201), "201", timestamp + 2));
+            fixtureIds.push(insertFixture(
+                database, repeatText("C", 5000), "5000", timestamp + 3));
+
+            executor = Executors.newSingleThreadExecutor();
+            executor.submit(new Packages.java.lang.Runnable({
+                run: function () {
+                    var round;
+                    var rows = [];
+                    var tags = {};
+                    var jsonText;
+                    var parsedOnWorker;
+                    try {
+                        for (round = 0; round < ROUNDS; round += 1) {
+                            rows = repository.listItemsByIds(
+                                fixtureIds, true);
+                            tags = repository.listItemTagMap(fixtureIds);
+                            jsonText = JSON.stringify({
+                                round: round,
+                                rows: rows,
+                                tags: tags
+                            });
+                            parsedOnWorker = JSON.parse(jsonText);
+                            if (parsedOnWorker.rows.length !== 3 ||
+                                    String(parsedOnWorker.rows[0].content || "")
+                                        .length > 200 ||
+                                    String(parsedOnWorker.rows[1].content || "")
+                                        .length !== 200 ||
+                                    Number(parsedOnWorker.rows[1]
+                                        .content_truncated || 0) !== 1 ||
+                                    String(parsedOnWorker.rows[2].content || "")
+                                        .length !== 200) {
+                                throw new Error(
+                                    "Worker projection assertion failed: " +
+                                    round);
+                            }
+                        }
+                        resultRef.set(new JavaString(JSON.stringify({
+                            rounds: ROUNDS,
+                            rowCount: rows.length,
+                            ids: fixtureIds,
+                            tags: tags
+                        })));
+                    } catch (error) {
+                        errorRef.set(new JavaString(String(error)));
+                    } finally {
+                        latch.countDown();
+                    }
+                }
+            }));
+
+            if (!latch.await(45, TimeUnit.SECONDS)) {
+                throw new Error("Worker probe timeout");
+            }
+            if (errorRef.get() !== null) {
+                throw new Error(String(errorRef.get()));
+            }
+            parsed = JSON.parse(String(resultRef.get()));
+            return {
+                ok: true,
+                project: "ClipHub",
+                testEntry: "stage11_1_hydration_worker_probe",
+                sourceRef: REF,
+                runtimeName: RUNTIME_NAME,
+                rounds: Number(parsed.rounds),
+                fixtureCount: fixtureIds.length,
+                repositoryModuleVersion: Number(repository.MODULE_VERSION),
+                filterModuleVersion:
+                    Number(global.ClipHub.Filter.MODULE_VERSION),
+                paginationStage:
+                    Number(global.ClipHub.Filter.PAGINATION_STAGE),
+                workerRepositoryRead: true,
+                jsonThreadBoundary: true,
+                previewAtMost200: true,
+                manualRegressionStillRequired: [
+                    "正式首页快速上下 fling",
+                    "Mutation race",
+                    "hide/show Executor 复用",
+                    "完全 stop Worker/Database 顺序",
+                    "Worker/View 性能诊断"
+                ],
+                bootstrap: bootstrap
+            };
+        } finally {
+            if (executor !== null) {
+                try { executor.shutdownNow(); } catch (ignoredShutdown) {}
+                try {
+                    executor.awaitTermination(2, TimeUnit.SECONDS);
+                } catch (ignoredAwait) {}
+            }
+            try { cleanup(database, fixtureIds); }
+            catch (ignoredCleanup) {}
+            try {
+                if (global.ClipHub && global.ClipHub.App &&
+                        global.ClipHub.App.isStarted()) {
+                    global.ClipHub.App.stop();
+                }
+            } catch (ignoredStop) {}
+            global.ClipHubBootstrapOptions = previousOptions;
+        }
+    }
+
+    try {
+        JSON.stringify(run());
+    } catch (error) {
+        JSON.stringify({
+            ok: false,
+            project: "ClipHub",
+            testEntry: "stage11_1_hydration_worker_probe",
+            error: String(error)
+        });
+    }
+}((function () { return this; }())));
