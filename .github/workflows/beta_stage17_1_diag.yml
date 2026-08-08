@@ -13,8 +13,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Build Filter66 atomically
+      - name: Build Filter66 with detailed Node diagnostics
         shell: bash
         run: |
           set -euo pipefail
-          python stage17_1_build_runner.py
+          python stage17_1_debug_wrapper.py
