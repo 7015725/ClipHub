@@ -1,0 +1,1074 @@
+===== makeSourceIcon =====
+    function makeSourceIcon(row, colors) {
+        var holder = new FrameLayout(appContext);
+        var image;
+        var drawable = null;
+        var constantState = null;
+        var fallback;
+        var packageName = String(row.source_package || "");
+        holder.setBackground(circleBackground(colors.surfaceMuted, null));
+        try {
+            if (packageName.length > 0) {
+      constantState = sourceIconConstantStateCache[packageName];
+      if (constantState !== null &&
+              constantState !== undefined) {
+          try { drawable = constantState.newDrawable(); }
+          catch (ignoredCachedDrawable) { drawable = null; }
+      }
+      if (drawable === null) {
+          drawable = appContext.getPackageManager()
+              .getApplicationIcon(packageName);
+          try {
+              constantState = drawable.getConstantState();
+              if (constantState !== null) {
+                  sourceIconConstantStateCache[packageName] =
+                      constantState;
+              }
+          } catch (ignoredConstantState) {}
+      }
+                image = new ImageView(appContext);
+                image.setImageDrawable(drawable);
+                image.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+                image.setPadding(dp(4), dp(4), dp(4), dp(4));
+                holder.addView(image, new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT));
+                state.resultSourceIconCount += 1;
+            }
+        } catch (ignoredIcon) {}
+        if (holder.getChildCount() === 0) {
+            fallback = makeText("剪", 14, colors.accentStrong, true);
+            fallback.setGravity(Gravity.CENTER);
+            holder.addView(fallback, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+        }
+        return holder;
+    }
+
+
+===== makePinnedBadge =====
+    function makePinnedBadge(colors, metrics) {
+        var root = new FrameLayout(appContext);
+        var icon = new View(appContext);
+        var params;
+        root.setBackground(roundedBackground(colors.accentSoft,
+            colors.accentBorder, metrics.pinBadgeRadiusDp));
+        root.setContentDescription("已置顶");
+        root.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        icon.setBackground(makeVectorIconDrawable("pin",
+            colors.accentStrong, metrics.pinIconSizePx,
+            metrics.pinIconStrokePx));
+        params = new FrameLayout.LayoutParams(metrics.pinIconSizePx,
+            metrics.pinIconSizePx);
+        params.gravity = Gravity.CENTER;
+        root.addView(icon, params);
+        return root;
+    }
+
+
+===== buildCardActionGrid =====
+    function buildCardActionGrid(holder, colors, metrics) {
+        var grid = new LinearLayout(appContext);
+        var top = new LinearLayout(appContext);
+        var bottom = new LinearLayout(appContext);
+        var edit;
+        var translate;
+        var copy;
+        var remove;
+        var params;
+        grid.setOrientation(LinearLayout.VERTICAL);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        bottom.setOrientation(LinearLayout.HORIZONTAL);
+        edit = makeCardActionButton("edit", "编辑剪贴板记录", colors,
+            false, metrics, function () {
+                editResultRow(currentCardHolderRow(holder),
+                    "card_action_edit");
+            });
+        translate = makeCardActionButton("translate", "翻译剪贴板记录", colors,
+            false, metrics, function () {
+                translateResultRow(currentCardHolderRow(holder),
+                    "card_action_translate");
+            });
+        copy = makeCardActionButton("copy", "复制剪贴板记录", colors,
+            false, metrics, function () {
+                copyResultRow(currentCardHolderRow(holder),
+                    "card_action_copy");
+            });
+        remove = makeCardActionButton("delete", "删除剪贴板记录", colors,
+            true, metrics, function () {
+                deleteResultRow(currentCardHolderRow(holder),
+                    "card_action_delete");
+            });
+        params = new LinearLayout.LayoutParams(0,
+            metrics.actionCellHeightPx, 1);
+        params.rightMargin = metrics.actionGapPx;
+        top.addView(edit, params);
+        top.addView(translate, new LinearLayout.LayoutParams(0,
+            metrics.actionCellHeightPx, 1));
+        params = new LinearLayout.LayoutParams(0,
+            metrics.actionCellHeightPx, 1);
+        params.rightMargin = metrics.actionGapPx;
+        bottom.addView(copy, params);
+        bottom.addView(remove, new LinearLayout.LayoutParams(0,
+            metrics.actionCellHeightPx, 1));
+        grid.addView(top, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            metrics.actionCellHeightPx));
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            metrics.actionCellHeightPx);
+        params.topMargin = metrics.actionGapPx;
+        grid.addView(bottom, params);
+        holder.editButton = edit;
+        holder.translateButton = translate;
+        holder.copyButton = copy;
+        holder.deleteButton = remove;
+        resultActionViews.push({
+            edit: edit,
+            translate: translate,
+            copy: copy,
+            delete: remove
+        });
+        state.cardActionButtonCount += 4;
+        return grid;
+    }
+
+
+===== bindSwipeGesture =====
+    function bindSwipeGesture(holder, wrapper, foreground, deleteAction,
+            pinAction, metrics) {
+        var gesture = {
+            downX: 0,
+            downY: 0,
+            swiping: false,
+            rejected: false,
+            disabled: false,
+            offset: 0
+        };
+        foreground.setOnTouchListener(new JavaAdapter(
+            View.OnTouchListener, {
+                onTouch: function (target, event) {
+                    var action = Number(event.getActionMasked());
+                    var rawX = Number(event.getRawX());
+                    var rawY = Number(event.getRawY());
+                    var deltaX;
+                    var deltaY;
+                    var absX;
+                    var absY;
+                    var offset;
+                    var parent;
+                    var commit;
+                    var direction;
+                    if (action === MotionEvent.ACTION_DOWN) {
+                        gesture.downX = rawX;
+                        gesture.downY = rawY;
+                        gesture.swiping = false;
+                        gesture.rejected = false;
+                        gesture.disabled = swipeInteractionBlocked() ||
+                            Number(event.getX()) > Math.max(0,
+                                Number(target.getWidth()) -
+                                metrics.actionGridWidthPx -
+                                metrics.contentGapPx);
+                        gesture.offset = 0;
+                        if (!gesture.disabled) {
+                            cancelActiveSwipe(true);
+                            try { target.animate().cancel(); }
+                            catch (ignoredAnimationCancel) {}
+                        }
+                        return false;
+                    }
+                    if (gesture.disabled) { return false; }
+                    if (action === MotionEvent.ACTION_MOVE) {
+                        deltaX = rawX - gesture.downX;
+                        deltaY = rawY - gesture.downY;
+                        absX = Math.abs(deltaX);
+                        absY = Math.abs(deltaY);
+                        if (!gesture.swiping && !gesture.rejected) {
+                            if (absY > touchSlop && absY >= absX) {
+                                gesture.rejected = true;
+                                return false;
+                            }
+                            if (absX > touchSlop && absX > absY * 1.2) {
+                                gesture.swiping = true;
+                                state.swipeStartCount += 1;
+                                activeSwipeCard = {
+                                    foreground: foreground,
+                                    deleteAction: deleteAction,
+                                    pinAction: pinAction
+                                };
+                                try { target.setPressed(false); }
+                                catch (ignoredPressed) {}
+                                try {
+                                    parent = wrapper.getParent();
+                                    if (parent !== null) {
+                                        parent.requestDisallowInterceptTouchEvent(
+                                            true);
+                                    }
+                                } catch (ignoredParent) {}
+                            }
+                        }
+                        if (!gesture.swiping) { return false; }
+                        offset = deltaX;
+                        if (Math.abs(offset) > metrics.swipeRevealWidthPx) {
+                            offset = (offset < 0 ? -1 : 1) *
+                                (metrics.swipeRevealWidthPx +
+                                (Math.abs(offset) -
+                                metrics.swipeRevealWidthPx) * 0.22);
+                        }
+                        offset = Math.max(-metrics.swipeMaximumOffsetPx,
+                            Math.min(metrics.swipeMaximumOffsetPx, offset));
+                        gesture.offset = offset;
+                        setSwipeVisual(foreground, deleteAction, pinAction,
+                            offset, metrics.swipeRevealWidthPx);
+                        state.swipeMoveCount += 1;
+                        return true;
+                    }
+                    if (action === MotionEvent.ACTION_UP ||
+                            action === MotionEvent.ACTION_CANCEL) {
+                        if (!gesture.swiping) { return false; }
+                        try {
+                            parent = wrapper.getParent();
+                            if (parent !== null) {
+                                parent.requestDisallowInterceptTouchEvent(false);
+                            }
+                        } catch (ignoredReleaseParent) {}
+                        commit = action === MotionEvent.ACTION_UP &&
+                            Math.abs(gesture.offset) >=
+                                metrics.swipeCommitDistancePx;
+                        direction = gesture.offset < 0 ? -1 : 1;
+                        resetSwipeVisual(foreground, deleteAction, pinAction,
+                            !commit);
+                        if (commit) {
+                            performSwipeAction(
+                                currentCardHolderRow(holder),
+                                direction, foreground);
+                        } else {
+                            state.swipeCancelCount += 1;
+                        }
+                        gesture.swiping = false;
+                        gesture.offset = 0;
+                        return true;
+                    }
+                    return false;
+                }
+            }));
+        return wrapper;
+    }
+
+
+===== makeResultCard =====
+    function makeResultCard(row, colors) {
+        var selected = SELECTION_ENABLED && selectedItemId !== null &&
+            Number(selectedItemId) === Number(row.id);
+        var pinned = Number(row.is_pinned || 0) === 1;
+        var metrics = resultCardMetrics(0);
+        var wrapper = new FrameLayout(appContext);
+        var actionLayer = new FrameLayout(appContext);
+        var deleteAction = makeSwipeAction("删除", colors.dangerSoft,
+            colors.danger, Gravity.START, metrics);
+        var pinAction = makeSwipeAction(
+            pinned ? "取消置顶" : "置顶",
+            colors.accentSoft, colors.accentStrong, Gravity.END, metrics);
+        var card = new LinearLayout(appContext);
+        var icon = makeSourceIcon(row, colors);
+        var center = new LinearLayout(appContext);
+        var contentRow = new LinearLayout(appContext);
+        var pinBadge = null;
+        var content = makeText(resultPreviewText(row),
+            metrics.contentTextSp, colors.textPrimary, selected);
+        var metaRow = new LinearLayout(appContext);
+        var tags = tagsForResult(row);
+        var tagBadge = makeText((tags.length > 0 ? "●  " : "") +
+            tagSummary(tags), metrics.sourceTextSp,
+            tags.length > 0 ? tagColorText(tags[0], colors.accentStrong) :
+                colors.textTertiary, tags.length > 0);
+        var source = makeText(sourceLabel(row) + " · " +
+            formatTime(row.last_copied_at), metrics.sourceTextSp,
+            colors.textSecondary, false);
+        var holder = {
+            itemId: Number(row.id),
+            row: row,
+            wrapper: wrapper,
+            actionLayer: actionLayer,
+            deleteAction: deleteAction,
+            pinAction: pinAction,
+            card: card,
+            iconView: icon,
+            center: center,
+            contentRow: contentRow,
+            contentView: content,
+            metaRow: metaRow,
+            tagBadge: tagBadge,
+            sourceView: source,
+            pinBadge: null,
+            actionGrid: null,
+            selected: selected,
+            pinned: pinned,
+            metrics: metrics
+        };
+        var actionGrid = buildCardActionGrid(holder, colors, metrics);
+        holder.actionGrid = actionGrid;
+        var params;
+
+        state.cardActionGridWidthDp = pxToDp(metrics.actionGridWidthPx);
+        state.cardActionCellHeightDp = pxToDp(metrics.actionCellHeightPx);
+        state.cardActionFontScale = metrics.fontScale;
+        state.cardActionIconSizeDp = pxToDp(metrics.actionIconSizePx);
+        state.pinBadgeSizeDp = pxToDp(metrics.pinBadgeSizePx);
+        wrapper.setClipChildren(true);
+        wrapper.setClipToPadding(true);
+        wrapper.setBackground(roundedBackground(colors.surfaceMuted,
+            colors.stroke, 12));
+        actionLayer.setClipChildren(true);
+        actionLayer.setClipToPadding(true);
+        params = new FrameLayout.LayoutParams(metrics.swipeRevealWidthPx,
+            FrameLayout.LayoutParams.MATCH_PARENT);
+        params.gravity = Gravity.START | Gravity.CENTER_VERTICAL;
+        actionLayer.addView(deleteAction, params);
+        params = new FrameLayout.LayoutParams(metrics.swipeRevealWidthPx,
+            FrameLayout.LayoutParams.MATCH_PARENT);
+        params.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
+        actionLayer.addView(pinAction, params);
+        wrapper.addView(actionLayer, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT));
+
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(metrics.cardPaddingHorizontalPx,
+            metrics.cardPaddingVerticalPx,
+            metrics.cardPaddingHorizontalPx,
+            metrics.cardPaddingVerticalPx);
+        card.setMinimumHeight(metrics.cardMinimumHeightPx);
+        card.setBackground(roundedBackground(
+            selected ? colors.accentSoft : colors.card,
+            selected ? colors.accentBorder : colors.stroke, 12));
+        card.setClickable(true);
+        card.setFocusable(true);
+        card.setContentDescription((pinned ? "已置顶，" : "") +
+            "剪贴板记录，点击正文输入到当前文本框，左滑置顶，右滑删除，右侧提供编辑翻译复制删除图标");
+        card.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, {
+                onClick: function () {
+                    inputResultRow(currentCardHolderRow(holder),
+                        "card_click");
+                }
+            }));
+
+        params = new LinearLayout.LayoutParams(metrics.iconSizePx,
+            metrics.iconSizePx);
+        params.rightMargin = metrics.contentGapPx;
+        card.addView(icon, params);
+
+        center.setOrientation(LinearLayout.VERTICAL);
+        contentRow.setOrientation(LinearLayout.HORIZONTAL);
+        contentRow.setGravity(Gravity.TOP);
+        content.setMaxLines(2);
+        content.setEllipsize(TextUtils.TruncateAt.END);
+        contentRow.addView(content, new LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        if (pinned) {
+            pinBadge = makePinnedBadge(colors, metrics);
+            holder.pinBadge = pinBadge;
+            params = new LinearLayout.LayoutParams(metrics.pinBadgeSizePx,
+                metrics.pinBadgeSizePx);
+            params.leftMargin = metrics.pinBadgeGapPx;
+            contentRow.addView(pinBadge, params);
+            state.pinnedBadgeCount += 1;
+        }
+        center.addView(contentRow, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT));
+        metaRow.setOrientation(LinearLayout.HORIZONTAL);
+        metaRow.setGravity(Gravity.CENTER_VERTICAL);
+        tagBadge.setPadding(metrics.baseUnitPx,
+            Math.max(1, Math.round(metrics.baseUnitPx * 0.28)),
+            metrics.baseUnitPx,
+            Math.max(1, Math.round(metrics.baseUnitPx * 0.28)));
+        tagBadge.setSingleLine(true);
+        tagBadge.setMaxLines(1);
+        tagBadge.setEllipsize(TextUtils.TruncateAt.END);
+        tagBadge.setBackground(roundedBackground(
+            tags.length > 0 ? colors.accentSoft : colors.surfaceMuted,
+            null, metrics.actionRadiusDp));
+        params = new LinearLayout.LayoutParams(metrics.tagWidthPx,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.rightMargin = metrics.contentGapPx;
+        metaRow.addView(tagBadge, params);
+        state.renderedTagLabelCount += Math.min(2, tags.length);
+        if (tags.length > 0) { state.tagColorPreviewCount += 1; }
+        source.setSingleLine(true);
+        source.setEllipsize(TextUtils.TruncateAt.END);
+        metaRow.addView(source, new LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        center.addView(metaRow, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT));
+        params = new LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+        params.rightMargin = metrics.contentGapPx;
+        card.addView(center, params);
+        card.addView(actionGrid, new LinearLayout.LayoutParams(
+            metrics.actionGridWidthPx, metrics.actionGridHeightPx));
+
+        wrapper.addView(card, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT));
+        bindSwipeGesture(holder, wrapper, card, deleteAction, pinAction, metrics);
+        resultCardViews.push(card);
+        state.resultCardCount += 1;
+        return wrapper;
+    }
+
+
+===== keyedReconcileVirtualWindow =====
+    function keyedReconcileVirtualWindow(range, colors) {
+        var keyedStartedAt = Number(System.currentTimeMillis());
+        var keyedSignatureStartedAt;
+        var keyedStructureStartedAt;
+        var keyedElapsed;
+        var keyedSignatureElapsed;
+        var keyedStructureElapsed;
+        var desiredCount = Math.max(0, range.end - range.start + 1);
+        var desiredIds = [];
+        var desiredSignatures = [];
+        var desiredKeys = {};
+        var index;
+        var localIndex;
+        var scanIndex;
+        var row;
+        var key;
+        var childCount = Number(virtualCardHost.getChildCount());
+        scrollPerformanceState.keyedReconcileCount += 1;
+        if (virtualRenderedItemIds.length !== childCount ||
+      virtualRenderedSignatures.length !== childCount ||
+      resultCardViews.length !== childCount ||
+      resultActionViews.length !== childCount) {
+  scrollPerformanceState.alignmentFallbackCount += 1;
+  while (virtualCardHost.getChildCount() > 0) {
+      virtualCardHost.removeViewAt(
+          Number(virtualCardHost.getChildCount()) - 1);
+      scrollPerformanceState.removedViewCount += 1;
+      scrollPerformanceState.structuralRemoveCount += 1;
+  }
+  virtualRenderedItemIds = [];
+  virtualRenderedSignatures = [];
+  resultCardViews = [];
+  resultActionViews = [];
+        }
+        keyedSignatureStartedAt = Number(System.currentTimeMillis());
+        for (index = range.start; index <= range.end; index += 1) {
+  row = previewRows[index];
+  desiredIds.push(Number(row.id));
+  desiredSignatures.push(virtualRenderSignature(row, colors));
+  key = "k:" + String(Number(row.id)) + "\u001e" +
+      desiredSignatures[desiredSignatures.length - 1];
+  desiredKeys[key] = true;
+        }
+        keyedSignatureElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) - keyedSignatureStartedAt);
+        keyedStructureStartedAt = Number(System.currentTimeMillis());
+        for (localIndex = Number(virtualCardHost.getChildCount()) - 1;
+      localIndex >= 0; localIndex -= 1) {
+  key = "k:" + String(Number(virtualRenderedItemIds[localIndex])) +
+      "\u001e" + String(virtualRenderedSignatures[localIndex]);
+  if (desiredKeys[key] !== true) {
+      removeVirtualEntryAt(localIndex);
+  }
+        }
+        for (localIndex = 0; localIndex < desiredCount; localIndex += 1) {
+  if (localIndex < virtualRenderedItemIds.length &&
+          Number(virtualRenderedItemIds[localIndex]) ===
+              Number(desiredIds[localIndex]) &&
+          String(virtualRenderedSignatures[localIndex]) ===
+              String(desiredSignatures[localIndex])) {
+      scrollPerformanceState.sameIdReuseCount += 1;
+      continue;
+  }
+  scanIndex = -1;
+  for (index = localIndex + 1;
+          index < virtualRenderedItemIds.length; index += 1) {
+      if (Number(virtualRenderedItemIds[index]) ===
+              Number(desiredIds[localIndex]) &&
+              String(virtualRenderedSignatures[index]) ===
+                  String(desiredSignatures[localIndex])) {
+          scanIndex = index;
+          break;
+      }
+  }
+  if (scanIndex >= 0) {
+      moveVirtualEntry(scanIndex, localIndex);
+      scrollPerformanceState.sameIdReuseCount += 1;
+  } else {
+      insertVirtualEntryAt(localIndex,
+          previewRows[range.start + localIndex], colors,
+          desiredSignatures[localIndex]);
+  }
+        }
+        while (virtualCardHost.getChildCount() > desiredCount) {
+  removeVirtualEntryAt(
+      Number(virtualCardHost.getChildCount()) - 1);
+        }
+        syncRenderedResultCounters(range);
+        keyedStructureElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) - keyedStructureStartedAt);
+        keyedElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) - keyedStartedAt);
+        scrollPerformanceState.keyedReconcileLastMs = keyedElapsed;
+        scrollPerformanceState.keyedReconcileMaxMs = Math.max(
+            Number(scrollPerformanceState.keyedReconcileMaxMs), keyedElapsed);
+        scrollPerformanceState.keyedSignatureLastMs = keyedSignatureElapsed;
+        scrollPerformanceState.keyedSignatureMaxMs = Math.max(
+            Number(scrollPerformanceState.keyedSignatureMaxMs), keyedSignatureElapsed);
+        scrollPerformanceState.keyedStructureLastMs = keyedStructureElapsed;
+        scrollPerformanceState.keyedStructureMaxMs = Math.max(
+            Number(scrollPerformanceState.keyedStructureMaxMs), keyedStructureElapsed);
+        return true;
+    }
+
+
+===== rebuildVirtualWindow =====
+    function rebuildVirtualWindow(origin, force, preferredIndex) {
+        var colors = palette();
+        var range;
+        var oldCount;
+        var index;
+        var params;
+        var generation;
+        var hydration;
+        var oldStart;
+        var oldEnd;
+        var overlap;
+        var removeTop;
+        var removeBottom;
+        var removeIndex;
+        var wrapper;
+        var cardRef;
+        var actionRef;
+        var recycledCount;
+        var rebuildCreatedBefore;
+        var rebuildRemovedBefore;
+        var rebuildReusedBefore;
+        var overlapStartedAt;
+        var overlapElapsed = 0;
+        if (virtualCardHost === null || !state.panelAttached) {
+            return false;
+        }
+        if (activeSwipeCard !== null) {
+            virtualState.updateDeferred = true;
+            return false;
+        }
+        range = virtualTargetRange(preferredIndex);
+        virtualState.firstVisibleIndex = range.first;
+        virtualState.lastVisibleIndex = range.last;
+        if (force !== true &&
+                String(origin || "") === "result_scroll" &&
+                range.start === Number(
+                    virtualState.firstRenderedIndex) &&
+                range.end === Number(
+                    virtualState.lastRenderedIndex)) {
+            scrollPerformanceState.sameRangeNoLayoutCount += 1;
+            virtualState.lastOrigin =
+                "result_scroll_same_range_fast";
+            virtualState.lastError = null;
+            return false;
+        }
+        hydration = hydrateDataWindowRange(
+            range.start, range.end,
+            String(origin || "virtual_rebuild") + "_hydrate");
+        if (hydration.pending === true &&
+                hydration.requiresRows === true) {
+            virtualState.lastOrigin = String(
+                origin || "virtual_rebuild") +
+                "_hydrate_pending";
+            return false;
+        }
+        dehydrateDataWindowOutside(
+            range.start, range.end,
+            String(origin || "virtual_rebuild") + "_dehydrate");
+        if (force !== true &&
+                range.start === Number(
+                    virtualState.firstRenderedIndex) &&
+                range.end === Number(
+                    virtualState.lastRenderedIndex)) {
+            virtualState.topSpacerPx = setVirtualSpacerHeight(
+                virtualTopSpacer,
+                virtualHeightRange(0, range.start));
+            virtualState.bottomSpacerPx = setVirtualSpacerHeight(
+                virtualBottomSpacer,
+                virtualHeightRange(range.end + 1,
+                    previewRows.length));
+            return false;
+        }
+        var viewRebuildStartedAt =
+            Number(System.currentTimeMillis());
+        rebuildCreatedBefore = Number(scrollPerformanceState.createdViewCount);
+        rebuildRemovedBefore = Number(scrollPerformanceState.removedViewCount);
+        rebuildReusedBefore = Number(scrollPerformanceState.sameIdReuseCount);
+        var viewRebuildElapsed;
+        scrollPerformanceState.viewRebuildCount += 1;
+        measureVirtualCards();
+        oldCount = Number(virtualCardHost.getChildCount());
+        oldStart = Number(virtualState.firstRenderedIndex);
+        oldEnd = Number(virtualState.lastRenderedIndex);
+        recycledCount = oldCount;
+        overlap = force !== true && oldCount > 0 &&
+            oldEnd >= oldStart && range.start <= oldEnd &&
+            range.end >= oldStart &&
+            virtualRenderedItemIds.length === oldCount &&
+            virtualRenderedSignatures.length === oldCount &&
+            resultCardViews.length === oldCount &&
+            resultActionViews.length === oldCount;
+        if (overlap) {
+            overlapStartedAt = Number(System.currentTimeMillis());
+            recycledCount = 0;
+            removeTop = Math.max(0, range.start - oldStart);
+            for (removeIndex = 0;
+                    removeIndex < removeTop; removeIndex += 1) {
+                virtualCardHost.removeViewAt(0);
+                virtualRenderedItemIds.shift();
+                virtualRenderedSignatures.shift();
+                resultCardViews.shift();
+                resultActionViews.shift();
+                recycledCount += 1;
+                scrollPerformanceState.structuralRemoveCount += 1;
+            }
+            removeBottom = Math.max(0, oldEnd - range.end);
+            for (removeIndex = 0;
+                    removeIndex < removeBottom; removeIndex += 1) {
+                virtualCardHost.removeViewAt(
+                    Number(virtualCardHost.getChildCount()) - 1);
+                virtualRenderedItemIds.pop();
+                virtualRenderedSignatures.pop();
+                resultCardViews.pop();
+                resultActionViews.pop();
+                recycledCount += 1;
+                scrollPerformanceState.structuralRemoveCount += 1;
+            }
+            scrollPerformanceState.removedViewCount += recycledCount;
+            if (range.start < oldStart) {
+                for (index = oldStart - 1;
+                        index >= range.start; index -= 1) {
+                    params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                    params.bottomMargin = dp(6);
+                    wrapper = makeResultCard(previewRows[index], colors);
+                    cardRef = resultCardViews.pop();
+                    actionRef = resultActionViews.pop();
+                    virtualCardHost.addView(wrapper, 0, params);
+                    resultCardViews.unshift(cardRef);
+                    resultActionViews.unshift(actionRef);
+                    virtualRenderedItemIds.unshift(
+                        Number(previewRows[index].id));
+                    virtualRenderedSignatures.unshift(
+                        virtualRenderSignature(previewRows[index], colors));
+                    scrollPerformanceState.createdViewCount += 1;
+                    scrollPerformanceState.structuralInsertCount += 1;
+                }
+            }
+            if (range.end > oldEnd) {
+                for (index = oldEnd + 1;
+                        index <= range.end; index += 1) {
+                    params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                    params.bottomMargin = dp(6);
+                    virtualCardHost.addView(makeResultCard(
+                        previewRows[index], colors), params);
+                    virtualRenderedItemIds.push(
+                        Number(previewRows[index].id));
+                    virtualRenderedSignatures.push(
+                        virtualRenderSignature(previewRows[index], colors));
+                    scrollPerformanceState.createdViewCount += 1;
+                    scrollPerformanceState.structuralInsertCount += 1;
+                }
+            }
+            state.resultCardCount = Number(
+                virtualCardHost.getChildCount());
+            overlapElapsed = Math.max(0,
+                Number(System.currentTimeMillis()) - overlapStartedAt);
+            scrollPerformanceState.overlapUpdateLastMs = overlapElapsed;
+            scrollPerformanceState.overlapUpdateMaxMs = Math.max(
+                Number(scrollPerformanceState.overlapUpdateMaxMs), overlapElapsed);
+        } else {
+  keyedReconcileVirtualWindow(range, colors);
+  recycledCount = Math.max(0, oldCount -
+      Number(virtualCardHost.getChildCount()));
+        }
+        syncRenderedResultCounters(range);
+        viewRebuildElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) -
+                viewRebuildStartedAt);
+        scrollPerformanceState.viewRebuildLastMs =
+            viewRebuildElapsed;
+        scrollPerformanceState.viewRebuildMaxMs = Math.max(
+            Number(scrollPerformanceState.viewRebuildMaxMs),
+            viewRebuildElapsed);
+        if (viewRebuildElapsed > 32) {
+            scrollPerformanceState.slowRebuildCount += 1;
+            scrollPerformanceState.slowRebuildSamples.push({
+                origin: String(origin || "virtual_rebuild"),
+                force: force === true,
+                mode: overlap ? "overlap" : "keyed",
+                elapsedMs: viewRebuildElapsed,
+                rangeStart: Number(range.start),
+                rangeEnd: Number(range.end),
+                oldCount: oldCount,
+                newCount: Number(virtualCardHost.getChildCount()),
+                created: Number(scrollPerformanceState.createdViewCount) -
+                    rebuildCreatedBefore,
+                removed: Number(scrollPerformanceState.removedViewCount) -
+                    rebuildRemovedBefore,
+                reused: Number(scrollPerformanceState.sameIdReuseCount) -
+                    rebuildReusedBefore,
+                measureMs: Number(scrollPerformanceState.measureLastMs),
+                keyedMs: overlap ? 0 :
+                    Number(scrollPerformanceState.keyedReconcileLastMs),
+                signatureMs: overlap ? 0 :
+                    Number(scrollPerformanceState.keyedSignatureLastMs),
+                structureMs: overlap ? overlapElapsed :
+                    Number(scrollPerformanceState.keyedStructureLastMs)
+            });
+            while (scrollPerformanceState.slowRebuildSamples.length > 8) {
+                scrollPerformanceState.slowRebuildSamples.shift();
+            }
+        }
+        virtualState.firstRenderedIndex = range.start;
+        virtualState.lastRenderedIndex = range.end;
+        virtualState.topSpacerPx = setVirtualSpacerHeight(
+            virtualTopSpacer,
+            virtualHeightRange(0, range.start));
+        virtualState.bottomSpacerPx = setVirtualSpacerHeight(
+            virtualBottomSpacer,
+            virtualHeightRange(range.end + 1,
+                previewRows.length));
+        virtualState.updateCount += 1;
+        virtualState.rebuildCount += 1;
+        virtualState.recycleCount += recycledCount;
+        virtualState.updateDeferred = false;
+        virtualState.lastOrigin = String(origin || "virtual_rebuild");
+        virtualState.lastError = null;
+        virtualGeneration += 1;
+        generation = virtualGeneration;
+        if (mainHandler !== null) {
+            mainHandler.post(new Packages.java.lang.Runnable({
+                run: function () {
+                    if (!state.panelAttached ||
+                            virtualCardHost === null) {
+                        virtualState.staleUpdateCount += 1;
+                        return;
+                    }
+                    measureVirtualCards();
+                    restoreScrollAnchor();
+                    captureScrollAnchor();
+                    updateQuickResetView();
+                }
+            }));
+        }
+        return true;
+    }
+
+
+===== virtualRenderSignature =====
+    function virtualRenderSignature(row, colors) {
+        var tags = tagsForResult(row);
+        var selected = SELECTION_ENABLED && selectedItemId !== null &&
+  Number(selectedItemId) === Number(row && row.id);
+        return [
+  JSON.stringify(row || {}),
+  JSON.stringify(tags || []),
+  selected ? "1" : "0",
+  rootMode ? "1" : "0",
+  String(colors.card),
+  String(colors.surfaceMuted),
+  String(colors.stroke),
+  String(colors.textPrimary),
+  String(colors.textSecondary),
+  String(colors.accentSoft),
+  String(colors.accentStrong),
+  Number(state.panelWidthPx || 0),
+  Number(state.panelHeightPx || 0)
+        ].join("\u001f");
+    }
+
+
+===== VARS var virtualRenderedItemIds =====
+
+    var prefetchGeneration = 0;
+    var prefetchedPage = null;
+    var prefetchState = {
+        enabled: true,
+        scheduled: false,
+        inFlight: false,
+        ready: false,
+        mode: "",
+        targetPage: 0,
+        rowCount: 0,
+        scheduleCount: 0,
+        requestCount: 0,
+        successCount: 0,
+        hitCount: 0,
+        missCount: 0,
+        invalidationCount: 0,
+        staleDiscardCount: 0,
+        lastOrigin: "",
+        lastInvalidationReason: "",
+        lastError: null
+    };
+    var VIRTUAL_BEFORE_SCREENS = 3;
+    var VIRTUAL_AFTER_SCREENS = 5;
+    var VIRTUAL_UPDATE_DELAY_MS = 24;
+    var virtualTopSpacer = null;
+    var virtualCardHost = null;
+    var virtualBottomSpacer = null;
+    var paginationFooterHost = null;
+    var quickResetView = null;
+    var virtualRenderedItemIds = [];
+    var virtualRenderedSignatures = [];
+    var virtualGeneration = 0;
+    var virtualPendingOrigin = "";
+    var virtualPendingForce = false;
+    var virtualState = {
+        firstRenderedIndex: 0,
+        lastRenderedIndex: -1,
+        firstVisibleIndex: 0,
+        lastVisibleIndex: -1,
+        visibleCount: 1,
+        averageHeightPx: 0,
+        defaultHeightPx: 0,
+        heightById: {},
+        topSpacerPx: 0,
+        bottomSpacerPx: 0,
+        anchorItemId: null,
+        anchorIndex: -1,
+        anchorOffsetPx: 0,
+        anchorRestoreErrorPx: 0,
+        updateScheduled: false,
+        updateDeferred: false,
+        scrollListenerBound: false,
+        scrollToTopPending: false,
+        updateCount: 0,
+        recycleCount: 0,
+        rebuildCount: 0,
+        staleUpdateCount: 0,
+        lastOrigin: "",
+        lastError: null
+    };
+    var DATA_BLOCK_MIN_ROWS = 24;
+    var DATA_BLOCK_MAX_ROWS = 100;
+    var DATA_BLOCK_VISIBLE_MULTIPLIER = 2;
+    var DATA_BLOCK_KEEP_BEFORE = 1;
+    var DATA_BLOCK_KEEP_AFTER = 1;
+    var dataTagLoadedById = {};
+    var dataWindowState = {
+        blockSize: DATA_BLOCK_MIN_ROWS,
+        blockCount: 0,
+        hydratedBlockCount: 0,
+        hydratedRowCount: 0,
+        dehydratedRowCount: 0,
+        hydrationPassCount: 0,
+        dehydrationPassCount: 0,
+        hydrateQueryCount: 0,
+        tagQueryCount: 0,
+        hydratedRowTotal: 0,
+        dehydratedRowTotal: 0,
+        missingIdCount: 0,
+        resetCount: 0,
+        keepStartIndex: 0,
+        keepEndIndex: -1,
+        lastHydrateStartIndex: 0,
+        lastHydrateEndIndex: -1,
+        lastOrigin: "",
+        lastError: null
+    };
+    var pendingNewItemId = null;
+    var mutationRefreshPlan = null;
+    var mutationAnchorLocked = false;
+    var
+
+===== VARS var resultCardViews =====
+    var searchView = null;
+    var resetView = null;
+    var closeView = null;
+    var settingsButton = null;
+    var advancedView = null;
+    var applyView = null;
+    var clearHistoryView = null;
+    var resultContainer = null;
+    var resultCountView = null;
+    var drawerContainer = null;
+    var drawerScrollView = null;
+    var drawerContentView = null;
+    var drawerFooterView = null;
+    var sourceViews = {};
+    var tagViews = {};
+    var pinnedViews = {};
+    var sensitiveViews = {};
+    var sortViews = {};
+    var historyViews = [];
+    var advancedVisible = false;
+    var searchHistory = [];
+    var previewRows = [];
+    var suppressTextWatcher = false;
+    var searchGeneration = 0;
+    var restoreListOnClose = false;
+    var rootMode = false;
+    var selectedItemId = null;
+    var resultCardViews = [];
+    var toolbarActionViews = {};
+    var resultTagMap = {};
+    var resultPageLimit = RESULT_PAGE_SIZE;
+    var resultHasMore = false;
+    var resultScrollView = null;
+    var loadMoreView = null;
+    var PAGINATION_STAGE = 9;
+    var paginationState = {
+        ready: false,
+        mode: "ajax",
+        repositoryMode: "append",
+        pageSize: 100,
+        prefetchEnabled: true,
+        pageNumber: 1,
+        loadedCount: 0,
+        totalCount: 0,
+        totalPages: 0,
+        hasMore: false,
+        endCursor: null,
+        queryGeneration: 0,
+        resetCount: 0,
+        loadCount: 0,
+        settingsSyncCount: 0,
+        settingsEventCount: 0,
+        criteriaChangeCount: 0,
+        lastResetReason: "",
+        lastLoadMode: "",
+        lastCriteriaSignature: "",
+        newContentPending: false,
+        quickResetAvailable: false,
+        lastError: null
+    };
+    var ajaxFooterState = {
+        present: false,
+        visible: false,
+        action: "none",
+        text: "",
+        clickable: false,
+        loading: false,
+        clickCount: 0,
+        blockedClickCount: 0,
+        successCount: 0,
+        endCount: 0,
+        appendedRowCount: 0,
+        duplicateBlockedCount: 0,
+        renderBatchCount: 0,
+        lastScrollYBeforeAppend: 0,
+        lastScrollYAfterAppend: 0,
+        positionPreserved: true,
+        lastError: null
+    };
+    var numberPagerView = null;
+    var numberPageViews = {};
+    var numberActionViews = {};
+    var numberPagerState = {
+        present: false,
+        visible: false,
+        loading: false,
+        currentPage: 1,
+        totalPages: 0,
+        totalCount: 0,
+        tokens: [],
+        selectedPage: 1,
+        nearbyPageLimit: 5,
+        jumpInputPresent: false,
+        layoutStyle:
+  
+
+===== VARS var resultActionViews =====
+tSuppressedCount: 0,
+        settingsChangeCount: 0,
+        anchorRestoreCount: 0,
+        anchorFallbackCount: 0,
+        lastEventName: "",
+        lastAction: "",
+        lastOrigin: "",
+        lastModeBefore: "",
+        lastModeAfter: "",
+        lastPageNumberBefore: 1,
+        lastPageNumberAfter: 1,
+        lastLoadedCountBefore: 0,
+        lastLoadedCountAfter: 0,
+        lastReloadPageCount: 0,
+        lastAnchorItemIdBefore: null,
+        lastAnchorItemIdAfter: null,
+        lastAnchorIndexBefore: -1,
+        lastAnchorIndexAfter: -1,
+        lastAnchorOffsetPxBefore: 0,
+        lastAnchorOffsetPxAfter: 0,
+        lastAnchorRestoreErrorPx: 0,
+        lastPositionPreserved: true,
+        lastError: null
+    };
+    var activeSwipeCard = null;
+    var resultBodyFrame = null;
+    var resultActionViews = [];
+    var sourceIconConstantStateCache = {};
+    var deleteUndoView = null;
+    var pendingDeleteUndo = null;
+    var deleteUndoGeneration = 0;
+    var copyFeedbackView = null;
+    var copyFeedbackGeneration = 0;
+    var adaptiveRenderGeneration = 0;
+    var searchExpanded = false;
+    var searchStatusRow = null;
+    var searchInputRow = null;
+    var searchToggleView = null;
+    var searchClearView = null;
+    var historyContainerView = null;
+    var inputDispatchGeneration = 0;
+    var inputDispatchPending = false;
+    var panelBuilt = false;
+    var panelBuiltRootMode = null;
+    var panelStructureDirty = true;
+    var panelDataDirty = true;
+    var panelDataVersion = 1;
+    var renderedDataVersion = 0;
+    var renderGeneration = 0;
+    var renderCursor = 0;
+    var renderBatchCount = 0;
+    var optionCountsCache = null;
+    var optionCountsDirty = true;
+    var refreshGeneration = 0;
+    var refreshScheduled = false;
+    var refreshReason = "";
+    var lastShowReused = false;
+    var timeFormatter = null;
+    var performance = {
+        showGeneration: 0,
+        showStartedAtNs: 0,
+        windowAttachedAtNs: 0,
+        firstDrawAtNs: 0,
+        firstBatchReadyAtNs: 0,
+        fullRenderReadyAtNs: 0,
+        showToAttachMs: null,
+        showToFirstDrawMs: null,
+        showToFirstBatchMs: null,
+        showToFullRenderMs: null,
+        renderBatchCount: 0,
+        lastRefreshOrigin: "",
+        lastError: null
+    };
+
+    var state = {
+        applyCount: 0,
+        eventApplyCount: 0,
+        lastResultCount: 0,
+        lastApplyThreadId: null,
+        lastApplyThreadName: null,
+        panelAttached: false,
+        panelOpenCount: 0,
+        panelCloseCount: 0,
+        panelRenderCount: 0,
+        searchActionCount: 0,
+        realtimeS
