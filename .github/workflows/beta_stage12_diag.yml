@@ -1,54 +1,81 @@
-name: Beta Stage12 View Diagnostics
+name: Beta Stage12 Apply Diagnostics
 on:
   push:
     branches: [beta-pagination-stage10-20260808]
     paths:
       - .github/workflows/beta_stage12_diag.yml
 jobs:
-  diag:
+  apply:
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Decode Filter 50 and write focused functions
+      - name: Patch beta source ref and status diagnostics
         shell: bash
         run: |
           python - <<'PY'
-          import base64,gzip,glob,re
-          parts=sorted(glob.glob('stage-assets/pagination-stage9/ch11_full_v5_*.b64'))
-          packed=base64.b64decode(''.join(open(p,encoding='utf-8').read().strip() for p in parts))
-          src=gzip.decompress(packed).decode('utf-8')
-          lines=src.splitlines()
-          starts=[]
-          for i,line in enumerate(lines):
-              m=re.match(r'    function ([A-Za-z0-9_]+)\(',line)
-              if m: starts.append((i,m.group(1)))
-          wanted={'makeResultCard','rebuildVirtualWindow','scheduleVirtualUpdate','updateResultScrollState','buildResultArea','dehydrateDataWindowOutside','hydrateDataWindowRange','applyHydrationWorkerResult','submitHydrationRequest','calculateVirtualRange','updateVirtualSpacers'}
-          out=[]
-          for n,(i,name) in enumerate(starts):
-              if name not in wanted: continue
-              j=starts[n+1][0] if n+1<len(starts) else len(lines)
-              out.append('\n===== FUNCTION %s L%d-L%d =====\n'%(name,i+1,j))
-              out.extend('%05d %s\n'%(k+1,lines[k]) for k in range(i,j))
-          # include neighboring top-level functions around makeResultCard/rebuildVirtualWindow
-          name_to_idx={name:n for n,(i,name) in enumerate(starts)}
-          for anchor in ['makeResultCard','rebuildVirtualWindow']:
-              n=name_to_idx.get(anchor)
-              if n is None: continue
-              for x in range(max(0,n-4),min(len(starts),n+5)):
-                  i,name=starts[x]; j=starts[x+1][0] if x+1<len(starts) else len(lines)
-                  tag='NEIGHBOR %s around %s'%(name,anchor)
-                  block='\n===== %s L%d-L%d =====\n'%(tag,i+1,j)
-                  if block in out: continue
-                  out.append(block); out.extend('%05d %s\n'%(k+1,lines[k]) for k in range(i,j))
-          open('stage12_focus.txt','w',encoding='utf-8').writelines(out)
+          import json,hashlib,pathlib
+          old='agent/beta-list-preview-on-demand-20260808'
+          new='beta-pagination-stage10-20260808'
+          def replace(path,a,b,count=None):
+              p=pathlib.Path(path); s=p.read_text(encoding='utf-8')
+              n=s.count(a)
+              if count is not None and n!=count: raise SystemExit('%s anchor count %d expected %d'%(path,n,count))
+              if n==0: return False
+              p.write_text(s.replace(a,b),encoding='utf-8'); return True
+          replace('ClipHub.js','var DEFAULT_REF = "'+old+'";','var DEFAULT_REF = "'+new+'";',1)
+          replace('src/ch_11_filter.js','var REF = "'+old+'";','var REF = "'+new+'";',1)
+          for path in ['ClipHub_Stage11.1数据窗口Worker测试入口.txt','ClipHub_分页阶段11首页预览按需正文测试入口.txt']:
+              p=pathlib.Path(path)
+              if p.exists(): replace(path,old,new)
+          p=pathlib.Path('src/ch_15_app.js')
+          s=p.read_text(encoding='utf-8')
+          anchor='            startupPerformance: filter.performance || null\n'
+          replacement=('            startupPerformance: filter.performance || null,\n'
+                       '            hydrationWorker: safeState(\n'
+                       '                ClipHub.Filter, "getHydrationWorkerState", null),\n'
+                       '            scrollPerformance: safeState(\n'
+                       '                ClipHub.Filter, "getScrollPerformanceState", null)\n')
+          if s.count(anchor)!=1: raise SystemExit('ch15 startupPerformance anchor mismatch')
+          p.write_text(s.replace(anchor,replacement),encoding='utf-8')
+          def blob_sha(path):
+              data=pathlib.Path(path).read_bytes()
+              return hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+          mp=pathlib.Path('module-manifest.json')
+          manifest=json.loads(mp.read_text(encoding='utf-8'))
+          manifest['moduleSetVersion']='20260808.04'
+          manifest['sourceRef']=new
+          shas={'ch_11_filter.js':blob_sha('src/ch_11_filter.js'),'ch_15_app.js':blob_sha('src/ch_15_app.js')}
+          for m in manifest['modules']:
+              if m['name'] in shas: m['sha']=shas[m['name']]
+          mp.write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          # Keep Stage 11 probe identity aligned with beta diagnostic-only module-set bump.
+          p=pathlib.Path('ClipHub_分页阶段11首页预览按需正文测试入口.txt')
+          if p.exists():
+              s=p.read_text(encoding='utf-8').replace('20260808.03','20260808.04')
+              p.write_text(s,encoding='utf-8')
+          print('ch11',shas['ch_11_filter.js'])
+          print('ch15',shas['ch_15_app.js'])
           PY
-      - name: Commit diagnostics
+          cp ClipHub_Stage11.1数据窗口Worker测试入口.txt /tmp/stage11_1.js
+          cp ClipHub_分页阶段11首页预览按需正文测试入口.txt /tmp/stage11.js
+          node --check ClipHub.js
+          node --check src/ch_11_filter.js
+          node --check src/ch_15_app.js
+          node --check /tmp/stage11_1.js
+          node --check /tmp/stage11.js
+          grep -Eq '"moduleSetVersion": "20260808.04"' module-manifest.json
+          grep -Eq '"sourceRef": "beta-pagination-stage10-20260808"' module-manifest.json
+          grep -Fq 'getScrollPerformanceState' src/ch_15_app.js
+          grep -Fq 'getHydrationWorkerState' src/ch_15_app.js
+          git diff --check
+      - name: Commit beta diagnostics and cleanup
         shell: bash
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add stage12_focus.txt
-          git commit -m "记录 Stage12 聚焦诊断" || exit 0
+          git rm -f .github/workflows/beta_stage12_diag.yml stage12_view_diag.txt stage12_focus.txt || true
+          git add ClipHub.js module-manifest.json src/ch_11_filter.js src/ch_15_app.js ClipHub_Stage11.1数据窗口Worker测试入口.txt ClipHub_分页阶段11首页预览按需正文测试入口.txt
+          git commit -m "修正 Beta 更新源并暴露滚动性能诊断"
           git push
