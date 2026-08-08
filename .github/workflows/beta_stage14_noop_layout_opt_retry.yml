@@ -1,0 +1,49 @@
+name: Beta Stage14 No-op Layout Optimization Retry
+on:
+  push:
+    branches: [beta-pagination-stage10-20260808]
+    paths:
+      - .github/workflows/beta_stage14_noop_layout_opt_retry.yml
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Re-run validated Filter 56 builder
+        shell: bash
+        run: |
+          git show 7e94e1cc189f5f604871d4852402567f66ba9d62:.github/workflows/beta_stage14_noop_layout_opt.yml > /tmp/stage14.yml
+          python - <<'PY'
+          import pathlib,textwrap
+          text=pathlib.Path('/tmp/stage14.yml').read_text(encoding='utf-8')
+          marker="          python - <<'PY'\n"
+          end_marker="\n          PY\n"
+          body=text.split(marker,1)[1].split(end_marker,1)[0]
+          lines=[]
+          for line in body.splitlines():
+              if line.startswith('          '): line=line[10:]
+              lines.append(line)
+          script='\n'.join(lines)+'\n'
+          exec(compile(script,'stage14_builder.py','exec'),{'__name__':'__main__'})
+          PY
+          node --check /tmp/filter56.js
+          node --check src/ch_11_filter.js
+          ! grep -Eq '(^|[^A-Za-z0-9_])(let|const|class)[[:space:]]|=>' /tmp/filter56.js
+          grep -Fq 'MODULE_VERSION: 56' /tmp/filter56.js
+          grep -Fq 'sameRangeNoLayoutCount' /tmp/filter56.js
+          grep -Fq 'spacerNoopCount' /tmp/filter56.js
+          grep -Fq 'anchorScrollNoopCount' /tmp/filter56.js
+          grep -Fq '"moduleSetVersion": "20260808.10"' module-manifest.json
+          git diff --check
+      - name: Commit Filter 56 atomically
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm -f .github/workflows/beta_stage14_noop_layout_opt_retry.yml
+          rm -f stage14_scroll_layout_diag.txt stage14_spacer_diag.txt stage13_build_error.txt stage13_exact_source_diag.txt || true
+          git add -A
+          git commit -m "优化 Beta 滚动零变化布局与锚点恢复"
+          git push
