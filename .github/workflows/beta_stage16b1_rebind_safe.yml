@@ -1,0 +1,283 @@
+name: Beta Stage16B1 Safe Rebind
+on:
+  push:
+    branches: [beta-pagination-stage10-20260808]
+    paths:
+      - .github/workflows/beta_stage16b1_rebind_safe.yml
+      - .github/stage16b1-trigger.txt
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Filter60 safe rebind
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64,gzip,glob,hashlib,json,pathlib
+          root=pathlib.Path('.')
+          loader_path=root/'src/ch_11_filter.js'
+          manifest_path=root/'module-manifest.json'
+          loader=loader_path.read_text(encoding='utf-8')
+          manifest=json.loads(manifest_path.read_text(encoding='utf-8'))
+          if manifest.get('moduleSetVersion')!='20260808.13': raise SystemExit('expected .13 baseline')
+          if manifest.get('sourceRef')!='beta-pagination-stage10-20260808': raise SystemExit('wrong sourceRef')
+          if '/* ClipHub Stage 16B overlap Holder recycle ES5 loader. */' not in loader:
+              raise SystemExit('Stage16B loader baseline missing')
+          eval_anchor='''    try {\n        eval(transformRecycleSource(\n            transformCardHolderSource(\n                transformSource(decodeSource(loadPackedSource())))));\n'''
+          if loader.count(eval_anchor)!=1: raise SystemExit('Stage16B eval anchor mismatch')
+
+          safe_transform=r'''
+    function transformRecycleFixSource(source) {
+        var info;
+        var value;
+
+        source = replaceOnceStrict(source,
+            "MODULE_VERSION: 59", "MODULE_VERSION: 60",
+            "Stage16B1 module version");
+
+        source = replaceOnceStrict(source,
+            "        holderNewBuildCount: 0\n",
+            "        holderNewBuildCount: 0,\n" +
+            "        holderRebindAttemptCount: 0,\n" +
+            "        holderRebindEligibleCount: 0,\n" +
+            "        holderRebindIneligibleCount: 0,\n" +
+            "        holderRebindFailureCount: 0,\n" +
+            "        holderRebindLastRejectReason: \"\",\n" +
+            "        holderRebindLastFailureStage: \"\",\n" +
+            "        holderRebindLastError: \"\",\n" +
+            "        holderRebindRejectReasons: {},\n" +
+            "        holderRebindFailureStages: {}\n",
+            "Stage16B1 diagnostic metrics");
+
+        source = replaceOnceStrict(source,
+            "        scrollPerformanceState.holderNewBuildCount = 0;\n",
+            "        scrollPerformanceState.holderNewBuildCount = 0;\n" +
+            "        scrollPerformanceState.holderRebindAttemptCount = 0;\n" +
+            "        scrollPerformanceState.holderRebindEligibleCount = 0;\n" +
+            "        scrollPerformanceState.holderRebindIneligibleCount = 0;\n" +
+            "        scrollPerformanceState.holderRebindFailureCount = 0;\n" +
+            "        scrollPerformanceState.holderRebindLastRejectReason = \"\";\n" +
+            "        scrollPerformanceState.holderRebindLastFailureStage = \"\";\n" +
+            "        scrollPerformanceState.holderRebindLastError = \"\";\n" +
+            "        scrollPerformanceState.holderRebindRejectReasons = {};\n" +
+            "        scrollPerformanceState.holderRebindFailureStages = {};\n",
+            "Stage16B1 diagnostic reset");
+
+        source = replaceOnceStrict(source,
+            "            holderNewBuildCount:\n" +
+            "                Number(scrollPerformanceState.holderNewBuildCount),\n" +
+            "            pendingOrigin: virtualPendingOrigin,\n",
+            "            holderNewBuildCount:\n" +
+            "                Number(scrollPerformanceState.holderNewBuildCount),\n" +
+            "            holderRebindAttemptCount:\n" +
+            "                Number(scrollPerformanceState.holderRebindAttemptCount),\n" +
+            "            holderRebindEligibleCount:\n" +
+            "                Number(scrollPerformanceState.holderRebindEligibleCount),\n" +
+            "            holderRebindIneligibleCount:\n" +
+            "                Number(scrollPerformanceState.holderRebindIneligibleCount),\n" +
+            "            holderRebindFailureCount:\n" +
+            "                Number(scrollPerformanceState.holderRebindFailureCount),\n" +
+            "            holderRebindLastRejectReason:\n" +
+            "                String(scrollPerformanceState.holderRebindLastRejectReason || \"\"),\n" +
+            "            holderRebindLastFailureStage:\n" +
+            "                String(scrollPerformanceState.holderRebindLastFailureStage || \"\"),\n" +
+            "            holderRebindLastError:\n" +
+            "                String(scrollPerformanceState.holderRebindLastError || \"\"),\n" +
+            "            holderRebindRejectReasons:\n" +
+            "                scrollPerformanceState.holderRebindRejectReasons,\n" +
+            "            holderRebindFailureStages:\n" +
+            "                scrollPerformanceState.holderRebindFailureStages,\n" +
+            "            pendingOrigin: virtualPendingOrigin,\n",
+            "Stage16B1 diagnostic copy");
+
+        info = section(source,
+            "    function rebindResultCardHolder(holder, row, colors) {",
+            "\n    function makeResultCard(",
+            "Stage16B1 rebind function");
+        value = '''    function noteCardHolderRebindReason(map, reason) {\n'''+
+            '''        var key = String(reason || "unknown");\n'''+
+            '''        if (map[key] === undefined || map[key] === null) {\n'''+
+            '''            map[key] = 0;\n'''+
+            '''        }\n'''+
+            '''        map[key] = Number(map[key]) + 1;\n'''+
+            '''        return key;\n'''+
+            '''    }\n\n'''+
+            '''    function rebindResultCardHolder(holder, row, colors) {\n'''+
+            '''        var startedAt = Number(System.currentTimeMillis());\n'''+
+            '''        var elapsed;\n'''+
+            '''        var stage = "validate";\n'''+
+            '''        var oldRow;\n'''+
+            '''        var oldTags;\n'''+
+            '''        var newTags;\n'''+
+            '''        var oldSelected;\n'''+
+            '''        var newSelected;\n'''+
+            '''        var oldPinned;\n'''+
+            '''        var newPinned;\n'''+
+            '''        var oldPackage;\n'''+
+            '''        var newPackage;\n'''+
+            '''        var oldHasTags;\n'''+
+            '''        var newHasTags;\n'''+
+            '''        var reason;\n'''+
+            '''        scrollPerformanceState.holderRebindAttemptCount += 1;\n'''+
+            '''        if (holder === null || holder === undefined ||\n'''+
+            '''                row === null || row === undefined ||\n'''+
+            '''                holder.row === null || holder.row === undefined ||\n'''+
+            '''                holder.contentView === null || holder.contentView === undefined ||\n'''+
+            '''                holder.tagBadge === null || holder.tagBadge === undefined ||\n'''+
+            '''                holder.sourceView === null || holder.sourceView === undefined) {\n'''+
+            '''            reason = noteCardHolderRebindReason(\n'''+
+            '''                scrollPerformanceState.holderRebindRejectReasons,\n'''+
+            '''                "invalid_holder");\n'''+
+            '''            scrollPerformanceState.holderRebindIneligibleCount += 1;\n'''+
+            '''            scrollPerformanceState.holderRebindLastRejectReason = reason;\n'''+
+            '''            return false;\n'''+
+            '''        }\n'''+
+            '''        try {\n'''+
+            '''            oldRow = holder.row;\n'''+
+            '''            stage = "eligibility";\n'''+
+            '''            oldSelected = holder.selected === true;\n'''+
+            '''            newSelected = SELECTION_ENABLED && selectedItemId !== null &&\n'''+
+            '''                Number(selectedItemId) === Number(row.id);\n'''+
+            '''            oldPinned = holder.pinned === true;\n'''+
+            '''            newPinned = Number(row.is_pinned || 0) === 1;\n'''+
+            '''            oldPackage = String(holder.sourcePackage ||\n'''+
+            '''                oldRow.source_package || "");\n'''+
+            '''            newPackage = String(row.source_package || "");\n'''+
+            '''            oldTags = tagsForResult(oldRow);\n'''+
+            '''            newTags = tagsForResult(row);\n'''+
+            '''            oldHasTags = oldTags.length > 0;\n'''+
+            '''            newHasTags = newTags.length > 0;\n'''+
+            '''            reason = "";\n'''+
+            '''            if (oldSelected !== newSelected) {\n'''+
+            '''                reason = "selected_changed";\n'''+
+            '''            } else if (oldPinned !== newPinned) {\n'''+
+            '''                reason = "pinned_changed";\n'''+
+            '''            } else if (oldPackage !== newPackage) {\n'''+
+            '''                reason = "source_package_changed";\n'''+
+            '''            } else if (oldHasTags !== newHasTags) {\n'''+
+            '''                reason = "tag_presence_changed";\n'''+
+            '''            }\n'''+
+            '''            if (reason.length > 0) {\n'''+
+            '''                reason = noteCardHolderRebindReason(\n'''+
+            '''                    scrollPerformanceState.holderRebindRejectReasons, reason);\n'''+
+            '''                scrollPerformanceState.holderRebindIneligibleCount += 1;\n'''+
+            '''                scrollPerformanceState.holderRebindLastRejectReason = reason;\n'''+
+            '''                return false;\n'''+
+            '''            }\n'''+
+            '''            scrollPerformanceState.holderRebindEligibleCount += 1;\n'''+
+            '''            stage = "content_text";\n'''+
+            '''            holder.contentView.setText(String(resultPreviewText(row)));\n'''+
+            '''            stage = "tag_text";\n'''+
+            '''            holder.tagBadge.setText(String(\n'''+
+            '''                (newTags.length > 0 ? "●  " : "") +\n'''+
+            '''                tagSummary(newTags)));\n'''+
+            '''            stage = "tag_color";\n'''+
+            '''            holder.tagBadge.setTextColor(newTags.length > 0 ?\n'''+
+            '''                tagColorText(newTags[0], colors.accentStrong) :\n'''+
+            '''                colors.textTertiary);\n'''+
+            '''            stage = "source_text";\n'''+
+            '''            holder.sourceView.setText(String(sourceLabel(row) + " · " +\n'''+
+            '''                formatTime(row.last_copied_at)));\n'''+
+            '''            stage = "commit";\n'''+
+            '''            holder.row = row;\n'''+
+            '''            holder.itemId = Number(row.id);\n'''+
+            '''            holder.selected = newSelected;\n'''+
+            '''            holder.pinned = newPinned;\n'''+
+            '''            holder.sourcePackage = newPackage;\n'''+
+            '''            elapsed = Math.max(0, Number(System.currentTimeMillis()) - startedAt);\n'''+
+            '''            scrollPerformanceState.holderRebindCount += 1;\n'''+
+            '''            scrollPerformanceState.holderRebindLastMs = elapsed;\n'''+
+            '''            scrollPerformanceState.holderRebindMaxMs = Math.max(\n'''+
+            '''                Number(scrollPerformanceState.holderRebindMaxMs), elapsed);\n'''+
+            '''            return true;\n'''+
+            '''        } catch (error) {\n'''+
+            '''            scrollPerformanceState.holderRebindFailureCount += 1;\n'''+
+            '''            scrollPerformanceState.holderRebindLastFailureStage =\n'''+
+            '''                noteCardHolderRebindReason(\n'''+
+            '''                    scrollPerformanceState.holderRebindFailureStages, stage);\n'''+
+            '''            scrollPerformanceState.holderRebindLastError = String(error);\n'''+
+            '''            virtualState.lastError = "CardHolder rebind failed at " + stage +\n'''+
+            '''                ": " + String(error);\n'''+
+            '''            return false;\n'''+
+            '''        }\n'''+
+            '''    }\n''';
+        source = replaceSection(source, info, value);
+
+        if (source.indexOf("MODULE_VERSION: 60") < 0 ||
+                source.indexOf("holderRebindAttemptCount") < 0 ||
+                source.indexOf("holderRebindFailureStages") < 0 ||
+                source.indexOf("source_package_changed") < 0 ||
+                source.indexOf("holder.contentView.setText(String(resultPreviewText(row)))") < 0) {
+            throw new Error("Stage16B1 safe rebind wiring incomplete");
+        }
+        if (source.indexOf("replaceCardHolderChild(holder.contentRow") >= 0 ||
+                source.indexOf("replaceCardHolderChild(holder.card") >= 0 ||
+                source.indexOf("replaceCardHolderChild(holder.actionLayer") >= 0) {
+            throw new Error("Stage16B1 structural rebind still active");
+        }
+        return source;
+    }
+'''
+          loader=loader.replace(eval_anchor, safe_transform+'\n    try {\n        eval(transformRecycleFixSource(\n            transformRecycleSource(\n                transformCardHolderSource(\n                    transformSource(decodeSource(loadPackedSource()))))));\n',1)
+          loader=loader.replace('/* ClipHub Stage 16B overlap Holder recycle ES5 loader. */',
+                                '/* ClipHub Stage 16B.1 safe Holder rebind ES5 loader. */',1)
+          loader=loader.replace('?stage16bv13=','?stage16b1v14=',1)
+          loader=loader.replace('ch_11_filter.js Stage 16B loader failed:',
+                                'ch_11_filter.js Stage 16B.1 loader failed:',1)
+          loader_path.write_text(loader,encoding='utf-8')
+
+          parts=sorted(glob.glob('stage-assets/pagination-stage9/ch11_full_v8s_*.b64'))
+          packed=''.join(pathlib.Path(p).read_text(encoding='utf-8').strip() for p in parts)
+          stable=gzip.decompress(base64.b64decode(packed)).decode('utf-8')
+          if hashlib.sha256(stable.encode()).hexdigest()!='328608b7fa357c9262079f43289d692ea7ddf79d9416e6135023d55f4bff6940':
+              raise SystemExit('stable Filter56 source sha changed')
+          text=loader_path.read_text(encoding='utf-8')
+          start=text.index('    function replaceOnceStrict(')
+          end=text.index('\n    try {',start)
+          pure=text[start:end]
+          harness='var __source='+json.dumps(stable)+';\n'+pure+'\nvar __out=transformRecycleFixSource(transformRecycleSource(transformCardHolderSource(transformSource(__source))));\nrequire("fs").writeFileSync("/tmp/filter60.js",__out);\n'
+          pathlib.Path('/tmp/stage16b1_harness.js').write_text(harness,encoding='utf-8')
+
+          data=loader_path.read_bytes()
+          blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+          manifest['moduleSetVersion']='20260808.14'
+          found=False
+          for m in manifest['modules']:
+              if m['name']=='ch_11_filter.js':
+                  m['sha']=blob; found=True
+          if not found: raise SystemExit('filter manifest entry missing')
+          manifest_path.write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          print('loader_blob='+blob)
+          PY
+          node --check src/ch_11_filter.js
+          node /tmp/stage16b1_harness.js
+          node --check /tmp/filter60.js
+          ! grep -Eq '(^|[^A-Za-z0-9_])(let|const|class)[[:space:]]|=>' /tmp/filter60.js
+          grep -Fq 'MODULE_VERSION: 60' /tmp/filter60.js
+          grep -Fq 'holderRebindAttemptCount' /tmp/filter60.js
+          grep -Fq 'holderRebindFailureStages' /tmp/filter60.js
+          grep -Fq 'source_package_changed' /tmp/filter60.js
+          grep -Fq 'holder.contentView.setText(String(resultPreviewText(row)))' /tmp/filter60.js
+          grep -Fq 'var VIRTUAL_BEFORE_SCREENS = 3;' /tmp/filter60.js
+          grep -Fq 'var VIRTUAL_AFTER_SCREENS = 5;' /tmp/filter60.js
+          grep -Fq 'var VIRTUAL_UPDATE_DELAY_MS = 24;' /tmp/filter60.js
+          test "$(grep -Fo '.newSingleThreadExecutor();' /tmp/filter60.js | wc -l)" -eq 1
+          ! grep -Fq 'resultTagBadgeViews' /tmp/filter60.js
+          ! grep -Fq 'refreshRenderedTagBadges' /tmp/filter60.js
+          grep -Fq '"moduleSetVersion": "20260808.14"' module-manifest.json
+          git diff --check
+      - name: Commit Filter60 atomically
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm -f .github/workflows/beta_stage16b1_rebind_safe.yml .github/stage16b1-trigger.txt
+          git add src/ch_11_filter.js module-manifest.json
+          git diff --cached --check
+          git commit -m "修复 Beta Holder 安全重绑定路径"
+          git push
