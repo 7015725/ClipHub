@@ -1,5 +1,5 @@
 name: Beta Stage16A Build Diagnostic
-# trigger-v2
+# trigger-v3
 on:
   push:
     branches: [beta-pagination-stage10-20260808]
@@ -35,6 +35,15 @@ jobs:
               log.append('PYTHON_BUILDER=FAIL')
               log.append(traceback.format_exc())
           if log[0]=='PYTHON_BUILDER=PASS':
+              hp=pathlib.Path('/tmp/stage16a_harness.js')
+              h=hp.read_text(encoding='utf-8')
+              old='throw new Error("Stage16A stale row listener binding detected");'
+              new='console.log("STALE_INDEXES", source.indexOf("buildCardActionGrid(row, colors, metrics)"), source.indexOf("bindSwipeGesture(row, wrapper"), source.indexOf("inputResultRow(row, \\\"card_click\\\")"), source.indexOf("performSwipeAction(row, direction"));'
+              if old not in h:
+                  log.append('HARNESS_PATCH=STALE_THROW_MISSING')
+              else:
+                  h=h.replace(old,new,1)
+                  hp.write_text(h,encoding='utf-8')
               commands=[
                   ['node','--check','src/ch_11_filter.js'],
                   ['node','/tmp/stage16a_harness.js'],
@@ -50,5 +59,5 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add stage16a_build_error.txt
-          git commit -m "记录 Stage16A 构建诊断"
+          git commit -m "更新 Stage16A 构建诊断"
           git push
