@@ -1,0 +1,53 @@
+name: Beta Stage14 Scroll Layout Diagnostics
+on:
+  push:
+    branches: [beta-pagination-stage10-20260808]
+    paths:
+      - .github/workflows/beta_stage14_scroll_layout_diag.yml
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract layout and anchor paths
+        shell: bash
+        run: |
+          python - <<'PY'
+          import base64,gzip,glob,pathlib,hashlib,re
+          parts=sorted(glob.glob('stage-assets/pagination-stage9/ch11_full_v8s_*.b64'))
+          if len(parts)!=8: raise SystemExit('expected 8 v8s parts')
+          packed=''.join(pathlib.Path(p).read_text(encoding='utf-8').strip() for p in parts)
+          src=gzip.decompress(base64.b64decode(packed)).decode('utf-8')
+          expected='420e512787cf6dd223115585f89f7a749fa0687bc1b50700b9cec67e3e541698'
+          if hashlib.sha256(src.encode()).hexdigest()!=expected: raise SystemExit('Filter55 source sha mismatch')
+          out=[]
+          needles=[
+            ('MEASURE','    function measureVirtualCards()',4200),
+            ('CAPTURE','    function captureScrollAnchor()',3200),
+            ('RESTORE','    function restoreScrollAnchor()',3200),
+            ('REBUILD','    function rebuildVirtualWindow(',8500),
+            ('SCHEDULE','    function scheduleVirtualUpdate(origin, force)',3600)
+          ]
+          for label,needle,size in needles:
+              pos=src.index(needle)
+              out.append('===== '+label+' @ '+str(pos)+' =====\n')
+              out.append(src[pos:pos+size])
+              out.append('\n\n')
+          for name in ['measureVirtualCards','captureScrollAnchor','restoreScrollAnchor','scheduleVirtualUpdate','rebuildVirtualWindow']:
+              out.append('===== CALLS '+name+' =====\n')
+              for m in re.finditer(re.escape(name)+'\\s*\\(',src):
+                  s=max(0,m.start()-240); e=min(len(src),m.start()+520)
+                  out.append(src[s:e]+'\n---\n')
+          pathlib.Path('stage14_scroll_layout_diag.txt').write_text(''.join(out),encoding='utf-8')
+          PY
+      - name: Commit diagnostics
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm -f .github/workflows/beta_stage14_scroll_layout_diag.yml
+          git add stage14_scroll_layout_diag.txt
+          git commit -m "记录 Stage14 滚动布局诊断"
+          git push
