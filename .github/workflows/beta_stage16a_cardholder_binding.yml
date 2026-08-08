@@ -1,4 +1,5 @@
 name: Beta Stage16A CardHolder Safe Binding
+# trigger-v2
 on:
   push:
     branches: [beta-pagination-stage10-20260808]
@@ -191,7 +192,6 @@ jobs:
                                 'ch_11_filter.js Stage 16A loader failed:',1)
           loader_path.write_text(loader,encoding='utf-8')
 
-          # Build a pure-JS harness and verify the transformed Filter58 source parses.
           parts=sorted(glob.glob('stage-assets/pagination-stage9/ch11_full_v8s_*.b64'))
           packed=''.join(pathlib.Path(p).read_text(encoding='utf-8').strip() for p in parts)
           stable=gzip.decompress(base64.b64decode(packed)).decode('utf-8')
