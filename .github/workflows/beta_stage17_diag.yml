@@ -1,0 +1,20 @@
+name: Beta Stage17.1 Build Via Stable Channel
+on:
+  push:
+    branches: [beta-pagination-stage10-20260808]
+    paths:
+      - .github/stage17-diag-trigger.txt
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build Filter66
+        shell: bash
+        run: |
+          set -euo pipefail
+          python stage17_1_debug_wrapper.py
