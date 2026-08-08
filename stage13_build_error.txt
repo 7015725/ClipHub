@@ -1,0 +1,4 @@
+  File "<stdin>", line 12
+    anchor='''            resultActionViews = [];\n            deleteUndoView = null;\n'''
+                          ^^^^^^^^^^^^^^^^^
+SyntaxError: invalid syntax
