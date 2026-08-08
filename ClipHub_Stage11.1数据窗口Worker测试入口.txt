@@ -268,9 +268,9 @@
     }
 
     try {
-        JSON.stringify(run());
+        return JSON.stringify(run());
     } catch (error) {
-        JSON.stringify({
+        return JSON.stringify({
             ok: false,
             project: "ClipHub",
             testEntry: "stage11_1_hydration_worker_probe",
