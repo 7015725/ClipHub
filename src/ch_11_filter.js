@@ -15,7 +15,7 @@
     var MessageDigest = Packages.java.security.MessageDigest;
     var System = Packages.java.lang.System;
 
-    var REF = "agent/beta-list-preview-on-demand-20260808";
+    var REF = "beta-pagination-stage10-20260808";
     var PARTS = [
         "stage-assets/pagination-stage9/ch11_full_v5_00.b64",
         "stage-assets/pagination-stage9/ch11_full_v5_01.b64",

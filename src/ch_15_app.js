@@ -423,7 +423,11 @@
             contentReady: filter.contentReady === true,
             windowCacheBuilt: filter.panelBuilt === true,
             windowCacheReused: filter.lastShowReused === true,
-            startupPerformance: filter.performance || null
+            startupPerformance: filter.performance || null,
+            hydrationWorker: safeState(
+                ClipHub.Filter, "getHydrationWorkerState", null),
+            scrollPerformance: safeState(
+                ClipHub.Filter, "getScrollPerformanceState", null)
         };
     }
 

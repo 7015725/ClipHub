@@ -14,9 +14,9 @@
 
     var OWNER = "7015725";
     var REPO = "ClipHub";
-    var REF = "agent/beta-list-preview-on-demand-20260808";
+    var REF = "beta-pagination-stage10-20260808";
     var ENTRY_PATH = "ClipHub.js";
-    var EXPECTED_MODULE_SET_VERSION = "20260808.03";
+    var EXPECTED_MODULE_SET_VERSION = "20260808.04";
     var TEST_ENTRY_VERSION = 1;
     var RUNTIME_NAME = "ClipHubPaginationStage11PreviewOnDemand";
     var PREVIEW_LIMIT = 200;

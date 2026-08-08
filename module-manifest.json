@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260808.03",
+  "moduleSetVersion": "20260808.04",
   "entryMinVersion": 6,
-  "sourceRef": "agent/beta-list-preview-on-demand-20260808",
+  "sourceRef": "beta-pagination-stage10-20260808",
   "modules": [
     {
       "name": "ch_01_base.js",
@@ -57,7 +57,7 @@
     {
       "name": "ch_11_filter.js",
       "path": "src/ch_11_filter.js",
-      "sha": "e59cb8d4ecf5a529477301e49346db94fba29cdd"
+      "sha": "5bce876ca3e129c044d6db104e779d99b35e7224"
     },
     {
       "name": "ch_12_translation.js",
@@ -77,7 +77,7 @@
     {
       "name": "ch_15_app.js",
       "path": "src/ch_15_app.js",
-      "sha": "ff60665e8ddd34bd96fa276cc7b632ca73a56845"
+      "sha": "bc9531f5d6afa6df628c953618101b4f6d228e84"
     }
   ]
 }
