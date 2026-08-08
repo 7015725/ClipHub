@@ -1,11 +1,11 @@
-name: Beta Stage17 Diagnostic
+name: Beta Stage17 Build
 on:
   push:
     branches: [beta-pagination-stage10-20260808]
     paths:
       - .github/stage17-diag-trigger.txt
 jobs:
-  diag:
+  build:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -13,50 +13,194 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Generate Filter64 and inspect AJAX path
+      - name: Build Filter65
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
-          import base64,gzip,glob,json,pathlib,re,subprocess
-          loader=pathlib.Path('src/ch_11_filter.js').read_text(encoding='utf-8')
-          if 'Stage 16C compatibility-key recycle selection' not in loader:
-              raise SystemExit('expected Stage16C baseline')
+          import base64,gzip,glob,hashlib,json,pathlib,re,subprocess
+          root=pathlib.Path('.')
+          loader_path=root/'src/ch_11_filter.js'
+          manifest_path=root/'module-manifest.json'
+          loader=loader_path.read_text(encoding='utf-8')
+          manifest=json.loads(manifest_path.read_text(encoding='utf-8'))
+          if manifest.get('moduleSetVersion')!='20260808.18': raise SystemExit('expected .18 baseline')
+          if manifest.get('sourceRef')!='beta-pagination-stage10-20260808': raise SystemExit('wrong sourceRef')
+          if 'Stage 16C compatibility-key recycle selection' not in loader: raise SystemExit('Stage16C loader baseline missing')
           m=re.search(r'var PATCH_B64 =\n((?:\s*"[A-Za-z0-9+/=]+"\s*\+?\n?)+);',loader)
           if not m: raise SystemExit('PATCH_B64 missing')
           patch=base64.b64decode(''.join(re.findall(r'"([A-Za-z0-9+/=]+)"',m.group(1)))).decode('utf-8')
+
+          def b64txt(text):
+              return base64.b64encode(text.encode('utf-8')).decode('ascii')
+
+          vars_snip='''    var AJAX_STAGED_ATTACH_BUDGET_MS = 8;\n    var AJAX_STAGED_ATTACH_DELAY_MS = 8;\n    var AJAX_STAGED_ATTACH_MAX_CARDS_PER_BATCH = 3;\n    var AJAX_STAGED_ATTACH_MIN_CARDS = 8;\n    var ajaxStagedAttachState = {\n        active: false,\n        generation: 0,\n        targetStart: 0,\n        targetEnd: -1,\n        nextIndex: 0,\n        colors: null,\n        appendedRows: null,\n        deferredOrigin: \"\",\n        deferredForce: false,\n        startedAtMs: 0\n    };\n'''
+          metrics_init='''        stagedAttachStartCount: 0,\n        stagedAttachBatchCount: 0,\n        stagedAttachCardCount: 0,\n        stagedAttachCompletedCount: 0,\n        stagedAttachCancelCount: 0,\n        stagedAttachFallbackCount: 0,\n        stagedAttachDeferredUpdateCount: 0,\n        stagedAttachPendingCount: 0,\n        stagedAttachLastBatchMs: 0,\n        stagedAttachMaxBatchMs: 0,\n        stagedAttachLastBatchCards: 0,\n        stagedAttachMaxCardsPerBatch: 0,\n        stagedAttachLastTotalCards: 0,\n        stagedAttachLastTotalMs: 0,\n        stagedAttachMaxTotalMs: 0,\n        stagedAttachLastCancelReason: \"\",\n'''
+          metrics_reset='''        scrollPerformanceState.stagedAttachStartCount = 0;\n        scrollPerformanceState.stagedAttachBatchCount = 0;\n        scrollPerformanceState.stagedAttachCardCount = 0;\n        scrollPerformanceState.stagedAttachCompletedCount = 0;\n        scrollPerformanceState.stagedAttachCancelCount = 0;\n        scrollPerformanceState.stagedAttachFallbackCount = 0;\n        scrollPerformanceState.stagedAttachDeferredUpdateCount = 0;\n        scrollPerformanceState.stagedAttachPendingCount = 0;\n        scrollPerformanceState.stagedAttachLastBatchMs = 0;\n        scrollPerformanceState.stagedAttachMaxBatchMs = 0;\n        scrollPerformanceState.stagedAttachLastBatchCards = 0;\n        scrollPerformanceState.stagedAttachMaxCardsPerBatch = 0;\n        scrollPerformanceState.stagedAttachLastTotalCards = 0;\n        scrollPerformanceState.stagedAttachLastTotalMs = 0;\n        scrollPerformanceState.stagedAttachMaxTotalMs = 0;\n        scrollPerformanceState.stagedAttachLastCancelReason = \"\";\n'''
+          metrics_copy='''            stagedAttachStartCount:\n                Number(scrollPerformanceState.stagedAttachStartCount),\n            stagedAttachBatchCount:\n                Number(scrollPerformanceState.stagedAttachBatchCount),\n            stagedAttachCardCount:\n                Number(scrollPerformanceState.stagedAttachCardCount),\n            stagedAttachCompletedCount:\n                Number(scrollPerformanceState.stagedAttachCompletedCount),\n            stagedAttachCancelCount:\n                Number(scrollPerformanceState.stagedAttachCancelCount),\n            stagedAttachFallbackCount:\n                Number(scrollPerformanceState.stagedAttachFallbackCount),\n            stagedAttachDeferredUpdateCount:\n                Number(scrollPerformanceState.stagedAttachDeferredUpdateCount),\n            stagedAttachPendingCount:\n                Number(scrollPerformanceState.stagedAttachPendingCount),\n            stagedAttachLastBatchMs:\n                Number(scrollPerformanceState.stagedAttachLastBatchMs),\n            stagedAttachMaxBatchMs:\n                Number(scrollPerformanceState.stagedAttachMaxBatchMs),\n            stagedAttachLastBatchCards:\n                Number(scrollPerformanceState.stagedAttachLastBatchCards),\n            stagedAttachMaxCardsPerBatch:\n                Number(scrollPerformanceState.stagedAttachMaxCardsPerBatch),\n            stagedAttachLastTotalCards:\n                Number(scrollPerformanceState.stagedAttachLastTotalCards),\n            stagedAttachLastTotalMs:\n                Number(scrollPerformanceState.stagedAttachLastTotalMs),\n            stagedAttachMaxTotalMs:\n                Number(scrollPerformanceState.stagedAttachMaxTotalMs),\n            stagedAttachLastCancelReason:\n                String(scrollPerformanceState.stagedAttachLastCancelReason || \"\"),\n'''
+          helpers='''    function cancelStagedAjaxAttach(reason) {\n        if (ajaxStagedAttachState === null ||\n                ajaxStagedAttachState === undefined ||\n                ajaxStagedAttachState.active !== true) {\n            return false;\n        }\n        ajaxStagedAttachState.active = false;\n        ajaxStagedAttachState.colors = null;\n        ajaxStagedAttachState.appendedRows = null;\n        ajaxStagedAttachState.deferredOrigin = \"\";\n        ajaxStagedAttachState.deferredForce = false;\n        scrollPerformanceState.stagedAttachPendingCount = 0;\n        scrollPerformanceState.stagedAttachCancelCount += 1;\n        scrollPerformanceState.stagedAttachLastCancelReason =\n            String(reason || \"cancelled\");\n        ajaxFooterState.loading = false;\n        return true;\n    }\n\n    function deferVirtualUpdateDuringStagedAttach(origin, force) {\n        var requestedOrigin = String(origin || \"virtual_rebuild\");\n        if (ajaxStagedAttachState.active !== true) { return false; }\n        if (force === true ||\n                ajaxStagedAttachState.deferredOrigin.length === 0 ||\n                ajaxStagedAttachState.deferredForce !== true) {\n            ajaxStagedAttachState.deferredOrigin = requestedOrigin;\n        }\n        if (force === true) {\n            ajaxStagedAttachState.deferredForce = true;\n        }\n        virtualState.updateDeferred = true;\n        scrollPerformanceState.stagedAttachDeferredUpdateCount += 1;\n        return true;\n    }\n\n    function postStagedAjaxAttachBatch(generation, delayMs) {\n        if (mainHandler === null) { return false; }\n        mainHandler.postDelayed(new Packages.java.lang.Runnable({\n            run: function () {\n                runStagedAjaxAttachBatch(generation);\n            }\n        }), Math.max(0, Number(delayMs || 0)));\n        return true;\n    }\n\n    function finishStagedAjaxAttach(generation) {\n        var rows;\n        var colors;\n        var deferredOrigin;\n        var deferredForce;\n        var totalElapsed;\n        var result;\n        if (ajaxStagedAttachState.active !== true ||\n                Number(ajaxStagedAttachState.generation) !== Number(generation) ||\n                Number(ajaxAppendGeneration) !== Number(generation) ||\n                !state.panelAttached) {\n            return false;\n        }\n        rows = ajaxStagedAttachState.appendedRows;\n        colors = ajaxStagedAttachState.colors;\n        deferredOrigin = String(ajaxStagedAttachState.deferredOrigin || \"\");\n        deferredForce = ajaxStagedAttachState.deferredForce === true;\n        totalElapsed = Math.max(0, Number(System.currentTimeMillis()) -\n            Number(ajaxStagedAttachState.startedAtMs));\n        ajaxStagedAttachState.active = false;\n        ajaxStagedAttachState.colors = null;\n        ajaxStagedAttachState.appendedRows = null;\n        ajaxStagedAttachState.deferredOrigin = \"\";\n        ajaxStagedAttachState.deferredForce = false;\n        scrollPerformanceState.stagedAttachPendingCount = 0;\n        scrollPerformanceState.stagedAttachCompletedCount += 1;\n        scrollPerformanceState.stagedAttachLastTotalMs = totalElapsed;\n        scrollPerformanceState.stagedAttachMaxTotalMs = Math.max(\n            Number(scrollPerformanceState.stagedAttachMaxTotalMs), totalElapsed);\n        virtualState.updateCount += 1;\n        virtualState.rebuildCount += 1;\n        virtualState.lastOrigin = \"ajax_append_staged\";\n        virtualState.lastError = null;\n        virtualState.updateDeferred = false;\n        state.resultCardCount = virtualCardHost === null ? 0 :\n            Number(virtualCardHost.getChildCount());\n        result = finishAjaxAppendRender(generation, rows, colors);\n        if (deferredOrigin.length > 0 && state.panelAttached &&\n                mainHandler !== null) {\n            scheduleVirtualUpdate(deferredOrigin, deferredForce);\n        }\n        return result;\n    }\n\n    function recoverStagedAjaxAttach(generation, reason) {\n        var rows = ajaxStagedAttachState.appendedRows;\n        var colors = ajaxStagedAttachState.colors;\n        if (Number(generation) !== Number(ajaxAppendGeneration)) {\n            cancelStagedAjaxAttach(reason);\n            return false;\n        }\n        cancelStagedAjaxAttach(reason);\n        if (!state.panelAttached) { return false; }\n        rebuildVirtualWindow(\n            \"ajax_append_recover\", true,\n            virtualState.firstVisibleIndex);\n        return finishAjaxAppendRender(generation, rows, colors);\n    }\n\n    function runStagedAjaxAttachBatch(generation) {\n        var startedAt;\n        var elapsed = 0;\n        var batchCards = 0;\n        var index;\n        var params;\n        var wrapper;\n        var cardRef;\n        var holderRef;\n        var actionRef;\n        if (ajaxStagedAttachState.active !== true ||\n                Number(ajaxStagedAttachState.generation) !== Number(generation)) {\n            return false;\n        }\n        if (Number(ajaxAppendGeneration) !== Number(generation)) {\n            cancelStagedAjaxAttach(\"stale_generation\");\n            return false;\n        }\n        if (!state.panelAttached || virtualCardHost === null) {\n            cancelStagedAjaxAttach(\"panel_detached\");\n            return false;\n        }\n        startedAt = Number(System.currentTimeMillis());\n        while (Number(ajaxStagedAttachState.nextIndex) <=\n                Number(ajaxStagedAttachState.targetEnd)) {\n            index = Number(ajaxStagedAttachState.nextIndex);\n            if (index < 0 || index >= previewRows.length ||\n                    previewRows[index] === null ||\n                    previewRows[index] === undefined) {\n                return recoverStagedAjaxAttach(\n                    generation, \"row_missing\");\n            }\n            params = new LinearLayout.LayoutParams(\n                LinearLayout.LayoutParams.MATCH_PARENT,\n                LinearLayout.LayoutParams.WRAP_CONTENT);\n            params.bottomMargin = dp(6);\n            wrapper = makeResultCard(previewRows[index],\n                ajaxStagedAttachState.colors);\n            cardRef = resultCardViews.pop();\n            holderRef = resultCardHolders.pop();\n            actionRef = resultActionViews.pop();\n            virtualCardHost.addView(wrapper, params);\n            resultCardViews.push(cardRef);\n            resultCardHolders.push(holderRef);\n            resultActionViews.push(actionRef);\n            virtualRenderedItemIds.push(Number(previewRows[index].id));\n            virtualRenderedSignatures.push(virtualRenderSignature(\n                previewRows[index], ajaxStagedAttachState.colors));\n            scrollPerformanceState.createdViewCount += 1;\n            scrollPerformanceState.structuralInsertCount += 1;\n            scrollPerformanceState.stagedAttachCardCount += 1;\n            ajaxStagedAttachState.nextIndex = index + 1;\n            batchCards += 1;\n            elapsed = Math.max(0, Number(System.currentTimeMillis()) - startedAt);\n            if (batchCards >= AJAX_STAGED_ATTACH_MAX_CARDS_PER_BATCH ||\n                    elapsed >= AJAX_STAGED_ATTACH_BUDGET_MS) {\n                break;\n            }\n        }\n        elapsed = Math.max(0, Number(System.currentTimeMillis()) - startedAt);\n        scrollPerformanceState.stagedAttachBatchCount += 1;\n        scrollPerformanceState.stagedAttachLastBatchMs = elapsed;\n        scrollPerformanceState.stagedAttachMaxBatchMs = Math.max(\n            Number(scrollPerformanceState.stagedAttachMaxBatchMs), elapsed);\n        scrollPerformanceState.stagedAttachLastBatchCards = batchCards;\n        scrollPerformanceState.stagedAttachMaxCardsPerBatch = Math.max(\n            Number(scrollPerformanceState.stagedAttachMaxCardsPerBatch),\n            batchCards);\n        scrollPerformanceState.stagedAttachPendingCount = Math.max(0,\n            Number(ajaxStagedAttachState.targetEnd) -\n            Number(ajaxStagedAttachState.nextIndex) + 1);\n        scrollPerformanceState.viewRebuildLastMs = elapsed;\n        scrollPerformanceState.viewRebuildMaxMs = Math.max(\n            Number(scrollPerformanceState.viewRebuildMaxMs), elapsed);\n        virtualState.firstRenderedIndex =\n            Number(ajaxStagedAttachState.targetStart);\n        virtualState.lastRenderedIndex = Math.max(\n            Number(ajaxStagedAttachState.targetStart) - 1,\n            Number(ajaxStagedAttachState.nextIndex) - 1);\n        virtualState.topSpacerPx = setVirtualSpacerHeight(\n            virtualTopSpacer, virtualHeightRange(0,\n                virtualState.firstRenderedIndex));\n        virtualState.bottomSpacerPx = setVirtualSpacerHeight(\n            virtualBottomSpacer, virtualHeightRange(\n                virtualState.lastRenderedIndex + 1, previewRows.length));\n        state.resultCardCount = Number(virtualCardHost.getChildCount());\n        if (elapsed > 32) {\n            scrollPerformanceState.slowRebuildCount += 1;\n            scrollPerformanceState.slowRebuildSamples.push({\n                origin: \"ajax_append_stage\",\n                force: false,\n                mode: \"staged\",\n                elapsedMs: elapsed,\n                rangeStart: Number(ajaxStagedAttachState.targetStart),\n                rangeEnd: Number(ajaxStagedAttachState.targetEnd),\n                oldCount: Math.max(0, Number(virtualCardHost.getChildCount()) - batchCards),\n                newCount: Number(virtualCardHost.getChildCount()),\n                created: batchCards,\n                removed: 0,\n                reused: 0,\n                recycled: 0,\n                newBuilt: batchCards,\n                measureMs: 0,\n                keyedMs: 0,\n                signatureMs: 0,\n                structureMs: elapsed\n            });\n            while (scrollPerformanceState.slowRebuildSamples.length > 8) {\n                scrollPerformanceState.slowRebuildSamples.shift();\n            }\n        }\n        if (Number(ajaxStagedAttachState.nextIndex) <=\n                Number(ajaxStagedAttachState.targetEnd)) {\n            if (!postStagedAjaxAttachBatch(\n                    generation, AJAX_STAGED_ATTACH_DELAY_MS)) {\n                return recoverStagedAjaxAttach(\n                    generation, \"post_failed\");\n            }\n            return true;\n        }\n        return finishStagedAjaxAttach(generation);\n    }\n\n    function startStagedAjaxAttach(generation, appendedRows, colors) {\n        var range;\n        var oldCount;\n        var oldStart;\n        var oldEnd;\n        var removeTop;\n        var removeIndex;\n        var addCount;\n        if (mainHandler === null || virtualCardHost === null ||\n                !state.panelAttached || activeSwipeCard !== null) {\n            scrollPerformanceState.stagedAttachFallbackCount += 1;\n            return false;\n        }\n        range = virtualTargetRange(virtualState.firstVisibleIndex);\n        oldCount = Number(virtualCardHost.getChildCount());\n        oldStart = Number(virtualState.firstRenderedIndex);\n        oldEnd = Number(virtualState.lastRenderedIndex);\n        if (oldCount <= 0 || oldEnd < oldStart ||\n                range.start < oldStart || range.start > oldEnd ||\n                range.end <= oldEnd ||\n                virtualRenderedItemIds.length !== oldCount ||\n                virtualRenderedSignatures.length !== oldCount ||\n                resultCardViews.length !== oldCount ||\n                resultCardHolders.length !== oldCount ||\n                resultActionViews.length !== oldCount) {\n            scrollPerformanceState.stagedAttachFallbackCount += 1;\n            return false;\n        }\n        addCount = Math.max(0, Number(range.end) - oldEnd);\n        if (addCount < AJAX_STAGED_ATTACH_MIN_CARDS) {\n            scrollPerformanceState.stagedAttachFallbackCount += 1;\n            return false;\n        }\n        removeTop = Math.max(0, Number(range.start) - oldStart);\n        for (removeIndex = 0; removeIndex < removeTop; removeIndex += 1) {\n            virtualCardHost.removeViewAt(0);\n            virtualRenderedItemIds.shift();\n            virtualRenderedSignatures.shift();\n            resultCardViews.shift();\n            resultCardHolders.shift();\n            resultActionViews.shift();\n            scrollPerformanceState.removedViewCount += 1;\n            scrollPerformanceState.structuralRemoveCount += 1;\n        }\n        ajaxStagedAttachState.active = true;\n        ajaxStagedAttachState.generation = Number(generation);\n        ajaxStagedAttachState.targetStart = Number(range.start);\n        ajaxStagedAttachState.targetEnd = Number(range.end);\n        ajaxStagedAttachState.nextIndex = oldEnd + 1;\n        ajaxStagedAttachState.colors = colors;\n        ajaxStagedAttachState.appendedRows = appendedRows;\n        ajaxStagedAttachState.deferredOrigin = \"\";\n        ajaxStagedAttachState.deferredForce = false;\n        ajaxStagedAttachState.startedAtMs = Number(System.currentTimeMillis());\n        virtualState.firstVisibleIndex = Number(range.first);\n        virtualState.lastVisibleIndex = Number(range.last);\n        virtualState.firstRenderedIndex = Number(range.start);\n        virtualState.lastRenderedIndex = oldEnd;\n        virtualState.topSpacerPx = setVirtualSpacerHeight(\n            virtualTopSpacer, virtualHeightRange(0, range.start));\n        virtualState.bottomSpacerPx = setVirtualSpacerHeight(\n            virtualBottomSpacer, virtualHeightRange(oldEnd + 1, previewRows.length));\n        state.resultCardCount = Number(virtualCardHost.getChildCount());\n        scrollPerformanceState.viewRebuildCount += 1;\n        scrollPerformanceState.stagedAttachStartCount += 1;\n        scrollPerformanceState.stagedAttachLastTotalCards = addCount;\n        scrollPerformanceState.stagedAttachPendingCount = addCount;\n        if (!postStagedAjaxAttachBatch(generation, 0)) {\n            cancelStagedAjaxAttach(\"initial_post_failed\");\n            scrollPerformanceState.stagedAttachFallbackCount += 1;\n            return false;\n        }\n        return true;\n    }\n\n'''
+          start_func='''    function startAjaxAppendRender(appendedRows) {\n        var colors = palette();\n        captureScrollAnchor();\n        if (loadMoreView !== null) {\n            try {\n                if (loadMoreView.getParent() !== null) {\n                    loadMoreView.getParent()\n                        .removeView(loadMoreView);\n                }\n            } catch (ignoredFooterRemove) {}\n        }\n        loadMoreView = null;\n        cancelStagedAjaxAttach(\"superseded_ajax\");\n        ajaxAppendGeneration += 1;\n        ajaxFooterState.loading = true;\n        ajaxFooterState.renderBatchCount += 1;\n        if (startStagedAjaxAttach(\n                ajaxAppendGeneration, appendedRows, colors)) {\n            return true;\n        }\n        rebuildVirtualWindow(\n            \"ajax_append\", false,\n            virtualState.firstVisibleIndex);\n        return finishAjaxAppendRender(\n            ajaxAppendGeneration,\n            appendedRows, colors);\n    }\n'''
+          rebuild_guard='''        if (ajaxStagedAttachState.active === true) {\n            deferVirtualUpdateDuringStagedAttach(origin, force);\n            return false;\n        }\n'''
+
+          stage17=r'''
+    function stage17DecodeText(encoded) {
+        return String(new JavaString(
+            Base64.decode(String(encoded), Base64.DEFAULT), "UTF-8"));
+    }
+
+    function transformStage17Source(source) {
+        var info;
+        var value;
+        source = replaceOnceStrict(source,
+            "MODULE_VERSION: 64", "MODULE_VERSION: 65",
+            "Stage17 module version");
+        source = replaceOnceStrict(source,
+            "    var ajaxAppendGeneration = 0;\n",
+            "    var ajaxAppendGeneration = 0;\n" +
+                stage17DecodeText("__VARS__"),
+            "Stage17 vars");
+        source = replaceOnceStrict(source,
+            "        slowRebuildSamples: [],\n",
+            "        slowRebuildSamples: [],\n" +
+                stage17DecodeText("__METRICS_INIT__"),
+            "Stage17 metrics init");
+        source = replaceOnceStrict(source,
+            "        scrollPerformanceState.slowRebuildSamples = [];\n",
+            "        scrollPerformanceState.slowRebuildSamples = [];\n" +
+                stage17DecodeText("__METRICS_RESET__"),
+            "Stage17 metrics reset");
+        source = replaceOnceStrict(source,
+            "            slowRebuildSamples:\n" +
+            "                scrollPerformanceState.slowRebuildSamples.slice(0),\n",
+            "            slowRebuildSamples:\n" +
+            "                scrollPerformanceState.slowRebuildSamples.slice(0),\n" +
+                stage17DecodeText("__METRICS_COPY__"),
+            "Stage17 metrics copy");
+        source = replaceOnceStrict(source,
+            "    function finishAjaxAppendRender(generation,\n" +
+            "            appendedRows, colors) {\n",
+            stage17DecodeText("__HELPERS__") +
+            "    function finishAjaxAppendRender(generation,\n" +
+            "            appendedRows, colors) {\n",
+            "Stage17 helpers");
+        info = section(source,
+            "    function startAjaxAppendRender(appendedRows) {",
+            "\n    function ",
+            "Stage17 start AJAX render");
+        source = replaceSection(source, info,
+            stage17DecodeText("__START_FUNC__").replace(/\n$/, ""));
+        info = section(source,
+            "    function rebuildVirtualWindow(origin, force, preferredIndex) {",
+            "\n    function ",
+            "Stage17 rebuild guard");
+        value = info.text;
+        value = replaceOnceStrict(value,
+            "        if (virtualCardHost === null || !state.panelAttached) {\n" +
+            "            return false;\n" +
+            "        }\n",
+            "        if (virtualCardHost === null || !state.panelAttached) {\n" +
+            "            return false;\n" +
+            "        }\n" + stage17DecodeText("__REBUILD_GUARD__"),
+            "Stage17 defer virtual update");
+        source = replaceSection(source, info, value);
+        source = replaceOnceStrict(source,
+            "    function resetVirtualState(clearHeights) {\n" +
+            "        virtualGeneration += 1;\n",
+            "    function resetVirtualState(clearHeights) {\n" +
+            "        cancelStagedAjaxAttach(\"virtual_reset\");\n" +
+            "        virtualGeneration += 1;\n",
+            "Stage17 virtual reset cancel");
+        source = replaceOnceStrict(source,
+            "    function closePanel(options) {\n" +
+            "        var result;\n" +
+            "        var hadTransientLayer;\n" +
+            "        options = options || {};\n",
+            "    function closePanel(options) {\n" +
+            "        var result;\n" +
+            "        var hadTransientLayer;\n" +
+            "        options = options || {};\n" +
+            "        cancelStagedAjaxAttach(\"close_panel\");\n",
+            "Stage17 close cancel");
+        if (source.indexOf("MODULE_VERSION: 65") < 0 ||
+                source.indexOf("AJAX_STAGED_ATTACH_BUDGET_MS = 8") < 0 ||
+                source.indexOf("AJAX_STAGED_ATTACH_MAX_CARDS_PER_BATCH = 3") < 0 ||
+                source.indexOf("startStagedAjaxAttach") < 0 ||
+                source.indexOf("stagedAttachMaxBatchMs") < 0 ||
+                source.indexOf("cancelStagedAjaxAttach(\"close_panel\")") < 0 ||
+                source.indexOf("cancelStagedAjaxAttach(\"virtual_reset\")") < 0) {
+            throw new Error("Stage17 wiring incomplete");
+        }
+        return source;
+    }
+'''
+          replacements={
+              '__VARS__':b64txt(vars_snip),
+              '__METRICS_INIT__':b64txt(metrics_init),
+              '__METRICS_RESET__':b64txt(metrics_reset),
+              '__METRICS_COPY__':b64txt(metrics_copy),
+              '__HELPERS__':b64txt(helpers),
+              '__START_FUNC__':b64txt(start_func),
+              '__REBUILD_GUARD__':b64txt(rebuild_guard),
+          }
+          for key,val in replacements.items(): stage17=stage17.replace(key,val)
+          patch=patch.rstrip()+"\n\n"+stage17.strip()+"\n"
+          enc=base64.b64encode(patch.encode()).decode()
+          pieces=[enc[i:i+120] for i in range(0,len(enc),120)]
+          assignment='var PATCH_B64 =\n'+''.join('        '+json.dumps(p)+(' +\n' if i<len(pieces)-1 else ';\n') for i,p in enumerate(pieces))
+          loader=loader[:m.start()]+assignment+loader[m.end():]
+
+          start=loader.index('        var newEval =\n')
+          end=loader.index('        loader = replaceOnce(loader, oldEval, newEval, "baseline eval");',start)
+          new_block='''        var newEval =
+  patchSourceText() + "\\n" +
+  "    try {\\n" +
+  "        eval(transformStage17Source(transformStage16CSource(transformStage16B4Source(transformStage16B3Source(transformStage16B2Source(transformRecycleFixSource(transformRecycleSource(transformCardHolderSource(transformSource(decodeSource(loadPackedSource())))))))))));\\n";
+'''
+          loader=loader[:start]+new_block+loader[end:]
+          loader=loader.replace('/* ClipHub Stage 16C compatibility-key recycle selection ES5 loader. */','/* ClipHub Stage 17 AJAX staged attach ES5 loader. */',1)
+          loader=loader.replace('?stage16cv18=','?stage17v19=',1)
+          loader=loader.replace('ch_11_filter.js Stage 16C loader failed:','ch_11_filter.js Stage 17 loader failed:',1)
+          loader=loader.replace('ch_11_filter.js Stage 16C wrapper failed:','ch_11_filter.js Stage 17 wrapper failed:',1)
+          loader_path.write_text(loader,encoding='utf-8')
+
           baseline=subprocess.check_output(['git','show','338a811e538ab526b59eed05102d4f4b66f19953:src/ch_11_filter.js'],text=True)
           s=baseline.index('    function replaceOnceStrict('); e=baseline.index('\n    try {',s)
           pure=baseline[s:e]
           packed=''.join(pathlib.Path(p).read_text(encoding='utf-8').strip() for p in sorted(glob.glob('stage-assets/pagination-stage9/ch11_full_v8s_*.b64')))
           stable=gzip.decompress(base64.b64decode(packed)).decode('utf-8')
-          harness='var __source='+json.dumps(stable)+';\n'+pure+'\n'+patch+'\nvar __out=transformStage16CSource(transformStage16B4Source(transformStage16B3Source(transformStage16B2Source(transformRecycleFixSource(transformRecycleSource(transformCardHolderSource(transformSource(__source))))))));\nrequire("fs").writeFileSync("/tmp/filter64.js",__out);\n'
-          pathlib.Path('/tmp/stage17_diag.js').write_text(harness,encoding='utf-8')
+          harness='var __source='+json.dumps(stable)+';\n'+pure+'\n'+patch+'\nvar __out=transformStage17Source(transformStage16CSource(transformStage16B4Source(transformStage16B3Source(transformStage16B2Source(transformRecycleFixSource(transformRecycleSource(transformCardHolderSource(transformSource(__source)))))))));\nrequire("fs").writeFileSync("/tmp/filter65.js",__out);\n'
+          pathlib.Path('/tmp/stage17_build.js').write_text(harness,encoding='utf-8')
+          subprocess.check_call(['node','/tmp/stage17_build.js'])
+          src=pathlib.Path('/tmp/filter65.js').read_text(encoding='utf-8')
+          if src.count('MODULE_VERSION: 65')!=1: raise SystemExit('Filter65 version mismatch')
+          for required in ['AJAX_STAGED_ATTACH_BUDGET_MS = 8','AJAX_STAGED_ATTACH_DELAY_MS = 8','AJAX_STAGED_ATTACH_MAX_CARDS_PER_BATCH = 3','AJAX_STAGED_ATTACH_MIN_CARDS = 8','function startStagedAjaxAttach','function runStagedAjaxAttachBatch','stagedAttachMaxBatchMs','cancelStagedAjaxAttach("close_panel")','cancelStagedAjaxAttach("virtual_reset")','scheduleVirtualUpdate(deferredOrigin, deferredForce)']:
+              if required not in src: raise SystemExit('missing Stage17 token: '+required)
+          if 'VIRTUAL_BEFORE_SCREENS = 3' not in src or 'VIRTUAL_AFTER_SCREENS = 5' not in src or 'VIRTUAL_UPDATE_DELAY_MS = 24' not in src: raise SystemExit('virtual constants changed')
+          if src.count('.newSingleThreadExecutor();')!=1: raise SystemExit('worker invariant changed')
+          if re.search(r'(^|[^A-Za-z0-9_])(let|const|class)[\s]+|=>',src): raise SystemExit('non-ES5 syntax in Filter65')
+          subprocess.check_call(['node','--check','/tmp/filter65.js'])
+          subprocess.check_call(['node','--check',str(loader_path)])
+
+          data=loader_path.read_bytes()
+          blob_sha=hashlib.sha1(('blob %d\0' % len(data)).encode()+data).hexdigest()
+          manifest['moduleSetVersion']='20260808.19'
+          found=False
+          for mod in manifest.get('modules',[]):
+              if mod.get('name')=='ch_11_filter.js': mod['sha']=blob_sha; found=True
+          if not found: raise SystemExit('filter manifest entry missing')
+          manifest_path.write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          print('Filter65 blob',blob_sha)
           PY
-          node /tmp/stage17_diag.js
-          node --check /tmp/filter64.js
-          python - <<'PY'
-          import pathlib,re
-          src=pathlib.Path('/tmp/filter64.js').read_text(encoding='utf-8')
-          out=['MODULE64='+str(src.count('MODULE_VERSION: 64'))]
-          needles=['function startAjaxAppendRender','function finishAjaxAppendRender','function rebuildVirtualWindow','function scheduleVirtualUpdate','function closePanel','function resetVirtualState','var ajaxAppendGeneration','slowRebuildSamples: []','holderRecyclePoolPeakCount','resetVirtualState(true)','ajaxAppendGeneration += 1']
-          seen=[]
-          for needle in needles:
-              out.append('\n===== '+needle+' =====')
-              for i,m in enumerate(re.finditer(re.escape(needle),src)):
-                  fs=src.rfind('\n    function ',0,m.start())
-                  fe=src.find('\n    function ',m.end())
-                  if fs>=0 and fe>fs and fe-fs<40000:
-                      block=src[fs:fe]
-                  else:
-                      a=max(0,m.start()-2500); b=min(len(src),m.end()+4500); block=src[a:b]
-                  if block in seen: continue
-                  seen.append(block)
-                  out.append('\n--- #%d at %d ---\n%s' % (i+1,m.start(),block))
-          pathlib.Path('stage17_diag.txt').write_text('\n'.join(out),encoding='utf-8')
-          PY
+      - name: Commit Stage17 atomically
+        shell: bash
+        run: |
+          set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add stage17_diag.txt
-          git commit -m "扩展 Stage17 生命周期诊断"
+          rm -f .github/stage17-diag-trigger.txt
+          rm -f .github/workflows/beta_stage17_diag.yml
+          rm -f stage17_diag.txt
+          git add -A
+          git diff --cached --check
+          git commit -m "分帧构建 Beta AJAX 追加列表"
           git push
