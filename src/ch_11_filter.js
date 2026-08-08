@@ -1,4 +1,4 @@
-/* ClipHub Stage 16A CardHolder safe-binding ES5 loader. */
+/* ClipHub Stage 16B overlap Holder recycle ES5 loader. */
 (function (global) {
     var File = Packages.java.io.File;
     var FIS = Packages.java.io.FileInputStream;
@@ -130,7 +130,7 @@
             connection = new URL(
                 "https://raw.githubusercontent.com/7015725/ClipHub/" +
                 encodePath(REF) + "/" + encodePath(path) +
-                "?stage16av12=" + Number(System.currentTimeMillis())
+                "?stage16bv13=" + Number(System.currentTimeMillis())
             ).openConnection();
             connection.setConnectTimeout(10000);
             connection.setReadTimeout(30000);
@@ -593,11 +593,492 @@
         return source;
     }
 
+
+    function transformRecycleSource(source) {
+        var info;
+        var value;
+
+        source = replaceOnceStrict(source,
+  "MODULE_VERSION: 58", "MODULE_VERSION: 59",
+  "Stage16B module version");
+
+        source = replaceOnceStrict(source,
+  "    var resultCardViews = [];\n",
+  "    var resultCardViews = [];\n" +
+  "    var resultCardHolders = [];\n",
+  "Stage16B holder array declaration");
+
+        source = source.replace(
+  /^([ \t]*)resultCardViews = \[\];/gm,
+  "$1resultCardViews = [];\n$1resultCardHolders = [];");
+
+        source = replaceOnceStrict(source,
+  "        slowRebuildSamples: []\n",
+  "        slowRebuildSamples: [],\n" +
+  "        holderRecycleReleaseCount: 0,\n" +
+  "        holderRecycleReuseCount: 0,\n" +
+  "        holderRecycleMissCount: 0,\n" +
+  "        holderRecycleDiscardCount: 0,\n" +
+  "        holderRebindCount: 0,\n" +
+  "        holderRebindLastMs: 0,\n" +
+  "        holderRebindMaxMs: 0,\n" +
+  "        holderNewBuildCount: 0\n",
+  "Stage16B recycle metrics");
+
+        source = replaceOnceStrict(source,
+  "        scrollPerformanceState.slowRebuildSamples = [];\n",
+  "        scrollPerformanceState.slowRebuildSamples = [];\n" +
+  "        scrollPerformanceState.holderRecycleReleaseCount = 0;\n" +
+  "        scrollPerformanceState.holderRecycleReuseCount = 0;\n" +
+  "        scrollPerformanceState.holderRecycleMissCount = 0;\n" +
+  "        scrollPerformanceState.holderRecycleDiscardCount = 0;\n" +
+  "        scrollPerformanceState.holderRebindCount = 0;\n" +
+  "        scrollPerformanceState.holderRebindLastMs = 0;\n" +
+  "        scrollPerformanceState.holderRebindMaxMs = 0;\n" +
+  "        scrollPerformanceState.holderNewBuildCount = 0;\n",
+  "Stage16B recycle metric reset");
+
+        source = replaceOnceStrict(source,
+  "            slowRebuildSamples:\n" +
+  "                scrollPerformanceState.slowRebuildSamples.slice(0),\n" +
+  "            pendingOrigin: virtualPendingOrigin,\n",
+  "            slowRebuildSamples:\n" +
+  "                scrollPerformanceState.slowRebuildSamples.slice(0),\n" +
+  "            holderRecycleReleaseCount:\n" +
+  "                Number(scrollPerformanceState.holderRecycleReleaseCount),\n" +
+  "            holderRecycleReuseCount:\n" +
+  "                Number(scrollPerformanceState.holderRecycleReuseCount),\n" +
+  "            holderRecycleMissCount:\n" +
+  "                Number(scrollPerformanceState.holderRecycleMissCount),\n" +
+  "            holderRecycleDiscardCount:\n" +
+  "                Number(scrollPerformanceState.holderRecycleDiscardCount),\n" +
+  "            holderRebindCount:\n" +
+  "                Number(scrollPerformanceState.holderRebindCount),\n" +
+  "            holderRebindLastMs:\n" +
+  "                Number(scrollPerformanceState.holderRebindLastMs),\n" +
+  "            holderRebindMaxMs:\n" +
+  "                Number(scrollPerformanceState.holderRebindMaxMs),\n" +
+  "            holderNewBuildCount:\n" +
+  "                Number(scrollPerformanceState.holderNewBuildCount),\n" +
+  "            pendingOrigin: virtualPendingOrigin,\n",
+  "Stage16B recycle metric copy");
+
+        source = replaceOnceStrict(source,
+  "    function makeResultCard(row, colors) {\n",
+  "    function cardHolderActionRefs(holder) {\n" +
+  "        return {\n" +
+  "            edit: holder.editButton,\n" +
+  "            translate: holder.translateButton,\n" +
+  "            copy: holder.copyButton,\n" +
+  "            delete: holder.deleteButton\n" +
+  "        };\n" +
+  "    }\n\n" +
+  "    function replaceCardHolderChild(parent, oldView, newView) {\n" +
+  "        var childIndex;\n" +
+  "        var params;\n" +
+  "        if (parent === null || parent === undefined ||\n" +
+  "                oldView === null || oldView === undefined ||\n" +
+  "                newView === null || newView === undefined) {\n" +
+  "            return false;\n" +
+  "        }\n" +
+  "        childIndex = Number(parent.indexOfChild(oldView));\n" +
+  "        if (childIndex < 0) { return false; }\n" +
+  "        params = oldView.getLayoutParams();\n" +
+  "        parent.removeViewAt(childIndex);\n" +
+  "        parent.addView(newView, childIndex, params);\n" +
+  "        return true;\n" +
+  "    }\n\n" +
+  "    function rebindResultCardHolder(holder, row, colors) {\n" +
+  "        var startedAt = Number(System.currentTimeMillis());\n" +
+  "        var elapsed;\n" +
+  "        var selected;\n" +
+  "        var pinned;\n" +
+  "        var oldPinned;\n" +
+  "        var metrics;\n" +
+  "        var tags;\n" +
+  "        var packageName;\n" +
+  "        var replacement;\n" +
+  "        var params;\n" +
+  "        if (holder === null || holder === undefined ||\n" +
+  "                row === null || row === undefined ||\n" +
+  "                holder.wrapper === null || holder.card === null ||\n" +
+  "                holder.contentView === null ||\n" +
+  "                holder.tagBadge === null ||\n" +
+  "                holder.sourceView === null) {\n" +
+  "            return false;\n" +
+  "        }\n" +
+  "        try {\n" +
+  "            metrics = holder.metrics || resultCardMetrics(0);\n" +
+  "            selected = SELECTION_ENABLED && selectedItemId !== null &&\n" +
+  "                Number(selectedItemId) === Number(row.id);\n" +
+  "            pinned = Number(row.is_pinned || 0) === 1;\n" +
+  "            oldPinned = holder.pinned === true;\n" +
+  "            tags = tagsForResult(row);\n" +
+  "            packageName = String(row.source_package || \"\");\n" +
+  "            holder.row = row;\n" +
+  "            holder.itemId = Number(row.id);\n" +
+  "            holder.wrapper.setBackground(roundedBackground(\n" +
+  "                colors.surfaceMuted, colors.stroke, 12));\n" +
+  "            holder.card.setBackground(roundedBackground(\n" +
+  "                selected ? colors.accentSoft : colors.card,\n" +
+  "                selected ? colors.accentBorder : colors.stroke, 12));\n" +
+  "            holder.card.setContentDescription((pinned ? \"已置顶，\" : \"\") +\n" +
+  "                \"剪贴板记录，点击正文输入到当前文本框，左滑置顶，右滑删除，右侧提供编辑翻译复制删除图标\");\n" +
+  "            if (holder.selected !== selected) {\n" +
+  "                replacement = makeText(resultPreviewText(row),\n" +
+  "                    metrics.contentTextSp, colors.textPrimary, selected);\n" +
+  "                replacement.setMaxLines(2);\n" +
+  "                replacement.setEllipsize(TextUtils.TruncateAt.END);\n" +
+  "                if (!replaceCardHolderChild(holder.contentRow,\n" +
+  "                        holder.contentView, replacement)) {\n" +
+  "                    return false;\n" +
+  "                }\n" +
+  "                holder.contentView = replacement;\n" +
+  "            } else {\n" +
+  "                holder.contentView.setText(resultPreviewText(row));\n" +
+  "            }\n" +
+  "            holder.tagBadge.setText((tags.length > 0 ? \"●  \" : \"\") +\n" +
+  "                tagSummary(tags));\n" +
+  "            holder.tagBadge.setTextColor(tags.length > 0 ?\n" +
+  "                tagColorText(tags[0], colors.accentStrong) :\n" +
+  "                colors.textTertiary);\n" +
+  "            try {\n" +
+  "                holder.tagBadge.setTypeface(tags.length > 0 ?\n" +
+  "                    Packages.android.graphics.Typeface.DEFAULT_BOLD :\n" +
+  "                    Packages.android.graphics.Typeface.DEFAULT);\n" +
+  "            } catch (ignoredTagTypeface) {}\n" +
+  "            holder.tagBadge.setBackground(roundedBackground(\n" +
+  "                tags.length > 0 ? colors.accentSoft : colors.surfaceMuted,\n" +
+  "                null, metrics.actionRadiusDp));\n" +
+  "            holder.sourceView.setText(sourceLabel(row) + \" · \" +\n" +
+  "                formatTime(row.last_copied_at));\n" +
+  "            if (String(holder.sourcePackage || \"\") !== packageName) {\n" +
+  "                replacement = makeSourceIcon(row, colors);\n" +
+  "                if (!replaceCardHolderChild(holder.card,\n" +
+  "                        holder.iconView, replacement)) {\n" +
+  "                    return false;\n" +
+  "                }\n" +
+  "                holder.iconView = replacement;\n" +
+  "            }\n" +
+  "            if (pinned && holder.pinBadge === null) {\n" +
+  "                replacement = makePinnedBadge(colors, metrics);\n" +
+  "                params = new LinearLayout.LayoutParams(\n" +
+  "                    metrics.pinBadgeSizePx, metrics.pinBadgeSizePx);\n" +
+  "                params.leftMargin = metrics.pinBadgeGapPx;\n" +
+  "                holder.contentRow.addView(replacement, params);\n" +
+  "                holder.pinBadge = replacement;\n" +
+  "            } else if (!pinned && holder.pinBadge !== null) {\n" +
+  "                holder.contentRow.removeView(holder.pinBadge);\n" +
+  "                holder.pinBadge = null;\n" +
+  "            }\n" +
+  "            if (oldPinned !== pinned) {\n" +
+  "                replacement = makeSwipeAction(\n" +
+  "                    pinned ? \"取消置顶\" : \"置顶\",\n" +
+  "                    colors.accentSoft, colors.accentStrong,\n" +
+  "                    Gravity.END, metrics);\n" +
+  "                if (!replaceCardHolderChild(holder.actionLayer,\n" +
+  "                        holder.pinAction, replacement)) {\n" +
+  "                    return false;\n" +
+  "                }\n" +
+  "                holder.pinAction = replacement;\n" +
+  "            }\n" +
+  "            holder.selected = selected;\n" +
+  "            holder.pinned = pinned;\n" +
+  "            holder.sourcePackage = packageName;\n" +
+  "            elapsed = Math.max(0,\n" +
+  "                Number(System.currentTimeMillis()) - startedAt);\n" +
+  "            scrollPerformanceState.holderRebindCount += 1;\n" +
+  "            scrollPerformanceState.holderRebindLastMs = elapsed;\n" +
+  "            scrollPerformanceState.holderRebindMaxMs = Math.max(\n" +
+  "                Number(scrollPerformanceState.holderRebindMaxMs), elapsed);\n" +
+  "            return true;\n" +
+  "        } catch (error) {\n" +
+  "            virtualState.lastError = \"CardHolder rebind failed: \" +\n" +
+  "                String(error);\n" +
+  "            return false;\n" +
+  "        }\n" +
+  "    }\n\n" +
+  "    function makeResultCard(row, colors) {\n",
+  "Stage16B rebind helpers");
+
+        info = section(source,
+  "    function bindSwipeGesture(holder, wrapper, foreground, deleteAction,",
+  "\n    function ",
+  "Stage16B dynamic swipe refs");
+        value = info.text;
+        value = replaceOnceStrict(value,
+  "                                    deleteAction: deleteAction,\n" +
+  "                                    pinAction: pinAction\n",
+  "                                    deleteAction: holder.deleteAction,\n" +
+  "                                    pinAction: holder.pinAction\n",
+  "Stage16B active swipe refs");
+        value = replaceOnceStrict(value,
+  "                        setSwipeVisual(foreground, deleteAction, pinAction,\n",
+  "                        setSwipeVisual(foreground, holder.deleteAction,\n" +
+  "                            holder.pinAction,\n",
+  "Stage16B swipe visual refs");
+        value = replaceOnceStrict(value,
+  "                        resetSwipeVisual(foreground, deleteAction, pinAction,\n",
+  "                        resetSwipeVisual(foreground, holder.deleteAction,\n" +
+  "                            holder.pinAction,\n",
+  "Stage16B swipe reset refs");
+        source = replaceSection(source, info, value);
+
+        info = section(source,
+  "    function makeResultCard(row, colors) {",
+  "\n    function ",
+  "Stage16B result card holder store");
+        value = info.text;
+        value = replaceOnceStrict(value,
+  "            metrics: metrics\n" +
+  "        };\n",
+  "            metrics: metrics,\n" +
+  "            sourcePackage: String(row.source_package || \"\")\n" +
+  "        };\n",
+  "Stage16B source package holder field");
+        value = replaceOnceStrict(value,
+  "        resultCardViews.push(card);\n" +
+  "        state.resultCardCount += 1;\n",
+  "        resultCardViews.push(card);\n" +
+  "        resultCardHolders.push(holder);\n" +
+  "        scrollPerformanceState.holderNewBuildCount += 1;\n" +
+  "        state.resultCardCount += 1;\n",
+  "Stage16B holder push");
+        source = replaceSection(source, info, value);
+
+        info = section(source,
+  "    function removeVirtualEntryAt(index) {",
+  "\n    function ",
+  "Stage16B keyed remove");
+        value = info.text;
+        value = replaceOnceStrict(value,
+  "        resultCardViews.splice(index, 1);\n" +
+  "        resultActionViews.splice(index, 1);\n",
+  "        resultCardViews.splice(index, 1);\n" +
+  "        resultCardHolders.splice(index, 1);\n" +
+  "        resultActionViews.splice(index, 1);\n",
+  "Stage16B keyed holder remove");
+        source = replaceSection(source, info, value);
+
+        info = section(source,
+  "    function insertVirtualEntryAt(index, row, colors, signature) {",
+  "\n    function ",
+  "Stage16B keyed insert");
+        value = info.text;
+        value = replaceOnceStrict(value,
+  "        var actionRef;\n",
+  "        var actionRef;\n" +
+  "        var holderRef;\n",
+  "Stage16B keyed insert holder var");
+        value = replaceOnceStrict(value,
+  "        cardRef = resultCardViews.pop();\n" +
+  "        actionRef = resultActionViews.pop();\n",
+  "        cardRef = resultCardViews.pop();\n" +
+  "        holderRef = resultCardHolders.pop();\n" +
+  "        actionRef = resultActionViews.pop();\n",
+  "Stage16B keyed insert holder pop");
+        value = replaceOnceStrict(value,
+  "        resultCardViews.splice(index, 0, cardRef);\n" +
+  "        resultActionViews.splice(index, 0, actionRef);\n",
+  "        resultCardViews.splice(index, 0, cardRef);\n" +
+  "        resultCardHolders.splice(index, 0, holderRef);\n" +
+  "        resultActionViews.splice(index, 0, actionRef);\n",
+  "Stage16B keyed insert holder splice");
+        source = replaceSection(source, info, value);
+
+        info = section(source,
+  "    function moveVirtualEntry(fromIndex, toIndex) {",
+  "\n    function ",
+  "Stage16B keyed move");
+        value = info.text;
+        value = replaceOnceStrict(value,
+  "        var cardRef = resultCardViews[fromIndex];\n" +
+  "        var actionRef = resultActionViews[fromIndex];\n",
+  "        var cardRef = resultCardViews[fromIndex];\n" +
+  "        var holderRef = resultCardHolders[fromIndex];\n" +
+  "        var actionRef = resultActionViews[fromIndex];\n",
+  "Stage16B keyed move holder ref");
+        value = replaceOnceStrict(value,
+  "        resultCardViews.splice(fromIndex, 1);\n" +
+  "        resultActionViews.splice(fromIndex, 1);\n",
+  "        resultCardViews.splice(fromIndex, 1);\n" +
+  "        resultCardHolders.splice(fromIndex, 1);\n" +
+  "        resultActionViews.splice(fromIndex, 1);\n",
+  "Stage16B keyed move holder remove");
+        value = replaceOnceStrict(value,
+  "        resultCardViews.splice(toIndex, 0, cardRef);\n" +
+  "        resultActionViews.splice(toIndex, 0, actionRef);\n",
+  "        resultCardViews.splice(toIndex, 0, cardRef);\n" +
+  "        resultCardHolders.splice(toIndex, 0, holderRef);\n" +
+  "        resultActionViews.splice(toIndex, 0, actionRef);\n",
+  "Stage16B keyed move holder insert");
+        source = replaceSection(source, info, value);
+
+        info = section(source,
+  "    function keyedReconcileVirtualWindow(range, colors) {",
+  "\n    function ",
+  "Stage16B keyed alignment");
+        value = info.text;
+        value = replaceOnceStrict(value,
+  "      resultCardViews.length !== childCount ||\n" +
+  "      resultActionViews.length !== childCount) {\n",
+  "      resultCardViews.length !== childCount ||\n" +
+  "      resultCardHolders.length !== childCount ||\n" +
+  "      resultActionViews.length !== childCount) {\n",
+  "Stage16B keyed holder alignment");
+        source = replaceSection(source, info, value);
+
+        info = section(source,
+  "    function rebuildVirtualWindow(origin, force, preferredIndex) {",
+  "\n    function scheduleVirtualUpdate(",
+  "Stage16B overlap recycle");
+        value = info.text;
+        value = replaceOnceStrict(value,
+  "        var actionRef;\n" +
+  "        var recycledCount;\n",
+  "        var actionRef;\n" +
+  "        var holderRef;\n" +
+  "        var recyclePool = [];\n" +
+  "        var recycleEnabled = String(origin || \"\") === \"result_scroll\" ||\n" +
+  "            String(origin || \"\") === \"hydration_apply\";\n" +
+  "        var recycledCount;\n",
+  "Stage16B recycle vars");
+        value = replaceOnceStrict(value,
+  "            resultCardViews.length === oldCount &&\n" +
+  "            resultActionViews.length === oldCount;\n",
+  "            resultCardViews.length === oldCount &&\n" +
+  "            resultCardHolders.length === oldCount &&\n" +
+  "            resultActionViews.length === oldCount;\n",
+  "Stage16B overlap holder alignment");
+        value = replaceOnceStrict(value,
+  "                resultCardViews.shift();\n" +
+  "                resultActionViews.shift();\n",
+  "                resultCardViews.shift();\n" +
+  "                holderRef = resultCardHolders.shift();\n" +
+  "                resultActionViews.shift();\n" +
+  "                if (recycleEnabled && holderRef !== null &&\n" +
+  "                        holderRef !== undefined) {\n" +
+  "                    recyclePool.push(holderRef);\n" +
+  "                    scrollPerformanceState.holderRecycleReleaseCount += 1;\n" +
+  "                }\n",
+  "Stage16B recycle top release");
+        value = replaceOnceStrict(value,
+  "                resultCardViews.pop();\n" +
+  "                resultActionViews.pop();\n",
+  "                resultCardViews.pop();\n" +
+  "                holderRef = resultCardHolders.pop();\n" +
+  "                resultActionViews.pop();\n" +
+  "                if (recycleEnabled && holderRef !== null &&\n" +
+  "                        holderRef !== undefined) {\n" +
+  "                    recyclePool.push(holderRef);\n" +
+  "                    scrollPerformanceState.holderRecycleReleaseCount += 1;\n" +
+  "                }\n",
+  "Stage16B recycle bottom release");
+
+        value = replaceOnceStrict(value,
+  "                    wrapper = makeResultCard(previewRows[index], colors);\n" +
+  "                    cardRef = resultCardViews.pop();\n" +
+  "                    actionRef = resultActionViews.pop();\n" +
+  "                    virtualCardHost.addView(wrapper, 0, params);\n" +
+  "                    resultCardViews.unshift(cardRef);\n" +
+  "                    resultActionViews.unshift(actionRef);\n",
+  "                    holderRef = null;\n" +
+  "                    if (recycleEnabled && recyclePool.length > 0) {\n" +
+  "                        holderRef = recyclePool.pop();\n" +
+  "                        if (rebindResultCardHolder(holderRef,\n" +
+  "                                previewRows[index], colors)) {\n" +
+  "                            wrapper = holderRef.wrapper;\n" +
+  "                            cardRef = holderRef.card;\n" +
+  "                            actionRef = cardHolderActionRefs(holderRef);\n" +
+  "                            scrollPerformanceState.holderRecycleReuseCount += 1;\n" +
+  "                        } else {\n" +
+  "                            scrollPerformanceState.holderRecycleDiscardCount += 1;\n" +
+  "                            holderRef = null;\n" +
+  "                        }\n" +
+  "                    }\n" +
+  "                    if (holderRef === null) {\n" +
+  "                        wrapper = makeResultCard(previewRows[index], colors);\n" +
+  "                        cardRef = resultCardViews.pop();\n" +
+  "                        holderRef = resultCardHolders.pop();\n" +
+  "                        actionRef = resultActionViews.pop();\n" +
+  "                        if (recycleEnabled) {\n" +
+  "                            scrollPerformanceState.holderRecycleMissCount += 1;\n" +
+  "                        }\n" +
+  "                    }\n" +
+  "                    virtualCardHost.addView(wrapper, 0, params);\n" +
+  "                    resultCardViews.unshift(cardRef);\n" +
+  "                    resultCardHolders.unshift(holderRef);\n" +
+  "                    resultActionViews.unshift(actionRef);\n",
+  "Stage16B prepend recycle");
+
+        value = replaceOnceStrict(value,
+  "                    virtualCardHost.addView(makeResultCard(\n" +
+  "                        previewRows[index], colors), params);\n" +
+  "                    virtualRenderedItemIds.push(\n",
+  "                    holderRef = null;\n" +
+  "                    if (recycleEnabled && recyclePool.length > 0) {\n" +
+  "                        holderRef = recyclePool.pop();\n" +
+  "                        if (rebindResultCardHolder(holderRef,\n" +
+  "                                previewRows[index], colors)) {\n" +
+  "                            wrapper = holderRef.wrapper;\n" +
+  "                            cardRef = holderRef.card;\n" +
+  "                            actionRef = cardHolderActionRefs(holderRef);\n" +
+  "                            scrollPerformanceState.holderRecycleReuseCount += 1;\n" +
+  "                        } else {\n" +
+  "                            scrollPerformanceState.holderRecycleDiscardCount += 1;\n" +
+  "                            holderRef = null;\n" +
+  "                        }\n" +
+  "                    }\n" +
+  "                    if (holderRef === null) {\n" +
+  "                        wrapper = makeResultCard(previewRows[index], colors);\n" +
+  "                        cardRef = resultCardViews.pop();\n" +
+  "                        holderRef = resultCardHolders.pop();\n" +
+  "                        actionRef = resultActionViews.pop();\n" +
+  "                        if (recycleEnabled) {\n" +
+  "                            scrollPerformanceState.holderRecycleMissCount += 1;\n" +
+  "                        }\n" +
+  "                    }\n" +
+  "                    virtualCardHost.addView(wrapper, params);\n" +
+  "                    resultCardViews.push(cardRef);\n" +
+  "                    resultCardHolders.push(holderRef);\n" +
+  "                    resultActionViews.push(actionRef);\n" +
+  "                    virtualRenderedItemIds.push(\n",
+  "Stage16B append recycle");
+
+        value = replaceOnceStrict(value,
+  "            state.resultCardCount = Number(\n" +
+  "                virtualCardHost.getChildCount());\n" +
+  "            overlapElapsed = Math.max(0,\n",
+  "            if (recycleEnabled && recyclePool.length > 0) {\n" +
+  "                scrollPerformanceState.holderRecycleDiscardCount +=\n" +
+  "                    recyclePool.length;\n" +
+  "                recyclePool = [];\n" +
+  "            }\n" +
+  "            state.resultCardCount = Number(\n" +
+  "                virtualCardHost.getChildCount());\n" +
+  "            overlapElapsed = Math.max(0,\n",
+  "Stage16B recycle discard remainder");
+        source = replaceSection(source, info, value);
+
+        if (source.indexOf("resultCardHolders.length === oldCount") < 0 ||
+      source.indexOf("function rebindResultCardHolder(holder, row, colors)") < 0 ||
+      source.indexOf("holderRecycleReuseCount") < 0 ||
+      source.indexOf("String(origin || \"\") === \"result_scroll\"") < 0 ||
+      source.indexOf("String(origin || \"\") === \"hydration_apply\"") < 0) {
+  throw new Error("Stage16B recycle wiring incomplete");
+        }
+        if (source.indexOf("String(origin || \"\") === \"ajax_append\"") >= 0) {
+  throw new Error("Stage16B must not recycle ajax_append");
+        }
+        return source;
+    }
+
     try {
-        eval(transformCardHolderSource(
-            transformSource(decodeSource(loadPackedSource()))));
+        eval(transformRecycleSource(
+            transformCardHolderSource(
+                transformSource(decodeSource(loadPackedSource())))));
     } catch (error) {
-        throw new Error("ch_11_filter.js Stage 16A loader failed: " +
+        throw new Error("ch_11_filter.js Stage 16B loader failed: " +
             String(error));
     }
 }((function () { return this; }())));
