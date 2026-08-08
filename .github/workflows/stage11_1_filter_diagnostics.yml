@@ -34,8 +34,10 @@ jobs:
           set -euo pipefail
           node --check /tmp/ch11_filter_v50_source.js
           node --check src/ch_11_filter.js
-          node --check 'ClipHub_Stage11.1数据窗口Worker测试入口.txt'
-          node --check 'ClipHub_分页阶段11首页预览按需正文测试入口.txt'
+          cp 'ClipHub_Stage11.1数据窗口Worker测试入口.txt' /tmp/stage11_1_worker_probe.js
+          cp 'ClipHub_分页阶段11首页预览按需正文测试入口.txt' /tmp/stage11_preview_probe.js
+          node --check /tmp/stage11_1_worker_probe.js
+          node --check /tmp/stage11_preview_probe.js
           if grep -En '\b(let|const|class)\b|=>' /tmp/ch11_filter_v50_source.js; then
             echo 'Rhino ES5 boundary violation'
             exit 1
