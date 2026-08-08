@@ -16,7 +16,7 @@
     var REPO = "ClipHub";
     var REF = "beta-pagination-stage10-20260808";
     var ENTRY_PATH = "ClipHub.js";
-    var EXPECTED_MODULE_SET_VERSION = "20260808.04";
+    var EXPECTED_MODULE_SET_VERSION = "20260808.05";
     var TEST_ENTRY_VERSION = 1;
     var RUNTIME_NAME = "ClipHubPaginationStage11PreviewOnDemand";
     var PREVIEW_LIMIT = 200;

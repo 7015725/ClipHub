@@ -1,4 +1,0 @@
-03207                     .newSingleThreadExecutor();
-09204         MODULE_VERSION: 50,
---- TEST IDENTITY ---
-00019     var EXPECTED_MODULE_SET_VERSION = "20260808.04";
