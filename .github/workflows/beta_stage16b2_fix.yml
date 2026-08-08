@@ -1,0 +1,232 @@
+name: Beta Stage16B2 Fix
+on:
+  push:
+    branches: [beta-pagination-stage10-20260808]
+    paths:
+      - .github/stage16b2-fix-trigger.txt
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build Filter61
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64,gzip,glob,hashlib,json,pathlib,re,subprocess
+          root=pathlib.Path('.')
+          loader_path=root/'src/ch_11_filter.js'
+          manifest_path=root/'module-manifest.json'
+          loader=loader_path.read_text(encoding='utf-8')
+          manifest=json.loads(manifest_path.read_text(encoding='utf-8'))
+          if manifest.get('moduleSetVersion')!='20260808.14': raise SystemExit('expected .14 baseline')
+          if manifest.get('sourceRef')!='beta-pagination-stage10-20260808': raise SystemExit('wrong sourceRef')
+          if '/* ClipHub Stage 16B.1 safe Holder rebind ES5 loader. */' not in loader: raise SystemExit('Stage16B.1 baseline missing')
+
+          m=re.search(r'var PATCH_B64 =\n((?:\s*"[A-Za-z0-9+/=]+"\s*\+?\n?)+);',loader)
+          if not m: raise SystemExit('PATCH_B64 missing')
+          chunks=re.findall(r'"([A-Za-z0-9+/=]+)"',m.group(1))
+          patch=base64.b64decode(''.join(chunks)).decode('utf-8')
+          if patch.count('oldTagls')!=1: raise SystemExit('expected exactly one oldTagls typo')
+          patch=patch.replace('oldTagls','oldTags',1)
+
+          stage2=r'''
+    function transformStage16B2Source(source) {
+        var oldAlignment;
+        var newAlignment;
+        source = replaceOnceStrict(source,
+            "MODULE_VERSION: 60", "MODULE_VERSION: 61",
+            "Stage16B2 module version");
+        source = replaceOnceStrict(source,
+            "        alignmentFallbackCount: 0,\n",
+            "        alignmentFallbackCount: 0,\n" +
+            "        alignmentFallbackLastReason: \"\",\n" +
+            "        alignmentFallbackReasonCounts: {},\n" +
+            "        alignmentFallbackLastSnapshot: null,\n" +
+            "        fullRefreshCallCount: 0,\n" +
+            "        fullRefreshLastPerformanceOrigin: \"\",\n" +
+            "        fullRefreshLastPreferredIndex: -1,\n" +
+            "        fullRefreshLastPreviewRowCount: 0,\n" +
+            "        fullRefreshLastRenderedCount: 0,\n" +
+            "        fullRefreshLastChildCount: 0,\n",
+            "Stage16B2 metrics");
+        source = replaceOnceStrict(source,
+            "        scrollPerformanceState.alignmentFallbackCount = 0;\n",
+            "        scrollPerformanceState.alignmentFallbackCount = 0;\n" +
+            "        scrollPerformanceState.alignmentFallbackLastReason = \"\";\n" +
+            "        scrollPerformanceState.alignmentFallbackReasonCounts = {};\n" +
+            "        scrollPerformanceState.alignmentFallbackLastSnapshot = null;\n" +
+            "        scrollPerformanceState.fullRefreshCallCount = 0;\n" +
+            "        scrollPerformanceState.fullRefreshLastPerformanceOrigin = \"\";\n" +
+            "        scrollPerformanceState.fullRefreshLastPreferredIndex = -1;\n" +
+            "        scrollPerformanceState.fullRefreshLastPreviewRowCount = 0;\n" +
+            "        scrollPerformanceState.fullRefreshLastRenderedCount = 0;\n" +
+            "        scrollPerformanceState.fullRefreshLastChildCount = 0;\n",
+            "Stage16B2 metric reset");
+        source = replaceOnceStrict(source,
+            "            alignmentFallbackCount:\n" +
+            "                Number(scrollPerformanceState.alignmentFallbackCount),\n" +
+            "            spacerApplyCount:\n",
+            "            alignmentFallbackCount:\n" +
+            "                Number(scrollPerformanceState.alignmentFallbackCount),\n" +
+            "            alignmentFallbackLastReason:\n" +
+            "                String(scrollPerformanceState.alignmentFallbackLastReason || \"\"),\n" +
+            "            alignmentFallbackReasonCounts:\n" +
+            "                scrollPerformanceState.alignmentFallbackReasonCounts,\n" +
+            "            alignmentFallbackLastSnapshot:\n" +
+            "                scrollPerformanceState.alignmentFallbackLastSnapshot,\n" +
+            "            fullRefreshCallCount:\n" +
+            "                Number(scrollPerformanceState.fullRefreshCallCount),\n" +
+            "            fullRefreshLastPerformanceOrigin:\n" +
+            "                String(scrollPerformanceState.fullRefreshLastPerformanceOrigin || \"\"),\n" +
+            "            fullRefreshLastPreferredIndex:\n" +
+            "                Number(scrollPerformanceState.fullRefreshLastPreferredIndex),\n" +
+            "            fullRefreshLastPreviewRowCount:\n" +
+            "                Number(scrollPerformanceState.fullRefreshLastPreviewRowCount),\n" +
+            "            fullRefreshLastRenderedCount:\n" +
+            "                Number(scrollPerformanceState.fullRefreshLastRenderedCount),\n" +
+            "            fullRefreshLastChildCount:\n" +
+            "                Number(scrollPerformanceState.fullRefreshLastChildCount),\n" +
+            "            spacerApplyCount:\n",
+            "Stage16B2 metric copy");
+
+        oldAlignment =
+            "        if (virtualRenderedItemIds.length !== childCount ||\n" +
+            "      virtualRenderedSignatures.length !== childCount ||\n" +
+            "      resultCardViews.length !== childCount ||\n" +
+            "      resultCardHolders.length !== childCount ||\n" +
+            "      resultActionViews.length !== childCount) {\n" +
+            "  scrollPerformanceState.alignmentFallbackCount += 1;\n";
+        newAlignment =
+            "        if (virtualRenderedItemIds.length !== childCount ||\n" +
+            "      virtualRenderedSignatures.length !== childCount ||\n" +
+            "      resultCardViews.length !== childCount ||\n" +
+            "      resultCardHolders.length !== childCount ||\n" +
+            "      resultActionViews.length !== childCount) {\n" +
+            "  var alignmentReasons = [];\n" +
+            "  var alignmentKey;\n" +
+            "  if (virtualRenderedItemIds.length !== childCount) { alignmentReasons.push(\"itemIds\"); }\n" +
+            "  if (virtualRenderedSignatures.length !== childCount) { alignmentReasons.push(\"signatures\"); }\n" +
+            "  if (resultCardViews.length !== childCount) { alignmentReasons.push(\"cardViews\"); }\n" +
+            "  if (resultCardHolders.length !== childCount) { alignmentReasons.push(\"holders\"); }\n" +
+            "  if (resultActionViews.length !== childCount) { alignmentReasons.push(\"actionViews\"); }\n" +
+            "  scrollPerformanceState.alignmentFallbackLastReason = alignmentReasons.join(\"+\");\n" +
+            "  for (alignmentKey = 0; alignmentKey < alignmentReasons.length; alignmentKey += 1) {\n" +
+            "      if (scrollPerformanceState.alignmentFallbackReasonCounts[alignmentReasons[alignmentKey]] === undefined) {\n" +
+            "          scrollPerformanceState.alignmentFallbackReasonCounts[alignmentReasons[alignmentKey]] = 0;\n" +
+            "      }\n" +
+            "      scrollPerformanceState.alignmentFallbackReasonCounts[alignmentReasons[alignmentKey]] += 1;\n" +
+            "  }\n" +
+            "  scrollPerformanceState.alignmentFallbackLastSnapshot = {\n" +
+            "      childCount: childCount,\n" +
+            "      itemIds: virtualRenderedItemIds.length,\n" +
+            "      signatures: virtualRenderedSignatures.length,\n" +
+            "      cardViews: resultCardViews.length,\n" +
+            "      holders: resultCardHolders.length,\n" +
+            "      actionViews: resultActionViews.length\n" +
+            "  };\n" +
+            "  scrollPerformanceState.alignmentFallbackCount += 1;\n";
+        source = replaceOnceStrict(source, oldAlignment, newAlignment,
+            "Stage16B2 alignment diagnostics");
+
+        source = replaceOnceStrict(source,
+            "        rebuildVirtualWindow(\n" +
+            "            \"full_refresh\", true, preferredIndex);\n",
+            "        scrollPerformanceState.fullRefreshCallCount += 1;\n" +
+            "        scrollPerformanceState.fullRefreshLastPerformanceOrigin =\n" +
+            "            String(performance.lastRefreshOrigin || \"\");\n" +
+            "        scrollPerformanceState.fullRefreshLastPreferredIndex = Number(preferredIndex);\n" +
+            "        scrollPerformanceState.fullRefreshLastPreviewRowCount = Number(previewRows.length);\n" +
+            "        scrollPerformanceState.fullRefreshLastRenderedCount =\n" +
+            "            Math.max(0, Number(virtualState.lastRenderedIndex) -\n" +
+            "                Number(virtualState.firstRenderedIndex) + 1);\n" +
+            "        scrollPerformanceState.fullRefreshLastChildCount = virtualCardHost === null ?\n" +
+            "            -1 : Number(virtualCardHost.getChildCount());\n" +
+            "        rebuildVirtualWindow(\n" +
+            "            \"full_refresh\", true, preferredIndex);\n",
+            "Stage16B2 full refresh diagnostics");
+        if (source.indexOf("oldTagls") >= 0 ||
+                source.indexOf("MODULE_VERSION: 61") < 0 ||
+                source.indexOf("alignmentFallbackReasonCounts") < 0 ||
+                source.indexOf("fullRefreshCallCount") < 0) {
+            throw new Error("Stage16B2 wiring incomplete");
+        }
+        return source;
+    }
+'''
+          patch=patch.rstrip()+"\n\n"+stage2.strip()+"\n"
+          enc=base64.b64encode(patch.encode()).decode()
+          pieces=[enc[i:i+120] for i in range(0,len(enc),120)]
+          assignment='var PATCH_B64 =\n'+''.join('        '+json.dumps(p)+(' +\n' if i<len(pieces)-1 else ';\n') for i,p in enumerate(pieces))
+          loader=loader[:m.start()]+assignment+loader[m.end():]
+
+          start=loader.index('        var newEval =\n')
+          end=loader.index('        loader = replaceOnce(loader, oldEval, newEval, "baseline eval");',start)
+          new_block='''        var newEval =
+            patchSourceText() + "\\n" +
+            "    try {\\n" +
+            "        eval(transformStage16B2Source(\\n" +
+            "            transformRecycleFixSource(\\n" +
+            "                transformRecycleSource(\\n" +
+            "                    transformCardHolderSource(\\n" +
+            "                        transformSource(decodeSource(loadPackedSource())))))));\\n";
+'''
+          loader=loader[:start]+new_block+loader[end:]
+          loader=loader.replace('/* ClipHub Stage 16B.1 safe Holder rebind ES5 loader. */','/* ClipHub Stage 16B.2 Holder rebind fix and alignment diagnostics ES5 loader. */',1)
+          loader=loader.replace('?stage16b1v14=','?stage16b2v15=',1)
+          loader=loader.replace('ch_11_filter.js Stage 16B.1 loader failed:','ch_11_filter.js Stage 16B.2 loader failed:',1)
+          loader=loader.replace('ch_11_filter.js Stage 16B.1 wrapper failed:','ch_11_filter.js Stage 16B.2 wrapper failed:',1)
+          loader_path.write_text(loader,encoding='utf-8')
+
+          # Generate actual Filter61 for static validation.
+          baseline=subprocess.check_output(['git','show','338a811e538ab526b59eed05102d4f4b66f19953:src/ch_11_filter.js'],text=True)
+          start2=baseline.index('    function replaceOnceStrict('); end2=baseline.index('\n    try {',start2)
+          pure=baseline[start2:end2]
+          parts=sorted(glob.glob('stage-assets/pagination-stage9/ch11_full_v8s_*.b64'))
+          packed=''.join(pathlib.Path(p).read_text(encoding='utf-8').strip() for p in parts)
+          stable=gzip.decompress(base64.b64decode(packed)).decode('utf-8')
+          harness='var __source='+json.dumps(stable)+';\n'+pure+'\n'+patch+'\nvar __out=transformStage16B2Source(transformRecycleFixSource(transformRecycleSource(transformCardHolderSource(transformSource(__source)))));\nrequire("fs").writeFileSync("/tmp/filter61.js",__out);\n'
+          pathlib.Path('/tmp/stage16b2_harness.js').write_text(harness,encoding='utf-8')
+
+          data=loader_path.read_bytes()
+          blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+          manifest['moduleSetVersion']='20260808.15'
+          for mod in manifest['modules']:
+              if mod['name']=='ch_11_filter.js': mod['sha']=blob
+          manifest_path.write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          print('filter_blob='+blob)
+          PY
+          node --check src/ch_11_filter.js
+          node /tmp/stage16b2_harness.js
+          node --check /tmp/filter61.js
+          ! grep -Eq '(^|[^A-Za-z0-9_])(let|const|class)[[:space:]]|=>' /tmp/filter61.js
+          grep -Fq 'MODULE_VERSION: 61' /tmp/filter61.js
+          ! grep -Fq 'oldTagls' /tmp/filter61.js
+          grep -Fq 'alignmentFallbackReasonCounts' /tmp/filter61.js
+          grep -Fq 'fullRefreshCallCount' /tmp/filter61.js
+          grep -Fq 'holderRebindAttemptCount' /tmp/filter61.js
+          grep -Fq 'var VIRTUAL_BEFORE_SCREENS = 3;' /tmp/filter61.js
+          grep -Fq 'var VIRTUAL_AFTER_SCREENS = 5;' /tmp/filter61.js
+          grep -Fq 'var VIRTUAL_UPDATE_DELAY_MS = 24;' /tmp/filter61.js
+          test "$(grep -Fo '.newSingleThreadExecutor();' /tmp/filter61.js | wc -l)" -eq 1
+          ! grep -Fq 'resultTagBadgeViews' /tmp/filter61.js
+          ! grep -Fq 'refreshRenderedTagBadges' /tmp/filter61.js
+          grep -Fq '"moduleSetVersion": "20260808.15"' module-manifest.json
+          git diff --check
+      - name: Commit Filter61 atomically
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          rm -f .github/stage16b2-diag-trigger.txt .github/stage16b2-fix-trigger.txt stage16b2_diag.txt
+          rm -f .github/workflows/beta_stage16b2_diag.yml .github/workflows/beta_stage16b2_fix.yml
+          git add -A src/ch_11_filter.js module-manifest.json .github stage16b2_diag.txt || true
+          git diff --cached --check
+          git commit -m "修复 Beta Holder 重绑定并诊断完整重建"
+          git push
