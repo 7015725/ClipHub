@@ -1,0 +1,57 @@
+name: Beta Stage16B2 Diagnostic
+on:
+  push:
+    branches: [beta-pagination-stage10-20260808]
+    paths:
+      - .github/stage16b2-diag-trigger.txt
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build current Filter60 and extract diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64,gzip,glob,json,pathlib,re,subprocess
+          current=pathlib.Path('src/ch_11_filter.js').read_text(encoding='utf-8')
+          m=re.search(r'var PATCH_B64 =\n((?:\s*"[A-Za-z0-9+/=]+"\s*\+?\n?)+);',current)
+          if not m: raise SystemExit('PATCH_B64 missing')
+          chunks=re.findall(r'"([A-Za-z0-9+/=]+)"',m.group(1))
+          patch=base64.b64decode(''.join(chunks)).decode('utf-8')
+          baseline=subprocess.check_output(['git','show','338a811e538ab526b59eed05102d4f4b66f19953:src/ch_11_filter.js'],text=True)
+          start=baseline.index('    function replaceOnceStrict(')
+          end=baseline.index('\n    try {',start)
+          pure=baseline[start:end]
+          parts=sorted(glob.glob('stage-assets/pagination-stage9/ch11_full_v8s_*.b64'))
+          packed=''.join(pathlib.Path(p).read_text(encoding='utf-8').strip() for p in parts)
+          stable=gzip.decompress(base64.b64decode(packed)).decode('utf-8')
+          harness='var __source='+json.dumps(stable)+';\n'+pure+'\n'+patch+'\nvar __out=transformRecycleFixSource(transformRecycleSource(transformCardHolderSource(transformSource(__source))));\nrequire("fs").writeFileSync("/tmp/filter60.js",__out);\n'
+          pathlib.Path('/tmp/stage16b2_diag.js').write_text(harness,encoding='utf-8')
+          PY
+          node /tmp/stage16b2_diag.js
+          node --check /tmp/filter60.js
+          python - <<'PY'
+          import pathlib,re
+          src=pathlib.Path('/tmp/filter60.js').read_text(encoding='utf-8')
+          out=[]
+          marker='    function keyedReconcileVirtualWindow(range, colors) {'
+          s=src.find(marker); e=src.find('\n    function ',s+len(marker))
+          out.append('===== KEYED =====\n'+src[s:e]+'\n')
+          out.append('===== FULL_REFRESH OCCURRENCES =====')
+          for m in re.finditer('full_refresh',src):
+              a=max(0,m.start()-900); b=min(len(src),m.end()+1200)
+              out.append('\n--- occurrence at %d ---\n%s' % (m.start(),src[a:b]))
+          out.append('\n===== OLD_TAGLS =====\ncount='+str(src.count('oldTagls'))+' oldTags='+str(src.count('oldTags')))
+          pathlib.Path('stage16b2_diag.txt').write_text('\n'.join(out),encoding='utf-8')
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add stage16b2_diag.txt
+          git commit -m "记录 Stage16B.2 源码诊断"
+          git push
