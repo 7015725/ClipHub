@@ -1,0 +1,42 @@
+name: Beta Stage14 Spacer Diagnostics
+on:
+  push:
+    branches: [beta-pagination-stage10-20260808]
+    paths:
+      - .github/workflows/beta_stage14_spacer_diag.yml
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract spacer functions
+        shell: bash
+        run: |
+          python - <<'PY'
+          import base64,gzip,glob,pathlib,hashlib
+          parts=sorted(glob.glob('stage-assets/pagination-stage9/ch11_full_v8s_*.b64'))
+          packed=''.join(pathlib.Path(p).read_text(encoding='utf-8').strip() for p in parts)
+          src=gzip.decompress(base64.b64decode(packed)).decode('utf-8')
+          if hashlib.sha256(src.encode()).hexdigest()!='420e512787cf6dd223115585f89f7a749fa0687bc1b50700b9cec67e3e541698':
+              raise SystemExit('Filter55 source sha mismatch')
+          out=[]
+          for label,needle,size in [
+            ('SPACER','    function setVirtualSpacerHeight(',2200),
+            ('HEIGHT_RANGE','    function virtualHeightRange(',2200),
+            ('SCROLL_Y','    function currentResultScrollY(',1400),
+            ('VISIBLE_COUNT','    function updateVirtualVisibleCount(',2400)]:
+              pos=src.index(needle)
+              out.append('===== '+label+' =====\n'+src[pos:pos+size]+'\n\n')
+          pathlib.Path('stage14_spacer_diag.txt').write_text(''.join(out),encoding='utf-8')
+          PY
+      - name: Commit diagnostics
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm -f .github/workflows/beta_stage14_spacer_diag.yml
+          git add stage14_spacer_diag.txt
+          git commit -m "记录 Stage14 spacer 布局诊断"
+          git push
