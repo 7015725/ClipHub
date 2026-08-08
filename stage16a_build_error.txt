@@ -1,0 +1,37 @@
+PYTHON_BUILDER=PASS
+CMD=['node', '--check', 'src/ch_11_filter.js'] RC=0
+STDOUT=
+STDERR=
+CMD=['node', '/tmp/stage16a_harness.js'] RC=1
+STDOUT=
+STDERR=/tmp/stage16a_harness.js:387
+  throw new Error("Stage16A stale row listener binding detected");
+  ^
+
+Error: Stage16A stale row listener binding detected
+    at transformCardHolderSource (/tmp/stage16a_harness.js:387:9)
+    at Object.<anonymous> (/tmp/stage16a_harness.js:398:11)
+    at Module._compile (node:internal/modules/cjs/loader:1781:14)
+    at Object..js (node:internal/modules/cjs/loader:1913:10)
+    at Module.load (node:internal/modules/cjs/loader:1505:32)
+    at Function._load (node:internal/modules/cjs/loader:1309:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+    at node:internal/main/run_main_module:36:49
+
+Node.js v22.23.1
+
+CMD=['node', '--check', '/tmp/filter58.js'] RC=1
+STDOUT=
+STDERR=node:internal/modules/cjs/loader:1433
+  throw err;
+  ^
+
+Error: Cannot find module '/tmp/filter58.js'
+    at node:internal/modules/cjs/loader:1430:15
+    at node:internal/main/check_syntax:33:20 {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: []
+}
+
+Node.js v22.23.1
