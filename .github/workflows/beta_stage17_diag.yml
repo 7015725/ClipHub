@@ -31,19 +31,8 @@ jobs:
               if line.startswith('          '): line=line[10:]
               lines.append(line)
           script='\n'.join(lines)+'\n'
-          old='''    function stage17DecodeText(encoded) {
-        return String(new JavaString(
-            Base64.decode(String(encoded), Base64.DEFAULT), "UTF-8"));
-    }
-'''
-          new='''    function stage17DecodeText(encoded) {
-        if (typeof Buffer !== "undefined") {
-            return String(Buffer.from(String(encoded), "base64").toString("utf8"));
-        }
-        return String(new JavaString(
-            Base64.decode(String(encoded), Base64.DEFAULT), "UTF-8"));
-    }
-'''
+          old="    function stage17DecodeText(encoded) {\n        return String(new JavaString(\n            Base64.decode(String(encoded), Base64.DEFAULT), \"UTF-8\"));\n    }\n"
+          new="    function stage17DecodeText(encoded) {\n        if (typeof Buffer !== \"undefined\") {\n            return String(Buffer.from(String(encoded), \"base64\").toString(\"utf8\"));\n        }\n        return String(new JavaString(\n            Base64.decode(String(encoded), Base64.DEFAULT), \"UTF-8\"));\n    }\n"
           if script.count(old)!=1:
               raise SystemExit('Stage17 decode anchor mismatch: %d' % script.count(old))
           script=script.replace(old,new,1)
