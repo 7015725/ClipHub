@@ -30,7 +30,8 @@ jobs:
           node --check src/ch_06_repository.js
           node --check src/ch_09_list.js
           node --check src/ch_11_filter.js
-          node --check "ClipHub_分页阶段11首页预览按需正文测试入口.txt"
+          cp "ClipHub_分页阶段11首页预览按需正文测试入口.txt" /tmp/cliphub_stage11_test.js
+          node --check /tmp/cliphub_stage11_test.js
 
       - name: Manifest and packed-source validation
         run: |
