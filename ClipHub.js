@@ -17,10 +17,10 @@
     var URLEncoder = Packages.java.net.URLEncoder;
     var MessageDigest = Packages.java.security.MessageDigest;
     var System = Packages.java.lang.System;
-    var ENTRY_VERSION = 5;
+    var ENTRY_VERSION = 6;
     var OWNER = "7015725";
     var REPO = "ClipHub";
-    var DEFAULT_REF = "main";
+    var DEFAULT_REF = "beta-pagination-stage10-20260808";
     var MANIFEST_PATH = "module-manifest.json";
     var NAMES = [
         "ch_01_base.js", "ch_02_log.js", "ch_03_database.js",
