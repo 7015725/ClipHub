@@ -5,7 +5,7 @@ on:
     paths:
       - .github/stage16b4-diag-trigger.txt
 jobs:
-  diag:
+  build:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -13,55 +13,35 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Generate Filter62 and extract targets
+      - name: Execute Stage16B4 builder
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
-          import base64,gzip,glob,json,pathlib,re,subprocess
-          loader=pathlib.Path('src/ch_11_filter.js').read_text(encoding='utf-8')
-          if 'Stage 16B.3 atomic virtual clear and full-refresh dedupe' not in loader:
-              raise SystemExit('expected Stage16B.3 baseline')
-          m=re.search(r'var PATCH_B64 =\n((?:\s*"[A-Za-z0-9+/=]+"\s*\+?\n?)+);',loader)
-          if not m: raise SystemExit('PATCH_B64 missing')
-          patch=base64.b64decode(''.join(re.findall(r'"([A-Za-z0-9+/=]+)"',m.group(1)))).decode('utf-8')
-          baseline=subprocess.check_output(['git','show','338a811e538ab526b59eed05102d4f4b66f19953:src/ch_11_filter.js'],text=True)
-          s=baseline.index('    function replaceOnceStrict('); e=baseline.index('\n    try {',s)
-          pure=baseline[s:e]
-          packed=''.join(pathlib.Path(p).read_text(encoding='utf-8').strip() for p in sorted(glob.glob('stage-assets/pagination-stage9/ch11_full_v8s_*.b64')))
-          stable=gzip.decompress(base64.b64decode(packed)).decode('utf-8')
-          harness='var __source='+json.dumps(stable)+';\n'+pure+'\n'+patch+'\nvar __out=transformStage16B3Source(transformStage16B2Source(transformRecycleFixSource(transformRecycleSource(transformCardHolderSource(transformSource(__source))))));\nrequire("fs").writeFileSync("/tmp/filter62.js",__out);\n'
-          pathlib.Path('/tmp/stage16b4_diag.js').write_text(harness,encoding='utf-8')
+          import pathlib
+          text=pathlib.Path('.github/workflows/beta_stage16b4_fix.yml').read_text(encoding='utf-8')
+          start_marker='      - name: Build Filter63\n        shell: bash\n        run: |\n'
+          end_marker='      - name: Commit Stage16B4 atomically\n'
+          if start_marker not in text or end_marker not in text:
+              raise SystemExit('Stage16B4 builder block missing')
+          body=text.split(start_marker,1)[1].split(end_marker,1)[0]
+          lines=[]
+          for line in body.splitlines():
+              if line.startswith('          '): line=line[10:]
+              lines.append(line)
+          pathlib.Path('/tmp/stage16b4_build.sh').write_text('\n'.join(lines)+'\n',encoding='utf-8')
           PY
-          node /tmp/stage16b4_diag.js
-          node --check /tmp/filter62.js
-          python - <<'PY'
-          import pathlib,re
-          src=pathlib.Path('/tmp/filter62.js').read_text(encoding='utf-8')
-          out=[]
-          out.append('MODULE62='+str(src.count('MODULE_VERSION: 62')))
-          for fn in ['rebindResultCardHolder','refreshResultsOnMain','finishResultRender']:
-              marker='    function '+fn+'('
-              s=src.find(marker)
-              if s<0:
-                  out.append('\n===== '+fn+' MISSING ====='); continue
-              e=src.find('\n    function ',s+len(marker))
-              if e<0: e=len(src)
-              out.append('\n===== '+fn+' =====\n'+src[s:e])
-          out.append('\n===== COLOR HELPERS =====')
-          patterns=['parseColor','Color.parseColor','setTextColor','tag_color','tagColor','colorValue','normalizeColor','parseArgb']
-          seen=set()
-          for p in patterns:
-              for m in re.finditer(re.escape(p),src):
-                  a=max(0,m.start()-500); b=min(len(src),m.end()+700)
-                  key=(a,b)
-                  if key in seen: continue
-                  seen.add(key)
-                  out.append('\n--- '+p+' @'+str(m.start())+' ---\n'+src[a:b])
-          pathlib.Path('stage16b4_diag.txt').write_text('\n'.join(out),encoding='utf-8')
-          PY
+          bash /tmp/stage16b4_build.sh
+      - name: Commit Filter63
+        shell: bash
+        run: |
+          set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add stage16b4_diag.txt
-          git commit -m "记录 Stage16B.4 颜色与完整刷新诊断"
+          rm -f .github/stage16b4-diag-trigger.txt .github/stage16b4-fix-trigger.txt
+          rm -f .github/workflows/beta_stage16b4_diag.yml .github/workflows/beta_stage16b4_fix.yml
+          rm -f stage16b4_diag.txt
+          git add -A
+          git diff --cached --check
+          git commit -m "修复 Beta Holder 标签颜色并记录完整刷新序列"
           git push
