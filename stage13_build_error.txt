@@ -1,4 +1,1 @@
-Traceback (most recent call last):
-  File "<stdin>", line 65, in <module>
-  File "stage13_embedded_builder.py", line 290, in <module>
-ValueError: substring not found
+source icon body mismatch
