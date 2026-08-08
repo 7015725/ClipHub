@@ -1,4 +1,6 @@
 Traceback (most recent call last):
-  File "<stdin>", line 44, in <module>
-  File "stage13_embedded_builder.py", line 289, in <module>
-ValueError: substring not found
+  File "<stdin>", line 54, in <module>
+  File "stage13_embedded_builder.py", line 289
+    end=src.index('        return true;
+                  ^
+SyntaxError: unterminated string literal (detected at line 289)
