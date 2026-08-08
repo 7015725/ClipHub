@@ -1,0 +1,4942 @@
+MODULE64=1
+
+===== "ajax_append" =====
+
+--- #1 at 283318 ---
+
+    function startAjaxAppendRender(appendedRows) {
+        var colors = palette();
+        captureScrollAnchor();
+        if (loadMoreView !== null) {
+            try {
+                if (loadMoreView.getParent() !== null) {
+                    loadMoreView.getParent()
+                        .removeView(loadMoreView);
+                }
+            } catch (ignoredFooterRemove) {}
+        }
+        loadMoreView = null;
+        ajaxAppendGeneration += 1;
+        ajaxFooterState.renderBatchCount += 1;
+        rebuildVirtualWindow(
+            "ajax_append", false,
+            virtualState.firstVisibleIndex);
+        return finishAjaxAppendRender(
+            ajaxAppendGeneration,
+            appendedRows, colors);
+    }
+
+
+===== ajax_append =====
+
+--- #1 at 280450 ---
+
+    function finishAjaxAppendRender(generation,
+            appendedRows, colors) {
+        if (generation !== ajaxAppendGeneration ||
+                !state.panelAttached) {
+            return false;
+        }
+        ajaxFooterState.loading = false;
+        ajaxFooterState.successCount += 1;
+        ajaxFooterState.appendedRowCount +=
+            appendedRows.length;
+        measureVirtualCards();
+        restoreScrollAnchor();
+        ajaxFooterState.lastScrollYAfterAppend =
+            currentResultScrollY();
+        ajaxFooterState.positionPreserved =
+            Number(ajaxFooterState
+                .lastScrollYBeforeAppend) ===
+            Number(ajaxFooterState
+                .lastScrollYAfterAppend);
+        if (!paginationState.hasMore) {
+            ajaxFooterState.endCount += 1;
+        }
+        state.loadMoreCount += 1;
+        state.loadedResultCount = previewRows.length;
+        state.resultHasMore =
+            paginationState.hasMore === true;
+        state.resultPageLimit = Math.max(
+            Number(paginationState.pageSize),
+            previewRows.length);
+        state.contentReady = true;
+        if (ClipHub.List &&
+                typeof ClipHub.List.setItems === "function") {
+            ClipHub.List.setItems(previewRows);
+        }
+        appendLoadMoreControl(colors);
+        updateResultCountOnMain();
+        updateQuickResetView();
+        attachDeleteUndoBanner();
+        updateResultScrollState();
+        if (lazyLoadState.pending) {
+            lazyLoadState.pending = false;
+            lazyLoadState.successCount += 1;
+            lazyLoadState.lastError = null;
+        }
+        scheduleNextPagePrefetch(
+            "ajax_append_complete");
+        if (mainHandler !== null) {
+            mainHandler.post(new Packages.java.lang.Runnable({
+                run: function () {
+                    if (!state.panelAttached) { return; }
+                    measureVirtualCards();
+                    restoreScrollAnchor();
+                    captureScrollAnchor();
+                    ajaxFooterState.lastScrollYAfterAppend =
+                        currentResultScrollY();
+                    ajaxFooterState.positionPreserved =
+                        Number(ajaxFooterState
+                            .lastScrollYBeforeAppend) ===
+                        Number(ajaxFooterState
+                            .lastScrollYAfterAppend);
+                }
+            }));
+        }
+        return true;
+    }
+
+
+===== function rebuildVirtualWindow =====
+
+--- #1 at 181043 ---
+
+    function takeCompatibleRecycleHolder(pool, row) {
+        var key = resultCardRecycleKeyForRow(row);
+        var index;
+        if (pool === null || pool === undefined || pool.length === 0) {
+            return null;
+        }
+        for (index = pool.length - 1; index >= 0; index -= 1) {
+            scrollPerformanceState.holderRecyclePoolScanCount += 1;
+            if (resultCardRecycleKeyForHolder(pool[index]) === key) {
+                return pool.splice(index, 1)[0];
+            }
+        }
+        return null;
+    }
+
+    function rebuildVirtualWindow(origin, force, preferredIndex) {
+        var colors = palette();
+        var range;
+        var oldCount;
+        var index;
+        var params;
+        var generation;
+        var hydration;
+        var oldStart;
+        var oldEnd;
+        var overlap;
+        var removeTop;
+        var removeBottom;
+        var removeIndex;
+        var wrapper;
+        var cardRef;
+        var actionRef;
+        var holderRef;
+        var recyclePool = [];
+        var recycleEnabled = String(origin || "") === "result_scroll" ||
+            String(origin || "") === "hydration_apply";
+        var recycledCount;
+        var rebuildCreatedBefore;
+        var rebuildRemovedBefore;
+        var rebuildReusedBefore;
+        var rebuildRecycleBefore =
+            Number(scrollPerformanceState.holderRecycleReuseCount);
+        var overlapStartedAt;
+        var overlapElapsed = 0;
+        if (virtualCardHost === null || !state.panelAttached) {
+            return false;
+        }
+        if (activeSwipeCard !== null) {
+            virtualState.updateDeferred = true;
+            return false;
+        }
+        range = virtualTargetRange(preferredIndex);
+        virtualState.firstVisibleIndex = range.first;
+        virtualState.lastVisibleIndex = range.last;
+        if (force !== true &&
+                String(origin || "") === "result_scroll" &&
+                range.start === Number(
+                    virtualState.firstRenderedIndex) &&
+                range.end === Number(
+                    virtualState.lastRenderedIndex)) {
+            scrollPerformanceState.sameRangeNoLayoutCount += 1;
+            virtualState.lastOrigin =
+                "result_scroll_same_range_fast";
+            virtualState.lastError = null;
+            return false;
+        }
+        hydration = hydrateDataWindowRange(
+            range.start, range.end,
+            String(origin || "virtual_rebuild") + "_hydrate");
+        if (hydration.pending === true &&
+                hydration.requiresRows === true) {
+            virtualState.lastOrigin = String(
+                origin || "virtual_rebuild") +
+                "_hydrate_pending";
+            return false;
+        }
+        dehydrateDataWindowOutside(
+            range.start, range.end,
+            String(origin || "virtual_rebuild") + "_dehydrate");
+        if (force !== true &&
+                range.start === Number(
+                    virtualState.firstRenderedIndex) &&
+                range.end === Number(
+                    virtualState.lastRenderedIndex)) {
+            virtualState.topSpacerPx = setVirtualSpacerHeight(
+                virtualTopSpacer,
+                virtualHeightRange(0, range.start));
+            virtualState.bottomSpacerPx = setVirtualSpacerHeight(
+                virtualBottomSpacer,
+                virtualHeightRange(range.end + 1,
+                    previewRows.length));
+            return false;
+        }
+        var viewRebuildStartedAt =
+            Number(System.currentTimeMillis());
+        rebuildCreatedBefore = Number(scrollPerformanceState.createdViewCount);
+        rebuildRemovedBefore = Number(scrollPerformanceState.removedViewCount);
+        rebuildReusedBefore = Number(scrollPerformanceState.sameIdReuseCount);
+        var viewRebuildElapsed;
+        scrollPerformanceState.viewRebuildCount += 1;
+        measureVirtualCards();
+        oldCount = Number(virtualCardHost.getChildCount());
+        oldStart = Number(virtualState.firstRenderedIndex);
+        oldEnd = Number(virtualState.lastRenderedIndex);
+        recycledCount = oldCount;
+        overlap = force !== true && oldCount > 0 &&
+            oldEnd >= oldStart && range.start <= oldEnd &&
+            range.end >= oldStart &&
+            virtualRenderedItemIds.length === oldCount &&
+            virtualRenderedSignatures.length === oldCount &&
+            resultCardViews.length === oldCount &&
+            resultCardHolders.length === oldCount &&
+            resultActionViews.length === oldCount;
+        if (overlap) {
+            overlapStartedAt = Number(System.currentTimeMillis());
+            recycledCount = 0;
+            removeTop = Math.max(0, range.start - oldStart);
+            for (removeIndex = 0;
+                    removeIndex < removeTop; removeIndex += 1) {
+                virtualCardHost.removeViewAt(0);
+                virtualRenderedItemIds.shift();
+                virtualRenderedSignatures.shift();
+                resultCardViews.shift();
+                holderRef = resultCardHolders.shift();
+                resultActionViews.shift();
+                if (recycleEnabled && holderRef !== null &&
+                        holderRef !== undefined) {
+                    recyclePool.push(holderRef);
+                    scrollPerformanceState.holderRecycleReleaseCount += 1;
+                }
+                recycledCount += 1;
+                scrollPerformanceState.structuralRemoveCount += 1;
+            }
+            removeBottom = Math.max(0, oldEnd - range.end);
+            for (removeIndex = 0;
+                    removeIndex < removeBottom; removeIndex += 1) {
+                virtualCardHost.removeViewAt(
+                    Number(virtualCardHost.getChildCount()) - 1);
+                virtualRenderedItemIds.pop();
+                virtualRenderedSignatures.pop();
+                resultCardViews.pop();
+                holderRef = resultCardHolders.pop();
+                resultActionViews.pop();
+                if (recycleEnabled && holderRef !== null &&
+                        holderRef !== undefined) {
+                    recyclePool.push(holderRef);
+                    scrollPerformanceState.holderRecycleReleaseCount += 1;
+                }
+                recycledCount += 1;
+                scrollPerformanceState.structuralRemoveCount += 1;
+            }
+            scrollPerformanceState.removedViewCount += recycledCount;
+            if (range.start < oldStart) {
+                for (index = oldStart - 1;
+                        index >= range.start; index -= 1) {
+                    params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                    params.bottomMargin = dp(6);
+                    holderRef = null;
+                    if (recycleEnabled && recyclePool.length > 0) {
+                        scrollPerformanceState.holderRecyclePoolPeakCount = Math.max(
+                            Number(scrollPerformanceState.holderRecyclePoolPeakCount),
+                            Number(recyclePool.length));
+                        holderRef = takeCompatibleRecycleHolder(
+                            recyclePool, previewRows[index]);
+                        if (holderRef !== null && holderRef !== undefined) {
+                            scrollPerformanceState.holderRecycleKeyHitCount += 1;
+                            if (rebindResultCardHolder(holderRef,
+                                    previewRows[index], colors)) {
+                                wrapper = holderRef.wrapper;
+                                cardRef = holderRef.card;
+                                actionRef = cardHolderActionRefs(holderRef);
+                                scrollPerformanceState.holderRecycleReuseCount += 1;
+                            } else {
+                                scrollPerformanceState.holderRecycleDiscardCount += 1;
+                                holderRef = null;
+                            }
+                        } else {
+                            scrollPerformanceState.holderRecycleKeyMissCount += 1;
+                        }
+                    }
+                    if (holderRef === null) {
+                        wrapper = makeResultCard(previewRows[index], colors);
+                        cardRef = resultCardViews.pop();
+                        holderRef = resultCardHolders.pop();
+                        actionRef = resultActionViews.pop();
+                        if (recycleEnabled) {
+                            scrollPerformanceState.holderRecycleMissCount += 1;
+                        }
+                    }
+                    virtualCardHost.addView(wrapper, 0, params);
+                    resultCardViews.unshift(cardRef);
+                    resultCardHolders.unshift(holderRef);
+                    resultActionViews.unshift(actionRef);
+                    virtualRenderedItemIds.unshift(
+                        Number(previewRows[index].id));
+                    virtualRenderedSignatures.unshift(
+                        virtualRenderSignature(previewRows[index], colors));
+                    scrollPerformanceState.createdViewCount += 1;
+                    scrollPerformanceState.structuralInsertCount += 1;
+                }
+            }
+            if (range.end > oldEnd) {
+                for (index = oldEnd + 1;
+                        index <= range.end; index += 1) {
+                    params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                    params.bottomMargin = dp(6);
+                    holderRef = null;
+                    if (recycleEnabled && recyclePool.length > 0) {
+                        scrollPerformanceState.holderRecyclePoolPeakCount = Math.max(
+                            Number(scrollPerformanceState.holderRecyclePoolPeakCount),
+                            Number(recyclePool.length));
+                        holderRef = takeCompatibleRecycleHolder(
+                            recyclePool, previewRows[index]);
+                        if (holderRef !== null && holderRef !== undefined) {
+                            scrollPerformanceState.holderRecycleKeyHitCount += 1;
+                            if (rebindResultCardHolder(holderRef,
+                                    previewRows[index], colors)) {
+                                wrapper = holderRef.wrapper;
+                                cardRef = holderRef.card;
+                                actionRef = cardHolderActionRefs(holderRef);
+                                scrollPerformanceState.holderRecycleReuseCount += 1;
+                            } else {
+                                scrollPerformanceState.holderRecycleDiscardCount += 1;
+                                holderRef = null;
+                            }
+                        } else {
+                            scrollPerformanceState.holderRecycleKeyMissCount += 1;
+                        }
+                    }
+                    if (holderRef === null) {
+                        wrapper = makeResultCard(previewRows[index], colors);
+                        cardRef = resultCardViews.pop();
+                        holderRef = resultCardHolders.pop();
+                        actionRef = resultActionViews.pop();
+                        if (recycleEnabled) {
+                            scrollPerformanceState.holderRecycleMissCount += 1;
+                        }
+                    }
+                    virtualCardHost.addView(wrapper, params);
+                    resultCardViews.push(cardRef);
+                    resultCardHolders.push(holderRef);
+                    resultActionViews.push(actionRef);
+                    virtualRenderedItemIds.push(
+                        Number(previewRows[index].id));
+                    virtualRenderedSignatures.push(
+                        virtualRenderSignature(previewRows[index], colors));
+                    scrollPerformanceState.createdViewCount += 1;
+                    scrollPerformanceState.structuralInsertCount += 1;
+                }
+            }
+            if (recycleEnabled && recyclePool.length > 0) {
+                scrollPerformanceState.holderRecycleDiscardCount +=
+                    recyclePool.length;
+                recyclePool = [];
+            }
+            state.resultCardCount = Number(
+                virtualCardHost.getChildCount());
+            overlapElapsed = Math.max(0,
+                Number(System.currentTimeMillis()) - overlapStartedAt);
+            scrollPerformanceState.overlapUpdateLastMs = overlapElapsed;
+            scrollPerformanceState.overlapUpdateMaxMs = Math.max(
+                Number(scrollPerformanceState.overlapUpdateMaxMs), overlapElapsed);
+        } else {
+  keyedReconcileVirtualWindow(range, colors);
+  recycledCount = Math.max(0, oldCount -
+      Number(virtualCardHost.getChildCount()));
+        }
+        syncRenderedResultCounters(range);
+        viewRebuildElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) -
+                viewRebuildStartedAt);
+        scrollPerformanceState.viewRebuildLastMs =
+            viewRebuildElapsed;
+        scrollPerformanceState.viewRebuildMaxMs = Math.max(
+            Number(scrollPerformanceState.viewRebuildMaxMs),
+            viewRebuildElapsed);
+        if (viewRebuildElapsed > 32) {
+            scrollPerformanceState.slowRebuildCount += 1;
+            scrollPerformanceState.slowRebuildSamples.push({
+                origin: String(origin || "virtual_rebuild"),
+                force: force === true,
+                mode: overlap ? "overlap" : "keyed",
+                elapsedMs: viewRebuildElapsed,
+                rangeStart: Number(range.start),
+                rangeEnd: Number(range.end),
+                oldCount: oldCount,
+                newCount: Number(virtualCardHost.getChildCount()),
+                created: Number(scrollPerformanceState.createdViewCount) -
+                    rebuildCreatedBefore,
+                removed: Number(scrollPerformanceState.removedViewCount) -
+                    rebuildRemovedBefore,
+                reused: Number(scrollPerformanceState.sameIdReuseCount) -
+                    rebuildReusedBefore,
+                recycled: Number(scrollPerformanceState.holderRecycleReuseCount) -
+                    rebuildRecycleBefore,
+                newBuilt: Math.max(0,
+                    Number(scrollPerformanceState.createdViewCount) -
+                    rebuildCreatedBefore -
+                    (Number(scrollPerformanceState.holderRecycleReuseCount) -
+                        rebuildRecycleBefore)),
+                measureMs: Number(scrollPerformanceState.measureLastMs),
+                keyedMs: overlap ? 0 :
+                    Number(scrollPerformanceState.keyedReconcileLastMs),
+                signatureMs: overlap ? 0 :
+                    Number(scrollPerformanceState.keyedSignatureLastMs),
+                structureMs: overlap ? overlapElapsed :
+                    Number(scrollPerformanceState.keyedStructureLastMs)
+            });
+            while (scrollPerformanceState.slowRebuildSamples.length > 8) {
+                scrollPerformanceState.slowRebuildSamples.shift();
+            }
+        }
+        virtualState.firstRenderedIndex = range.start;
+        virtualState.lastRenderedIndex = range.end;
+        virtualState.topSpacerPx = setVirtualSpacerHeight(
+            virtualTopSpacer,
+            virtualHeightRange(0, range.start));
+        virtualState.bottomSpacerPx = setVirtualSpacerHeight(
+            virtualBottomSpacer,
+            virtualHeightRange(range.end + 1,
+                previewRows.length));
+        virtualState.updateCount += 1;
+        virtualState.rebuildCount += 1;
+        virtualState.recycleCount += recycledCount;
+        virtualState.updateDeferred = false;
+        virtualState.lastOrigin = String(origin || "virtual_rebuild");
+        virtualState.lastError = null;
+        virtualGeneration += 1;
+        generation = virtualGeneration;
+        if (mainHandler !== null) {
+            mainHandler.post(new Packages.java.lang.Runnable({
+                run: function () {
+                    if (!state.panelAttached ||
+                            virtualCardHost === null) {
+                        virtualState.staleUpdateCount += 1;
+                        return;
+                    }
+                    measureVirtualCards();
+                    restoreScrollAnchor();
+                    captureScrollAnchor();
+                    updateQuickResetView();
+                }
+            }));
+        }
+        return true;
+    }
+
+
+===== scheduleVirtualWindowUpdate =====
+
+===== function requestVirtualWindowUpdate =====
+
+===== mainHandler.post =====
+
+--- #1 at 27594 ---
+
+    function scheduleCopyFeedbackTimeout(generation) {
+        if (mainHandler === null) { return false; }
+        mainHandler.postDelayed(new Packages.java.lang.Runnable({
+            run: function () {
+                if (generation !== copyFeedbackGeneration) { return; }
+                state.copyFeedbackTimeoutCount += 1;
+                removeCopyFeedbackView();
+                copyFeedbackGeneration += 1;
+                attachDeleteUndoBanner();
+            }
+        }), COPY_FEEDBACK_TIMEOUT_MS);
+        return true;
+    }
+
+
+--- #2 at 30552 ---
+
+    function scheduleDeleteUndoTimeout(generation) {
+        if (mainHandler === null) { return false; }
+        mainHandler.postDelayed(new Packages.java.lang.Runnable({
+            run: function () {
+                if (generation !== deleteUndoGeneration ||
+                        pendingDeleteUndo === null) {
+                    return;
+                }
+                state.deleteUndoTimeoutCount += 1;
+                clearDeleteUndo(true);
+            }
+        }), DELETE_UNDO_TIMEOUT_MS);
+        return true;
+    }
+
+
+--- #3 at 35074 ---
+
+    function scheduleAdaptiveResultRefresh(previousWidth, nextWidth) {
+        var generation;
+        if (mainHandler === null || !state.panelAttached ||
+                Math.abs(Number(nextWidth) - Number(previousWidth)) <=
+                    touchSlop * 2) {
+            return false;
+        }
+        adaptiveRenderGeneration += 1;
+        generation = adaptiveRenderGeneration;
+        mainHandler.post(new Packages.java.lang.Runnable({
+            run: function () {
+                if (generation !== adaptiveRenderGeneration ||
+                        !state.panelAttached) {
+                    return;
+                }
+                state.adaptiveLayoutRefreshCount += 1;
+                buildPanelContent(false);
+            }
+        }));
+        return true;
+    }
+
+
+--- #4 at 44270 ---
+
+    function runOnMainSync(callback, timeoutMs) {
+        var mainLooper = Looper.getMainLooper();
+        var currentLooper = Looper.myLooper();
+        var box;
+        var latch;
+        var runnable;
+        var posted;
+        var completed;
+        if (mainLooper !== null && currentLooper !== null &&
+                currentLooper === mainLooper) {
+            return { ok: true, value: callback(), direct: true };
+        }
+        box = { ok: false, value: null, error: null };
+        latch = new CountDownLatch(1);
+        runnable = new Packages.java.lang.Runnable({
+            run: function () {
+                try {
+                    box.value = callback();
+                    box.ok = true;
+                } catch (error) {
+                    box.error = error;
+                } finally {
+                    latch.countDown();
+                }
+            }
+        });
+        posted = mainHandler.post(runnable);
+        if (!posted) {
+            return {
+                ok: false,
+                error: new Error("Filter main handler post failed")
+            };
+        }
+        completed = latch.await(Number(timeoutMs || 2500),
+            TimeUnit.MILLISECONDS);
+        if (!completed) {
+            try {
+                mainHandler.removeCallbacks(runnable);
+            } catch (ignored) {}
+            return {
+                ok: false,
+                error: new Error("Filter main handler timeout")
+            };
+        }
+        return box;
+    }
+
+
+--- #5 at 76565 ---
+
+    function scheduleNextPagePrefetch(origin) {
+        var descriptor;
+        var generation;
+        if (paginationState.prefetchEnabled !== true ||
+                paginationState.hasMore !== true ||
+                mainHandler === null ||
+                !state.panelAttached) {
+            prefetchState.enabled =
+                paginationState.prefetchEnabled === true;
+            if (paginationState.prefetchEnabled !== true) {
+                clearPrefetchedPage(
+                    "prefetch_disabled");
+            }
+            return false;
+        }
+        descriptor = nextPrefetchDescriptor();
+        if (descriptor === null) {
+            return false;
+        }
+        if (prefetchedPage !== null &&
+                prefetchState.ready === true &&
+                prefetchedPage.key === descriptor.key) {
+            return true;
+        }
+        prefetchGeneration += 1;
+        generation = prefetchGeneration;
+        prefetchState.enabled = true;
+        prefetchState.scheduled = true;
+        prefetchState.scheduleCount += 1;
+        prefetchState.mode = descriptor.mode;
+        prefetchState.targetPage =
+            Number(descriptor.targetPage);
+        prefetchState.lastOrigin =
+            String(origin || "prefetch_schedule");
+        mainHandler.postDelayed(
+            new Packages.java.lang.Runnable({
+                run: function () {
+                    if (generation !==
+                            prefetchGeneration ||
+                            !state.panelAttached) {
+                        prefetchState
+                            .staleDiscardCount += 1;
+                        return;
+                    }
+                    executeNextPagePrefetch(
+                        origin || "prefetch_schedule",
+                        generation);
+                }
+            }), PREFETCH_DELAY_MS);
+        return true;
+    }
+
+
+--- #6 at 135122 ---
+
+    function postHydrationResult(resultJson) {
+        hydrationResultQueue.offer(
+            new Packages.java.lang.String(String(resultJson)));
+        if (mainHandler !== null && hydrationApplyRunnable !== null) {
+            mainHandler.post(hydrationApplyRunnable);
+        }
+    }
+
+
+--- #7 at 145216 ---
+
+    function drainHydrationResultsOnMain() {
+        var resultJson;
+        if (Looper.myLooper() !== Looper.getMainLooper()) {
+            if (mainHandler !== null && hydrationApplyRunnable !== null) {
+                mainHandler.post(hydrationApplyRunnable);
+            }
+            return false;
+        }
+        while ((resultJson = hydrationResultQueue.poll()) !== null) {
+            applyHydrationResult(String(resultJson));
+        }
+        return true;
+    }
+
+
+--- #8 at 196677 ---
+
+    function rebuildVirtualWindow(origin, force, preferredIndex) {
+        var colors = palette();
+        var range;
+        var oldCount;
+        var index;
+        var params;
+        var generation;
+        var hydration;
+        var oldStart;
+        var oldEnd;
+        var overlap;
+        var removeTop;
+        var removeBottom;
+        var removeIndex;
+        var wrapper;
+        var cardRef;
+        var actionRef;
+        var holderRef;
+        var recyclePool = [];
+        var recycleEnabled = String(origin || "") === "result_scroll" ||
+            String(origin || "") === "hydration_apply";
+        var recycledCount;
+        var rebuildCreatedBefore;
+        var rebuildRemovedBefore;
+        var rebuildReusedBefore;
+        var rebuildRecycleBefore =
+            Number(scrollPerformanceState.holderRecycleReuseCount);
+        var overlapStartedAt;
+        var overlapElapsed = 0;
+        if (virtualCardHost === null || !state.panelAttached) {
+            return false;
+        }
+        if (activeSwipeCard !== null) {
+            virtualState.updateDeferred = true;
+            return false;
+        }
+        range = virtualTargetRange(preferredIndex);
+        virtualState.firstVisibleIndex = range.first;
+        virtualState.lastVisibleIndex = range.last;
+        if (force !== true &&
+                String(origin || "") === "result_scroll" &&
+                range.start === Number(
+                    virtualState.firstRenderedIndex) &&
+                range.end === Number(
+                    virtualState.lastRenderedIndex)) {
+            scrollPerformanceState.sameRangeNoLayoutCount += 1;
+            virtualState.lastOrigin =
+                "result_scroll_same_range_fast";
+            virtualState.lastError = null;
+            return false;
+        }
+        hydration = hydrateDataWindowRange(
+            range.start, range.end,
+            String(origin || "virtual_rebuild") + "_hydrate");
+        if (hydration.pending === true &&
+                hydration.requiresRows === true) {
+            virtualState.lastOrigin = String(
+                origin || "virtual_rebuild") +
+                "_hydrate_pending";
+            return false;
+        }
+        dehydrateDataWindowOutside(
+            range.start, range.end,
+            String(origin || "virtual_rebuild") + "_dehydrate");
+        if (force !== true &&
+                range.start === Number(
+                    virtualState.firstRenderedIndex) &&
+                range.end === Number(
+                    virtualState.lastRenderedIndex)) {
+            virtualState.topSpacerPx = setVirtualSpacerHeight(
+                virtualTopSpacer,
+                virtualHeightRange(0, range.start));
+            virtualState.bottomSpacerPx = setVirtualSpacerHeight(
+                virtualBottomSpacer,
+                virtualHeightRange(range.end + 1,
+                    previewRows.length));
+            return false;
+        }
+        var viewRebuildStartedAt =
+            Number(System.currentTimeMillis());
+        rebuildCreatedBefore = Number(scrollPerformanceState.createdViewCount);
+        rebuildRemovedBefore = Number(scrollPerformanceState.removedViewCount);
+        rebuildReusedBefore = Number(scrollPerformanceState.sameIdReuseCount);
+        var viewRebuildElapsed;
+        scrollPerformanceState.viewRebuildCount += 1;
+        measureVirtualCards();
+        oldCount = Number(virtualCardHost.getChildCount());
+        oldStart = Number(virtualState.firstRenderedIndex);
+        oldEnd = Number(virtualState.lastRenderedIndex);
+        recycledCount = oldCount;
+        overlap = force !== true && oldCount > 0 &&
+            oldEnd >= oldStart && range.start <= oldEnd &&
+            range.end >= oldStart &&
+            virtualRenderedItemIds.length === oldCount &&
+            virtualRenderedSignatures.length === oldCount &&
+            resultCardViews.length === oldCount &&
+            resultCardHolders.length === oldCount &&
+            resultActionViews.length === oldCount;
+        if (overlap) {
+            overlapStartedAt = Number(System.currentTimeMillis());
+            recycledCount = 0;
+            removeTop = Math.max(0, range.start - oldStart);
+            for (removeIndex = 0;
+                    removeIndex < removeTop; removeIndex += 1) {
+                virtualCardHost.removeViewAt(0);
+                virtualRenderedItemIds.shift();
+                virtualRenderedSignatures.shift();
+                resultCardViews.shift();
+                holderRef = resultCardHolders.shift();
+                resultActionViews.shift();
+                if (recycleEnabled && holderRef !== null &&
+                        holderRef !== undefined) {
+                    recyclePool.push(holderRef);
+                    scrollPerformanceState.holderRecycleReleaseCount += 1;
+                }
+                recycledCount += 1;
+                scrollPerformanceState.structuralRemoveCount += 1;
+            }
+            removeBottom = Math.max(0, oldEnd - range.end);
+            for (removeIndex = 0;
+                    removeIndex < removeBottom; removeIndex += 1) {
+                virtualCardHost.removeViewAt(
+                    Number(virtualCardHost.getChildCount()) - 1);
+                virtualRenderedItemIds.pop();
+                virtualRenderedSignatures.pop();
+                resultCardViews.pop();
+                holderRef = resultCardHolders.pop();
+                resultActionViews.pop();
+                if (recycleEnabled && holderRef !== null &&
+                        holderRef !== undefined) {
+                    recyclePool.push(holderRef);
+                    scrollPerformanceState.holderRecycleReleaseCount += 1;
+                }
+                recycledCount += 1;
+                scrollPerformanceState.structuralRemoveCount += 1;
+            }
+            scrollPerformanceState.removedViewCount += recycledCount;
+            if (range.start < oldStart) {
+                for (index = oldStart - 1;
+                        index >= range.start; index -= 1) {
+                    params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                    params.bottomMargin = dp(6);
+                    holderRef = null;
+                    if (recycleEnabled && recyclePool.length > 0) {
+                        scrollPerformanceState.holderRecyclePoolPeakCount = Math.max(
+                            Number(scrollPerformanceState.holderRecyclePoolPeakCount),
+                            Number(recyclePool.length));
+                        holderRef = takeCompatibleRecycleHolder(
+                            recyclePool, previewRows[index]);
+                        if (holderRef !== null && holderRef !== undefined) {
+                            scrollPerformanceState.holderRecycleKeyHitCount += 1;
+                            if (rebindResultCardHolder(holderRef,
+                                    previewRows[index], colors)) {
+                                wrapper = holderRef.wrapper;
+                                cardRef = holderRef.card;
+                                actionRef = cardHolderActionRefs(holderRef);
+                                scrollPerformanceState.holderRecycleReuseCount += 1;
+                            } else {
+                                scrollPerformanceState.holderRecycleDiscardCount += 1;
+                                holderRef = null;
+                            }
+                        } else {
+                            scrollPerformanceState.holderRecycleKeyMissCount += 1;
+                        }
+                    }
+                    if (holderRef === null) {
+                        wrapper = makeResultCard(previewRows[index], colors);
+                        cardRef = resultCardViews.pop();
+                        holderRef = resultCardHolders.pop();
+                        actionRef = resultActionViews.pop();
+                        if (recycleEnabled) {
+                            scrollPerformanceState.holderRecycleMissCount += 1;
+                        }
+                    }
+                    virtualCardHost.addView(wrapper, 0, params);
+                    resultCardViews.unshift(cardRef);
+                    resultCardHolders.unshift(holderRef);
+                    resultActionViews.unshift(actionRef);
+                    virtualRenderedItemIds.unshift(
+                        Number(previewRows[index].id));
+                    virtualRenderedSignatures.unshift(
+                        virtualRenderSignature(previewRows[index], colors));
+                    scrollPerformanceState.createdViewCount += 1;
+                    scrollPerformanceState.structuralInsertCount += 1;
+                }
+            }
+            if (range.end > oldEnd) {
+                for (index = oldEnd + 1;
+                        index <= range.end; index += 1) {
+                    params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                    params.bottomMargin = dp(6);
+                    holderRef = null;
+                    if (recycleEnabled && recyclePool.length > 0) {
+                        scrollPerformanceState.holderRecyclePoolPeakCount = Math.max(
+                            Number(scrollPerformanceState.holderRecyclePoolPeakCount),
+                            Number(recyclePool.length));
+                        holderRef = takeCompatibleRecycleHolder(
+                            recyclePool, previewRows[index]);
+                        if (holderRef !== null && holderRef !== undefined) {
+                            scrollPerformanceState.holderRecycleKeyHitCount += 1;
+                            if (rebindResultCardHolder(holderRef,
+                                    previewRows[index], colors)) {
+                                wrapper = holderRef.wrapper;
+                                cardRef = holderRef.card;
+                                actionRef = cardHolderActionRefs(holderRef);
+                                scrollPerformanceState.holderRecycleReuseCount += 1;
+                            } else {
+                                scrollPerformanceState.holderRecycleDiscardCount += 1;
+                                holderRef = null;
+                            }
+                        } else {
+                            scrollPerformanceState.holderRecycleKeyMissCount += 1;
+                        }
+                    }
+                    if (holderRef === null) {
+                        wrapper = makeResultCard(previewRows[index], colors);
+                        cardRef = resultCardViews.pop();
+                        holderRef = resultCardHolders.pop();
+                        actionRef = resultActionViews.pop();
+                        if (recycleEnabled) {
+                            scrollPerformanceState.holderRecycleMissCount += 1;
+                        }
+                    }
+                    virtualCardHost.addView(wrapper, params);
+                    resultCardViews.push(cardRef);
+                    resultCardHolders.push(holderRef);
+                    resultActionViews.push(actionRef);
+                    virtualRenderedItemIds.push(
+                        Number(previewRows[index].id));
+                    virtualRenderedSignatures.push(
+                        virtualRenderSignature(previewRows[index], colors));
+                    scrollPerformanceState.createdViewCount += 1;
+                    scrollPerformanceState.structuralInsertCount += 1;
+                }
+            }
+            if (recycleEnabled && recyclePool.length > 0) {
+                scrollPerformanceState.holderRecycleDiscardCount +=
+                    recyclePool.length;
+                recyclePool = [];
+            }
+            state.resultCardCount = Number(
+                virtualCardHost.getChildCount());
+            overlapElapsed = Math.max(0,
+                Number(System.currentTimeMillis()) - overlapStartedAt);
+            scrollPerformanceState.overlapUpdateLastMs = overlapElapsed;
+            scrollPerformanceState.overlapUpdateMaxMs = Math.max(
+                Number(scrollPerformanceState.overlapUpdateMaxMs), overlapElapsed);
+        } else {
+  keyedReconcileVirtualWindow(range, colors);
+  recycledCount = Math.max(0, oldCount -
+      Number(virtualCardHost.getChildCount()));
+        }
+        syncRenderedResultCounters(range);
+        viewRebuildElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) -
+                viewRebuildStartedAt);
+        scrollPerformanceState.viewRebuildLastMs =
+            viewRebuildElapsed;
+        scrollPerformanceState.viewRebuildMaxMs = Math.max(
+            Number(scrollPerformanceState.viewRebuildMaxMs),
+            viewRebuildElapsed);
+        if (viewRebuildElapsed > 32) {
+            scrollPerformanceState.slowRebuildCount += 1;
+            scrollPerformanceState.slowRebuildSamples.push({
+                origin: String(origin || "virtual_rebuild"),
+                force: force === true,
+                mode: overlap ? "overlap" : "keyed",
+                elapsedMs: viewRebuildElapsed,
+                rangeStart: Number(range.start),
+                rangeEnd: Number(range.end),
+                oldCount: oldCount,
+                newCount: Number(virtualCardHost.getChildCount()),
+                created: Number(scrollPerformanceState.createdViewCount) -
+                    rebuildCreatedBefore,
+                removed: Number(scrollPerformanceState.removedViewCount) -
+                    rebuildRemovedBefore,
+                reused: Number(scrollPerformanceState.sameIdReuseCount) -
+                    rebuildReusedBefore,
+                recycled: Number(scrollPerformanceState.holderRecycleReuseCount) -
+                    rebuildRecycleBefore,
+                newBuilt: Math.max(0,
+                    Number(scrollPerformanceState.createdViewCount) -
+                    rebuildCreatedBefore -
+                    (Number(scrollPerformanceState.holderRecycleReuseCount) -
+                        rebuildRecycleBefore)),
+                measureMs: Number(scrollPerformanceState.measureLastMs),
+                keyedMs: overlap ? 0 :
+                    Number(scrollPerformanceState.keyedReconcileLastMs),
+                signatureMs: overlap ? 0 :
+                    Number(scrollPerformanceState.keyedSignatureLastMs),
+                structureMs: overlap ? overlapElapsed :
+                    Number(scrollPerformanceState.keyedStructureLastMs)
+            });
+            while (scrollPerformanceState.slowRebuildSamples.length > 8) {
+                scrollPerformanceState.slowRebuildSamples.shift();
+            }
+        }
+        virtualState.firstRenderedIndex = range.start;
+        virtualState.lastRenderedIndex = range.end;
+        virtualState.topSpacerPx = setVirtualSpacerHeight(
+            virtualTopSpacer,
+            virtualHeightRange(0, range.start));
+        virtualState.bottomSpacerPx = setVirtualSpacerHeight(
+            virtualBottomSpacer,
+            virtualHeightRange(range.end + 1,
+                previewRows.length));
+        virtualState.updateCount += 1;
+        virtualState.rebuildCount += 1;
+        virtualState.recycleCount += recycledCount;
+        virtualState.updateDeferred = false;
+        virtualState.lastOrigin = String(origin || "virtual_rebuild");
+        virtualState.lastError = null;
+        virtualGeneration += 1;
+        generation = virtualGeneration;
+        if (mainHandler !== null) {
+            mainHandler.post(new Packages.java.lang.Runnable({
+                run: function () {
+                    if (!state.panelAttached ||
+                            virtualCardHost === null) {
+                        virtualState.staleUpdateCount += 1;
+                        return;
+                    }
+                    measureVirtualCards();
+                    restoreScrollAnchor();
+                    captureScrollAnchor();
+                    updateQuickResetView();
+                }
+            }));
+        }
+        return true;
+    }
+
+
+--- #9 at 198326 ---
+
+    function scheduleVirtualUpdate(origin, force) {
+        var generation;
+        var requestedOrigin = String(origin || "virtual_scroll");
+        var requestedForce = force === true;
+        scrollPerformanceState.updateRequestCount += 1;
+        if (requestedOrigin.indexOf("scroll") >= 0) {
+  scrollPerformanceState.scrollEventCount += 1;
+        }
+        if (mainHandler === null) { return false; }
+        if (virtualPendingOrigin.length === 0 || requestedForce === true ||
+      virtualPendingOrigin === "result_scroll") {
+  virtualPendingOrigin = requestedOrigin;
+        }
+        if (requestedForce === true && virtualPendingForce !== true) {
+  if (virtualState.updateScheduled) {
+      scrollPerformanceState.forceEscalationCount += 1;
+  }
+  virtualPendingForce = true;
+        }
+        if (virtualState.updateScheduled) {
+  scrollPerformanceState.updateCoalescedCount += 1;
+  return false;
+        }
+        virtualState.updateScheduled = true;
+        scrollPerformanceState.virtualScheduleCount += 1;
+        virtualGeneration += 1;
+        generation = virtualGeneration;
+        mainHandler.postDelayed(new Packages.java.lang.Runnable({
+  run: function () {
+      var commitOrigin;
+      var commitForce;
+      var virtualUpdateStartedAt;
+      var virtualUpdateElapsed;
+      if (generation !== virtualGeneration ||
+              !state.panelAttached) {
+          virtualState.updateScheduled = false;
+          virtualPendingOrigin = "";
+          virtualPendingForce = false;
+          virtualState.staleUpdateCount += 1;
+          return;
+      }
+      virtualState.updateScheduled = false;
+      commitOrigin = virtualPendingOrigin.length > 0 ?
+          virtualPendingOrigin : requestedOrigin;
+      commitForce = virtualPendingForce === true;
+      virtualPendingOrigin = "";
+      virtualPendingForce = false;
+      virtualUpdateStartedAt = Number(System.currentTimeMillis());
+      scrollPerformanceState.virtualUpdateCount += 1;
+      captureScrollAnchor();
+      rebuildVirtualWindow(commitOrigin, commitForce,
+          virtualState.firstVisibleIndex);
+      updateQuickResetView();
+      virtualUpdateElapsed = Math.max(0,
+          Number(System.currentTimeMillis()) -
+              virtualUpdateStartedAt);
+      scrollPerformanceState.virtualUpdateLastMs =
+          virtualUpdateElapsed;
+      scrollPerformanceState.virtualUpdateMaxMs = Math.max(
+          Number(scrollPerformanceState.virtualUpdateMaxMs),
+          virtualUpdateElapsed);
+  }
+        }), VIRTUAL_UPDATE_DELAY_MS);
+        return true;
+    }
+
+
+--- #10 at 201887 ---
+
+    function markNewContentPending(origin) {
+        paginationState.newContentPending = true;
+        paginationState.quickResetAvailable = true;
+        clearPrefetchedPage(
+            origin || "new_content_pending");
+        if (mainHandler !== null &&
+                Looper.myLooper() !== Looper.getMainLooper()) {
+            mainHandler.post(new Packages.java.lang.Runnable({
+                run: function () {
+                    if (!state.panelAttached) { return; }
+                    updateQuickResetView();
+                    updateResultCountOnMain();
+                }
+            }));
+        } else {
+            updateQuickResetView();
+            updateResultCountOnMain();
+        }
+        return true;
+    }
+
+
+--- #11 at 215036 ---
+
+    function requestKeyboardOnMain() {
+        var target = keywordInput;
+        var generation = searchGeneration;
+        var focused = false;
+        if (target === null) {
+            return false;
+        }
+        startFilterImeAvoidance();
+        try {
+            focused = target.requestFocus();
+        } catch (ignoredFocus) {}
+        state.inputFocused = focused || target.hasFocus();
+        state.keyboardRequestCount += 1;
+        mainHandler.postDelayed(new Packages.java.lang.Runnable({
+            run: function () {
+                if (!state.panelAttached || target === null ||
+                        target !== keywordInput || !searchExpanded ||
+                        generation !== searchGeneration) {
+                    return;
+                }
+                try {
+                    if (inputMethodManager !== null) {
+                        inputMethodManager.showSoftInput(target,
+                            InputMethodManager.SHOW_IMPLICIT);
+                    }
+                } catch (ignoredKeyboard) {}
+            }
+        }), 120);
+        return state.inputFocused;
+    }
+
+
+--- #12 at 216422 ---
+
+    function scheduleRealtimeSearch(text) {
+        var generation = searchGeneration + 1;
+        searchGeneration = generation;
+        mainHandler.postDelayed(new Packages.java.lang.Runnable({
+            run: function () {
+                if (!state.panelAttached ||
+                        generation !== searchGeneration) {
+                    return;
+                }
+                try {
+                    state.realtimeSearchCount += 1;
+                    setValue({ keyword: text }, {
+                        origin: "ui_realtime"
+                    });
+                    refreshResultsOnMain();
+                    updateResultCountOnMain();
+                } catch (error) {
+                    state.lastError = String(error);
+                }
+            }
+        }), 260);
+    }
+
+
+--- #13 at 237252 ---
+
+    function scheduleInputAttempt(text, generation, attempt, delayMs) {
+        var posted;
+        if (mainHandler === null) {
+            return finishInputDispatch(false,
+                "Main handler unavailable", attempt);
+        }
+        posted = mainHandler.postDelayed(new Packages.java.lang.Runnable({
+            run: function () {
+                if (!ready || generation !== inputDispatchGeneration) {
+                    return;
+                }
+                state.lastInputAttemptCount = Number(attempt);
+                try {
+                    executeInputText(text);
+                    finishInputDispatch(true, null, attempt);
+                } catch (error) {
+                    if (inputContextPendingError(error) &&
+                            attempt < INPUT_MAX_ATTEMPTS) {
+                        state.inputRetryCount += 1;
+                        scheduleInputAttempt(text, generation,
+                            attempt + 1, INPUT_RETRY_DELAY_MS);
+                        return;
+                    }
+                    finishInputDispatch(false, error, attempt);
+                }
+            }
+        }), Number(delayMs));
+        if (posted !== true) {
+            return finishInputDispatch(false,
+                "Input callback post failed", attempt);
+        }
+        return true;
+    }
+
+
+--- #15 at 282358 ---
+
+    function renderAjaxAppendBatch(context) {
+        var end;
+        var index;
+        var params;
+        if (context.generation !== ajaxAppendGeneration ||
+                resultContainer === null ||
+                !state.panelAttached) {
+            ajaxFooterState.loading = false;
+            return false;
+        }
+        end = Math.min(context.rows.length,
+            context.index + RENDER_BATCH_COUNT);
+        for (index = context.index; index < end;
+                index += 1) {
+            params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+            params.bottomMargin = dp(6);
+            resultContainer.addView(makeResultCard(
+                context.rows[index],
+                context.colors), params);
+        }
+        context.index = end;
+        ajaxFooterState.renderBatchCount += 1;
+        if (context.index < context.rows.length) {
+            if (context.synchronous === true) {
+                return true;
+            }
+            if (mainHandler !== null) {
+                mainHandler.post(
+                    new Packages.java.lang.Runnable({
+                        run: function () {
+                            renderAjaxAppendBatch(context);
+                        }
+                    }));
+                return true;
+            }
+        }
+        return finishAjaxAppendRender(
+            context.generation,
+            context.rows,
+            context.colors);
+    }
+
+
+--- #16 at 304824 ---
+
+    function finishResultRender(generation, colors) {
+        if (generation !== renderGeneration) { return false; }
+        appendLoadMoreControl(colors);
+        state.loadedResultCount = previewRows.length;
+        state.resultPageSize =
+            Number(paginationState.pageSize);
+        state.resultHasMore =
+            paginationState.hasMore === true;
+        state.resultPageLimit = Math.max(
+            Number(paginationState.pageSize),
+            previewRows.length);
+        state.contentReady = true;
+        state.renderedDataVersion = panelDataVersion;
+        state.renderBatchCount = renderBatchCount;
+        renderedDataVersion = panelDataVersion;
+        panelDataDirty = false;
+        performance.fullRenderReadyAtNs = nowNanos();
+        performance.showToFullRenderMs = elapsedMs(
+            performance.showStartedAtNs, performance.fullRenderReadyAtNs);
+        performance.renderBatchCount = renderBatchCount;
+        updateResultCountOnMain();
+        attachDeleteUndoBanner();
+        bindLazyScrollListener();
+        scheduleNextPagePrefetch(
+            "full_render_complete");
+        if (mainHandler !== null) {
+            mainHandler.post(new Packages.java.lang.Runnable({
+                run: function () {
+                    measureVirtualCards();
+                    restoreScrollAnchor();
+                    captureScrollAnchor();
+                    updateQuickResetView();
+                    updateResultScrollState();
+                    lazyLoadState.remainingPx =
+                        resultRemainingScrollPx();
+                }
+            }));
+        }
+        if (String(scrollPerformanceState.fullRefreshPendingDataKey || "").length > 0) {
+            scrollPerformanceState.fullRefreshLastAppliedDataKey =
+                String(scrollPerformanceState.fullRefreshPendingDataKey);
+            scrollPerformanceState.fullRefreshPendingDataKey = "";
+        }
+        return true;
+    }
+
+
+--- #17 at 306834 ---
+
+    function renderResultBatch(generation, batchSize, colors) {
+        var end;
+        var index;
+        var params;
+        if (generation !== renderGeneration ||
+                resultContainer === null || !state.panelAttached) {
+            return false;
+        }
+        end = Math.min(previewRows.length,
+            renderCursor + Math.max(1, Number(batchSize)));
+        for (index = renderCursor; index < end; index += 1) {
+            params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+            params.bottomMargin = dp(6);
+            resultContainer.addView(makeResultCard(
+                previewRows[index], colors), params);
+        }
+        renderCursor = end;
+        renderBatchCount += 1;
+        state.renderBatchCount = renderBatchCount;
+        if (performance.firstBatchReadyAtNs === 0) {
+            performance.firstBatchReadyAtNs = nowNanos();
+            performance.showToFirstBatchMs = elapsedMs(
+                performance.showStartedAtNs,
+                performance.firstBatchReadyAtNs);
+        }
+        if (renderCursor < previewRows.length && mainHandler !== null) {
+            mainHandler.post(new Packages.java.lang.Runnable({
+                run: function () {
+                    renderResultBatch(generation,
+                        RENDER_BATCH_COUNT, colors);
+                }
+            }));
+            return true;
+        }
+        return finishResultRender(generation, colors);
+    }
+
+
+--- #18 at 335689 ---
+
+    function buildResultArea(colors) {
+        var root = new LinearLayout(appContext);
+        var scroll = new ScrollView(appContext);
+        resultScrollView = scroll;
+        root.setOrientation(LinearLayout.VERTICAL);
+        resultContainer = new LinearLayout(appContext);
+        resultContainer.setOrientation(LinearLayout.VERTICAL);
+        scroll.setFillViewport(false);
+        scroll.setVerticalScrollBarEnabled(false);
+        scroll.addView(resultContainer, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT));
+        root.addView(scroll, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
+        refreshResultsOnMain();
+        if (mainHandler !== null) {
+            mainHandler.post(new Packages.java.lang.Runnable({
+                run: function () { updateResultScrollState(); }
+            }));
+        }
+        return root;
+    }
+
+
+--- #19 at 375007 ---
+
+    function schedulePanelRefresh(origin, rebuildStructure, requestFocus) {
+        var generation = refreshGeneration;
+        refreshReason = String(origin || refreshReason || "refresh");
+        if (refreshScheduled || mainHandler === null) { return false; }
+        refreshScheduled = true;
+        mainHandler.post(new Packages.java.lang.Runnable({
+            run: function () {
+                if (generation !== refreshGeneration) { return; }
+                refreshScheduled = false;
+                if (!state.panelAttached) { return; }
+                try {
+                    performance.lastRefreshOrigin = refreshReason;
+                    if (mutationRefreshPlan !== null) {
+                        refreshMutationResultsOnMain(refreshReason);
+                    } else if (panelDataDirty ||
+                            rebuildStructure === true ||
+                            resultContainer === null) {
+                        resetResultPaging(
+                            "panel_refresh");
+                        apply({ origin: refreshReason });
+                        if (rebuildStructure === true ||
+                                panelStructureDirty ||
+                                resultContainer === null) {
+                            buildPanelContent(requestFocus === true);
+                            panelStructureDirty = false;
+                            state.panelStructureDirty = false;
+                        } else {
+                            refreshResultsOnMain();
+                            updateResultCountOnMain();
+                        }
+                    }
+                } catch (error) {
+                    state.lastError = String(error);
+                    performance.lastError = String(error);
+                }
+            }
+        }));
+        return true;
+    }
+
+
+--- #20 at 376921 ---
+
+    function scheduleCoalescedRefresh(origin) {
+        invalidateHydrationWorker("coalesced_refresh");
+        var generation = refreshGeneration;
+        refreshReason = String(origin || "event");
+        if (refreshScheduled || mainHandler === null) {
+            state.refreshCoalescedCount += 1;
+            return false;
+        }
+        refreshScheduled = true;
+        mainHandler.postDelayed(new Packages.java.lang.Runnable({
+            run: function () {
+                if (generation !== refreshGeneration) { return; }
+                refreshScheduled = false;
+                if (state.panelAttached && panelDataDirty) {
+                    schedulePanelRefresh(refreshReason, false, false);
+                }
+            }
+        }), REFRESH_COALESCE_MS);
+        return true;
+    }
+
+
+===== paginationState.loadCount =====
+
+--- #1 at 54378 ---
+
+    function copyPaginationState() {
+        return {
+            ready: paginationState.ready === true,
+            mode: paginationState.mode,
+            repositoryMode: paginationState.repositoryMode,
+            pageSize: Number(paginationState.pageSize),
+            prefetchEnabled:
+                paginationState.prefetchEnabled === true,
+            pageNumber: Number(paginationState.pageNumber),
+            loadedCount: Number(paginationState.loadedCount),
+            totalCount: Number(paginationState.totalCount),
+            totalPages: Number(paginationState.totalPages),
+            hasMore: paginationState.hasMore === true,
+            endCursor: paginationState.endCursor,
+            queryGeneration: Number(paginationState.queryGeneration),
+            resetCount: Number(paginationState.resetCount),
+            loadCount: Number(paginationState.loadCount),
+            settingsSyncCount:
+                Number(paginationState.settingsSyncCount),
+            settingsEventCount:
+                Number(paginationState.settingsEventCount),
+            criteriaChangeCount:
+                Number(paginationState.criteriaChangeCount),
+            lastResetReason: paginationState.lastResetReason,
+            lastLoadMode: paginationState.lastLoadMode,
+            lastCriteriaSignature:
+                paginationState.lastCriteriaSignature,
+            newContentPending:
+                paginationState.newContentPending === true,
+            quickResetAvailable:
+                paginationState.quickResetAvailable === true,
+            lastError: paginationState.lastError
+        };
+    }
+
+
+--- #2 at 87395 ---
+
+    function loadPaginationPageInternal(request) {
+        var options;
+        var result;
+        var rows;
+        var appendedRows;
+        var append;
+        request = request || {};
+        append = paginationState.mode === "ajax" &&
+            request.append === true;
+        options = paginationQueryOptions(request);
+        try {
+            result = consumePrefetchedPage(options);
+            if (result === null) {
+                result = ClipHub.Repository.listItemPage(
+                    options);
+            }
+            rows = result && result.rows ? result.rows : [];
+            if (paginationState.repositoryMode === "number" &&
+                    rows.length === 0 &&
+                    Number(options.page || 1) > 1 &&
+                    Number(options.page) >
+                        Math.max(1,
+                            Number(result.totalPages || 0))) {
+                options.page = Math.max(1,
+                    Number(result.totalPages || 0));
+                result = ClipHub.Repository.listItemPage(options);
+                rows = result && result.rows ?
+                    result.rows : [];
+            }
+            if (append) {
+                appendedRows = uniqueAppendRows(
+                    previewRows, rows);
+                previewRows = previewRows.concat(appendedRows);
+            } else {
+                appendedRows = rows.slice(0);
+                previewRows = rows.slice(0);
+                resetDataWindowState(true);
+            }
+            paginationState.pageNumber =
+                paginationState.repositoryMode === "number" ?
+                    Math.max(1, Number(result.page ||
+                        options.page || 1)) :
+                    Math.max(1, Math.ceil(
+                        previewRows.length /
+                        Math.max(1,
+                            Number(paginationState.pageSize))));
+            paginationState.loadedCount = previewRows.length;
+            if (options.includeTotal === true &&
+                    result.totalCount !== undefined &&
+                    result.totalCount !== null) {
+                paginationState.totalCount =
+                    Number(result.totalCount);
+            } else if (result.hasMore !== true) {
+                paginationState.totalCount =
+                    Math.max(
+                        Number(paginationState.totalCount),
+                        previewRows.length);
+            }
+            if (options.includeTotal === true &&
+                    result.totalPages !== undefined &&
+                    result.totalPages !== null) {
+                paginationState.totalPages =
+                    Number(result.totalPages);
+            } else if (paginationState.totalCount > 0) {
+                paginationState.totalPages = Math.ceil(
+                    paginationState.totalCount /
+                    Math.max(1,
+                        Number(paginationState.pageSize)));
+            } else if (result.hasMore !== true &&
+                    previewRows.length > 0) {
+                paginationState.totalPages = Math.ceil(
+                    previewRows.length /
+                    Math.max(1,
+                        Number(paginationState.pageSize)));
+            } else {
+                paginationState.totalPages = 0;
+            }
+            paginationState.hasMore =
+                result.hasMore === true;
+            paginationState.endCursor =
+                result.endCursor === undefined ?
+                    null : result.endCursor;
+            paginationState.loadCount += 1;
+            paginationState.lastLoadMode =
+                paginationState.repositoryMode;
+            paginationState.lastError = null;
+            resultHasMore = paginationState.hasMore;
+            resultPageLimit = Math.max(
+                Number(paginationState.pageSize),
+                previewRows.length);
+            state.loadedResultCount =
+                previewRows.length;
+            state.resultPageSize =
+                Number(paginationState.pageSize);
+            state.resultPageLimit = resultPageLimit;
+            state.resultHasMore = resultHasMore;
+            if (paginationState.repositoryMode === "number") {
+                numberPagerState.currentPage =
+                    Number(paginationState.pageNumber);
+                numberPagerState.totalPages =
+                    Number(paginationState.totalPages);
+                numberPagerState.totalCount =
+                    Number(paginationState.totalCount);
+                numberPagerState.selectedPage =
+                    Number(paginationState.pageNumber);
+            }
+            return {
+                rows: rows,
+                appendedRows: appendedRows,
+                allRows: previewRows.slice(0),
+                options: options,
+                hasMore: paginationState.hasMore,
+                endCursor: paginationState.endCursor,
+                totalCount:
+                    Number(paginationState.totalCount),
+                totalPages:
+                    Number(paginationState.totalPages),
+                pageNumber:
+                    Number(paginationState.pageNumber),
+                pagination: copyPaginationState()
+            };
+        } catch (error) {
+            paginationState.lastError = String(error);
+            ajaxFooterState.lastError = String(error);
+            numberPagerState.lastError = String(error);
+            throw error;
+        }
+    }
+
+
+===== append =====
+
+--- #1 at 4393 ---
+var ScrollView = Packages.android.widget.ScrollView;
+    var HorizontalScrollView = Packages.android.widget.HorizontalScrollView;
+    var TextView = Packages.android.widget.TextView;
+    var EditText = Packages.android.widget.EditText;
+    var ImageView = Packages.android.widget.ImageView;
+    var TypedValue = Packages.android.util.TypedValue;
+    var InputType = Packages.android.text.InputType;
+    var EditorInfo = Packages.android.view.inputmethod.EditorInfo;
+    var InputMethodManager = Packages.android.view.inputmethod.InputMethodManager;
+    var DisplayMetrics = Packages.android.util.DisplayMetrics;
+    var TextUtils = Packages.android.text.TextUtils;
+    var TextWatcher = Packages.android.text.TextWatcher;
+    var Date = Packages.java.util.Date;
+    var SimpleDateFormat = Packages.java.text.SimpleDateFormat;
+    var Locale = Packages.java.util.Locale;
+
+    var HISTORY_KEY = "filterSearchHistory";
+    var HISTORY_LIMIT = 6;
+    var RESULT_PAGE_SIZE = 20;
+    var SELECTION_ENABLED = false;
+    var DELETE_UNDO_TIMEOUT_MS = 5000;
+    var COPY_FEEDBACK_TIMEOUT_MS = 1600;
+    var INPUT_FOCUS_DELAY_MS = 160;
+    var INPUT_RETRY_DELAY_MS = 180;
+    var INPUT_MAX_ATTEMPTS = 2;
+    var FIRST_RENDER_COUNT = 6;
+    var RENDER_BATCH_COUNT = 4;
+    var REFRESH_COALESCE_MS = 80;
+    var MUTATION_RELOAD_PAGE_LIMIT = 20;
+
+    var androidContext = null;
+    var appContext = null;
+    var windowManager = null;
+    var inputMethodManager = null;
+    var mainHandler = null;
+    var density = 1;
+    var touchSlop = 8;
+    var value = null;
+    var ready = false;
+    var eventListeners = [];
+
+    var panelRoot = null;
+    var panelWindowRoot = null;
+    var panelManagedFrame = null;
+    var panelParams = null;
+    var primaryDragView = null;
+    var primaryResizeView = null;
+    var keywordInput = null;
+    var searchView = null;
+    var resetView = null;
+    var closeView = null;
+    var settingsButton = null;
+    var advancedView = null;
+    var applyView = null;
+    var clearHistoryView = null;
+    var resultContainer = null;
+    var resultCountView = null;
+    var drawerContainer = null;
+    var drawerScrollView = null;
+    var drawerContentView = null;
+    var drawerFooterView = null;
+    var sourceViews = {};
+    var tagViews = {};
+    var pinnedViews = {};
+    var sensitiveViews = {};
+    var sortViews = {};
+    var historyViews = [];
+    var advancedVisible = false;
+    var searchHistory = [];
+    var previewRows = [];
+    var suppressTextWatcher = false;
+    var searchGeneration = 0;
+    var restoreListOnClose = false;
+    var rootMode = false;
+    var selectedItemId = null;
+    var resultCardViews = [];
+    var resultCardHolders = [];
+    var toolbarActionViews = {};
+    var resultTagMap = {};
+    var resultPageLimit = RESULT_PAGE_SIZE;
+    var resultHasMore = false;
+    var resultScrollView = null;
+    var loadMoreView = null;
+    var PAGINATION_STAGE = 9;
+    var paginationState = {
+        ready: false,
+        mode: "ajax",
+        repositoryMode: "append",
+        pageSize: 100,
+        prefetchEnabled: true,
+        pageNumber: 1,
+        loadedCount: 0,
+        totalCount: 0,
+        totalPages: 0,
+        hasMore: false,
+        endCursor: null,
+        queryGeneration: 0,
+        resetCount: 0,
+        loadCount: 0,
+        settingsSyncCount: 0,
+        settingsEventCount: 0,
+        criteriaChangeCount: 0,
+        lastResetReason: "",
+        lastLoadMode: "",
+        lastCriteriaSignature: "",
+        newContentPending: false,
+        quickResetAvailable: false,
+        lastError: null
+    };
+    var ajaxFooterState = {
+        present: false,
+        visible: false,
+        action: "none",
+        text: "",
+        clickable: false,
+        loading: false,
+        clickCount: 0,
+        blockedClickCount: 0,
+        successCount: 0,
+        endCount: 0,
+        appendedRowCount: 0,
+        duplicateBlockedCount: 0,
+        renderBatchCount: 0,
+        lastScrollYBeforeAppend: 0,
+        lastScrollYAfterAppend: 0,
+        positionPreserved: true,
+        lastError: null
+    };
+    var numberPagerView = null;
+    var numberPageViews = {};
+    var numberActionViews = {};
+    var numberPagerState = {
+        present: false,
+        visible: false,
+        loading: false,
+        currentPage: 1,
+        totalPages: 0,
+        totalCount: 0,
+        tokens: [],
+        selectedPage: 1,
+        nearbyPageLimit: 5,
+        jumpInputPresent: false,
+        layoutStyle:
+            "first_previous_nearby_next_last",
+        firstEnabled: false,
+        previousEnabled: false,
+        nextEnabled: false,
+        lastEnabled: false,
+        clickCount: 0,
+        pageClickCount: 0,
+        actionClickCount: 0,
+        blockedClickCount: 0,
+        samePageBlockedCount: 0,
+        successCount: 0,
+        failureCount: 0,
+        pageReplaceCount: 0,
+        scrollResetCount: 0,
+        nonZeroScrollResetCount: 0,
+        maximumScrollYBeforeChange: 0,
+        lastScrollYBeforeChange: 0,
+        lastScrollYAfterChange: 0,
+        lastTargetPage: 1,
+        lastAction: "",
+        lastOrigin: "",
+        lastError: null
+    };
+    var ajaxAppendGeneration = 0;
+    var LAZY_TRIGGER_MIN_DP = 120;
+    var LAZY_TRIGGER_VIEWPORT_RATIO = 0.38;
+    var LAZY_TRIGGER_COOLDOWN_MS = 260;
+    var PREFETCH_DELAY_MS = 160;
+    var lazyScrollListener = null;
+    var lazyGeneration = 0;
+    var lazyLoadState = {
+        listenerBound: false,
+        enabled: false,
+        pending: false,
+        thresholdPx: 0,
+        remainingPx: 0,
+        lastScrollY: 0,
+        lastOldScrollY: 0,
+        scrollEventCount: 0,
+        downwardScrollCount: 0,
+        nearBottomCount: 0,
+        triggerCount: 0,
+        successCount: 0,
+        failureCount: 0,
+        blockedCount: 0,
+        lastTriggeredLoadedCount: -1,
+        lastTriggerAt: 0,
+        lastOrigin: "",
+        lastError: null
+    };
+    var prefetchGeneration = 0;
+    var prefetchedPage = null;
+    var prefetchState = {
+        enabled: true,
+        scheduled: false,
+        inFlight: false,
+        ready: false,
+        mode: "",
+        targetPage: 0,
+        rowCount: 0,
+        scheduleCount: 0,
+        requestCount: 0,
+        successCount: 0,
+        hitCount: 0,
+        missCount: 0,
+        invalidationCount: 0,
+        staleDiscardCount: 0,
+        lastOrigin: "",
+        lastInvalidationReason: "",
+        lastError: null
+    };
+    var VIRTUAL_BEFORE_SCREENS = 3;
+    var VIRTUAL_AFTER_SCREENS = 5;
+    var VIRTUAL_UPDATE_DELAY_MS = 24;
+    var virtualTopSpacer = null;
+    var virtualCardHost = null;
+    var virtualBottomSpacer = null;
+    var paginationFooterHost = null;
+    var quickResetView = null;
+    var virtualRenderedItemIds = [];
+    var virtualRenderedSignatures = [];
+    var virtualGeneration = 0;
+    var virtualPendingOrigin = "";
+    var virtualPendingForce = false;
+    var virtualState = {
+        firstRenderedIndex: 0,
+        lastRenderedIndex: -1,
+        firstVisibleIndex: 0,
+        lastVisibleIndex: -1,
+        visibleCount: 1,
+        averageHeightPx: 0,
+        defaultHeightPx: 0,
+        heightById: {},
+        topSpacerPx: 0,
+        bottomSpacerPx: 0,
+        anchorItemId: null,
+        anchorIndex: -1,
+        anchorOffsetPx: 0,
+        anchorRestoreErrorPx: 0,
+        updateScheduled: false,
+        updateDeferred: false,
+        scrollListenerBound: false,
+        scrollToTopPending: false,
+        updateCount: 0,
+        recycleCount: 0,
+        rebuildCount: 0,
+        staleUpdateCount: 0,
+        lastOrigin: "",
+        lastError: null
+    };
+    var DATA_BLOCK_MIN_ROWS = 24;
+    var DATA_BLOCK_MAX_ROWS = 100;
+    var DATA_BLOCK_VISIBLE_MULTIPLIER = 2;
+    var DATA_BLOCK_KEEP_BEFORE = 1;
+    var DATA_BLOCK_KEEP_AFTER = 1;
+    var dataTagLoadedById = {};
+    var dataWindowState = {
+        blockSize: DATA_BLOCK_MIN_ROWS,
+        blockCount: 0,
+        hydratedBlockCount: 0,
+        hydratedRowCount: 0,
+        dehydratedRowCount: 0,
+        hydrationPassCount: 0,
+        dehydrationPa
+
+--- #2 at 5230 ---
+ale = Packages.java.util.Locale;
+
+    var HISTORY_KEY = "filterSearchHistory";
+    var HISTORY_LIMIT = 6;
+    var RESULT_PAGE_SIZE = 20;
+    var SELECTION_ENABLED = false;
+    var DELETE_UNDO_TIMEOUT_MS = 5000;
+    var COPY_FEEDBACK_TIMEOUT_MS = 1600;
+    var INPUT_FOCUS_DELAY_MS = 160;
+    var INPUT_RETRY_DELAY_MS = 180;
+    var INPUT_MAX_ATTEMPTS = 2;
+    var FIRST_RENDER_COUNT = 6;
+    var RENDER_BATCH_COUNT = 4;
+    var REFRESH_COALESCE_MS = 80;
+    var MUTATION_RELOAD_PAGE_LIMIT = 20;
+
+    var androidContext = null;
+    var appContext = null;
+    var windowManager = null;
+    var inputMethodManager = null;
+    var mainHandler = null;
+    var density = 1;
+    var touchSlop = 8;
+    var value = null;
+    var ready = false;
+    var eventListeners = [];
+
+    var panelRoot = null;
+    var panelWindowRoot = null;
+    var panelManagedFrame = null;
+    var panelParams = null;
+    var primaryDragView = null;
+    var primaryResizeView = null;
+    var keywordInput = null;
+    var searchView = null;
+    var resetView = null;
+    var closeView = null;
+    var settingsButton = null;
+    var advancedView = null;
+    var applyView = null;
+    var clearHistoryView = null;
+    var resultContainer = null;
+    var resultCountView = null;
+    var drawerContainer = null;
+    var drawerScrollView = null;
+    var drawerContentView = null;
+    var drawerFooterView = null;
+    var sourceViews = {};
+    var tagViews = {};
+    var pinnedViews = {};
+    var sensitiveViews = {};
+    var sortViews = {};
+    var historyViews = [];
+    var advancedVisible = false;
+    var searchHistory = [];
+    var previewRows = [];
+    var suppressTextWatcher = false;
+    var searchGeneration = 0;
+    var restoreListOnClose = false;
+    var rootMode = false;
+    var selectedItemId = null;
+    var resultCardViews = [];
+    var resultCardHolders = [];
+    var toolbarActionViews = {};
+    var resultTagMap = {};
+    var resultPageLimit = RESULT_PAGE_SIZE;
+    var resultHasMore = false;
+    var resultScrollView = null;
+    var loadMoreView = null;
+    var PAGINATION_STAGE = 9;
+    var paginationState = {
+        ready: false,
+        mode: "ajax",
+        repositoryMode: "append",
+        pageSize: 100,
+        prefetchEnabled: true,
+        pageNumber: 1,
+        loadedCount: 0,
+        totalCount: 0,
+        totalPages: 0,
+        hasMore: false,
+        endCursor: null,
+        queryGeneration: 0,
+        resetCount: 0,
+        loadCount: 0,
+        settingsSyncCount: 0,
+        settingsEventCount: 0,
+        criteriaChangeCount: 0,
+        lastResetReason: "",
+        lastLoadMode: "",
+        lastCriteriaSignature: "",
+        newContentPending: false,
+        quickResetAvailable: false,
+        lastError: null
+    };
+    var ajaxFooterState = {
+        present: false,
+        visible: false,
+        action: "none",
+        text: "",
+        clickable: false,
+        loading: false,
+        clickCount: 0,
+        blockedClickCount: 0,
+        successCount: 0,
+        endCount: 0,
+        appendedRowCount: 0,
+        duplicateBlockedCount: 0,
+        renderBatchCount: 0,
+        lastScrollYBeforeAppend: 0,
+        lastScrollYAfterAppend: 0,
+        positionPreserved: true,
+        lastError: null
+    };
+    var numberPagerView = null;
+    var numberPageViews = {};
+    var numberActionViews = {};
+    var numberPagerState = {
+        present: false,
+        visible: false,
+        loading: false,
+        currentPage: 1,
+        totalPages: 0,
+        totalCount: 0,
+        tokens: [],
+        selectedPage: 1,
+        nearbyPageLimit: 5,
+        jumpInputPresent: false,
+        layoutStyle:
+            "first_previous_nearby_next_last",
+        firstEnabled: false,
+        previousEnabled: false,
+        nextEnabled: false,
+        lastEnabled: false,
+        clickCount: 0,
+        pageClickCount: 0,
+        actionClickCount: 0,
+        blockedClickCount: 0,
+        samePageBlockedCount: 0,
+        successCount: 0,
+        failureCount: 0,
+        pageReplaceCount: 0,
+        scrollResetCount: 0,
+        nonZeroScrollResetCount: 0,
+        maximumScrollYBeforeChange: 0,
+        lastScrollYBeforeChange: 0,
+        lastScrollYAfterChange: 0,
+        lastTargetPage: 1,
+        lastAction: "",
+        lastOrigin: "",
+        lastError: null
+    };
+    var ajaxAppendGeneration = 0;
+    var LAZY_TRIGGER_MIN_DP = 120;
+    var LAZY_TRIGGER_VIEWPORT_RATIO = 0.38;
+    var LAZY_TRIGGER_COOLDOWN_MS = 260;
+    var PREFETCH_DELAY_MS = 160;
+    var lazyScrollListener = null;
+    var lazyGeneration = 0;
+    var lazyLoadState = {
+        listenerBound: false,
+        enabled: false,
+        pending: false,
+        thresholdPx: 0,
+        remainingPx: 0,
+        lastScrollY: 0,
+        lastOldScrollY: 0,
+        scrollEventCount: 0,
+        downwardScrollCount: 0,
+        nearBottomCount: 0,
+        triggerCount: 0,
+        successCount: 0,
+        failureCount: 0,
+        blockedCount: 0,
+        lastTriggeredLoadedCount: -1,
+        lastTriggerAt: 0,
+        lastOrigin: "",
+        lastError: null
+    };
+    var prefetchGeneration = 0;
+    var prefetchedPage = null;
+    var prefetchState = {
+        enabled: true,
+        scheduled: false,
+        inFlight: false,
+        ready: false,
+        mode: "",
+        targetPage: 0,
+        rowCount: 0,
+        scheduleCount: 0,
+        requestCount: 0,
+        successCount: 0,
+        hitCount: 0,
+        missCount: 0,
+        invalidationCount: 0,
+        staleDiscardCount: 0,
+        lastOrigin: "",
+        lastInvalidationReason: "",
+        lastError: null
+    };
+    var VIRTUAL_BEFORE_SCREENS = 3;
+    var VIRTUAL_AFTER_SCREENS = 5;
+    var VIRTUAL_UPDATE_DELAY_MS = 24;
+    var virtualTopSpacer = null;
+    var virtualCardHost = null;
+    var virtualBottomSpacer = null;
+    var paginationFooterHost = null;
+    var quickResetView = null;
+    var virtualRenderedItemIds = [];
+    var virtualRenderedSignatures = [];
+    var virtualGeneration = 0;
+    var virtualPendingOrigin = "";
+    var virtualPendingForce = false;
+    var virtualState = {
+        firstRenderedIndex: 0,
+        lastRenderedIndex: -1,
+        firstVisibleIndex: 0,
+        lastVisibleIndex: -1,
+        visibleCount: 1,
+        averageHeightPx: 0,
+        defaultHeightPx: 0,
+        heightById: {},
+        topSpacerPx: 0,
+        bottomSpacerPx: 0,
+        anchorItemId: null,
+        anchorIndex: -1,
+        anchorOffsetPx: 0,
+        anchorRestoreErrorPx: 0,
+        updateScheduled: false,
+        updateDeferred: false,
+        scrollListenerBound: false,
+        scrollToTopPending: false,
+        updateCount: 0,
+        recycleCount: 0,
+        rebuildCount: 0,
+        staleUpdateCount: 0,
+        lastOrigin: "",
+        lastError: null
+    };
+    var DATA_BLOCK_MIN_ROWS = 24;
+    var DATA_BLOCK_MAX_ROWS = 100;
+    var DATA_BLOCK_VISIBLE_MULTIPLIER = 2;
+    var DATA_BLOCK_KEEP_BEFORE = 1;
+    var DATA_BLOCK_KEEP_AFTER = 1;
+    var dataTagLoadedById = {};
+    var dataWindowState = {
+        blockSize: DATA_BLOCK_MIN_ROWS,
+        blockCount: 0,
+        hydratedBlockCount: 0,
+        hydratedRowCount: 0,
+        dehydratedRowCount: 0,
+        hydrationPassCount: 0,
+        dehydrationPassCount: 0,
+        hydrateQueryCount: 0,
+        tagQueryCount: 0,
+        hydratedRowTotal: 0,
+        dehydratedRowTotal: 0,
+        missingIdCount: 0,
+        resetCount: 0,
+        keepStartIndex: 0,
+        keepEndIndex: -1,
+        lastHydrateStartIndex: 0,
+        lastHydrateEndIndex: -1,
+        lastOrigin: "",
+        lastError: null
+    };
+    var pendingNewItemId = null;
+    var mutationRefreshPlan = null;
+    var mutationAnchorLocked = false;
+    var mutationState = {
+        eventCount: 0,
+        refreshRequestCount: 0,
+        refreshCount: 0,
+        coalescedCount: 0,
+        addedPendingCount: 0,
+        relatedEventSuppressedCount: 0,
+        settingsChangeCount: 0,
+        anchorRestoreCount: 0,
+        anchorFallbackCount: 0,
+        lastEventName: "",
+        lastAction: "",
+        lastOrigin: "",
+    
+
+--- #3 at 55787 ---
+
+    function copyAjaxFooterState() {
+        return {
+            present: ajaxFooterState.present === true,
+            visible: ajaxFooterState.visible === true,
+            action: ajaxFooterState.action,
+            text: ajaxFooterState.text,
+            clickable: ajaxFooterState.clickable === true,
+            loading: ajaxFooterState.loading === true,
+            clickCount: Number(ajaxFooterState.clickCount),
+            blockedClickCount:
+                Number(ajaxFooterState.blockedClickCount),
+            successCount: Number(ajaxFooterState.successCount),
+            endCount: Number(ajaxFooterState.endCount),
+            appendedRowCount:
+                Number(ajaxFooterState.appendedRowCount),
+            duplicateBlockedCount:
+                Number(ajaxFooterState.duplicateBlockedCount),
+            renderBatchCount:
+                Number(ajaxFooterState.renderBatchCount),
+            lastScrollYBeforeAppend:
+                Number(ajaxFooterState.lastScrollYBeforeAppend),
+            lastScrollYAfterAppend:
+                Number(ajaxFooterState.lastScrollYAfterAppend),
+            positionPreserved:
+                ajaxFooterState.positionPreserved === true,
+            lastError: ajaxFooterState.lastError
+        };
+    }
+
+
+--- #5 at 59515 ---
+
+    function readPaginationSettings() {
+        var settings = ClipHub.Settings;
+        var mode = "ajax";
+        var pageSize = 100;
+        var prefetchEnabled = true;
+        if (settings && typeof settings.get === "function") {
+            mode = paginationMode(
+                settings.get("paginationMode", "ajax"));
+            pageSize = paginationPageSize(
+                settings.get("paginationPageSize", 100));
+            prefetchEnabled =
+                settings.get("paginationPrefetchEnabled", true) === true;
+        }
+        return {
+            mode: mode,
+            repositoryMode: mode === "number" ?
+                "number" : "append",
+            pageSize: pageSize,
+            prefetchEnabled: prefetchEnabled
+        };
+    }
+
+
+--- #6 at 63841 ---
+
+    function paginationQueryOptions(request) {
+        var options;
+        var append;
+        request = request || {};
+        syncPaginationSettings("query_options_sync");
+        ensurePaginationCriteria();
+        append = paginationState.mode === "ajax" &&
+            request.append === true;
+        options = toQueryOptions({
+            mode: paginationState.repositoryMode,
+            pageSize: paginationState.pageSize,
+            sortMode: validateSortMode(
+                value && value.sortMode || "latest")
+        });
+        if (paginationState.repositoryMode === "number") {
+            options.page = Math.max(1, Math.floor(Number(
+                request.page || paginationState.pageNumber || 1)));
+            options.includeTotal =
+                request.includeTotal !== false;
+        } else {
+            options.cursor = append ?
+                paginationState.endCursor : null;
+            options.includeTotal = !append ||
+                request.includeTotal === true;
+        }
+        options.previewOnly = true;
+        return options;
+    }
+
+
+--- #11 at 71390 ---
+
+    function nextPrefetchDescriptor() {
+        var request;
+        var options;
+        var targetPage;
+        if (!ready ||
+                paginationState.prefetchEnabled !== true ||
+                paginationState.hasMore !== true) {
+            return null;
+        }
+        if (paginationState.mode === "ajax") {
+            targetPage = Math.max(2,
+                Number(paginationState.pageNumber || 1) + 1);
+            request = {
+                append: true,
+                includeTotal: false
+            };
+        } else {
+            targetPage = Number(
+                paginationState.pageNumber || 1) + 1;
+            if (targetPage >
+                    Math.max(1, Number(
+                        paginationState.totalPages || 1))) {
+                return null;
+            }
+            request = {
+                append: false,
+                page: targetPage,
+                includeTotal: true
+            };
+        }
+        options = paginationQueryOptions(request);
+        return {
+            request: request,
+            options: options,
+            key: prefetchOptionsKey(options),
+            targetPage: targetPage,
+            mode: paginationState.mode,
+            queryGeneration:
+                Number(paginationState.queryGeneration)
+        };
+    }
+
+
+--- #13 at 77442 ---
+
+    function consumePrefetchedPage(options) {
+        var key;
+        var result;
+        var pageRequest;
+        if (paginationState.prefetchEnabled !== true) {
+            return null;
+        }
+        pageRequest =
+            (String(options.mode || "") === "append" &&
+                options.cursor !== null &&
+                options.cursor !== undefined) ||
+            (String(options.mode || "") === "number" &&
+                Number(options.page || 1) > 1);
+        if (!pageRequest) {
+            return null;
+        }
+        key = prefetchOptionsKey(options);
+        if (prefetchedPage !== null &&
+                prefetchState.ready === true &&
+                prefetchedPage.key === key &&
+                Number(prefetchedPage.queryGeneration) ===
+                    Number(paginationState
+                        .queryGeneration)) {
+            result = prefetchedPage.result;
+            prefetchedPage = null;
+            prefetchState.ready = false;
+            prefetchState.inFlight = false;
+            prefetchState.scheduled = false;
+            prefetchState.rowCount = 0;
+            prefetchState.hitCount += 1;
+            prefetchState.lastOrigin =
+                "prefetch_consume";
+            return result;
+        }
+        prefetchState.missCount += 1;
+        if (prefetchedPage !== null ||
+                prefetchState.ready === true) {
+            clearPrefetchedPage(
+                "prefetch_request_mismatch");
+        }
+        return null;
+    }
+
+
+--- #24 at 103372 ---
+
+    function refreshMutationResultsOnMain(origin) {
+        var plan = mutationRefreshPlan;
+        var pendingBefore;
+        var quickBefore;
+        var globalAnchorIndex;
+        var targetPage = 1;
+        var targetLoaded;
+        var reloadPages = 0;
+        var anchorFound;
+        var fallbackIndex;
+        var beforeItemId;
+        var beforeIndex;
+        var beforeOffset;
+        var afterItemId;
+        var afterIndex;
+        var positionPreserved;
+        if (plan === null) {
+            plan = rememberMutationRefresh(
+                "manual", "changed",
+                origin || "manual_mutation_refresh", false);
+        }
+        try {
+            if (state.panelAttached) {
+                captureScrollAnchor();
+            }
+            if (virtualState.anchorItemId !== null) {
+                plan.anchorItemId = virtualState.anchorItemId;
+                plan.anchorIndex = Number(virtualState.anchorIndex);
+                plan.anchorOffsetPx = Number(
+                    virtualState.anchorOffsetPx);
+            }
+            beforeItemId = plan.anchorItemId;
+            beforeIndex = Number(plan.anchorIndex);
+            beforeOffset = Number(plan.anchorOffsetPx);
+            pendingBefore = paginationState.newContentPending === true ||
+                plan.newContentPending === true;
+            quickBefore = paginationState.quickResetAvailable === true;
+            globalAnchorIndex = mutationGlobalAnchorIndex(plan);
+            mutationState.lastModeBefore = String(plan.modeBefore);
+            mutationState.lastPageNumberBefore =
+                Number(plan.pageNumberBefore);
+            mutationState.lastLoadedCountBefore =
+                Number(plan.loadedCountBefore);
+            mutationState.lastAnchorItemIdBefore = beforeItemId;
+            mutationState.lastAnchorIndexBefore = beforeIndex;
+            mutationState.lastAnchorOffsetPxBefore = beforeOffset;
+            mutationRefreshPlan = null;
+            mutationAnchorLocked = true;
+            clearPrefetchedPage(
+                origin || "mutation_refresh");
+            resetUnifiedPagination(
+                origin || "mutation_refresh");
+            if (paginationState.mode === "number") {
+                targetPage = plan.criteriaChanged === true ? 1 :
+                    (plan.settingsChanged === true ?
+                    Math.floor(globalAnchorIndex /
+                        Math.max(1,
+                            Number(paginationState.pageSize))) + 1 :
+                    Math.max(1, Number(plan.pageNumberBefore)));
+                loadPaginationPageInternal({
+                    append: false,
+                    page: targetPage,
+                    includeTotal: true
+                });
+                reloadPages = 1;
+                if (plan.criteriaChanged === true &&
+                        beforeItemId !== null) {
+                    while (virtualRowIndexById(beforeItemId) < 0 &&
+                            targetPage < Number(
+                                paginationState.totalPages) &&
+                            reloadPages <
+                                MUTATION_RELOAD_PAGE_LIMIT) {
+                        targetPage += 1;
+                        loadPaginationPageInternal({
+                            append: false,
+                            page: targetPage,
+                            includeTotal: true
+                        });
+                        reloadPages += 1;
+                    }
+                    if (virtualRowIndexById(beforeItemId) < 0 &&
+                            targetPage !== 1) {
+                        targetPage = 1;
+                        loadPaginationPageInternal({
+                            append: false,
+                            page: 1,
+                            includeTotal: true
+                        });
+                        reloadPages += 1;
+                    }
+                }
+                fallbackIndex = plan.settingsChanged === true ?
+                    globalAnchorIndex % Math.max(1,
+                        Number(paginationState.pageSize)) :
+                    beforeIndex;
+            } else {
+                loadPaginationPageInternal({
+                    append: false,
+                    includeTotal: true
+                });
+                reloadPages = 1;
+                targetLoaded = Math.max(
+                    Number(paginationState.pageSize),
+                    Number(plan.loadedCountBefore));
+                if (plan.settingsChanged === true) {
+                    targetLoaded = Math.max(targetLoaded,
+                        globalAnchorIndex + 1);
+                }
+                while ((previewRows.length < targetLoaded ||
+                        (plan.criteriaChanged === true &&
+                            beforeItemId !== null &&
+                            virtualRowIndexById(beforeItemId) < 0)) &&
+                        paginationState.hasMore === true &&
+                        reloadPages < MUTATION_RELOAD_PAGE_LIMIT) {
+                    loadPaginationPageInternal({
+                        append: true,
+                        includeTotal: false
+                    });
+                    reloadPages += 1;
+                }
+                fallbackIndex = plan.settingsChanged === true ?
+                    globalAnchorIndex : beforeIndex;
+            }
+            paginationState.newContentPending = pendingBefore;
+            paginationState.quickResetAvailable =
+                pendingBefore || quickBefore;
+            virtualState.anchorItemId = beforeItemId;
+            virtualState.anchorIndex = fallbackIndex;
+            virtualState.anchorOffsetPx = beforeOffset;
+            virtualState.scrollToTopPending = false;
+            if (state.panelAttached) {
+                if (plan.rebuildStructure === true ||
+                        panelStructureDirty === true ||
+                        resultContainer === null) {
+                    buildPanelContent(false);
+                    panelStructureDirty = false;
+                    state.panelStructureDirty = false;
+                } else {
+                    refreshResultsOnMain();
+                    updateResultCountOnMain();
+                }
+                restoreScrollAnchor();
+                updateQuickResetView();
+            }
+            mutationAnchorLocked = false;
+            anchorFound = beforeItemId !== null &&
+                virtualRowIndexById(beforeItemId) >= 0;
+            afterItemId = virtualState.anchorItemId;
+            afterIndex = Number(virtualState.anchorIndex);
+            positionPreserved = beforeItemId === null ?
+                afterItemId === null :
+                (anchorFound ?
+                    Number(afterItemId) === Number(beforeItemId) :
+                    Math.abs(afterIndex - fallbackIndex) <= 1);
+            if (anchorFound && positionPreserved) {
+                mutationState.anchorRestoreCount += 1;
+            } else if (!anchorFound) {
+                mutationState.anchorFallbackCount += 1;
+            }
+            mutationState.refreshCount += 1;
+            mutationState.lastOrigin = String(origin || plan.origin);
+            mutationState.lastModeAfter = paginationState.mode;
+            mutationState.lastPageNumberAfter =
+                Number(paginationState.pageNumber);
+            mutationState.lastLoadedCountAfter = previewRows.length;
+            mutationState.lastReloadPageCount = reloadPages;
+            mutationState.lastAnchorItemIdAfter = afterItemId;
+            mutationState.lastAnchorIndexAfter = afterIndex;
+            mutationState.lastAnchorOffsetPxAfter =
+                Number(virtualState.anchorOffsetPx);
+            mutationState.lastAnchorRestoreErrorPx =
+                Number(virtualState.anchorRestoreErrorPx);
+            mutationState.lastPositionPreserved =
+                positionPreserved === true;
+            mutationState.lastError = null;
+            panelDataDirty = false;
+            state.panelDataDirty = false;
+            return copyMutationState();
+        } catch (error) {
+            mutationAnchorLocked = false;
+            mutationState.lastError = String(error);
+            state.lastError = String(error);
+            mutationRefreshPlan = null;
+            throw error;
+        }
+    }
+
+
+--- #29 at 205306 ---
+
+    function apply(options) {
+        var rows;
+        var thread;
+        var pagedRequest;
+        var requestedLimit;
+        var pageResult;
+        options = options || {};
+        if (!ready || value === null) {
+            throw new Error("ClipHub filter is not ready");
+        }
+        pagedRequest = options.limit === undefined &&
+            (options.offset === undefined ||
+                Number(options.offset) === 0);
+        requestedLimit = Math.max(1, Math.floor(
+            Number(options.limit || RESULT_PAGE_SIZE)));
+        try {
+            if (pagedRequest) {
+                pageResult = loadPaginationPageInternal({
+                    append: false,
+                    page: options.page,
+                    includeTotal: true
+                });
+                rows = pageResult.rows;
+            } else {
+                rows = ClipHub.Repository.listItems(
+                    toQueryOptions({
+                        previewOnly: true,
+                        limit: requestedLimit,
+                        offset: options.offset === undefined ?
+                            0 : options.offset
+                    }));
+                rows = sortRows(rows);
+                resultHasMore = false;
+                previewRows = rows;
+                resetDataWindowState(true);
+                paginationState.loadedCount =
+                    previewRows.length;
+                paginationState.totalCount =
+                    previewRows.length;
+                paginationState.totalPages =
+                    previewRows.length > 0 ? 1 : 0;
+                paginationState.hasMore = false;
+                paginationState.endCursor = null;
+            }
+            if (ClipHub.List &&
+                    typeof ClipHub.List.setItems === "function") {
+                ClipHub.List.setItems(previewRows);
+            }
+            state.applyCount += 1;
+            if (options.fromEvent === true) {
+                state.eventApplyCount += 1;
+            }
+            state.lastResultCount = previewRows.length;
+            state.loadedResultCount = previewRows.length;
+            state.resultPageSize =
+                Number(paginationState.pageSize);
+            state.resultPageLimit = resultPageLimit;
+            state.resultHasMore = resultHasMore;
+            thread = Thread.currentThread();
+            state.lastApplyThreadId =
+                Number(thread.getId());
+            state.lastApplyThreadName =
+                String(thread.getName());
+            state.lastError = null;
+            emitChanged(previewRows,
+                options.origin ||
+                (options.fromEvent ?
+                    "event" : "manual"));
+            return previewRows;
+        } catch (error) {
+            state.lastError = String(error);
+            paginationState.lastError =
+                String(error);
+            throw error;
+        }
+    }
+
+
+--- #38 at 284388 ---
+
+    function loadMoreResults(origin) {
+        var pageResult;
+        var lazyOrigin;
+        origin = String(origin || "footer_click");
+        lazyOrigin = origin !== "footer_click";
+        if (!state.panelAttached ||
+                paginationState.mode !== "ajax" ||
+                !paginationState.hasMore) {
+            if (!lazyOrigin) {
+                ajaxFooterState.blockedClickCount += 1;
+            }
+            return false;
+        }
+        if (ajaxFooterState.loading) {
+            if (!lazyOrigin) {
+                ajaxFooterState.blockedClickCount += 1;
+            }
+            return false;
+        }
+        if (!lazyOrigin) {
+            ajaxFooterState.clickCount += 1;
+        }
+        ajaxFooterState.loading = true;
+        ajaxFooterState.lastError = null;
+        ajaxFooterState.lastScrollYBeforeAppend =
+            currentResultScrollY();
+        appendLoadMoreControl(palette());
+        try {
+            pageResult = loadPaginationPageInternal({
+                append: true,
+                includeTotal: false
+            });
+            return startAjaxAppendRender(
+                pageResult.appendedRows);
+        } catch (error) {
+            ajaxFooterState.loading = false;
+            ajaxFooterState.lastError =
+                String(error);
+            if (lazyOrigin) {
+                lazyLoadState.pending = false;
+                lazyLoadState.failureCount += 1;
+                lazyLoadState.lastError =
+                    String(error);
+            }
+            appendLoadMoreControl(palette());
+            state.lastError = String(error);
+            return false;
+        }
+    }
+
+
+--- #42 at 291391 ---
+
+    function goToPage(page, origin, action) {
+        var target = Math.floor(Number(page));
+        var total = Math.max(1,
+            Number(paginationState.totalPages || 1));
+        var current = Math.max(1,
+            Number(paginationState.pageNumber || 1));
+        var beforeScroll;
+        var afterScroll;
+        action = String(action || "page");
+        origin = String(origin || "number_page");
+        if (!state.panelAttached ||
+                paginationState.mode !== "number" ||
+                numberPagerState.loading ||
+                !isFinite(target)) {
+            numberPagerState.blockedClickCount += 1;
+            return false;
+        }
+        target = Math.max(1, Math.min(total, target));
+        if (target === current) {
+            numberPagerState.blockedClickCount += 1;
+            numberPagerState.samePageBlockedCount += 1;
+            return false;
+        }
+        beforeScroll = currentResultScrollY();
+        numberPagerState.clickCount += 1;
+        if (action === "page") {
+            numberPagerState.pageClickCount += 1;
+        } else {
+            numberPagerState.actionClickCount += 1;
+        }
+        numberPagerState.loading = true;
+        numberPagerState.lastTargetPage = target;
+        numberPagerState.lastAction = action;
+        numberPagerState.lastOrigin = origin;
+        numberPagerState.lastScrollYBeforeChange =
+            beforeScroll;
+        numberPagerState.maximumScrollYBeforeChange =
+            Math.max(
+                Number(numberPagerState
+                    .maximumScrollYBeforeChange),
+                beforeScroll);
+        numberPagerState.lastError = null;
+        captureScrollAnchor();
+        appendLoadMoreControl(palette());
+        try {
+            apply({
+                page: target,
+                origin: origin
+            });
+            numberPagerState.loading = false;
+            numberPagerState.successCount += 1;
+            numberPagerState.pageReplaceCount += 1;
+            refreshResultsOnMain();
+            updateResultCountOnMain();
+            restoreScrollAnchor();
+            afterScroll = currentResultScrollY();
+            numberPagerState.lastScrollYAfterChange =
+                afterScroll;
+            if (beforeScroll > 0 && afterScroll === 0) {
+                numberPagerState.scrollResetCount += 1;
+                numberPagerState.nonZeroScrollResetCount += 1;
+            }
+            return true;
+        } catch (error) {
+            numberPagerState.loading = false;
+            numberPagerState.failureCount += 1;
+            numberPagerState.lastError = String(error);
+            state.lastError = String(error);
+            appendLoadMoreControl(palette());
+            return false;
+        }
+    }
+
+
+--- #44 at 303032 ---
+
+    function appendLoadMoreControl(colors) {
+        removePaginationFooterViews();
+        if (paginationState.mode === "number") {
+            ajaxFooterState.present = false;
+            ajaxFooterState.visible = false;
+            ajaxFooterState.action = "none";
+            ajaxFooterState.text = "";
+            ajaxFooterState.clickable = false;
+            return buildNumberPaginationFooter(colors);
+        }
+        numberPagerState.present = false;
+        numberPagerState.visible = false;
+        numberPagerState.loading = false;
+        numberPagerState.tokens = [];
+        return buildAjaxPaginationFooter(colors);
+    }
+
+
+===== loadNext =====
+
+===== prefetch =====
+
+--- #1 at 4433 ---
+.ScrollView;
+    var HorizontalScrollView = Packages.android.widget.HorizontalScrollView;
+    var TextView = Packages.android.widget.TextView;
+    var EditText = Packages.android.widget.EditText;
+    var ImageView = Packages.android.widget.ImageView;
+    var TypedValue = Packages.android.util.TypedValue;
+    var InputType = Packages.android.text.InputType;
+    var EditorInfo = Packages.android.view.inputmethod.EditorInfo;
+    var InputMethodManager = Packages.android.view.inputmethod.InputMethodManager;
+    var DisplayMetrics = Packages.android.util.DisplayMetrics;
+    var TextUtils = Packages.android.text.TextUtils;
+    var TextWatcher = Packages.android.text.TextWatcher;
+    var Date = Packages.java.util.Date;
+    var SimpleDateFormat = Packages.java.text.SimpleDateFormat;
+    var Locale = Packages.java.util.Locale;
+
+    var HISTORY_KEY = "filterSearchHistory";
+    var HISTORY_LIMIT = 6;
+    var RESULT_PAGE_SIZE = 20;
+    var SELECTION_ENABLED = false;
+    var DELETE_UNDO_TIMEOUT_MS = 5000;
+    var COPY_FEEDBACK_TIMEOUT_MS = 1600;
+    var INPUT_FOCUS_DELAY_MS = 160;
+    var INPUT_RETRY_DELAY_MS = 180;
+    var INPUT_MAX_ATTEMPTS = 2;
+    var FIRST_RENDER_COUNT = 6;
+    var RENDER_BATCH_COUNT = 4;
+    var REFRESH_COALESCE_MS = 80;
+    var MUTATION_RELOAD_PAGE_LIMIT = 20;
+
+    var androidContext = null;
+    var appContext = null;
+    var windowManager = null;
+    var inputMethodManager = null;
+    var mainHandler = null;
+    var density = 1;
+    var touchSlop = 8;
+    var value = null;
+    var ready = false;
+    var eventListeners = [];
+
+    var panelRoot = null;
+    var panelWindowRoot = null;
+    var panelManagedFrame = null;
+    var panelParams = null;
+    var primaryDragView = null;
+    var primaryResizeView = null;
+    var keywordInput = null;
+    var searchView = null;
+    var resetView = null;
+    var closeView = null;
+    var settingsButton = null;
+    var advancedView = null;
+    var applyView = null;
+    var clearHistoryView = null;
+    var resultContainer = null;
+    var resultCountView = null;
+    var drawerContainer = null;
+    var drawerScrollView = null;
+    var drawerContentView = null;
+    var drawerFooterView = null;
+    var sourceViews = {};
+    var tagViews = {};
+    var pinnedViews = {};
+    var sensitiveViews = {};
+    var sortViews = {};
+    var historyViews = [];
+    var advancedVisible = false;
+    var searchHistory = [];
+    var previewRows = [];
+    var suppressTextWatcher = false;
+    var searchGeneration = 0;
+    var restoreListOnClose = false;
+    var rootMode = false;
+    var selectedItemId = null;
+    var resultCardViews = [];
+    var resultCardHolders = [];
+    var toolbarActionViews = {};
+    var resultTagMap = {};
+    var resultPageLimit = RESULT_PAGE_SIZE;
+    var resultHasMore = false;
+    var resultScrollView = null;
+    var loadMoreView = null;
+    var PAGINATION_STAGE = 9;
+    var paginationState = {
+        ready: false,
+        mode: "ajax",
+        repositoryMode: "append",
+        pageSize: 100,
+        prefetchEnabled: true,
+        pageNumber: 1,
+        loadedCount: 0,
+        totalCount: 0,
+        totalPages: 0,
+        hasMore: false,
+        endCursor: null,
+        queryGeneration: 0,
+        resetCount: 0,
+        loadCount: 0,
+        settingsSyncCount: 0,
+        settingsEventCount: 0,
+        criteriaChangeCount: 0,
+        lastResetReason: "",
+        lastLoadMode: "",
+        lastCriteriaSignature: "",
+        newContentPending: false,
+        quickResetAvailable: false,
+        lastError: null
+    };
+    var ajaxFooterState = {
+        present: false,
+        visible: false,
+        action: "none",
+        text: "",
+        clickable: false,
+        loading: false,
+        clickCount: 0,
+        blockedClickCount: 0,
+        successCount: 0,
+        endCount: 0,
+        appendedRowCount: 0,
+        duplicateBlockedCount: 0,
+        renderBatchCount: 0,
+        lastScrollYBeforeAppend: 0,
+        lastScrollYAfterAppend: 0,
+        positionPreserved: true,
+        lastError: null
+    };
+    var numberPagerView = null;
+    var numberPageViews = {};
+    var numberActionViews = {};
+    var numberPagerState = {
+        present: false,
+        visible: false,
+        loading: false,
+        currentPage: 1,
+        totalPages: 0,
+        totalCount: 0,
+        tokens: [],
+        selectedPage: 1,
+        nearbyPageLimit: 5,
+        jumpInputPresent: false,
+        layoutStyle:
+            "first_previous_nearby_next_last",
+        firstEnabled: false,
+        previousEnabled: false,
+        nextEnabled: false,
+        lastEnabled: false,
+        clickCount: 0,
+        pageClickCount: 0,
+        actionClickCount: 0,
+        blockedClickCount: 0,
+        samePageBlockedCount: 0,
+        successCount: 0,
+        failureCount: 0,
+        pageReplaceCount: 0,
+        scrollResetCount: 0,
+        nonZeroScrollResetCount: 0,
+        maximumScrollYBeforeChange: 0,
+        lastScrollYBeforeChange: 0,
+        lastScrollYAfterChange: 0,
+        lastTargetPage: 1,
+        lastAction: "",
+        lastOrigin: "",
+        lastError: null
+    };
+    var ajaxAppendGeneration = 0;
+    var LAZY_TRIGGER_MIN_DP = 120;
+    var LAZY_TRIGGER_VIEWPORT_RATIO = 0.38;
+    var LAZY_TRIGGER_COOLDOWN_MS = 260;
+    var PREFETCH_DELAY_MS = 160;
+    var lazyScrollListener = null;
+    var lazyGeneration = 0;
+    var lazyLoadState = {
+        listenerBound: false,
+        enabled: false,
+        pending: false,
+        thresholdPx: 0,
+        remainingPx: 0,
+        lastScrollY: 0,
+        lastOldScrollY: 0,
+        scrollEventCount: 0,
+        downwardScrollCount: 0,
+        nearBottomCount: 0,
+        triggerCount: 0,
+        successCount: 0,
+        failureCount: 0,
+        blockedCount: 0,
+        lastTriggeredLoadedCount: -1,
+        lastTriggerAt: 0,
+        lastOrigin: "",
+        lastError: null
+    };
+    var prefetchGeneration = 0;
+    var prefetchedPage = null;
+    var prefetchState = {
+        enabled: true,
+        scheduled: false,
+        inFlight: false,
+        ready: false,
+        mode: "",
+        targetPage: 0,
+        rowCount: 0,
+        scheduleCount: 0,
+        requestCount: 0,
+        successCount: 0,
+        hitCount: 0,
+        missCount: 0,
+        invalidationCount: 0,
+        staleDiscardCount: 0,
+        lastOrigin: "",
+        lastInvalidationReason: "",
+        lastError: null
+    };
+    var VIRTUAL_BEFORE_SCREENS = 3;
+    var VIRTUAL_AFTER_SCREENS = 5;
+    var VIRTUAL_UPDATE_DELAY_MS = 24;
+    var virtualTopSpacer = null;
+    var virtualCardHost = null;
+    var virtualBottomSpacer = null;
+    var paginationFooterHost = null;
+    var quickResetView = null;
+    var virtualRenderedItemIds = [];
+    var virtualRenderedSignatures = [];
+    var virtualGeneration = 0;
+    var virtualPendingOrigin = "";
+    var virtualPendingForce = false;
+    var virtualState = {
+        firstRenderedIndex: 0,
+        lastRenderedIndex: -1,
+        firstVisibleIndex: 0,
+        lastVisibleIndex: -1,
+        visibleCount: 1,
+        averageHeightPx: 0,
+        defaultHeightPx: 0,
+        heightById: {},
+        topSpacerPx: 0,
+        bottomSpacerPx: 0,
+        anchorItemId: null,
+        anchorIndex: -1,
+        anchorOffsetPx: 0,
+        anchorRestoreErrorPx: 0,
+        updateScheduled: false,
+        updateDeferred: false,
+        scrollListenerBound: false,
+        scrollToTopPending: false,
+        updateCount: 0,
+        recycleCount: 0,
+        rebuildCount: 0,
+        staleUpdateCount: 0,
+        lastOrigin: "",
+        lastError: null
+    };
+    var DATA_BLOCK_MIN_ROWS = 24;
+    var DATA_BLOCK_MAX_ROWS = 100;
+    var DATA_BLOCK_VISIBLE_MULTIPLIER = 2;
+    var DATA_BLOCK_KEEP_BEFORE = 1;
+    var DATA_BLOCK_KEEP_AFTER = 1;
+    var dataTagLoadedById = {};
+    var dataWindowState = {
+        blockSize: DATA_BLOCK_MIN_ROWS,
+        blockCount: 0,
+        hydratedBlockCount: 0,
+        hydratedRowCount: 0,
+        dehydratedRowCount: 0,
+        hydrationPassCount: 0,
+        dehydrationPassCount: 0,
+        hydrateQueryCount: 0,
+
+
+--- #2 at 7275 ---
+AGINATION_STAGE = 9;
+    var paginationState = {
+        ready: false,
+        mode: "ajax",
+        repositoryMode: "append",
+        pageSize: 100,
+        prefetchEnabled: true,
+        pageNumber: 1,
+        loadedCount: 0,
+        totalCount: 0,
+        totalPages: 0,
+        hasMore: false,
+        endCursor: null,
+        queryGeneration: 0,
+        resetCount: 0,
+        loadCount: 0,
+        settingsSyncCount: 0,
+        settingsEventCount: 0,
+        criteriaChangeCount: 0,
+        lastResetReason: "",
+        lastLoadMode: "",
+        lastCriteriaSignature: "",
+        newContentPending: false,
+        quickResetAvailable: false,
+        lastError: null
+    };
+    var ajaxFooterState = {
+        present: false,
+        visible: false,
+        action: "none",
+        text: "",
+        clickable: false,
+        loading: false,
+        clickCount: 0,
+        blockedClickCount: 0,
+        successCount: 0,
+        endCount: 0,
+        appendedRowCount: 0,
+        duplicateBlockedCount: 0,
+        renderBatchCount: 0,
+        lastScrollYBeforeAppend: 0,
+        lastScrollYAfterAppend: 0,
+        positionPreserved: true,
+        lastError: null
+    };
+    var numberPagerView = null;
+    var numberPageViews = {};
+    var numberActionViews = {};
+    var numberPagerState = {
+        present: false,
+        visible: false,
+        loading: false,
+        currentPage: 1,
+        totalPages: 0,
+        totalCount: 0,
+        tokens: [],
+        selectedPage: 1,
+        nearbyPageLimit: 5,
+        jumpInputPresent: false,
+        layoutStyle:
+            "first_previous_nearby_next_last",
+        firstEnabled: false,
+        previousEnabled: false,
+        nextEnabled: false,
+        lastEnabled: false,
+        clickCount: 0,
+        pageClickCount: 0,
+        actionClickCount: 0,
+        blockedClickCount: 0,
+        samePageBlockedCount: 0,
+        successCount: 0,
+        failureCount: 0,
+        pageReplaceCount: 0,
+        scrollResetCount: 0,
+        nonZeroScrollResetCount: 0,
+        maximumScrollYBeforeChange: 0,
+        lastScrollYBeforeChange: 0,
+        lastScrollYAfterChange: 0,
+        lastTargetPage: 1,
+        lastAction: "",
+        lastOrigin: "",
+        lastError: null
+    };
+    var ajaxAppendGeneration = 0;
+    var LAZY_TRIGGER_MIN_DP = 120;
+    var LAZY_TRIGGER_VIEWPORT_RATIO = 0.38;
+    var LAZY_TRIGGER_COOLDOWN_MS = 260;
+    var PREFETCH_DELAY_MS = 160;
+    var lazyScrollListener = null;
+    var lazyGeneration = 0;
+    var lazyLoadState = {
+        listenerBound: false,
+        enabled: false,
+        pending: false,
+        thresholdPx: 0,
+        remainingPx: 0,
+        lastScrollY: 0,
+        lastOldScrollY: 0,
+        scrollEventCount: 0,
+        downwardScrollCount: 0,
+        nearBottomCount: 0,
+        triggerCount: 0,
+        successCount: 0,
+        failureCount: 0,
+        blockedCount: 0,
+        lastTriggeredLoadedCount: -1,
+        lastTriggerAt: 0,
+        lastOrigin: "",
+        lastError: null
+    };
+    var prefetchGeneration = 0;
+    var prefetchedPage = null;
+    var prefetchState = {
+        enabled: true,
+        scheduled: false,
+        inFlight: false,
+        ready: false,
+        mode: "",
+        targetPage: 0,
+        rowCount: 0,
+        scheduleCount: 0,
+        requestCount: 0,
+        successCount: 0,
+        hitCount: 0,
+        missCount: 0,
+        invalidationCount: 0,
+        staleDiscardCount: 0,
+        lastOrigin: "",
+        lastInvalidationReason: "",
+        lastError: null
+    };
+    var VIRTUAL_BEFORE_SCREENS = 3;
+    var VIRTUAL_AFTER_SCREENS = 5;
+    var VIRTUAL_UPDATE_DELAY_MS = 24;
+    var virtualTopSpacer = null;
+    var virtualCardHost = null;
+    var virtualBottomSpacer = null;
+    var paginationFooterHost = null;
+    var quickResetView = null;
+    var virtualRenderedItemIds = [];
+    var virtualRenderedSignatures = [];
+    var virtualGeneration = 0;
+    var virtualPendingOrigin = "";
+    var virtualPendingForce = false;
+    var virtualState = {
+        firstRenderedIndex: 0,
+        lastRenderedIndex: -1,
+        firstVisibleIndex: 0,
+        lastVisibleIndex: -1,
+        visibleCount: 1,
+        averageHeightPx: 0,
+        defaultHeightPx: 0,
+        heightById: {},
+        topSpacerPx: 0,
+        bottomSpacerPx: 0,
+        anchorItemId: null,
+        anchorIndex: -1,
+        anchorOffsetPx: 0,
+        anchorRestoreErrorPx: 0,
+        updateScheduled: false,
+        updateDeferred: false,
+        scrollListenerBound: false,
+        scrollToTopPending: false,
+        updateCount: 0,
+        recycleCount: 0,
+        rebuildCount: 0,
+        staleUpdateCount: 0,
+        lastOrigin: "",
+        lastError: null
+    };
+    var DATA_BLOCK_MIN_ROWS = 24;
+    var DATA_BLOCK_MAX_ROWS = 100;
+    var DATA_BLOCK_VISIBLE_MULTIPLIER = 2;
+    var DATA_BLOCK_KEEP_BEFORE = 1;
+    var DATA_BLOCK_KEEP_AFTER = 1;
+    var dataTagLoadedById = {};
+    var dataWindowState = {
+        blockSize: DATA_BLOCK_MIN_ROWS,
+        blockCount: 0,
+        hydratedBlockCount: 0,
+        hydratedRowCount: 0,
+        dehydratedRowCount: 0,
+        hydrationPassCount: 0,
+        dehydrationPassCount: 0,
+        hydrateQueryCount: 0,
+        tagQueryCount: 0,
+        hydratedRowTotal: 0,
+        dehydratedRowTotal: 0,
+        missingIdCount: 0,
+        resetCount: 0,
+        keepStartIndex: 0,
+        keepEndIndex: -1,
+        lastHydrateStartIndex: 0,
+        lastHydrateEndIndex: -1,
+        lastOrigin: "",
+        lastError: null
+    };
+    var pendingNewItemId = null;
+    var mutationRefreshPlan = null;
+    var mutationAnchorLocked = false;
+    var mutationState = {
+        eventCount: 0,
+        refreshRequestCount: 0,
+        refreshCount: 0,
+        coalescedCount: 0,
+        addedPendingCount: 0,
+        relatedEventSuppressedCount: 0,
+        settingsChangeCount: 0,
+        anchorRestoreCount: 0,
+        anchorFallbackCount: 0,
+        lastEventName: "",
+        lastAction: "",
+        lastOrigin: "",
+        lastModeBefore: "",
+        lastModeAfter: "",
+        lastPageNumberBefore: 1,
+        lastPageNumberAfter: 1,
+        lastLoadedCountBefore: 0,
+        lastLoadedCountAfter: 0,
+        lastReloadPageCount: 0,
+        lastAnchorItemIdBefore: null,
+        lastAnchorItemIdAfter: null,
+        lastAnchorIndexBefore: -1,
+        lastAnchorIndexAfter: -1,
+        lastAnchorOffsetPxBefore: 0,
+        lastAnchorOffsetPxAfter: 0,
+        lastAnchorRestoreErrorPx: 0,
+        lastPositionPreserved: true,
+        lastError: null
+    };
+    var activeSwipeCard = null;
+    var resultBodyFrame = null;
+    var resultActionViews = [];
+    var sourceIconConstantStateCache = {};
+    var deleteUndoView = null;
+    var pendingDeleteUndo = null;
+    var deleteUndoGeneration = 0;
+    var copyFeedbackView = null;
+    var copyFeedbackGeneration = 0;
+    var adaptiveRenderGeneration = 0;
+    var searchExpanded = false;
+    var searchStatusRow = null;
+    var searchInputRow = null;
+    var searchToggleView = null;
+    var searchClearView = null;
+    var historyContainerView = null;
+    var inputDispatchGeneration = 0;
+    var inputDispatchPending = false;
+    var panelBuilt = false;
+    var panelBuiltRootMode = null;
+    var panelStructureDirty = true;
+    var panelDataDirty = true;
+    var panelDataVersion = 1;
+    var renderedDataVersion = 0;
+    var renderGeneration = 0;
+    var renderCursor = 0;
+    var renderBatchCount = 0;
+    var optionCountsCache = null;
+    var optionCountsDirty = true;
+    var refreshGeneration = 0;
+    var refreshScheduled = false;
+    var refreshReason = "";
+    var lastShowReused = false;
+    var timeFormatter = null;
+    var performance = {
+        showGeneration: 0,
+        showStartedAtNs: 0,
+        windowAttachedAtNs: 0,
+        firstDrawAtNs: 0,
+        firstBatchReadyAtNs: 0,
+        fullRenderReadyAtNs: 0,
+        showToAttachMs: null,
+        showToFirstDrawMs: null,
+        showToFirstBatchMs: null,
+        showToFullRenderMs: null,
+        renderBatchCount: 0,
+        lastRefreshOrigin: "",
+
+
+--- #3 at 7307 ---
+inationState = {
+        ready: false,
+        mode: "ajax",
+        repositoryMode: "append",
+        pageSize: 100,
+        prefetchEnabled: true,
+        pageNumber: 1,
+        loadedCount: 0,
+        totalCount: 0,
+        totalPages: 0,
+        hasMore: false,
+        endCursor: null,
+        queryGeneration: 0,
+        resetCount: 0,
+        loadCount: 0,
+        settingsSyncCount: 0,
+        settingsEventCount: 0,
+        criteriaChangeCount: 0,
+        lastResetReason: "",
+        lastLoadMode: "",
+        lastCriteriaSignature: "",
+        newContentPending: false,
+        quickResetAvailable: false,
+        lastError: null
+    };
+    var ajaxFooterState = {
+        present: false,
+        visible: false,
+        action: "none",
+        text: "",
+        clickable: false,
+        loading: false,
+        clickCount: 0,
+        blockedClickCount: 0,
+        successCount: 0,
+        endCount: 0,
+        appendedRowCount: 0,
+        duplicateBlockedCount: 0,
+        renderBatchCount: 0,
+        lastScrollYBeforeAppend: 0,
+        lastScrollYAfterAppend: 0,
+        positionPreserved: true,
+        lastError: null
+    };
+    var numberPagerView = null;
+    var numberPageViews = {};
+    var numberActionViews = {};
+    var numberPagerState = {
+        present: false,
+        visible: false,
+        loading: false,
+        currentPage: 1,
+        totalPages: 0,
+        totalCount: 0,
+        tokens: [],
+        selectedPage: 1,
+        nearbyPageLimit: 5,
+        jumpInputPresent: false,
+        layoutStyle:
+            "first_previous_nearby_next_last",
+        firstEnabled: false,
+        previousEnabled: false,
+        nextEnabled: false,
+        lastEnabled: false,
+        clickCount: 0,
+        pageClickCount: 0,
+        actionClickCount: 0,
+        blockedClickCount: 0,
+        samePageBlockedCount: 0,
+        successCount: 0,
+        failureCount: 0,
+        pageReplaceCount: 0,
+        scrollResetCount: 0,
+        nonZeroScrollResetCount: 0,
+        maximumScrollYBeforeChange: 0,
+        lastScrollYBeforeChange: 0,
+        lastScrollYAfterChange: 0,
+        lastTargetPage: 1,
+        lastAction: "",
+        lastOrigin: "",
+        lastError: null
+    };
+    var ajaxAppendGeneration = 0;
+    var LAZY_TRIGGER_MIN_DP = 120;
+    var LAZY_TRIGGER_VIEWPORT_RATIO = 0.38;
+    var LAZY_TRIGGER_COOLDOWN_MS = 260;
+    var PREFETCH_DELAY_MS = 160;
+    var lazyScrollListener = null;
+    var lazyGeneration = 0;
+    var lazyLoadState = {
+        listenerBound: false,
+        enabled: false,
+        pending: false,
+        thresholdPx: 0,
+        remainingPx: 0,
+        lastScrollY: 0,
+        lastOldScrollY: 0,
+        scrollEventCount: 0,
+        downwardScrollCount: 0,
+        nearBottomCount: 0,
+        triggerCount: 0,
+        successCount: 0,
+        failureCount: 0,
+        blockedCount: 0,
+        lastTriggeredLoadedCount: -1,
+        lastTriggerAt: 0,
+        lastOrigin: "",
+        lastError: null
+    };
+    var prefetchGeneration = 0;
+    var prefetchedPage = null;
+    var prefetchState = {
+        enabled: true,
+        scheduled: false,
+        inFlight: false,
+        ready: false,
+        mode: "",
+        targetPage: 0,
+        rowCount: 0,
+        scheduleCount: 0,
+        requestCount: 0,
+        successCount: 0,
+        hitCount: 0,
+        missCount: 0,
+        invalidationCount: 0,
+        staleDiscardCount: 0,
+        lastOrigin: "",
+        lastInvalidationReason: "",
+        lastError: null
+    };
+    var VIRTUAL_BEFORE_SCREENS = 3;
+    var VIRTUAL_AFTER_SCREENS = 5;
+    var VIRTUAL_UPDATE_DELAY_MS = 24;
+    var virtualTopSpacer = null;
+    var virtualCardHost = null;
+    var virtualBottomSpacer = null;
+    var paginationFooterHost = null;
+    var quickResetView = null;
+    var virtualRenderedItemIds = [];
+    var virtualRenderedSignatures = [];
+    var virtualGeneration = 0;
+    var virtualPendingOrigin = "";
+    var virtualPendingForce = false;
+    var virtualState = {
+        firstRenderedIndex: 0,
+        lastRenderedIndex: -1,
+        firstVisibleIndex: 0,
+        lastVisibleIndex: -1,
+        visibleCount: 1,
+        averageHeightPx: 0,
+        defaultHeightPx: 0,
+        heightById: {},
+        topSpacerPx: 0,
+        bottomSpacerPx: 0,
+        anchorItemId: null,
+        anchorIndex: -1,
+        anchorOffsetPx: 0,
+        anchorRestoreErrorPx: 0,
+        updateScheduled: false,
+        updateDeferred: false,
+        scrollListenerBound: false,
+        scrollToTopPending: false,
+        updateCount: 0,
+        recycleCount: 0,
+        rebuildCount: 0,
+        staleUpdateCount: 0,
+        lastOrigin: "",
+        lastError: null
+    };
+    var DATA_BLOCK_MIN_ROWS = 24;
+    var DATA_BLOCK_MAX_ROWS = 100;
+    var DATA_BLOCK_VISIBLE_MULTIPLIER = 2;
+    var DATA_BLOCK_KEEP_BEFORE = 1;
+    var DATA_BLOCK_KEEP_AFTER = 1;
+    var dataTagLoadedById = {};
+    var dataWindowState = {
+        blockSize: DATA_BLOCK_MIN_ROWS,
+        blockCount: 0,
+        hydratedBlockCount: 0,
+        hydratedRowCount: 0,
+        dehydratedRowCount: 0,
+        hydrationPassCount: 0,
+        dehydrationPassCount: 0,
+        hydrateQueryCount: 0,
+        tagQueryCount: 0,
+        hydratedRowTotal: 0,
+        dehydratedRowTotal: 0,
+        missingIdCount: 0,
+        resetCount: 0,
+        keepStartIndex: 0,
+        keepEndIndex: -1,
+        lastHydrateStartIndex: 0,
+        lastHydrateEndIndex: -1,
+        lastOrigin: "",
+        lastError: null
+    };
+    var pendingNewItemId = null;
+    var mutationRefreshPlan = null;
+    var mutationAnchorLocked = false;
+    var mutationState = {
+        eventCount: 0,
+        refreshRequestCount: 0,
+        refreshCount: 0,
+        coalescedCount: 0,
+        addedPendingCount: 0,
+        relatedEventSuppressedCount: 0,
+        settingsChangeCount: 0,
+        anchorRestoreCount: 0,
+        anchorFallbackCount: 0,
+        lastEventName: "",
+        lastAction: "",
+        lastOrigin: "",
+        lastModeBefore: "",
+        lastModeAfter: "",
+        lastPageNumberBefore: 1,
+        lastPageNumberAfter: 1,
+        lastLoadedCountBefore: 0,
+        lastLoadedCountAfter: 0,
+        lastReloadPageCount: 0,
+        lastAnchorItemIdBefore: null,
+        lastAnchorItemIdAfter: null,
+        lastAnchorIndexBefore: -1,
+        lastAnchorIndexAfter: -1,
+        lastAnchorOffsetPxBefore: 0,
+        lastAnchorOffsetPxAfter: 0,
+        lastAnchorRestoreErrorPx: 0,
+        lastPositionPreserved: true,
+        lastError: null
+    };
+    var activeSwipeCard = null;
+    var resultBodyFrame = null;
+    var resultActionViews = [];
+    var sourceIconConstantStateCache = {};
+    var deleteUndoView = null;
+    var pendingDeleteUndo = null;
+    var deleteUndoGeneration = 0;
+    var copyFeedbackView = null;
+    var copyFeedbackGeneration = 0;
+    var adaptiveRenderGeneration = 0;
+    var searchExpanded = false;
+    var searchStatusRow = null;
+    var searchInputRow = null;
+    var searchToggleView = null;
+    var searchClearView = null;
+    var historyContainerView = null;
+    var inputDispatchGeneration = 0;
+    var inputDispatchPending = false;
+    var panelBuilt = false;
+    var panelBuiltRootMode = null;
+    var panelStructureDirty = true;
+    var panelDataDirty = true;
+    var panelDataVersion = 1;
+    var renderedDataVersion = 0;
+    var renderGeneration = 0;
+    var renderCursor = 0;
+    var renderBatchCount = 0;
+    var optionCountsCache = null;
+    var optionCountsDirty = true;
+    var refreshGeneration = 0;
+    var refreshScheduled = false;
+    var refreshReason = "";
+    var lastShowReused = false;
+    var timeFormatter = null;
+    var performance = {
+        showGeneration: 0,
+        showStartedAtNs: 0,
+        windowAttachedAtNs: 0,
+        firstDrawAtNs: 0,
+        firstBatchReadyAtNs: 0,
+        fullRenderReadyAtNs: 0,
+        showToAttachMs: null,
+        showToFirstDrawMs: null,
+        showToFirstBatchMs: null,
+        showToFullRenderMs: null,
+        renderBatchCount: 0,
+        lastRefreshOrigin: "",
+        lastError: null
+    };
+
+
+
+--- #4 at 7338 ---
+ false,
+        mode: "ajax",
+        repositoryMode: "append",
+        pageSize: 100,
+        prefetchEnabled: true,
+        pageNumber: 1,
+        loadedCount: 0,
+        totalCount: 0,
+        totalPages: 0,
+        hasMore: false,
+        endCursor: null,
+        queryGeneration: 0,
+        resetCount: 0,
+        loadCount: 0,
+        settingsSyncCount: 0,
+        settingsEventCount: 0,
+        criteriaChangeCount: 0,
+        lastResetReason: "",
+        lastLoadMode: "",
+        lastCriteriaSignature: "",
+        newContentPending: false,
+        quickResetAvailable: false,
+        lastError: null
+    };
+    var ajaxFooterState = {
+        present: false,
+        visible: false,
+        action: "none",
+        text: "",
+        clickable: false,
+        loading: false,
+        clickCount: 0,
+        blockedClickCount: 0,
+        successCount: 0,
+        endCount: 0,
+        appendedRowCount: 0,
+        duplicateBlockedCount: 0,
+        renderBatchCount: 0,
+        lastScrollYBeforeAppend: 0,
+        lastScrollYAfterAppend: 0,
+        positionPreserved: true,
+        lastError: null
+    };
+    var numberPagerView = null;
+    var numberPageViews = {};
+    var numberActionViews = {};
+    var numberPagerState = {
+        present: false,
+        visible: false,
+        loading: false,
+        currentPage: 1,
+        totalPages: 0,
+        totalCount: 0,
+        tokens: [],
+        selectedPage: 1,
+        nearbyPageLimit: 5,
+        jumpInputPresent: false,
+        layoutStyle:
+            "first_previous_nearby_next_last",
+        firstEnabled: false,
+        previousEnabled: false,
+        nextEnabled: false,
+        lastEnabled: false,
+        clickCount: 0,
+        pageClickCount: 0,
+        actionClickCount: 0,
+        blockedClickCount: 0,
+        samePageBlockedCount: 0,
+        successCount: 0,
+        failureCount: 0,
+        pageReplaceCount: 0,
+        scrollResetCount: 0,
+        nonZeroScrollResetCount: 0,
+        maximumScrollYBeforeChange: 0,
+        lastScrollYBeforeChange: 0,
+        lastScrollYAfterChange: 0,
+        lastTargetPage: 1,
+        lastAction: "",
+        lastOrigin: "",
+        lastError: null
+    };
+    var ajaxAppendGeneration = 0;
+    var LAZY_TRIGGER_MIN_DP = 120;
+    var LAZY_TRIGGER_VIEWPORT_RATIO = 0.38;
+    var LAZY_TRIGGER_COOLDOWN_MS = 260;
+    var PREFETCH_DELAY_MS = 160;
+    var lazyScrollListener = null;
+    var lazyGeneration = 0;
+    var lazyLoadState = {
+        listenerBound: false,
+        enabled: false,
+        pending: false,
+        thresholdPx: 0,
+        remainingPx: 0,
+        lastScrollY: 0,
+        lastOldScrollY: 0,
+        scrollEventCount: 0,
+        downwardScrollCount: 0,
+        nearBottomCount: 0,
+        triggerCount: 0,
+        successCount: 0,
+        failureCount: 0,
+        blockedCount: 0,
+        lastTriggeredLoadedCount: -1,
+        lastTriggerAt: 0,
+        lastOrigin: "",
+        lastError: null
+    };
+    var prefetchGeneration = 0;
+    var prefetchedPage = null;
+    var prefetchState = {
+        enabled: true,
+        scheduled: false,
+        inFlight: false,
+        ready: false,
+        mode: "",
+        targetPage: 0,
+        rowCount: 0,
+        scheduleCount: 0,
+        requestCount: 0,
+        successCount: 0,
+        hitCount: 0,
+        missCount: 0,
+        invalidationCount: 0,
+        staleDiscardCount: 0,
+        lastOrigin: "",
+        lastInvalidationReason: "",
+        lastError: null
+    };
+    var VIRTUAL_BEFORE_SCREENS = 3;
+    var VIRTUAL_AFTER_SCREENS = 5;
+    var VIRTUAL_UPDATE_DELAY_MS = 24;
+    var virtualTopSpacer = null;
+    var virtualCardHost = null;
+    var virtualBottomSpacer = null;
+    var paginationFooterHost = null;
+    var quickResetView = null;
+    var virtualRenderedItemIds = [];
+    var virtualRenderedSignatures = [];
+    var virtualGeneration = 0;
+    var virtualPendingOrigin = "";
+    var virtualPendingForce = false;
+    var virtualState = {
+        firstRenderedIndex: 0,
+        lastRenderedIndex: -1,
+        firstVisibleIndex: 0,
+        lastVisibleIndex: -1,
+        visibleCount: 1,
+        averageHeightPx: 0,
+        defaultHeightPx: 0,
+        heightById: {},
+        topSpacerPx: 0,
+        bottomSpacerPx: 0,
+        anchorItemId: null,
+        anchorIndex: -1,
+        anchorOffsetPx: 0,
+        anchorRestoreErrorPx: 0,
+        updateScheduled: false,
+        updateDeferred: false,
+        scrollListenerBound: false,
+        scrollToTopPending: false,
+        updateCount: 0,
+        recycleCount: 0,
+        rebuildCount: 0,
+        staleUpdateCount: 0,
+        lastOrigin: "",
+        lastError: null
+    };
+    var DATA_BLOCK_MIN_ROWS = 24;
+    var DATA_BLOCK_MAX_ROWS = 100;
+    var DATA_BLOCK_VISIBLE_MULTIPLIER = 2;
+    var DATA_BLOCK_KEEP_BEFORE = 1;
+    var DATA_BLOCK_KEEP_AFTER = 1;
+    var dataTagLoadedById = {};
+    var dataWindowState = {
+        blockSize: DATA_BLOCK_MIN_ROWS,
+        blockCount: 0,
+        hydratedBlockCount: 0,
+        hydratedRowCount: 0,
+        dehydratedRowCount: 0,
+        hydrationPassCount: 0,
+        dehydrationPassCount: 0,
+        hydrateQueryCount: 0,
+        tagQueryCount: 0,
+        hydratedRowTotal: 0,
+        dehydratedRowTotal: 0,
+        missingIdCount: 0,
+        resetCount: 0,
+        keepStartIndex: 0,
+        keepEndIndex: -1,
+        lastHydrateStartIndex: 0,
+        lastHydrateEndIndex: -1,
+        lastOrigin: "",
+        lastError: null
+    };
+    var pendingNewItemId = null;
+    var mutationRefreshPlan = null;
+    var mutationAnchorLocked = false;
+    var mutationState = {
+        eventCount: 0,
+        refreshRequestCount: 0,
+        refreshCount: 0,
+        coalescedCount: 0,
+        addedPendingCount: 0,
+        relatedEventSuppressedCount: 0,
+        settingsChangeCount: 0,
+        anchorRestoreCount: 0,
+        anchorFallbackCount: 0,
+        lastEventName: "",
+        lastAction: "",
+        lastOrigin: "",
+        lastModeBefore: "",
+        lastModeAfter: "",
+        lastPageNumberBefore: 1,
+        lastPageNumberAfter: 1,
+        lastLoadedCountBefore: 0,
+        lastLoadedCountAfter: 0,
+        lastReloadPageCount: 0,
+        lastAnchorItemIdBefore: null,
+        lastAnchorItemIdAfter: null,
+        lastAnchorIndexBefore: -1,
+        lastAnchorIndexAfter: -1,
+        lastAnchorOffsetPxBefore: 0,
+        lastAnchorOffsetPxAfter: 0,
+        lastAnchorRestoreErrorPx: 0,
+        lastPositionPreserved: true,
+        lastError: null
+    };
+    var activeSwipeCard = null;
+    var resultBodyFrame = null;
+    var resultActionViews = [];
+    var sourceIconConstantStateCache = {};
+    var deleteUndoView = null;
+    var pendingDeleteUndo = null;
+    var deleteUndoGeneration = 0;
+    var copyFeedbackView = null;
+    var copyFeedbackGeneration = 0;
+    var adaptiveRenderGeneration = 0;
+    var searchExpanded = false;
+    var searchStatusRow = null;
+    var searchInputRow = null;
+    var searchToggleView = null;
+    var searchClearView = null;
+    var historyContainerView = null;
+    var inputDispatchGeneration = 0;
+    var inputDispatchPending = false;
+    var panelBuilt = false;
+    var panelBuiltRootMode = null;
+    var panelStructureDirty = true;
+    var panelDataDirty = true;
+    var panelDataVersion = 1;
+    var renderedDataVersion = 0;
+    var renderGeneration = 0;
+    var renderCursor = 0;
+    var renderBatchCount = 0;
+    var optionCountsCache = null;
+    var optionCountsDirty = true;
+    var refreshGeneration = 0;
+    var refreshScheduled = false;
+    var refreshReason = "";
+    var lastShowReused = false;
+    var timeFormatter = null;
+    var performance = {
+        showGeneration: 0,
+        showStartedAtNs: 0,
+        windowAttachedAtNs: 0,
+        firstDrawAtNs: 0,
+        firstBatchReadyAtNs: 0,
+        fullRenderReadyAtNs: 0,
+        showToAttachMs: null,
+        showToFirstDrawMs: null,
+        showToFirstBatchMs: null,
+        showToFullRenderMs: null,
+        renderBatchCount: 0,
+        lastRefreshOrigin: "",
+        lastError: null
+    };
+
+    var state = {
+        apply
+
+--- #11 at 62734 ---
+
+    function syncPaginationSettings(reason) {
+        var next = readPaginationSettings();
+        var changed;
+        paginationState.settingsSyncCount += 1;
+        changed = paginationState.ready === true &&
+            (paginationState.mode !== next.mode ||
+                Number(paginationState.pageSize) !==
+                    Number(next.pageSize) ||
+                paginationState.prefetchEnabled !==
+                    next.prefetchEnabled);
+        paginationState.mode = next.mode;
+        paginationState.repositoryMode = next.repositoryMode;
+        paginationState.pageSize = next.pageSize;
+        paginationState.prefetchEnabled =
+            next.prefetchEnabled === true;
+        if (!paginationState.ready) {
+            paginationState.ready = true;
+        } else if (changed) {
+            resetUnifiedPagination(
+                reason || "pagination_settings_sync");
+        }
+        state.resultPageSize = Number(paginationState.pageSize);
+        return copyPaginationState();
+    }
+
+
+--- #15 at 67803 ---
+
+    function copyPrefetchState() {
+        return {
+            enabled: prefetchState.enabled === true,
+            scheduled:
+                prefetchState.scheduled === true,
+            inFlight: prefetchState.inFlight === true,
+            ready: prefetchState.ready === true,
+            mode: prefetchState.mode,
+            targetPage: Number(
+                prefetchState.targetPage),
+            rowCount: Number(prefetchState.rowCount),
+            scheduleCount: Number(
+                prefetchState.scheduleCount),
+            requestCount: Number(
+                prefetchState.requestCount),
+            successCount: Number(
+                prefetchState.successCount),
+            hitCount: Number(prefetchState.hitCount),
+            missCount: Number(
+                prefetchState.missCount),
+            invalidationCount: Number(
+                prefetchState.invalidationCount),
+            staleDiscardCount: Number(
+                prefetchState.staleDiscardCount),
+            lastOrigin: prefetchState.lastOrigin,
+            lastInvalidationReason:
+                prefetchState.lastInvalidationReason,
+            lastError: prefetchState.lastError
+        };
+    }
+
+
+--- #32 at 69598 ---
+
+    function clearPrefetchedPage(reason) {
+        var hadValue = prefetchedPage !== null ||
+            prefetchState.scheduled ||
+            prefetchState.inFlight ||
+            prefetchState.ready;
+        prefetchGeneration += 1;
+        prefetchedPage = null;
+        prefetchState.enabled =
+            paginationState.prefetchEnabled === true;
+        prefetchState.scheduled = false;
+        prefetchState.inFlight = false;
+        prefetchState.ready = false;
+        prefetchState.mode = "";
+        prefetchState.targetPage = 0;
+        prefetchState.rowCount = 0;
+        if (hadValue) {
+            prefetchState.invalidationCount += 1;
+        }
+        prefetchState.lastInvalidationReason =
+            String(reason || "prefetch_clear");
+        prefetchState.lastError = null;
+        return true;
+    }
+
+
+--- #50 at 70370 ---
+
+    function prefetchOptionsKey(options) {
+        return JSON.stringify({
+            queryGeneration:
+                Number(paginationState.queryGeneration),
+            criteria:
+                String(paginationState
+                    .lastCriteriaSignature ||
+                    paginationCriteriaSignature()),
+            mode: String(options.mode || ""),
+            pageSize: Number(options.pageSize || 0),
+            page: Number(options.page || 0),
+            cursor: options.cursor === undefined ?
+                null : options.cursor
+        });
+    }
+
+
+--- #53 at 72390 ---
+
+    function executeNextPagePrefetch(origin, generation) {
+        var descriptor;
+        var result;
+        var rows;
+        origin = String(origin || "prefetch_now");
+        descriptor = nextPrefetchDescriptor();
+        prefetchState.enabled =
+            paginationState.prefetchEnabled === true;
+        prefetchState.scheduled = false;
+        if (descriptor === null) {
+            prefetchState.inFlight = false;
+            prefetchState.ready = false;
+            prefetchedPage = null;
+            prefetchState.mode = "";
+            prefetchState.targetPage = 0;
+            prefetchState.rowCount = 0;
+            prefetchState.lastOrigin = origin;
+            return false;
+        }
+        if (prefetchedPage !== null &&
+                prefetchState.ready === true &&
+                prefetchedPage.key === descriptor.key &&
+                Number(prefetchedPage.queryGeneration) ===
+                    Number(descriptor.queryGeneration)) {
+            prefetchState.lastOrigin =
+                origin + "_reuse";
+            return true;
+        }
+        prefetchState.inFlight = true;
+        prefetchState.ready = false;
+        prefetchState.mode = descriptor.mode;
+        prefetchState.targetPage =
+            Number(descriptor.targetPage);
+        prefetchState.rowCount = 0;
+        prefetchState.requestCount += 1;
+        prefetchState.lastOrigin = origin;
+        prefetchState.lastError = null;
+        try {
+            result = ClipHub.Repository.listItemPage(
+                descriptor.options);
+            rows = result && result.rows ?
+                result.rows : [];
+            if (generation !== prefetchGeneration ||
+                    Number(descriptor.queryGeneration) !==
+                        Number(paginationState
+                            .queryGeneration)) {
+                prefetchState.staleDiscardCount += 1;
+                prefetchState.inFlight = false;
+                prefetchState.ready = false;
+                prefetchedPage = null;
+                return false;
+            }
+            prefetchedPage = {
+                key: descriptor.key,
+                queryGeneration:
+                    Number(descriptor.queryGeneration),
+                mode: descriptor.mode,
+                targetPage:
+                    Number(descriptor.targetPage),
+                result: result
+            };
+            prefetchState.inFlight = false;
+            prefetchState.ready = true;
+            prefetchState.rowCount = rows.length;
+            prefetchState.successCount += 1;
+            return true;
+        } catch (error) {
+            prefetchState.inFlight = false;
+            prefetchState.ready = false;
+            prefetchedPage = null;
+            prefetchState.lastError = String(error);
+            return false;
+        }
+    }
+
+
+--- #91 at 75067 ---
+
+    function prefetchNextPageNow(origin) {
+        prefetchGeneration += 1;
+        prefetchState.scheduled = false;
+        return executeNextPagePrefetch(
+            origin || "prefetch_now",
+            prefetchGeneration);
+    }
+
+
+--- #135 at 386283 ---
+
+    function getPanelState() {
+        var attachedToWindow = false;
+        var notFocusable = false;
+        try {
+            attachedToWindow = (panelWindowRoot !== null ?
+                panelWindowRoot : panelRoot) !== null &&
+                (panelWindowRoot !== null ?
+                    panelWindowRoot : panelRoot).isAttachedToWindow();
+        } catch (ignored) {}
+        try {
+            notFocusable = panelParams !== null &&
+                (Number(panelParams.flags) & Number(
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)) !== 0;
+        } catch (ignoredFlag) {}
+        try {
+            state.inputFocused = keywordInput !== null &&
+                keywordInput.hasFocus();
+        } catch (ignoredFocus) {}
+        updateDrawerMeasurements();
+        return {
+            pagination: copyPaginationState(),
+            ajaxFooter: copyAjaxFooterState(),
+            numberPager: copyNumberPagerState(),
+            lazyLoad: copyLazyLoadState(),
+            prefetch: copyPrefetchState(),
+            virtual: copyVirtualState(),
+            dataWindow: copyDataWindowState(),
+            mutation: copyMutationState(),
+            newContentPending:
+                paginationState.newContentPending === true,
+            quickResetAvailable:
+                paginationState.quickResetAvailable === true,
+            quickResetPresent: quickResetView !== null,
+            attached: state.panelAttached,
+            attachedToWindow: attachedToWindow,
+            panelBuilt: panelBuilt === true,
+            panelStructureDirty: panelStructureDirty === true,
+            panelDataDirty: panelDataDirty === true,
+            panelDataVersion: Number(panelDataVersion),
+            renderedDataVersion: Number(renderedDataVersion),
+            contentReady: state.contentReady === true,
+            lastShowReused: lastShowReused === true,
+            panelCacheReuseCount: Number(state.panelCacheReuseCount),
+            panelCacheBuildCount: Number(state.panelCacheBuildCount),
+            panelCacheDestroyCount: Number(state.panelCacheDestroyCount),
+            renderBatchCount: Number(renderBatchCount),
+            firstRenderCount: FIRST_RENDER_COUNT,
+            renderBatchSize: RENDER_BATCH_COUNT,
+            performance: copyPerformance(),
+            focusableWindow: !notFocusable,
+            inputPresent: keywordInput !== null,
+            advancedKeywordInputPresent: false,
+            inputFocused: state.inputFocused,
+            sourceOptionCount: Number(state.sourceOptionCount),
+            tagOptionCount: Number(state.tagOptionCount),
+            sourceChipCount: Object.keys(sourceViews).length,
+            tagChipCount: Object.keys(tagViews).length,
+            historyChipCount: Number(state.historyChipCount),
+            searchExpanded: searchExpanded === true,
+            searchTogglePresent: searchToggleView !== null,
+            searchClearPresent: searchClearView !== null,
+            searchExpandCount: Number(state.searchExpandCount),
+            searchCollapseCount: Number(state.searchCollapseCount),
+            headerHeightDp: Number(state.headerHeightDp),
+            headerControlHeightDp:
+                Number(state.headerControlHeightDp),
+            headerActionSizeDp: Number(state.headerActionSizeDp),
+            headerGapDp: Number(state.headerGapDp),
+            headerFilterActiveCount:
+                Number(state.headerFilterActiveCount),
+            resultCardCount: Number(state.resultCardCount),
+            settingsButtonPresent: settingsButton !== null,
+            settingsOpenCount: Number(state.settingsOpenCount),
+            renderedTagLabelCount: Number(state.renderedTagLabelCount),
+            tagColorPreviewCount: Number(state.tagColorPreviewCount),
+            loadedResultCount: Number(state.loadedResultCount),
+            resultPageSize: Number(state.resultPageSize),
+            resultPageLimit: Number(state.resultPageLimit),
+            resultHasMore: state.resultHasMore === true,
+            resultCanScroll: state.resultCanScroll === true,
+            loadMorePresent: loadMoreView !== null,
+            loadMoreCount: Number(state.loadMoreCount),
+            resultSourceIconCount:
+                Number(state.resultSourceIconCount),
+            advancedDrawerVisible: advancedVisible,
+            advancedButtonText: advancedView !== null ?
+                (activeAdvancedFilterCount() > 0 ?
+                    "筛选(" + String(activeAdvancedFilterCount()) + ")" :
+                    "筛选") : "",
+            sortMode: validateSortMode(value && value.sortMode),
+            sortOptionCount: Number(state.sortOptionCount),
+            sourceWrapRowCount: Number(state.sourceWrapRowCount),
+            tagWrapRowCount: Number(state.tagWrapRowCount),
+            drawerWidthDp: Number(state.drawerWidthDp),
+            drawerHeightDp: Number(state.drawerHeightDp),
+            chipSingleLineEnforced:
+                state.chipSingleLineEnforced === true,
+            chipEllipsizeEndEnforced:
+                state.chipEllipsizeEndEnforced === true,
+            drawerContentBottomPaddingDp:
+                Number(state.drawerContentBottomPaddingDp),
+            drawerFooterTopGapDp:
+                Number(state.drawerFooterTopGapDp),
+            drawerFooterHeightDp:
+                Number(state.drawerFooterHeightDp),
+            advancedChipVerticalPaddingDp:
+                Number(state.advancedChipVerticalPaddingDp),
+            drawerMeasured: state.drawerMeasured === true,
+            drawerContentHeightDp:
+                Number(state.drawerContentHeightDp),
+            drawerViewportHeightDp:
+                Number(state.drawerViewportHeightDp),
+            drawerScrollYDp: Number(state.drawerScrollYDp),
+            drawerCanScrollDownAtTop:
+                state.drawerCanScrollDownAtTop === true,
+            drawerContentFitsViewport:
+                state.drawerContentFitsViewport === true,
+            repositorySortUnchanged: true,
+            sortScope: state.sortScope,
+            backLayerCloseCount: Number(state.backLayerCloseCount),
+            lastBackLayer: state.lastBackLayer,
+            homeWindowSuspended: state.homeWindowSuspended === true,
+            homeSuspendCount: Number(state.homeSuspendCount),
+            homeRestoreCount: Number(state.homeRestoreCount),
+            homeRestoreCancelCount:
+                Number(state.homeRestoreCancelCount),
+            exclusiveHomeFilter: state.exclusiveHomeFilter === true,
+            rootMode: rootMode === true,
+            primarySurface: state.primarySurface,
+            selectedItemId: selectedItemId,
+            selectionEnabled: SELECTION_ENABLED === true,
+            selectionMode: SELECTION_ENABLED && selectedItemId !== null,
+            resultCardClickCount:
+                Number(state.resultCardClickCount),
+            resultCardLongPressCount:
+                Number(state.resultCardLongPressCount),
+            inputActionCount: Number(state.inputActionCount),
+            inputSuccessCount: Number(state.inputSuccessCount),
+            inputFailureCount: Number(state.inputFailureCount),
+            inputRetryCount: Number(state.inputRetryCount),
+            inputDuplicateBlockedCount:
+                Number(state.inputDuplicateBlockedCount),
+            inputDispatchPending: inputDispatchPending === true,
+            lastInputItemId: state.lastInputItemId,
+            lastInputContentLength:
+                Number(state.lastInputContentLength),
+            lastInputAttemptCount:
+                Number(state.lastInputAttemptCount),
+            lastInputAt: Number(state.lastInputAt),
+            lastInputOrigin: state.lastInputOrigin,
+            lastInputError: state.lastInputError,
+            copyActionCount: Number(state.copyActionCount),
+            pinActionCount: Number(state.pinActionCount),
+            editActionCount: Number(state.editActionCount),
+            addActionCount: Number(state.addActionCount),
+            deleteActionCount: Number(state.deleteActionCount),
+            detailActionCount: Number(state.detailActionCount),
+            cardActionButtonCount: Number(state.cardActionButtonCount),
+            cardEditActionCount: Number(state.cardEditActionCount),
+            cardTranslateActionCount:
+                Number(state.cardTranslateActionCount),
+            cardCopyActionCount: Number(state.cardCopyActionCount),
+            cardDeleteActionCount: Number(state.cardDeleteActionCount),
+            cardActionGridWidthDp:
+                Number(state.cardActionGridWidthDp),
+            cardActionCellHeightDp:
+                Number(state.cardActionCellHeightDp),
+            cardActionFontScale: Number(state.cardActionFontScale),
+            cardActionIconSizeDp:
+                Number(state.cardActionIconSizeDp),
+            pinnedBadgeCount: Number(state.pinnedBadgeCount),
+            pinBadgeSizeDp: Number(state.pinBadgeSizeDp),
+            deleteUndoVisible: state.deleteUndoVisible === true,
+            deleteUndoItemId: state.deleteUndoItemId,
+            deleteUndoShowCount: Number(state.deleteUndoShowCount),
+            deleteUndoActionCount: Number(state.deleteUndoActionCount),
+            deleteUndoTimeoutCount:
+                Number(state.deleteUndoTimeoutCount),
+            copyFeedbackVisible: state.copyFeedbackVisible === true,
+            copyFeedbackShowCount:
+                Number(state.copyFeedbackShowCount),
+            copyFeedbackTimeoutCount:
+                Number(state.copyFeedbackTimeoutCount),
+            adaptiveLayoutRefreshCount:
+                Number(state.adaptiveLayoutRefreshCount),
+            swipeEnabled: state.swipeEnabled === true,
+            swipeStartCount: Number(state.swipeStartCount),
+            swipeMoveCount: Number(state.swipeMoveCount),
+            swipePinCount: Number(state.swipePinCount),
+            swipeDeleteCount: Number(state.swipeDeleteCount),
+            swipeCancelCount: Number(state.swipeCancelCount),
+            lastSwipeItemId: state.lastSwipeItemId,
+            lastSwipeAction: state.lastSwipeAction,
+            toolbarEnabledCount:
+                Number(state.toolbarEnabledCount),
+            panelWindowType: state.panelWindowType,
+            panelFlags: state.panelFlags,
+            panelWidthPx: state.panelWidthPx,
+            panelHeightPx: state.panelHeightPx,
+            panelWidthDp: state.panelWidthDp,
+            panelHeightDp: state.panelHeightDp,
+            panelX: Number(state.panelX || 0),
+            panelY: Number(state.panelY || 0),
+            primaryGeometryManaged: state.primaryGeometryManaged === true,
+            primaryDragViewPresent: state.primaryDragViewPresent === true,
+            primaryResizeViewPresent: state.primaryResizeViewPresent === true,
+            resizeCorner: state.resizeCorner,
+            dimAmount: state.dimAmount,
+            modalWindow: state.modalWindow,
+            opaqueBackground: state.opaqueBackground,
+            horizontalFadeEnabled: state.horizontalFadeEnabled,
+            panelOpenCount: Number(state.panelOpenCount),
+            panelCloseCount: Number(state.panelCloseCount),
+            panelRenderCount: Number(state.panelRenderCount),
+            searchActionCount: Number(state.searchActionCount),
+            realtimeSearchCount:
+                Number(state.realtimeSearchCount),
+            sourceToggleCount: Number(state.sourceToggleCount),
+            tagToggleCount: Number(state.tagToggleCount),
+            pinnedToggleCount: Number(state.pinnedToggleCount),
+            sensitiveToggleCount:
+                Number(state.sensitiveToggleCount),
+            sortToggleCount: Number(state.sortToggleCount),
+            resetActionCount: Number(state.resetActionCount),
+            applyActionCount: Number(state.applyActionCount),
+            advancedOpenCount: Number(state.advancedOpenCount),
+            advancedCloseCount: Number(state.advancedCloseCount),
+            historyUseCount: Number(state.historyUseCount),
+            historyClearCount: Number(state.historyClearCount),
+            keyboardRequestCount: Number(state.keyboardRequestCount),
+            panelAddThreadId: state.panelAddThreadId,
+            panelAddThreadName: state.panelAddThreadName,
+            panelRemoveThreadId: state.panelRemoveThreadId,
+            panelRemoveThreadName: state.panelRemoveThreadName,
+            lastUiThreadId: state.lastUiThreadId,
+            lastUiThreadName: state.lastUiThreadName,
+            searchPageStyle: state.searchPageStyle,
+            lastError: state.lastError
+        };
+    }
+
+
+--- #136 at 408952 ---
+t = null;
+            panelManagedFrame = null;
+            panelParams = null;
+            primaryDragView = null;
+            primaryResizeView = null;
+            panelBuilt = false;
+            panelBuiltRootMode = null;
+            panelStructureDirty = true;
+            panelDataDirty = true;
+            panelDataVersion = 1;
+            renderedDataVersion = 0;
+            renderGeneration = 0;
+            renderCursor = 0;
+            renderBatchCount = 0;
+            optionCountsCache = null;
+            optionCountsDirty = true;
+            refreshGeneration = 0;
+            refreshScheduled = false;
+            refreshReason = "";
+            lastShowReused = false;
+            timeFormatter = null;
+            advancedVisible = false;
+            previewRows = [];
+            searchGeneration = 0;
+            restoreListOnClose = false;
+            rootMode = false;
+            selectedItemId = null;
+            resultCardViews = [];
+            resultCardHolders = [];
+            toolbarActionViews = {};
+            resultTagMap = {};
+            resultScrollView = null;
+            loadMoreView = null;
+            resultBodyFrame = null;
+            resultActionViews = [];
+            sourceIconConstantStateCache = {};
+            deleteUndoView = null;
+            pendingDeleteUndo = null;
+            deleteUndoGeneration = 0;
+            copyFeedbackView = null;
+            copyFeedbackGeneration = 0;
+            adaptiveRenderGeneration = 0;
+            searchExpanded = false;
+            searchStatusRow = null;
+            searchInputRow = null;
+            searchToggleView = null;
+            searchClearView = null;
+            historyContainerView = null;
+            inputDispatchGeneration += 1;
+            inputDispatchPending = false;
+            paginationState.newContentPending = false;
+            paginationState.quickResetAvailable = false;
+            resetVirtualState(true);
+            resetMutationState();
+            resetResultPaging("filter_init");
+            resetState();
+            loadHistory();
+            registerEvent("clipboard_added");
+            registerEvent("clipboard_merged");
+            registerEvent("clipboard_deleted");
+            registerEvent("clipboard_restored");
+            registerEvent("tags_changed");
+            registerEvent(
+                "pagination_settings_changed");
+            return true;
+        },
+
+        isReady: function () { return ready; },
+        isActive: function () { return isActive(value); },
+        get: function () { return copyValue(value); },
+
+        getState: function () {
+            return {
+                ready: ready,
+                active: isActive(value),
+                pagination:
+                    copyPaginationState(),
+                ajaxFooter:
+                    copyAjaxFooterState(),
+                numberPager:
+                    copyNumberPagerState(),
+                lazyLoad:
+                    copyLazyLoadState(),
+                prefetch:
+                    copyPrefetchState(),
+                virtual:
+                    copyVirtualState(),
+                dataWindow:
+                    copyDataWindowState(),
+                hydrationWorker:
+                    copyHydrationWorkerState(),
+                scrollPerformance:
+                    copyScrollPerformanceState(),
+                mutation:
+                    copyMutationState(),
+                criteria: copyValue(value),
+                searchHistory: copyList(searchHistory),
+                applyCount: Number(state.applyCount),
+                eventApplyCount: Number(state.eventApplyCount),
+                lastResultCount: Number(state.lastResultCount),
+                lastApplyThreadId: state.lastApplyThreadId,
+                lastApplyThreadName: state.lastApplyThreadName,
+                panel: getPanelState(),
+                lastError: state.lastError
+            };
+        },
+
+        toQueryOptions: toQueryOptions,
+        syncPaginationSettings: function () {
+            return syncPaginationSettings(
+                "public_settings_sync");
+        },
+        resetPagination: function (reason) {
+            return resetUnifiedPagination(
+                reason || "public_reset");
+        },
+        getPaginationState:
+            copyPaginationState,
+        getPaginationQueryOptions:
+            paginationQueryOptions,
+        loadPaginationPage: function (request) {
+            return loadPaginationPageInternal(
+                request || {});
+        },
+        getAjaxFooterState:
+            copyAjaxFooterState,
+        getNumberPagerState:
+            copyNumberPagerState,
+        getLazyLoadState:
+            copyLazyLoadState,
+        getPrefetchState:
+            copyPrefetchState,
+        getVirtualState:
+            copyVirtualState,
+        getDataWindowState:
+            copyDataWindowState,
+        getMutationState:
+            copyMutationState,
+        performMutationRefresh: function (origin) {
+            return requireMain(runOnMainSync(function () {
+                return refreshMutationResultsOnMain(
+                    origin || "api_mutation_refresh");
+            }, 10000));
+        },
+        getDataWindowRowSnapshot:
+            dataWindowRowSnapshot,
+        performDataWindowMaintenance: function (origin) {
+            return requireMain(runOnMainSync(function () {
+                var range = virtualTargetRange(
+                    virtualState.firstVisibleIndex);
+                var hydration = hydrateDataWindowRange(
+                    range.start, range.end,
+                    origin || "api_data_window_hydrate");
+                if (Number(hydration.missingCount) > 0) {
+                    range = virtualTargetRange(
+                        virtualState.firstVisibleIndex);
+                    hydrateDataWindowRange(
+                        range.start, range.end,
+                        origin ||
+                            "api_data_window_hydrate_after_missing");
+                }
+                dehydrateDataWindowOutside(
+                    range.start, range.end,
+                    origin || "api_data_window_dehydrate");
+                rebuildVirtualWindow(
+                    origin || "api_data_window_rebuild",
+                    true, range.first);
+                return copyDataWindowState();
+            }, 5000));
+        },
+        captureResultAnchor: function () {
+            return requireMain(runOnMainSync(function () {
+                return captureScrollAnchor();
+            }, 2500));
+        },
+        performVirtualUpdate: function (origin) {
+            return requireMain(runOnMainSync(function () {
+                captureScrollAnchor();
+                rebuildVirtualWindow(
+                    origin || "api_virtual_update",
+                    false,
+                    virtualState.firstVisibleIndex);
+                return copyVirtualState();
+            }, 2500));
+        },
+        performScrollToItemId: function (itemId,
+                offsetPx, origin) {
+            return requireMain(runOnMainSync(function () {
+                return scrollToVirtualItem(
+                    itemId, offsetPx,
+                    origin || "api_scroll_to_item");
+            }, 2500));
+        },
+        resetToLatest: resetToLatest,
+        performQuickResetClick: function () {
+            return requireMain(runOnMainSync(function () {
+                return quickResetView !== null &&
+                    quickResetView.getVisibility() === View.VISIBLE ?
+                        quickResetView.performClick() : false;
+            }, 2500));
+        },
+        performPrefetchNow: function (origin) {
+            return requireMain(
+                runOnMainSync(function () {
+                    return prefetchNextPageNow(
+                        origin || "api_prefetch_now");
+                }, 5000));
+        },
+        performLazyLoadCheck: function (origin) {
+            return requireMain(
+                runOnMainSync(f
+
+--- #137 at 413733 ---
+rtualState:
+            copyVirtualState,
+        getDataWindowState:
+            copyDataWindowState,
+        getMutationState:
+            copyMutationState,
+        performMutationRefresh: function (origin) {
+            return requireMain(runOnMainSync(function () {
+                return refreshMutationResultsOnMain(
+                    origin || "api_mutation_refresh");
+            }, 10000));
+        },
+        getDataWindowRowSnapshot:
+            dataWindowRowSnapshot,
+        performDataWindowMaintenance: function (origin) {
+            return requireMain(runOnMainSync(function () {
+                var range = virtualTargetRange(
+                    virtualState.firstVisibleIndex);
+                var hydration = hydrateDataWindowRange(
+                    range.start, range.end,
+                    origin || "api_data_window_hydrate");
+                if (Number(hydration.missingCount) > 0) {
+                    range = virtualTargetRange(
+                        virtualState.firstVisibleIndex);
+                    hydrateDataWindowRange(
+                        range.start, range.end,
+                        origin ||
+                            "api_data_window_hydrate_after_missing");
+                }
+                dehydrateDataWindowOutside(
+                    range.start, range.end,
+                    origin || "api_data_window_dehydrate");
+                rebuildVirtualWindow(
+                    origin || "api_data_window_rebuild",
+                    true, range.first);
+                return copyDataWindowState();
+            }, 5000));
+        },
+        captureResultAnchor: function () {
+            return requireMain(runOnMainSync(function () {
+                return captureScrollAnchor();
+            }, 2500));
+        },
+        performVirtualUpdate: function (origin) {
+            return requireMain(runOnMainSync(function () {
+                captureScrollAnchor();
+                rebuildVirtualWindow(
+                    origin || "api_virtual_update",
+                    false,
+                    virtualState.firstVisibleIndex);
+                return copyVirtualState();
+            }, 2500));
+        },
+        performScrollToItemId: function (itemId,
+                offsetPx, origin) {
+            return requireMain(runOnMainSync(function () {
+                return scrollToVirtualItem(
+                    itemId, offsetPx,
+                    origin || "api_scroll_to_item");
+            }, 2500));
+        },
+        resetToLatest: resetToLatest,
+        performQuickResetClick: function () {
+            return requireMain(runOnMainSync(function () {
+                return quickResetView !== null &&
+                    quickResetView.getVisibility() === View.VISIBLE ?
+                        quickResetView.performClick() : false;
+            }, 2500));
+        },
+        performPrefetchNow: function (origin) {
+            return requireMain(
+                runOnMainSync(function () {
+                    return prefetchNextPageNow(
+                        origin || "api_prefetch_now");
+                }, 5000));
+        },
+        performLazyLoadCheck: function (origin) {
+            return requireMain(
+                runOnMainSync(function () {
+                    lazyLoadState.lastOldScrollY =
+                        Math.max(0,
+                            currentResultScrollY() - 1);
+                    lazyLoadState.lastScrollY =
+                        currentResultScrollY();
+                    return maybeTriggerLazyLoad(
+                        origin || "api_lazy_check",
+                        false);
+                }, 5000));
+        },
+        getRemainingScrollPx:
+            resultRemainingScrollPx,
+        calculatePageButtons:
+            calculatePageButtons,
+        goToPage: function (page, origin) {
+            return requireMain(runOnMainSync(function () {
+                return goToPage(page,
+                    origin || "api_number_page",
+                    "page");
+            }, 5000));
+        },
+        performNumberPageClick: function (page) {
+            page = String(Math.floor(Number(page)));
+            return requireMain(runOnMainSync(function () {
+                return numberPageViews[page] ?
+                    numberPageViews[page].performClick() :
+                    false;
+            }, 5000));
+        },
+        performNumberActionClick: function (action) {
+            action = String(action || "");
+            return requireMain(runOnMainSync(function () {
+                return numberActionViews[action] ?
+                    numberActionViews[action].performClick() :
+                    false;
+            }, 5000));
+        },
+        getLoadedResultIds:
+            loadedResultIds,
+        refreshPaginationUi:
+            refreshPaginationUi,
+        getResultScrollY:
+            currentResultScrollY,
+        performSetResultScrollY:
+            function (valueY) {
+                return requireMain(
+                    runOnMainSync(function () {
+                        return setResultScrollY(
+                            valueY);
+                    }, 2500));
+            },
+
+        query: function (options) {
+            return sortRows(ClipHub.Repository.listItems(
+                toQueryOptions(options || {})));
+        },
+
+        apply: apply,
+        set: setValue,
+        reset: reset,
+
+        setKeyword: function (keyword, options) {
+            return setValue({ keyword: keyword }, options);
+        },
+
+        setSourcePackages: function (packages, options) {
+            return setValue({ sourcePackages: packages }, options);
+        },
+
+        setTagIds: function (tagIds, options) {
+            return setValue({ tagIds: tagIds }, options);
+        },
+
+        setPinnedOnly: function (enabled, options) {
+            return setValue({ pinnedOnly: enabled }, options);
+        },
+
+        setSensitiveMode: function (mode, options) {
+            return setValue({ sensitiveMode: mode }, options);
+        },
+
+        setSortMode: function (mode, options) {
+            return setValue({ sortMode: mode }, options);
+        },
+
+        getSourceOptions: function () {
+            return ClipHub.Repository.listSourceOptions();
+        },
+
+        getTagOptions: function () {
+            return ClipHub.Repository.listTags();
+        },
+
+        showPanel: showPanel,
+        showRoot: function (options) {
+            options = options || {};
+            options.rootMode = true;
+            if (options.requestKeyboard === undefined) {
+                options.requestKeyboard = false;
+            }
+            return showPanel(options);
+        },
+        closePanel: closePanel,
+        handleBack: handleBack,
+        getPanelState: getPanelState,
+        getImeAvoidanceState: getFilterImeAvoidanceState,
+        FILTER_IME_AVOIDANCE: "formal_v34",
+        getSelectedItemId: function () { return selectedItemId; },
+
+        performResultClick: function (index) {
+            index = Math.floor(Number(index));
+            return requireMain(runOnMainSync(function () {
+                return index >= 0 && index < resultCardViews.length ?
+                    resultCardViews[index].performClick() : false;
+            }, 2500));
+        },
+
+        performResultLongClick: function (index) {
+            index = Math.floor(Number(index));
+            return requireMain(runOnMainSync(function () {
+                return index >= 0 && index < resultCardViews.length ?
+                    resultCardViews[index].performLongClick() : false;
+            }, 2500));
+        },
+
+        performResultActionClick: function (index, action) {
+            index = Math.floor(Number(index));
+            action = String(action || "");
+            return requireMain(runOnMainSync(function () {
+                var views = index >= 0 && index < resultActionViews.length ?
+                    resultActionViews[index] : null;
+                return views !== null && views[action] ?
+                    views[a
+
+--- #138 at 413793 ---
+dowState:
+            copyDataWindowState,
+        getMutationState:
+            copyMutationState,
+        performMutationRefresh: function (origin) {
+            return requireMain(runOnMainSync(function () {
+                return refreshMutationResultsOnMain(
+                    origin || "api_mutation_refresh");
+            }, 10000));
+        },
+        getDataWindowRowSnapshot:
+            dataWindowRowSnapshot,
+        performDataWindowMaintenance: function (origin) {
+            return requireMain(runOnMainSync(function () {
+                var range = virtualTargetRange(
+                    virtualState.firstVisibleIndex);
+                var hydration = hydrateDataWindowRange(
+                    range.start, range.end,
+                    origin || "api_data_window_hydrate");
+                if (Number(hydration.missingCount) > 0) {
+                    range = virtualTargetRange(
+                        virtualState.firstVisibleIndex);
+                    hydrateDataWindowRange(
+                        range.start, range.end,
+                        origin ||
+                            "api_data_window_hydrate_after_missing");
+                }
+                dehydrateDataWindowOutside(
+                    range.start, range.end,
+                    origin || "api_data_window_dehydrate");
+                rebuildVirtualWindow(
+                    origin || "api_data_window_rebuild",
+                    true, range.first);
+                return copyDataWindowState();
+            }, 5000));
+        },
+        captureResultAnchor: function () {
+            return requireMain(runOnMainSync(function () {
+                return captureScrollAnchor();
+            }, 2500));
+        },
+        performVirtualUpdate: function (origin) {
+            return requireMain(runOnMainSync(function () {
+                captureScrollAnchor();
+                rebuildVirtualWindow(
+                    origin || "api_virtual_update",
+                    false,
+                    virtualState.firstVisibleIndex);
+                return copyVirtualState();
+            }, 2500));
+        },
+        performScrollToItemId: function (itemId,
+                offsetPx, origin) {
+            return requireMain(runOnMainSync(function () {
+                return scrollToVirtualItem(
+                    itemId, offsetPx,
+                    origin || "api_scroll_to_item");
+            }, 2500));
+        },
+        resetToLatest: resetToLatest,
+        performQuickResetClick: function () {
+            return requireMain(runOnMainSync(function () {
+                return quickResetView !== null &&
+                    quickResetView.getVisibility() === View.VISIBLE ?
+                        quickResetView.performClick() : false;
+            }, 2500));
+        },
+        performPrefetchNow: function (origin) {
+            return requireMain(
+                runOnMainSync(function () {
+                    return prefetchNextPageNow(
+                        origin || "api_prefetch_now");
+                }, 5000));
+        },
+        performLazyLoadCheck: function (origin) {
+            return requireMain(
+                runOnMainSync(function () {
+                    lazyLoadState.lastOldScrollY =
+                        Math.max(0,
+                            currentResultScrollY() - 1);
+                    lazyLoadState.lastScrollY =
+                        currentResultScrollY();
+                    return maybeTriggerLazyLoad(
+                        origin || "api_lazy_check",
+                        false);
+                }, 5000));
+        },
+        getRemainingScrollPx:
+            resultRemainingScrollPx,
+        calculatePageButtons:
+            calculatePageButtons,
+        goToPage: function (page, origin) {
+            return requireMain(runOnMainSync(function () {
+                return goToPage(page,
+                    origin || "api_number_page",
+                    "page");
+            }, 5000));
+        },
+        performNumberPageClick: function (page) {
+            page = String(Math.floor(Number(page)));
+            return requireMain(runOnMainSync(function () {
+                return numberPageViews[page] ?
+                    numberPageViews[page].performClick() :
+                    false;
+            }, 5000));
+        },
+        performNumberActionClick: function (action) {
+            action = String(action || "");
+            return requireMain(runOnMainSync(function () {
+                return numberActionViews[action] ?
+                    numberActionViews[action].performClick() :
+                    false;
+            }, 5000));
+        },
+        getLoadedResultIds:
+            loadedResultIds,
+        refreshPaginationUi:
+            refreshPaginationUi,
+        getResultScrollY:
+            currentResultScrollY,
+        performSetResultScrollY:
+            function (valueY) {
+                return requireMain(
+                    runOnMainSync(function () {
+                        return setResultScrollY(
+                            valueY);
+                    }, 2500));
+            },
+
+        query: function (options) {
+            return sortRows(ClipHub.Repository.listItems(
+                toQueryOptions(options || {})));
+        },
+
+        apply: apply,
+        set: setValue,
+        reset: reset,
+
+        setKeyword: function (keyword, options) {
+            return setValue({ keyword: keyword }, options);
+        },
+
+        setSourcePackages: function (packages, options) {
+            return setValue({ sourcePackages: packages }, options);
+        },
+
+        setTagIds: function (tagIds, options) {
+            return setValue({ tagIds: tagIds }, options);
+        },
+
+        setPinnedOnly: function (enabled, options) {
+            return setValue({ pinnedOnly: enabled }, options);
+        },
+
+        setSensitiveMode: function (mode, options) {
+            return setValue({ sensitiveMode: mode }, options);
+        },
+
+        setSortMode: function (mode, options) {
+            return setValue({ sortMode: mode }, options);
+        },
+
+        getSourceOptions: function () {
+            return ClipHub.Repository.listSourceOptions();
+        },
+
+        getTagOptions: function () {
+            return ClipHub.Repository.listTags();
+        },
+
+        showPanel: showPanel,
+        showRoot: function (options) {
+            options = options || {};
+            options.rootMode = true;
+            if (options.requestKeyboard === undefined) {
+                options.requestKeyboard = false;
+            }
+            return showPanel(options);
+        },
+        closePanel: closePanel,
+        handleBack: handleBack,
+        getPanelState: getPanelState,
+        getImeAvoidanceState: getFilterImeAvoidanceState,
+        FILTER_IME_AVOIDANCE: "formal_v34",
+        getSelectedItemId: function () { return selectedItemId; },
+
+        performResultClick: function (index) {
+            index = Math.floor(Number(index));
+            return requireMain(runOnMainSync(function () {
+                return index >= 0 && index < resultCardViews.length ?
+                    resultCardViews[index].performClick() : false;
+            }, 2500));
+        },
+
+        performResultLongClick: function (index) {
+            index = Math.floor(Number(index));
+            return requireMain(runOnMainSync(function () {
+                return index >= 0 && index < resultCardViews.length ?
+                    resultCardViews[index].performLongClick() : false;
+            }, 2500));
+        },
+
+        performResultActionClick: function (index, action) {
+            index = Math.floor(Number(index));
+            action = String(action || "");
+            return requireMain(runOnMainSync(function () {
+                var views = index >= 0 && index < resultActionViews.length ?
+                    resultActionViews[index] : null;
+                return views !== null && views[action] ?
+                    views[action].performClick() : false;
+            }, 2500));
+      
