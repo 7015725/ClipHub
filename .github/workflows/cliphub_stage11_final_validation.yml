@@ -7,6 +7,10 @@ on:
     paths:
       - .github/workflows/cliphub_stage11_final_validation.yml
       - ClipHub_分页阶段11首页预览按需正文测试入口.txt
+  pull_request:
+    types: [opened, reopened, synchronize]
+    branches:
+      - beta-pagination-stage10-20260808
 
 permissions:
   contents: read
