@@ -1,0 +1,169 @@
+===== KEYED =====
+    function keyedReconcileVirtualWindow(range, colors) {
+        var keyedStartedAt = Number(System.currentTimeMillis());
+        var keyedSignatureStartedAt;
+        var keyedStructureStartedAt;
+        var keyedElapsed;
+        var keyedSignatureElapsed;
+        var keyedStructureElapsed;
+        var desiredCount = Math.max(0, range.end - range.start + 1);
+        var desiredIds = [];
+        var desiredSignatures = [];
+        var desiredKeys = {};
+        var index;
+        var localIndex;
+        var scanIndex;
+        var row;
+        var key;
+        var childCount = Number(virtualCardHost.getChildCount());
+        scrollPerformanceState.keyedReconcileCount += 1;
+        if (virtualRenderedItemIds.length !== childCount ||
+      virtualRenderedSignatures.length !== childCount ||
+      resultCardViews.length !== childCount ||
+      resultCardHolders.length !== childCount ||
+      resultActionViews.length !== childCount) {
+  scrollPerformanceState.alignmentFallbackCount += 1;
+  while (virtualCardHost.getChildCount() > 0) {
+      virtualCardHost.removeViewAt(
+          Number(virtualCardHost.getChildCount()) - 1);
+      scrollPerformanceState.removedViewCount += 1;
+      scrollPerformanceState.structuralRemoveCount += 1;
+  }
+  virtualRenderedItemIds = [];
+  virtualRenderedSignatures = [];
+  resultCardViews = [];
+  resultCardHolders = [];
+  resultActionViews = [];
+        }
+        keyedSignatureStartedAt = Number(System.currentTimeMillis());
+        for (index = range.start; index <= range.end; index += 1) {
+  row = previewRows[index];
+  desiredIds.push(Number(row.id));
+  desiredSignatures.push(virtualRenderSignature(row, colors));
+  key = "k:" + String(Number(row.id)) + "\u001e" +
+      desiredSignatures[desiredSignatures.length - 1];
+  desiredKeys[key] = true;
+        }
+        keyedSignatureElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) - keyedSignatureStartedAt);
+        keyedStructureStartedAt = Number(System.currentTimeMillis());
+        for (localIndex = Number(virtualCardHost.getChildCount()) - 1;
+      localIndex >= 0; localIndex -= 1) {
+  key = "k:" + String(Number(virtualRenderedItemIds[localIndex])) +
+      "\u001e" + String(virtualRenderedSignatures[localIndex]);
+  if (desiredKeys[key] !== true) {
+      removeVirtualEntryAt(localIndex);
+  }
+        }
+        for (localIndex = 0; localIndex < desiredCount; localIndex += 1) {
+  if (localIndex < virtualRenderedItemIds.length &&
+          Number(virtualRenderedItemIds[localIndex]) ===
+              Number(desiredIds[localIndex]) &&
+          String(virtualRenderedSignatures[localIndex]) ===
+              String(desiredSignatures[localIndex])) {
+      scrollPerformanceState.sameIdReuseCount += 1;
+      continue;
+  }
+  scanIndex = -1;
+  for (index = localIndex + 1;
+          index < virtualRenderedItemIds.length; index += 1) {
+      if (Number(virtualRenderedItemIds[index]) ===
+              Number(desiredIds[localIndex]) &&
+              String(virtualRenderedSignatures[index]) ===
+                  String(desiredSignatures[localIndex])) {
+          scanIndex = index;
+          break;
+      }
+  }
+  if (scanIndex >= 0) {
+      moveVirtualEntry(scanIndex, localIndex);
+      scrollPerformanceState.sameIdReuseCount += 1;
+  } else {
+      insertVirtualEntryAt(localIndex,
+          previewRows[range.start + localIndex], colors,
+          desiredSignatures[localIndex]);
+  }
+        }
+        while (virtualCardHost.getChildCount() > desiredCount) {
+  removeVirtualEntryAt(
+      Number(virtualCardHost.getChildCount()) - 1);
+        }
+        syncRenderedResultCounters(range);
+        keyedStructureElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) - keyedStructureStartedAt);
+        keyedElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) - keyedStartedAt);
+        scrollPerformanceState.keyedReconcileLastMs = keyedElapsed;
+        scrollPerformanceState.keyedReconcileMaxMs = Math.max(
+            Number(scrollPerformanceState.keyedReconcileMaxMs), keyedElapsed);
+        scrollPerformanceState.keyedSignatureLastMs = keyedSignatureElapsed;
+        scrollPerformanceState.keyedSignatureMaxMs = Math.max(
+            Number(scrollPerformanceState.keyedSignatureMaxMs), keyedSignatureElapsed);
+        scrollPerformanceState.keyedStructureLastMs = keyedStructureElapsed;
+        scrollPerformanceState.keyedStructureMaxMs = Math.max(
+            Number(scrollPerformanceState.keyedStructureMaxMs), keyedStructureElapsed);
+        return true;
+    }
+
+
+===== FULL_REFRESH OCCURRENCES =====
+
+--- occurrence at 300170 ---
+.lastRenderedIndex = -1;
+            virtualState.firstVisibleIndex = 0;
+            virtualState.lastVisibleIndex = -1;
+            virtualState.topSpacerPx = 0;
+            virtualState.bottomSpacerPx = 0;
+            performance.firstBatchReadyAtNs = nowNanos();
+            performance.showToFirstBatchMs = elapsedMs(
+                performance.showStartedAtNs,
+                performance.firstBatchReadyAtNs);
+            return finishResultRender(generation, colors);
+        }
+        preferredIndex = virtualRowIndexById(
+            virtualState.anchorItemId);
+        if (preferredIndex < 0) {
+            preferredIndex = Math.max(0, Math.min(
+                previewRows.length - 1,
+                Number(virtualState.anchorIndex)));
+        }
+        if (virtualState.scrollToTopPending === true) {
+            preferredIndex = 0;
+        }
+        rebuildVirtualWindow(
+            "full_refresh", true, preferredIndex);
+        renderCursor = Math.max(0,
+            Number(virtualState.lastRenderedIndex) + 1);
+        renderBatchCount = 1;
+        performance.firstBatchReadyAtNs = nowNanos();
+        performance.showToFirstBatchMs = elapsedMs(
+            performance.showStartedAtNs,
+            performance.firstBatchReadyAtNs);
+        return finishResultRender(generation, colors);
+    }
+
+    function updateResultCountOnMain() {
+        var text;
+        if (resultCountView === null) { return false; }
+        if (paginationState.mode === "ajax") {
+            text = paginationState.totalCount > 0 ?
+                "已加载 " +
+                    String(previewRows.length) +
+                    " / " +
+                    String(paginationState.totalCount) +
+                    " 条" :
+                "共 " + String(previewRows.length) +
+                    " 条";
+            if (paginationState.hasMore) {
+                text += "（还有更多）";
+            }
+        } else {
+            text = "第 " +
+                String(paginationState.pageNumber) +
+                " / " +
+                String(Math.max(1,
+                    paginationState.totalPages)) +
+                " 页 · 
+
+===== OLD_TAGLS =====
+count=1 oldTags=2
