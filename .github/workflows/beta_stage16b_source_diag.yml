@@ -1,4 +1,5 @@
 name: Beta Stage16B Source Diagnostic
+# trigger-v2
 on:
   push:
     branches: [beta-pagination-stage10-20260808]
@@ -21,7 +22,6 @@ jobs:
           parts=sorted(glob.glob('stage-assets/pagination-stage9/ch11_full_v8s_*.b64'))
           packed=''.join(pathlib.Path(p).read_text(encoding='utf-8').strip() for p in parts)
           stable=gzip.decompress(base64.b64decode(packed)).decode('utf-8')
-          # Execute the pure transform functions in node, because current runtime source is Filter56 + Stage15 + Stage16A transforms.
           start=loader.index('    function replaceOnceStrict(')
           end=loader.index('\n    try {',start)
           pure=loader[start:end]
@@ -44,7 +44,6 @@ jobs:
               end=src.find('\n    function ',start+len(marker))
               if end<0: end=min(len(src),start+24000)
               out.append('===== '+name+' =====\n'+src[start:end]+'\n')
-          # Also include variable declarations around rendered arrays.
           for pat in ['var virtualRenderedItemIds','var resultCardViews','var resultActionViews']:
               pos=src.find(pat)
               if pos>=0:
