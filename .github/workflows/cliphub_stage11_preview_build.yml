@@ -25,7 +25,7 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
 
-      - name: Align builder with actual Filter source shape
+      - name: Align builder with actual source shape
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -107,6 +107,15 @@ jobs:
           if s.count(old) != 1:
               raise SystemExit('builder PAGINATION_STAGE validation anchor failed')
           s = s.replace(old, new, 1)
+
+          old_repo_write = '    write("src/ch_06_repository.js", wrapper)\n'
+          new_repo_write = (
+              '    wrapper = "\\n".join(line.rstrip() for line in wrapper.splitlines()) + "\\n"\n'
+              '    write("src/ch_06_repository.js", wrapper)\n'
+          )
+          if s.count(old_repo_write) != 1:
+              raise SystemExit('builder repository write anchor failed')
+          s = s.replace(old_repo_write, new_repo_write, 1)
 
           p.write_text(s, encoding='utf-8', newline='\n')
           PY
