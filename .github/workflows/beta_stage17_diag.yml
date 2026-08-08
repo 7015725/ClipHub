@@ -1,4 +1,4 @@
-name: Beta Stage17 Build Fix
+name: Beta Stage17 Build
 on:
   push:
     branches: [beta-pagination-stage10-20260808]
@@ -13,53 +13,5 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Execute corrected Stage17 builder
-        shell: bash
-        run: |
-          set -euo pipefail
-          git show 34db82d66cd1dbdaf2b3b81720190a74ee78ca01:.github/workflows/beta_stage17_diag.yml > /tmp/stage17_builder.yml
-          python - <<'PY'
-          import pathlib
-          text=pathlib.Path('/tmp/stage17_builder.yml').read_text(encoding='utf-8')
-          start_marker='      - name: Build Filter65\n        shell: bash\n        run: |\n'
-          end_marker='      - name: Commit Stage17 atomically\n'
-          if start_marker not in text or end_marker not in text:
-              raise SystemExit('builder block markers missing')
-          body=text.split(start_marker,1)[1].split(end_marker,1)[0]
-          lines=[]
-          for line in body.splitlines():
-              if line.startswith('          '): line=line[10:]
-              lines.append(line)
-          script='\n'.join(lines)+'\n'
-          old="    function stage17DecodeText(encoded) {\n        return String(new JavaString(\n            Base64.decode(String(encoded), Base64.DEFAULT), \"UTF-8\"));\n    }\n"
-          new="    function stage17DecodeText(encoded) {\n        if (typeof Buffer !== \"undefined\") {\n            return String(Buffer.from(String(encoded), \"base64\").toString(\"utf8\"));\n        }\n        return String(new JavaString(\n            Base64.decode(String(encoded), Base64.DEFAULT), \"UTF-8\"));\n    }\n"
-          if script.count(old)!=1:
-              raise SystemExit('Stage17 decode anchor mismatch: %d' % script.count(old))
-          script=script.replace(old,new,1)
-          pathlib.Path('/tmp/stage17_build.sh').write_text(script,encoding='utf-8')
-          PY
-          set +e
-          bash /tmp/stage17_build.sh > /tmp/stage17_build_fix.log 2>&1
-          rc=$?
-          set -e
-          if [ "$rc" -ne 0 ]; then
-            git restore src/ch_11_filter.js module-manifest.json || true
-            cp /tmp/stage17_build_fix.log stage17_build_debug.txt
-            printf '\nEXIT_CODE=%s\n' "$rc" >> stage17_build_debug.txt
-            git config user.name github-actions[bot]
-            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-            git add stage17_build_debug.txt
-            git commit -m "记录 Stage17 二次构建失败诊断"
-            git push
-            exit 0
-          fi
-          cat /tmp/stage17_build_fix.log
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          rm -f .github/stage17-diag-trigger.txt
-          rm -f .github/workflows/beta_stage17_diag.yml
-          rm -f stage17_diag.txt stage17_build_debug.txt
-          git add -A
-          git diff --cached --check
-          git commit -m "分帧构建 Beta AJAX 追加列表"
-          git push
+      - name: Run Stage17 builder
+        run: python stage17_build_runner.py
