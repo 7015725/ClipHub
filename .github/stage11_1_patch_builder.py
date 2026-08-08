@@ -49,10 +49,45 @@ source = insert_named_head(
     "refresh invalidation"
 )
 '''
+old_diag = '''source = replace_once(
+    source,
+    "        getState: function () {\\n",
+    ''' + "'''" + '''        getHydrationWorkerState: function () {
+            return copyHydrationWorkerState();
+        },
+
+        getScrollPerformanceState: function () {
+            return copyScrollPerformanceState();
+        },
+
+        getState: function () {
+''' + "'''" + ''',
+    "diagnostic APIs"
+)
+'''
+new_diag = '''source = replace_once(
+    source,
+    "        PAGINATION_STAGE: PAGINATION_STAGE,\\n",
+    ''' + "'''" + '''        PAGINATION_STAGE: PAGINATION_STAGE,
+
+        getHydrationWorkerState: function () {
+            return copyHydrationWorkerState();
+        },
+
+        getScrollPerformanceState: function () {
+            return copyScrollPerformanceState();
+        },
+''' + "'''" + ''',
+    "diagnostic APIs"
+)
+'''
 if text.count(old_helper) != 1:
     raise RuntimeError('builder helper anchor mismatch')
 if text.count(old_calls) != 1:
     raise RuntimeError('builder call anchor mismatch')
+if text.count(old_diag) != 1:
+    raise RuntimeError('builder diagnostic anchor mismatch')
 text = text.replace(old_helper, new_helper, 1)
 text = text.replace(old_calls, new_calls, 1)
+text = text.replace(old_diag, new_diag, 1)
 path.write_text(text, encoding='utf-8')
