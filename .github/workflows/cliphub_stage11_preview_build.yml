@@ -25,6 +25,33 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
 
+      - name: Align builder with actual Filter query-options shape
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          p = Path('tools/cliphub_stage11_preview_build.py')
+          s = p.read_text(encoding='utf-8')
+          pattern = re.compile(r'    def patch_query_options\(block: str\) -> str:\n.*?\n    source = mutate_function\(source, "paginationQueryOptions", patch_query_options\)', re.S)
+          replacement = '''    def patch_query_options(block: str) -> str:
+              if "previewOnly" in block:
+                  return block
+              marker = "        return options;\\n"
+              if block.count(marker) != 1:
+                  raise RuntimeError("paginationQueryOptions return options anchor missing\\n" + block[:2400])
+              return block.replace(
+                  marker,
+                  "        options.previewOnly = true;\\n" + marker,
+                  1,
+              )
+
+          source = mutate_function(source, "paginationQueryOptions", patch_query_options)'''
+          s2, count = pattern.subn(replacement, s, count=1)
+          if count != 1:
+              raise SystemExit('builder patch_query_options replacement failed')
+          p.write_text(s2, encoding='utf-8', newline='\n')
+          PY
+
       - name: Build preview-on-demand implementation
         run: python tools/cliphub_stage11_preview_build.py
 
