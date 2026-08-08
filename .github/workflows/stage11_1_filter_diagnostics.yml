@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Decode Filter v49 and print implementation anchors
+      - name: Decode Filter v49 and print exact Stage11.1 anchors
         shell: bash
         run: |
           python3 - <<'PY'
@@ -31,24 +31,28 @@ jobs:
           assert hashlib.sha256(source.encode()).hexdigest() == '6d85719de45449ac1d029081a50554b8592bf21e7717fa3ecbfce18c8aa913e7'
           lines = source.splitlines()
           patterns = [
-              'function performDataWindowMaintenance',
-              'function performVirtualUpdate',
-              'function scheduleVirtualUpdate',
+              'var dataWindowState',
+              'var virtualState',
+              'function hydrateDataWindow',
+              'function maintainDataWindow',
+              'function rebuildVirtualWindow',
+              'function bindLazyScrollListener',
+              'virtualCardHost.remove',
+              'virtualCardHost.addView',
+              'makeResultCard(',
+              'function resetState',
+              'getDataWindowState:',
+              'getVirtualWindowState:',
+              'function prepareMutation',
+              'function refreshMutation',
+              'mutationRefreshPlan',
+              'function resetUnifiedPagination',
               'function closePanel',
-              'shutdown: function',
-              'var previewRows',
-              'var paginationState',
-              'var mainHandler',
-              'function runOnMain',
-              'function runOnMainSync',
-              'MODULE_VERSION: 49',
-              '__clipHubDehydrated',
-              'listItemsByIds(',
-              'listItemTagMap(',
-              'queryGeneration',
-              'renderGeneration',
-              'refreshGeneration'
+              'shutdown: function'
           ]
+          print('===== IMPORTS 1-42 =====')
+          for idx in range(0, min(42, len(lines))):
+              print('%05d|%s' % (idx + 1, lines[idx]))
           hits = []
           for pat in patterns:
               found = [i for i, line in enumerate(lines) if pat in line]
@@ -56,9 +60,9 @@ jobs:
               hits.extend(found)
           ranges = []
           for i in sorted(set(hits)):
-              start = max(0, i - 18)
-              end = min(len(lines), i + 45)
-              if ranges and start <= ranges[-1][1] + 8:
+              start = max(0, i - 55)
+              end = min(len(lines), i + 100)
+              if ranges and start <= ranges[-1][1] + 12:
                   ranges[-1] = (ranges[-1][0], max(ranges[-1][1], end))
               else:
                   ranges.append((start, end))
