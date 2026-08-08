@@ -1,0 +1,15 @@
+v5_parts=8
+source_sha=605fdf2bc41d4db6a2ac4deacd060e0a331043fb205e7eef1b45c67f4973da7e
+module50_count=0
+rebuild_anchor_count=1
+before3_count=1
+after5_count=1
+delay24_count=1
+executor_count=0
+loader_parts_regex=1
+loader_packed_regex=1
+loader_source_regex=1
+loader_cache_regex=1
+moduleSetVersion=20260808.04
+test_filter50_count=0
+test_dot04_count=1
