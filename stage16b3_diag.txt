@@ -1,0 +1,1610 @@
+MODULE61=1
+newTagls=2 newTags=5
+
+===== resultCardViews = []; =====
+
+--- #1 at 4015 ---
+
+    var primaryDragView = null;
+    var primaryResizeView = null;
+    var keywordInput = null;
+    var searchView = null;
+    var resetView = null;
+    var closeView = null;
+    var settingsButton = null;
+    var advancedView = null;
+    var applyView = null;
+    var clearHistoryView = null;
+    var resultContainer = null;
+    var resultCountView = null;
+    var drawerContainer = null;
+    var drawerScrollView = null;
+    var drawerContentView = null;
+    var drawerFooterView = null;
+    var sourceViews = {};
+    var tagViews = {};
+    var pinnedViews = {};
+    var sensitiveViews = {};
+    var sortViews = {};
+    var historyViews = [];
+    var advancedVisible = false;
+    var searchHistory = [];
+    var previewRows = [];
+    var suppressTextWatcher = false;
+    var searchGeneration = 0;
+    var restoreListOnClose = false;
+    var rootMode = false;
+    var selectedItemId = null;
+    var resultCardViews = [];
+    var resultCardHolders = [];
+    var toolbarActionViews = {};
+    var resultTagMap = {};
+    var resultPageLimit = RESULT_PAGE_SIZE;
+    var resultHasMore = false;
+    var resultScrollView = null;
+    var loadMoreView = null;
+    var PAGINATION_STAGE = 9;
+    var paginationState = {
+        ready: false,
+        mode: "ajax",
+        repositoryMode: "append",
+        pageSize: 100,
+        prefetchEnabled: true,
+        pageNumber: 1,
+        loadedCount: 0,
+        totalCount: 0,
+        totalPages: 0,
+        hasMore: false,
+        endCursor: null,
+        queryGeneration: 0,
+        resetCount: 0,
+        loadCount: 0,
+        settingsSyncCount: 0,
+        settingsEventCount: 0,
+        criteriaChangeCount: 0,
+        lastResetReason: "",
+        lastLoadMode: "",
+        lastCriteriaSignature: "",
+        newContentPending: false,
+        quickResetAvailable: false,
+        lastError: null
+    };
+    var ajaxFooterState = {
+        present: false,
+        visible: false,
+        action: "none",
+        text: "",
+        clickable: false,
+        loading: false,
+        click
+
+--- #2 at 173870 ---
+         scrollPerformanceState.alignmentFallbackReasonCounts[alignmentReasons[alignmentKey]] = 0;
+      }
+      scrollPerformanceState.alignmentFallbackReasonCounts[alignmentReasons[alignmentKey]] += 1;
+  }
+  scrollPerformanceState.alignmentFallbackLastSnapshot = {
+      childCount: childCount,
+      itemIds: virtualRenderedItemIds.length,
+      signatures: virtualRenderedSignatures.length,
+      cardViews: resultCardViews.length,
+      holders: resultCardHolders.length,
+      actionViews: resultActionViews.length
+  };
+  scrollPerformanceState.alignmentFallbackCount += 1;
+  while (virtualCardHost.getChildCount() > 0) {
+      virtualCardHost.removeViewAt(
+          Number(virtualCardHost.getChildCount()) - 1);
+      scrollPerformanceState.removedViewCount += 1;
+      scrollPerformanceState.structuralRemoveCount += 1;
+  }
+  virtualRenderedItemIds = [];
+  virtualRenderedSignatures = [];
+  resultCardViews = [];
+  resultCardHolders = [];
+  resultActionViews = [];
+        }
+        keyedSignatureStartedAt = Number(System.currentTimeMillis());
+        for (index = range.start; index <= range.end; index += 1) {
+  row = previewRows[index];
+  desiredIds.push(Number(row.id));
+  desiredSignatures.push(virtualRenderSignature(row, colors));
+  key = "k:" + String(Number(row.id)) + "\u001e" +
+      desiredSignatures[desiredSignatures.length - 1];
+  desiredKeys[key] = true;
+        }
+        keyedSignatureElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) - keyedSignatureStartedAt);
+        keyedStructureStartedAt = Number(System.currentTimeMillis());
+        for (localIndex = Number(virtualCardHost.getChildCount()) - 1;
+      localIndex >= 0; localIndex -= 1) {
+  key = "k:" + String(Number(virtualRenderedItemIds[localIndex])) +
+      "\u001e" + String(virtualRenderedSignatures[localIndex]);
+  if (desiredKeys[key] !== true) {
+      removeVirtualEntryAt(localIndex);
+  }
+        }
+        for (localIndex = 0; localIndex < desiredCount; localIndex += 1) {
+  if (localIndex < virtualRender
+
+--- #3 at 301722 ---
+() {
+                    renderResultBatch(generation,
+                        RENDER_BATCH_COUNT, colors);
+                }
+            }));
+            return true;
+        }
+        return finishResultRender(generation, colors);
+    }
+
+    function refreshResultsOnMain() {
+        var colors = palette();
+        var empty;
+        var generation;
+        var preferredIndex;
+        if (resultContainer === null) { return false; }
+        captureScrollAnchor();
+        renderGeneration += 1;
+        generation = renderGeneration;
+        renderCursor = 0;
+        renderBatchCount = 0;
+        state.contentReady = false;
+        cancelActiveSwipe(false);
+        createVirtualHierarchy();
+        state.resultCardCount = 0;
+        state.resultSourceIconCount = 0;
+        state.renderedTagLabelCount = 0;
+        state.cardActionButtonCount = 0;
+        state.pinnedBadgeCount = 0;
+        resultCardViews = [];
+        resultCardHolders = [];
+        resultActionViews = [];
+        resultTagMap = {};
+        dataTagLoadedById = {};
+        if (selectedItemId !== null && selectedResultRow() === null) {
+            clearSelectedResult();
+        }
+        if (previewRows.length === 0) {
+            empty = makeText("没有匹配的剪贴板记录",
+                12, colors.textSecondary, false);
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(dp(10), dp(42), dp(10), dp(42));
+            virtualCardHost.addView(empty,
+                new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
+            virtualRenderedItemIds = [];
+            virtualRenderedSignatures = [];
+            virtualState.firstRenderedIndex = 0;
+            virtualState.lastRenderedIndex = -1;
+            virtualState.firstVisibleIndex = 0;
+            virtualState.lastVisibleIndex = -1;
+            virtualState.topSpacerPx = 0;
+            virtualState.bottomSpacerPx = 0;
+            performance.firstBatchReadyAt
+
+--- #4 at 365547 ---
+oot = null;
+        panelWindowRoot = null;
+        panelManagedFrame = null;
+        panelParams = null;
+        primaryDragView = null;
+        primaryResizeView = null;
+        keywordInput = null;
+        searchView = null;
+        searchStatusRow = null;
+        searchInputRow = null;
+        searchToggleView = null;
+        searchClearView = null;
+        historyContainerView = null;
+        resetView = null;
+        closeView = null;
+        settingsButton = null;
+        advancedView = null;
+        applyView = null;
+        clearHistoryView = null;
+        resultContainer = null;
+        resultCountView = null;
+        resultBodyFrame = null;
+        resultScrollView = null;
+        loadMoreView = null;
+        clearVirtualViewReferences();
+        drawerContainer = null;
+        drawerScrollView = null;
+        drawerContentView = null;
+        drawerFooterView = null;
+        resultCardViews = [];
+        resultCardHolders = [];
+        resultActionViews = [];
+        panelBuilt = false;
+        panelBuiltRootMode = null;
+        panelStructureDirty = true;
+        state.panelBuilt = false;
+        state.panelCacheDestroyCount += 1;
+        state.lastError = reason ? String(reason) : state.lastError;
+        return true;
+    }
+
+    function schedulePanelRefresh(origin, rebuildStructure, requestFocus) {
+        var generation = refreshGeneration;
+        refreshReason = String(origin || refreshReason || "refresh");
+        if (refreshScheduled || mainHandler === null) { return false; }
+        refreshScheduled = true;
+        mainHandler.post(new Packages.java.lang.Runnable({
+            run: function () {
+                if (generation !== refreshGeneration) { return; }
+                refreshScheduled = false;
+                if (!state.panelAttached) { return; }
+                try {
+                    performance.lastRefreshOrigin = refreshReason;
+                    if (mutationRefreshPlan !== null) {
+                        refreshMutationResultsOnMain(refreshReason);
+ 
+
+--- #5 at 398092 ---
+e = null;
+            panelParams = null;
+            primaryDragView = null;
+            primaryResizeView = null;
+            panelBuilt = false;
+            panelBuiltRootMode = null;
+            panelStructureDirty = true;
+            panelDataDirty = true;
+            panelDataVersion = 1;
+            renderedDataVersion = 0;
+            renderGeneration = 0;
+            renderCursor = 0;
+            renderBatchCount = 0;
+            optionCountsCache = null;
+            optionCountsDirty = true;
+            refreshGeneration = 0;
+            refreshScheduled = false;
+            refreshReason = "";
+            lastShowReused = false;
+            timeFormatter = null;
+            advancedVisible = false;
+            previewRows = [];
+            searchGeneration = 0;
+            restoreListOnClose = false;
+            rootMode = false;
+            selectedItemId = null;
+            resultCardViews = [];
+            resultCardHolders = [];
+            toolbarActionViews = {};
+            resultTagMap = {};
+            resultScrollView = null;
+            loadMoreView = null;
+            resultBodyFrame = null;
+            resultActionViews = [];
+            sourceIconConstantStateCache = {};
+            deleteUndoView = null;
+            pendingDeleteUndo = null;
+            deleteUndoGeneration = 0;
+            copyFeedbackView = null;
+            copyFeedbackGeneration = 0;
+            adaptiveRenderGeneration = 0;
+            searchExpanded = false;
+            searchStatusRow = null;
+            searchInputRow = null;
+            searchToggleView = null;
+            searchClearView = null;
+            historyContainerView = null;
+            inputDispatchGeneration += 1;
+            inputDispatchPending = false;
+            paginationState.newContentPending = false;
+            paginationState.quickResetAvailable = false;
+            resetVirtualState(true);
+            resetMutationState();
+            resetResultPaging("filter_init");
+            resetState();
+            load
+
+--- #6 at 415701 ---
+     performCloseClick: function () {
+            return requireMain(runOnMainSync(function () {
+                return closeView !== null ?
+                    closeView.performClick() : false;
+            }, 2500));
+        },
+
+        shutdown: function () {
+            try {
+                closePanel({
+                    restoreList: false,
+                    reason: "shutdown",
+                    destroyCache: true
+                });
+            } catch (ignoredClose) {}
+            shutdownHydrationWorker();
+            unregisterEvents();
+            searchGeneration += 1;
+            adaptiveRenderGeneration += 1;
+            inputDispatchGeneration += 1;
+            inputDispatchPending = false;
+            clearDeleteUndo(true);
+            clearCopyFeedback();
+            rootMode = false;
+            searchExpanded = false;
+            selectedItemId = null;
+            resultCardViews = [];
+            resultCardHolders = [];
+            toolbarActionViews = {};
+            resultTagMap = {};
+            resultScrollView = null;
+            loadMoreView = null;
+            clearVirtualViewReferences();
+            resultBodyFrame = null;
+            resultActionViews = [];
+            sourceIconConstantStateCache = {};
+            deleteUndoView = null;
+            pendingDeleteUndo = null;
+            copyFeedbackView = null;
+            copyFeedbackGeneration = 0;
+            cancelActiveSwipe(false);
+            activeSwipeCard = null;
+            paginationState.newContentPending = false;
+            paginationState.quickResetAvailable = false;
+            resetMutationState();
+            resetVirtualState(true);
+            resetResultPaging();
+            value = null;
+            ready = false;
+            androidContext = null;
+            appContext = null;
+            windowManager = null;
+            inputMethodManager = null;
+            mainHandler = null;
+            return true;
+        }
+    };
+}((function () { return this; }())));
+
+
+===== resultCardHolders = []; =====
+
+--- #1 at 4045 ---
+l;
+    var primaryResizeView = null;
+    var keywordInput = null;
+    var searchView = null;
+    var resetView = null;
+    var closeView = null;
+    var settingsButton = null;
+    var advancedView = null;
+    var applyView = null;
+    var clearHistoryView = null;
+    var resultContainer = null;
+    var resultCountView = null;
+    var drawerContainer = null;
+    var drawerScrollView = null;
+    var drawerContentView = null;
+    var drawerFooterView = null;
+    var sourceViews = {};
+    var tagViews = {};
+    var pinnedViews = {};
+    var sensitiveViews = {};
+    var sortViews = {};
+    var historyViews = [];
+    var advancedVisible = false;
+    var searchHistory = [];
+    var previewRows = [];
+    var suppressTextWatcher = false;
+    var searchGeneration = 0;
+    var restoreListOnClose = false;
+    var rootMode = false;
+    var selectedItemId = null;
+    var resultCardViews = [];
+    var resultCardHolders = [];
+    var toolbarActionViews = {};
+    var resultTagMap = {};
+    var resultPageLimit = RESULT_PAGE_SIZE;
+    var resultHasMore = false;
+    var resultScrollView = null;
+    var loadMoreView = null;
+    var PAGINATION_STAGE = 9;
+    var paginationState = {
+        ready: false,
+        mode: "ajax",
+        repositoryMode: "append",
+        pageSize: 100,
+        prefetchEnabled: true,
+        pageNumber: 1,
+        loadedCount: 0,
+        totalCount: 0,
+        totalPages: 0,
+        hasMore: false,
+        endCursor: null,
+        queryGeneration: 0,
+        resetCount: 0,
+        loadCount: 0,
+        settingsSyncCount: 0,
+        settingsEventCount: 0,
+        criteriaChangeCount: 0,
+        lastResetReason: "",
+        lastLoadMode: "",
+        lastCriteriaSignature: "",
+        newContentPending: false,
+        quickResetAvailable: false,
+        lastError: null
+    };
+    var ajaxFooterState = {
+        present: false,
+        visible: false,
+        action: "none",
+        text: "",
+        clickable: false,
+        loading: false,
+        clickCount: 0,
+        blockedClickCo
+
+--- #2 at 173894 ---
+ceState.alignmentFallbackReasonCounts[alignmentReasons[alignmentKey]] = 0;
+      }
+      scrollPerformanceState.alignmentFallbackReasonCounts[alignmentReasons[alignmentKey]] += 1;
+  }
+  scrollPerformanceState.alignmentFallbackLastSnapshot = {
+      childCount: childCount,
+      itemIds: virtualRenderedItemIds.length,
+      signatures: virtualRenderedSignatures.length,
+      cardViews: resultCardViews.length,
+      holders: resultCardHolders.length,
+      actionViews: resultActionViews.length
+  };
+  scrollPerformanceState.alignmentFallbackCount += 1;
+  while (virtualCardHost.getChildCount() > 0) {
+      virtualCardHost.removeViewAt(
+          Number(virtualCardHost.getChildCount()) - 1);
+      scrollPerformanceState.removedViewCount += 1;
+      scrollPerformanceState.structuralRemoveCount += 1;
+  }
+  virtualRenderedItemIds = [];
+  virtualRenderedSignatures = [];
+  resultCardViews = [];
+  resultCardHolders = [];
+  resultActionViews = [];
+        }
+        keyedSignatureStartedAt = Number(System.currentTimeMillis());
+        for (index = range.start; index <= range.end; index += 1) {
+  row = previewRows[index];
+  desiredIds.push(Number(row.id));
+  desiredSignatures.push(virtualRenderSignature(row, colors));
+  key = "k:" + String(Number(row.id)) + "\u001e" +
+      desiredSignatures[desiredSignatures.length - 1];
+  desiredKeys[key] = true;
+        }
+        keyedSignatureElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) - keyedSignatureStartedAt);
+        keyedStructureStartedAt = Number(System.currentTimeMillis());
+        for (localIndex = Number(virtualCardHost.getChildCount()) - 1;
+      localIndex >= 0; localIndex -= 1) {
+  key = "k:" + String(Number(virtualRenderedItemIds[localIndex])) +
+      "\u001e" + String(virtualRenderedSignatures[localIndex]);
+  if (desiredKeys[key] !== true) {
+      removeVirtualEntryAt(localIndex);
+  }
+        }
+        for (localIndex = 0; localIndex < desiredCount; localIndex += 1) {
+  if (localIndex < virtualRenderedItemIds.length &&
+      
+
+--- #3 at 301752 ---
+rResultBatch(generation,
+                        RENDER_BATCH_COUNT, colors);
+                }
+            }));
+            return true;
+        }
+        return finishResultRender(generation, colors);
+    }
+
+    function refreshResultsOnMain() {
+        var colors = palette();
+        var empty;
+        var generation;
+        var preferredIndex;
+        if (resultContainer === null) { return false; }
+        captureScrollAnchor();
+        renderGeneration += 1;
+        generation = renderGeneration;
+        renderCursor = 0;
+        renderBatchCount = 0;
+        state.contentReady = false;
+        cancelActiveSwipe(false);
+        createVirtualHierarchy();
+        state.resultCardCount = 0;
+        state.resultSourceIconCount = 0;
+        state.renderedTagLabelCount = 0;
+        state.cardActionButtonCount = 0;
+        state.pinnedBadgeCount = 0;
+        resultCardViews = [];
+        resultCardHolders = [];
+        resultActionViews = [];
+        resultTagMap = {};
+        dataTagLoadedById = {};
+        if (selectedItemId !== null && selectedResultRow() === null) {
+            clearSelectedResult();
+        }
+        if (previewRows.length === 0) {
+            empty = makeText("没有匹配的剪贴板记录",
+                12, colors.textSecondary, false);
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(dp(10), dp(42), dp(10), dp(42));
+            virtualCardHost.addView(empty,
+                new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
+            virtualRenderedItemIds = [];
+            virtualRenderedSignatures = [];
+            virtualState.firstRenderedIndex = 0;
+            virtualState.lastRenderedIndex = -1;
+            virtualState.firstVisibleIndex = 0;
+            virtualState.lastVisibleIndex = -1;
+            virtualState.topSpacerPx = 0;
+            virtualState.bottomSpacerPx = 0;
+            performance.firstBatchReadyAtNs = nowNanos();
+            per
+
+--- #4 at 365577 ---
+wRoot = null;
+        panelManagedFrame = null;
+        panelParams = null;
+        primaryDragView = null;
+        primaryResizeView = null;
+        keywordInput = null;
+        searchView = null;
+        searchStatusRow = null;
+        searchInputRow = null;
+        searchToggleView = null;
+        searchClearView = null;
+        historyContainerView = null;
+        resetView = null;
+        closeView = null;
+        settingsButton = null;
+        advancedView = null;
+        applyView = null;
+        clearHistoryView = null;
+        resultContainer = null;
+        resultCountView = null;
+        resultBodyFrame = null;
+        resultScrollView = null;
+        loadMoreView = null;
+        clearVirtualViewReferences();
+        drawerContainer = null;
+        drawerScrollView = null;
+        drawerContentView = null;
+        drawerFooterView = null;
+        resultCardViews = [];
+        resultCardHolders = [];
+        resultActionViews = [];
+        panelBuilt = false;
+        panelBuiltRootMode = null;
+        panelStructureDirty = true;
+        state.panelBuilt = false;
+        state.panelCacheDestroyCount += 1;
+        state.lastError = reason ? String(reason) : state.lastError;
+        return true;
+    }
+
+    function schedulePanelRefresh(origin, rebuildStructure, requestFocus) {
+        var generation = refreshGeneration;
+        refreshReason = String(origin || refreshReason || "refresh");
+        if (refreshScheduled || mainHandler === null) { return false; }
+        refreshScheduled = true;
+        mainHandler.post(new Packages.java.lang.Runnable({
+            run: function () {
+                if (generation !== refreshGeneration) { return; }
+                refreshScheduled = false;
+                if (!state.panelAttached) { return; }
+                try {
+                    performance.lastRefreshOrigin = refreshReason;
+                    if (mutationRefreshPlan !== null) {
+                        refreshMutationResultsOnMain(refreshReason);
+                    } else if (pa
+
+--- #5 at 398126 ---
+= null;
+            primaryDragView = null;
+            primaryResizeView = null;
+            panelBuilt = false;
+            panelBuiltRootMode = null;
+            panelStructureDirty = true;
+            panelDataDirty = true;
+            panelDataVersion = 1;
+            renderedDataVersion = 0;
+            renderGeneration = 0;
+            renderCursor = 0;
+            renderBatchCount = 0;
+            optionCountsCache = null;
+            optionCountsDirty = true;
+            refreshGeneration = 0;
+            refreshScheduled = false;
+            refreshReason = "";
+            lastShowReused = false;
+            timeFormatter = null;
+            advancedVisible = false;
+            previewRows = [];
+            searchGeneration = 0;
+            restoreListOnClose = false;
+            rootMode = false;
+            selectedItemId = null;
+            resultCardViews = [];
+            resultCardHolders = [];
+            toolbarActionViews = {};
+            resultTagMap = {};
+            resultScrollView = null;
+            loadMoreView = null;
+            resultBodyFrame = null;
+            resultActionViews = [];
+            sourceIconConstantStateCache = {};
+            deleteUndoView = null;
+            pendingDeleteUndo = null;
+            deleteUndoGeneration = 0;
+            copyFeedbackView = null;
+            copyFeedbackGeneration = 0;
+            adaptiveRenderGeneration = 0;
+            searchExpanded = false;
+            searchStatusRow = null;
+            searchInputRow = null;
+            searchToggleView = null;
+            searchClearView = null;
+            historyContainerView = null;
+            inputDispatchGeneration += 1;
+            inputDispatchPending = false;
+            paginationState.newContentPending = false;
+            paginationState.quickResetAvailable = false;
+            resetVirtualState(true);
+            resetMutationState();
+            resetResultPaging("filter_init");
+            resetState();
+            loadHistory();
+            registerEvent
+
+--- #6 at 415735 ---
+) {
+            return requireMain(runOnMainSync(function () {
+                return closeView !== null ?
+                    closeView.performClick() : false;
+            }, 2500));
+        },
+
+        shutdown: function () {
+            try {
+                closePanel({
+                    restoreList: false,
+                    reason: "shutdown",
+                    destroyCache: true
+                });
+            } catch (ignoredClose) {}
+            shutdownHydrationWorker();
+            unregisterEvents();
+            searchGeneration += 1;
+            adaptiveRenderGeneration += 1;
+            inputDispatchGeneration += 1;
+            inputDispatchPending = false;
+            clearDeleteUndo(true);
+            clearCopyFeedback();
+            rootMode = false;
+            searchExpanded = false;
+            selectedItemId = null;
+            resultCardViews = [];
+            resultCardHolders = [];
+            toolbarActionViews = {};
+            resultTagMap = {};
+            resultScrollView = null;
+            loadMoreView = null;
+            clearVirtualViewReferences();
+            resultBodyFrame = null;
+            resultActionViews = [];
+            sourceIconConstantStateCache = {};
+            deleteUndoView = null;
+            pendingDeleteUndo = null;
+            copyFeedbackView = null;
+            copyFeedbackGeneration = 0;
+            cancelActiveSwipe(false);
+            activeSwipeCard = null;
+            paginationState.newContentPending = false;
+            paginationState.quickResetAvailable = false;
+            resetMutationState();
+            resetVirtualState(true);
+            resetResultPaging();
+            value = null;
+            ready = false;
+            androidContext = null;
+            appContext = null;
+            windowManager = null;
+            inputMethodManager = null;
+            mainHandler = null;
+            return true;
+        }
+    };
+}((function () { return this; }())));
+
+
+===== resultActionViews = []; =====
+
+--- #1 at 10845 ---
+   refreshCount: 0,
+        coalescedCount: 0,
+        addedPendingCount: 0,
+        relatedEventSuppressedCount: 0,
+        settingsChangeCount: 0,
+        anchorRestoreCount: 0,
+        anchorFallbackCount: 0,
+        lastEventName: "",
+        lastAction: "",
+        lastOrigin: "",
+        lastModeBefore: "",
+        lastModeAfter: "",
+        lastPageNumberBefore: 1,
+        lastPageNumberAfter: 1,
+        lastLoadedCountBefore: 0,
+        lastLoadedCountAfter: 0,
+        lastReloadPageCount: 0,
+        lastAnchorItemIdBefore: null,
+        lastAnchorItemIdAfter: null,
+        lastAnchorIndexBefore: -1,
+        lastAnchorIndexAfter: -1,
+        lastAnchorOffsetPxBefore: 0,
+        lastAnchorOffsetPxAfter: 0,
+        lastAnchorRestoreErrorPx: 0,
+        lastPositionPreserved: true,
+        lastError: null
+    };
+    var activeSwipeCard = null;
+    var resultBodyFrame = null;
+    var resultActionViews = [];
+    var sourceIconConstantStateCache = {};
+    var deleteUndoView = null;
+    var pendingDeleteUndo = null;
+    var deleteUndoGeneration = 0;
+    var copyFeedbackView = null;
+    var copyFeedbackGeneration = 0;
+    var adaptiveRenderGeneration = 0;
+    var searchExpanded = false;
+    var searchStatusRow = null;
+    var searchInputRow = null;
+    var searchToggleView = null;
+    var searchClearView = null;
+    var historyContainerView = null;
+    var inputDispatchGeneration = 0;
+    var inputDispatchPending = false;
+    var panelBuilt = false;
+    var panelBuiltRootMode = null;
+    var panelStructureDirty = true;
+    var panelDataDirty = true;
+    var panelDataVersion = 1;
+    var renderedDataVersion = 0;
+    var renderGeneration = 0;
+    var renderCursor = 0;
+    var renderBatchCount = 0;
+    var optionCountsCache = null;
+    var optionCountsDirty = true;
+    var refreshGeneration = 0;
+    var refreshScheduled = false;
+    var refreshReason = "";
+    var lastShowReused = false;
+    var timeFormatter = null;
+    var performance = {
+        showGeneration: 0,
+        showStartedAtNs: 
+
+--- #2 at 173920 ---
+easonCounts[alignmentReasons[alignmentKey]] = 0;
+      }
+      scrollPerformanceState.alignmentFallbackReasonCounts[alignmentReasons[alignmentKey]] += 1;
+  }
+  scrollPerformanceState.alignmentFallbackLastSnapshot = {
+      childCount: childCount,
+      itemIds: virtualRenderedItemIds.length,
+      signatures: virtualRenderedSignatures.length,
+      cardViews: resultCardViews.length,
+      holders: resultCardHolders.length,
+      actionViews: resultActionViews.length
+  };
+  scrollPerformanceState.alignmentFallbackCount += 1;
+  while (virtualCardHost.getChildCount() > 0) {
+      virtualCardHost.removeViewAt(
+          Number(virtualCardHost.getChildCount()) - 1);
+      scrollPerformanceState.removedViewCount += 1;
+      scrollPerformanceState.structuralRemoveCount += 1;
+  }
+  virtualRenderedItemIds = [];
+  virtualRenderedSignatures = [];
+  resultCardViews = [];
+  resultCardHolders = [];
+  resultActionViews = [];
+        }
+        keyedSignatureStartedAt = Number(System.currentTimeMillis());
+        for (index = range.start; index <= range.end; index += 1) {
+  row = previewRows[index];
+  desiredIds.push(Number(row.id));
+  desiredSignatures.push(virtualRenderSignature(row, colors));
+  key = "k:" + String(Number(row.id)) + "\u001e" +
+      desiredSignatures[desiredSignatures.length - 1];
+  desiredKeys[key] = true;
+        }
+        keyedSignatureElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) - keyedSignatureStartedAt);
+        keyedStructureStartedAt = Number(System.currentTimeMillis());
+        for (localIndex = Number(virtualCardHost.getChildCount()) - 1;
+      localIndex >= 0; localIndex -= 1) {
+  key = "k:" + String(Number(virtualRenderedItemIds[localIndex])) +
+      "\u001e" + String(virtualRenderedSignatures[localIndex]);
+  if (desiredKeys[key] !== true) {
+      removeVirtualEntryAt(localIndex);
+  }
+        }
+        for (localIndex = 0; localIndex < desiredCount; localIndex += 1) {
+  if (localIndex < virtualRenderedItemIds.length &&
+          Number(virtualRendered
+
+--- #3 at 301784 ---
+                 RENDER_BATCH_COUNT, colors);
+                }
+            }));
+            return true;
+        }
+        return finishResultRender(generation, colors);
+    }
+
+    function refreshResultsOnMain() {
+        var colors = palette();
+        var empty;
+        var generation;
+        var preferredIndex;
+        if (resultContainer === null) { return false; }
+        captureScrollAnchor();
+        renderGeneration += 1;
+        generation = renderGeneration;
+        renderCursor = 0;
+        renderBatchCount = 0;
+        state.contentReady = false;
+        cancelActiveSwipe(false);
+        createVirtualHierarchy();
+        state.resultCardCount = 0;
+        state.resultSourceIconCount = 0;
+        state.renderedTagLabelCount = 0;
+        state.cardActionButtonCount = 0;
+        state.pinnedBadgeCount = 0;
+        resultCardViews = [];
+        resultCardHolders = [];
+        resultActionViews = [];
+        resultTagMap = {};
+        dataTagLoadedById = {};
+        if (selectedItemId !== null && selectedResultRow() === null) {
+            clearSelectedResult();
+        }
+        if (previewRows.length === 0) {
+            empty = makeText("没有匹配的剪贴板记录",
+                12, colors.textSecondary, false);
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(dp(10), dp(42), dp(10), dp(42));
+            virtualCardHost.addView(empty,
+                new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
+            virtualRenderedItemIds = [];
+            virtualRenderedSignatures = [];
+            virtualState.firstRenderedIndex = 0;
+            virtualState.lastRenderedIndex = -1;
+            virtualState.firstVisibleIndex = 0;
+            virtualState.lastVisibleIndex = -1;
+            virtualState.topSpacerPx = 0;
+            virtualState.bottomSpacerPx = 0;
+            performance.firstBatchReadyAtNs = nowNanos();
+            performance.showToFirstBatchMs = el
+
+--- #4 at 365609 ---
+edFrame = null;
+        panelParams = null;
+        primaryDragView = null;
+        primaryResizeView = null;
+        keywordInput = null;
+        searchView = null;
+        searchStatusRow = null;
+        searchInputRow = null;
+        searchToggleView = null;
+        searchClearView = null;
+        historyContainerView = null;
+        resetView = null;
+        closeView = null;
+        settingsButton = null;
+        advancedView = null;
+        applyView = null;
+        clearHistoryView = null;
+        resultContainer = null;
+        resultCountView = null;
+        resultBodyFrame = null;
+        resultScrollView = null;
+        loadMoreView = null;
+        clearVirtualViewReferences();
+        drawerContainer = null;
+        drawerScrollView = null;
+        drawerContentView = null;
+        drawerFooterView = null;
+        resultCardViews = [];
+        resultCardHolders = [];
+        resultActionViews = [];
+        panelBuilt = false;
+        panelBuiltRootMode = null;
+        panelStructureDirty = true;
+        state.panelBuilt = false;
+        state.panelCacheDestroyCount += 1;
+        state.lastError = reason ? String(reason) : state.lastError;
+        return true;
+    }
+
+    function schedulePanelRefresh(origin, rebuildStructure, requestFocus) {
+        var generation = refreshGeneration;
+        refreshReason = String(origin || refreshReason || "refresh");
+        if (refreshScheduled || mainHandler === null) { return false; }
+        refreshScheduled = true;
+        mainHandler.post(new Packages.java.lang.Runnable({
+            run: function () {
+                if (generation !== refreshGeneration) { return; }
+                refreshScheduled = false;
+                if (!state.panelAttached) { return; }
+                try {
+                    performance.lastRefreshOrigin = refreshReason;
+                    if (mutationRefreshPlan !== null) {
+                        refreshMutationResultsOnMain(refreshReason);
+                    } else if (panelDataDirty ||
+                
+
+--- #5 at 398336 ---
+DataDirty = true;
+            panelDataVersion = 1;
+            renderedDataVersion = 0;
+            renderGeneration = 0;
+            renderCursor = 0;
+            renderBatchCount = 0;
+            optionCountsCache = null;
+            optionCountsDirty = true;
+            refreshGeneration = 0;
+            refreshScheduled = false;
+            refreshReason = "";
+            lastShowReused = false;
+            timeFormatter = null;
+            advancedVisible = false;
+            previewRows = [];
+            searchGeneration = 0;
+            restoreListOnClose = false;
+            rootMode = false;
+            selectedItemId = null;
+            resultCardViews = [];
+            resultCardHolders = [];
+            toolbarActionViews = {};
+            resultTagMap = {};
+            resultScrollView = null;
+            loadMoreView = null;
+            resultBodyFrame = null;
+            resultActionViews = [];
+            sourceIconConstantStateCache = {};
+            deleteUndoView = null;
+            pendingDeleteUndo = null;
+            deleteUndoGeneration = 0;
+            copyFeedbackView = null;
+            copyFeedbackGeneration = 0;
+            adaptiveRenderGeneration = 0;
+            searchExpanded = false;
+            searchStatusRow = null;
+            searchInputRow = null;
+            searchToggleView = null;
+            searchClearView = null;
+            historyContainerView = null;
+            inputDispatchGeneration += 1;
+            inputDispatchPending = false;
+            paginationState.newContentPending = false;
+            paginationState.quickResetAvailable = false;
+            resetVirtualState(true);
+            resetMutationState();
+            resetResultPaging("filter_init");
+            resetState();
+            loadHistory();
+            registerEvent("clipboard_added");
+            registerEvent("clipboard_merged");
+            registerEvent("clipboard_deleted");
+            registerEvent("clipboard_restored");
+            registerEvent("tags_changed");
+  
+
+--- #6 at 415987 ---
+          closePanel({
+                    restoreList: false,
+                    reason: "shutdown",
+                    destroyCache: true
+                });
+            } catch (ignoredClose) {}
+            shutdownHydrationWorker();
+            unregisterEvents();
+            searchGeneration += 1;
+            adaptiveRenderGeneration += 1;
+            inputDispatchGeneration += 1;
+            inputDispatchPending = false;
+            clearDeleteUndo(true);
+            clearCopyFeedback();
+            rootMode = false;
+            searchExpanded = false;
+            selectedItemId = null;
+            resultCardViews = [];
+            resultCardHolders = [];
+            toolbarActionViews = {};
+            resultTagMap = {};
+            resultScrollView = null;
+            loadMoreView = null;
+            clearVirtualViewReferences();
+            resultBodyFrame = null;
+            resultActionViews = [];
+            sourceIconConstantStateCache = {};
+            deleteUndoView = null;
+            pendingDeleteUndo = null;
+            copyFeedbackView = null;
+            copyFeedbackGeneration = 0;
+            cancelActiveSwipe(false);
+            activeSwipeCard = null;
+            paginationState.newContentPending = false;
+            paginationState.quickResetAvailable = false;
+            resetMutationState();
+            resetVirtualState(true);
+            resetResultPaging();
+            value = null;
+            ready = false;
+            androidContext = null;
+            appContext = null;
+            windowManager = null;
+            inputMethodManager = null;
+            mainHandler = null;
+            return true;
+        }
+    };
+}((function () { return this; }())));
+
+
+===== virtualRenderedItemIds = []; =====
+
+--- #1 at 8070 ---
+oadedCount: -1,
+        lastTriggerAt: 0,
+        lastOrigin: "",
+        lastError: null
+    };
+    var prefetchGeneration = 0;
+    var prefetchedPage = null;
+    var prefetchState = {
+        enabled: true,
+        scheduled: false,
+        inFlight: false,
+        ready: false,
+        mode: "",
+        targetPage: 0,
+        rowCount: 0,
+        scheduleCount: 0,
+        requestCount: 0,
+        successCount: 0,
+        hitCount: 0,
+        missCount: 0,
+        invalidationCount: 0,
+        staleDiscardCount: 0,
+        lastOrigin: "",
+        lastInvalidationReason: "",
+        lastError: null
+    };
+    var VIRTUAL_BEFORE_SCREENS = 3;
+    var VIRTUAL_AFTER_SCREENS = 5;
+    var VIRTUAL_UPDATE_DELAY_MS = 24;
+    var virtualTopSpacer = null;
+    var virtualCardHost = null;
+    var virtualBottomSpacer = null;
+    var paginationFooterHost = null;
+    var quickResetView = null;
+    var virtualRenderedItemIds = [];
+    var virtualRenderedSignatures = [];
+    var virtualGeneration = 0;
+    var virtualPendingOrigin = "";
+    var virtualPendingForce = false;
+    var virtualState = {
+        firstRenderedIndex: 0,
+        lastRenderedIndex: -1,
+        firstVisibleIndex: 0,
+        lastVisibleIndex: -1,
+        visibleCount: 1,
+        averageHeightPx: 0,
+        defaultHeightPx: 0,
+        heightById: {},
+        topSpacerPx: 0,
+        bottomSpacerPx: 0,
+        anchorItemId: null,
+        anchorIndex: -1,
+        anchorOffsetPx: 0,
+        anchorRestoreErrorPx: 0,
+        updateScheduled: false,
+        updateDeferred: false,
+        scrollListenerBound: false,
+        scrollToTopPending: false,
+        updateCount: 0,
+        recycleCount: 0,
+        rebuildCount: 0,
+        staleUpdateCount: 0,
+        lastOrigin: "",
+        lastError: null
+    };
+    var DATA_BLOCK_MIN_ROWS = 24;
+    var DATA_BLOCK_MAX_ROWS = 100;
+    var DATA_BLOCK_VISIBLE_MULTIPLIER = 2;
+    var DATA_BLOCK_KEEP_BEFORE = 1;
+    var DATA_BLOCK_KEEP_AFTER = 1;
+    var dataTagLoadedById = {};
+    var dataWindowState = {
+     
+
+--- #2 at 154654 ---
+updateScheduled === true,
+            updateDeferred:
+                virtualState.updateDeferred === true,
+            scrollListenerBound:
+                virtualState.scrollListenerBound === true,
+            updateCount: Number(virtualState.updateCount),
+            recycleCount: Number(virtualState.recycleCount),
+            rebuildCount: Number(virtualState.rebuildCount),
+            staleUpdateCount:
+                Number(virtualState.staleUpdateCount),
+            beforeScreens: VIRTUAL_BEFORE_SCREENS,
+            afterScreens: VIRTUAL_AFTER_SCREENS,
+            lastOrigin: virtualState.lastOrigin,
+            lastError: virtualState.lastError
+        };
+    }
+
+    function clearVirtualViewReferences() {
+        virtualTopSpacer = null;
+        virtualCardHost = null;
+        virtualBottomSpacer = null;
+        paginationFooterHost = null;
+        quickResetView = null;
+        virtualRenderedItemIds = [];
+        virtualRenderedSignatures = [];
+        virtualPendingOrigin = "";
+        virtualPendingForce = false;
+        return true;
+    }
+
+    function resetVirtualState(clearHeights) {
+        virtualGeneration += 1;
+        virtualState.firstRenderedIndex = 0;
+        virtualState.lastRenderedIndex = -1;
+        virtualState.firstVisibleIndex = 0;
+        virtualState.lastVisibleIndex = -1;
+        virtualState.visibleCount = 1;
+        virtualState.topSpacerPx = 0;
+        virtualState.bottomSpacerPx = 0;
+        virtualState.anchorItemId = null;
+        virtualState.anchorIndex = -1;
+        virtualState.anchorOffsetPx = 0;
+        virtualState.anchorRestoreErrorPx = 0;
+        virtualState.updateScheduled = false;
+        virtualState.updateDeferred = false;
+        virtualState.scrollListenerBound = false;
+        virtualState.scrollToTopPending = false;
+        virtualState.lastOrigin = "virtual_reset";
+        virtualState.lastError = null;
+        if (clearHeights === true) {
+            virtualState.heightById = {};
+            virtualState.averageHeightPx = 0;
+          
+
+--- #3 at 173805 ---
+ckReasonCounts[alignmentReasons[alignmentKey]] === undefined) {
+          scrollPerformanceState.alignmentFallbackReasonCounts[alignmentReasons[alignmentKey]] = 0;
+      }
+      scrollPerformanceState.alignmentFallbackReasonCounts[alignmentReasons[alignmentKey]] += 1;
+  }
+  scrollPerformanceState.alignmentFallbackLastSnapshot = {
+      childCount: childCount,
+      itemIds: virtualRenderedItemIds.length,
+      signatures: virtualRenderedSignatures.length,
+      cardViews: resultCardViews.length,
+      holders: resultCardHolders.length,
+      actionViews: resultActionViews.length
+  };
+  scrollPerformanceState.alignmentFallbackCount += 1;
+  while (virtualCardHost.getChildCount() > 0) {
+      virtualCardHost.removeViewAt(
+          Number(virtualCardHost.getChildCount()) - 1);
+      scrollPerformanceState.removedViewCount += 1;
+      scrollPerformanceState.structuralRemoveCount += 1;
+  }
+  virtualRenderedItemIds = [];
+  virtualRenderedSignatures = [];
+  resultCardViews = [];
+  resultCardHolders = [];
+  resultActionViews = [];
+        }
+        keyedSignatureStartedAt = Number(System.currentTimeMillis());
+        for (index = range.start; index <= range.end; index += 1) {
+  row = previewRows[index];
+  desiredIds.push(Number(row.id));
+  desiredSignatures.push(virtualRenderSignature(row, colors));
+  key = "k:" + String(Number(row.id)) + "\u001e" +
+      desiredSignatures[desiredSignatures.length - 1];
+  desiredKeys[key] = true;
+        }
+        keyedSignatureElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) - keyedSignatureStartedAt);
+        keyedStructureStartedAt = Number(System.currentTimeMillis());
+        for (localIndex = Number(virtualCardHost.getChildCount()) - 1;
+      localIndex >= 0; localIndex -= 1) {
+  key = "k:" + String(Number(virtualRenderedItemIds[localIndex])) +
+      "\u001e" + String(virtualRenderedSignatures[localIndex]);
+  if (desiredKeys[key] !== true) {
+      removeVirtualEntryAt(localIndex);
+  }
+        }
+        for (localIndex = 0; localIndex < desired
+
+--- #4 at 302448 ---
+t = 0;
+        state.resultSourceIconCount = 0;
+        state.renderedTagLabelCount = 0;
+        state.cardActionButtonCount = 0;
+        state.pinnedBadgeCount = 0;
+        resultCardViews = [];
+        resultCardHolders = [];
+        resultActionViews = [];
+        resultTagMap = {};
+        dataTagLoadedById = {};
+        if (selectedItemId !== null && selectedResultRow() === null) {
+            clearSelectedResult();
+        }
+        if (previewRows.length === 0) {
+            empty = makeText("没有匹配的剪贴板记录",
+                12, colors.textSecondary, false);
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(dp(10), dp(42), dp(10), dp(42));
+            virtualCardHost.addView(empty,
+                new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
+            virtualRenderedItemIds = [];
+            virtualRenderedSignatures = [];
+            virtualState.firstRenderedIndex = 0;
+            virtualState.lastRenderedIndex = -1;
+            virtualState.firstVisibleIndex = 0;
+            virtualState.lastVisibleIndex = -1;
+            virtualState.topSpacerPx = 0;
+            virtualState.bottomSpacerPx = 0;
+            performance.firstBatchReadyAtNs = nowNanos();
+            performance.showToFirstBatchMs = elapsedMs(
+                performance.showStartedAtNs,
+                performance.firstBatchReadyAtNs);
+            return finishResultRender(generation, colors);
+        }
+        preferredIndex = virtualRowIndexById(
+            virtualState.anchorItemId);
+        if (preferredIndex < 0) {
+            preferredIndex = Math.max(0, Math.min(
+                previewRows.length - 1,
+                Number(virtualState.anchorIndex)));
+        }
+        if (virtualState.scrollToTopPending === true) {
+            preferredIndex = 0;
+        }
+        scrollPerformanceState.fullRefreshCallCount += 1;
+        scrollPerformanceState.fullRefreshLastPerformanceOrigin =
+ 
+
+===== virtualRenderedSignatures = []; =====
+
+--- #1 at 8107 ---
+: 0,
+        lastOrigin: "",
+        lastError: null
+    };
+    var prefetchGeneration = 0;
+    var prefetchedPage = null;
+    var prefetchState = {
+        enabled: true,
+        scheduled: false,
+        inFlight: false,
+        ready: false,
+        mode: "",
+        targetPage: 0,
+        rowCount: 0,
+        scheduleCount: 0,
+        requestCount: 0,
+        successCount: 0,
+        hitCount: 0,
+        missCount: 0,
+        invalidationCount: 0,
+        staleDiscardCount: 0,
+        lastOrigin: "",
+        lastInvalidationReason: "",
+        lastError: null
+    };
+    var VIRTUAL_BEFORE_SCREENS = 3;
+    var VIRTUAL_AFTER_SCREENS = 5;
+    var VIRTUAL_UPDATE_DELAY_MS = 24;
+    var virtualTopSpacer = null;
+    var virtualCardHost = null;
+    var virtualBottomSpacer = null;
+    var paginationFooterHost = null;
+    var quickResetView = null;
+    var virtualRenderedItemIds = [];
+    var virtualRenderedSignatures = [];
+    var virtualGeneration = 0;
+    var virtualPendingOrigin = "";
+    var virtualPendingForce = false;
+    var virtualState = {
+        firstRenderedIndex: 0,
+        lastRenderedIndex: -1,
+        firstVisibleIndex: 0,
+        lastVisibleIndex: -1,
+        visibleCount: 1,
+        averageHeightPx: 0,
+        defaultHeightPx: 0,
+        heightById: {},
+        topSpacerPx: 0,
+        bottomSpacerPx: 0,
+        anchorItemId: null,
+        anchorIndex: -1,
+        anchorOffsetPx: 0,
+        anchorRestoreErrorPx: 0,
+        updateScheduled: false,
+        updateDeferred: false,
+        scrollListenerBound: false,
+        scrollToTopPending: false,
+        updateCount: 0,
+        recycleCount: 0,
+        rebuildCount: 0,
+        staleUpdateCount: 0,
+        lastOrigin: "",
+        lastError: null
+    };
+    var DATA_BLOCK_MIN_ROWS = 24;
+    var DATA_BLOCK_MAX_ROWS = 100;
+    var DATA_BLOCK_VISIBLE_MULTIPLIER = 2;
+    var DATA_BLOCK_KEEP_BEFORE = 1;
+    var DATA_BLOCK_KEEP_AFTER = 1;
+    var dataTagLoadedById = {};
+    var dataWindowState = {
+        blockSize: DATA_BLOCK_MIN_ROWS,
+     
+
+--- #2 at 154691 ---
+ updateDeferred:
+                virtualState.updateDeferred === true,
+            scrollListenerBound:
+                virtualState.scrollListenerBound === true,
+            updateCount: Number(virtualState.updateCount),
+            recycleCount: Number(virtualState.recycleCount),
+            rebuildCount: Number(virtualState.rebuildCount),
+            staleUpdateCount:
+                Number(virtualState.staleUpdateCount),
+            beforeScreens: VIRTUAL_BEFORE_SCREENS,
+            afterScreens: VIRTUAL_AFTER_SCREENS,
+            lastOrigin: virtualState.lastOrigin,
+            lastError: virtualState.lastError
+        };
+    }
+
+    function clearVirtualViewReferences() {
+        virtualTopSpacer = null;
+        virtualCardHost = null;
+        virtualBottomSpacer = null;
+        paginationFooterHost = null;
+        quickResetView = null;
+        virtualRenderedItemIds = [];
+        virtualRenderedSignatures = [];
+        virtualPendingOrigin = "";
+        virtualPendingForce = false;
+        return true;
+    }
+
+    function resetVirtualState(clearHeights) {
+        virtualGeneration += 1;
+        virtualState.firstRenderedIndex = 0;
+        virtualState.lastRenderedIndex = -1;
+        virtualState.firstVisibleIndex = 0;
+        virtualState.lastVisibleIndex = -1;
+        virtualState.visibleCount = 1;
+        virtualState.topSpacerPx = 0;
+        virtualState.bottomSpacerPx = 0;
+        virtualState.anchorItemId = null;
+        virtualState.anchorIndex = -1;
+        virtualState.anchorOffsetPx = 0;
+        virtualState.anchorRestoreErrorPx = 0;
+        virtualState.updateScheduled = false;
+        virtualState.updateDeferred = false;
+        virtualState.scrollListenerBound = false;
+        virtualState.scrollToTopPending = false;
+        virtualState.lastOrigin = "virtual_reset";
+        virtualState.lastError = null;
+        if (clearHeights === true) {
+            virtualState.heightById = {};
+            virtualState.averageHeightPx = 0;
+            virtualState.defaultHeightPx = 0;
+    
+
+--- #3 at 173836 ---
+[alignmentKey]] === undefined) {
+          scrollPerformanceState.alignmentFallbackReasonCounts[alignmentReasons[alignmentKey]] = 0;
+      }
+      scrollPerformanceState.alignmentFallbackReasonCounts[alignmentReasons[alignmentKey]] += 1;
+  }
+  scrollPerformanceState.alignmentFallbackLastSnapshot = {
+      childCount: childCount,
+      itemIds: virtualRenderedItemIds.length,
+      signatures: virtualRenderedSignatures.length,
+      cardViews: resultCardViews.length,
+      holders: resultCardHolders.length,
+      actionViews: resultActionViews.length
+  };
+  scrollPerformanceState.alignmentFallbackCount += 1;
+  while (virtualCardHost.getChildCount() > 0) {
+      virtualCardHost.removeViewAt(
+          Number(virtualCardHost.getChildCount()) - 1);
+      scrollPerformanceState.removedViewCount += 1;
+      scrollPerformanceState.structuralRemoveCount += 1;
+  }
+  virtualRenderedItemIds = [];
+  virtualRenderedSignatures = [];
+  resultCardViews = [];
+  resultCardHolders = [];
+  resultActionViews = [];
+        }
+        keyedSignatureStartedAt = Number(System.currentTimeMillis());
+        for (index = range.start; index <= range.end; index += 1) {
+  row = previewRows[index];
+  desiredIds.push(Number(row.id));
+  desiredSignatures.push(virtualRenderSignature(row, colors));
+  key = "k:" + String(Number(row.id)) + "\u001e" +
+      desiredSignatures[desiredSignatures.length - 1];
+  desiredKeys[key] = true;
+        }
+        keyedSignatureElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) - keyedSignatureStartedAt);
+        keyedStructureStartedAt = Number(System.currentTimeMillis());
+        for (localIndex = Number(virtualCardHost.getChildCount()) - 1;
+      localIndex >= 0; localIndex -= 1) {
+  key = "k:" + String(Number(virtualRenderedItemIds[localIndex])) +
+      "\u001e" + String(virtualRenderedSignatures[localIndex]);
+  if (desiredKeys[key] !== true) {
+      removeVirtualEntryAt(localIndex);
+  }
+        }
+        for (localIndex = 0; localIndex < desiredCount; localIndex += 1) {
+  if (lo
+
+--- #4 at 302489 ---
+t = 0;
+        state.renderedTagLabelCount = 0;
+        state.cardActionButtonCount = 0;
+        state.pinnedBadgeCount = 0;
+        resultCardViews = [];
+        resultCardHolders = [];
+        resultActionViews = [];
+        resultTagMap = {};
+        dataTagLoadedById = {};
+        if (selectedItemId !== null && selectedResultRow() === null) {
+            clearSelectedResult();
+        }
+        if (previewRows.length === 0) {
+            empty = makeText("没有匹配的剪贴板记录",
+                12, colors.textSecondary, false);
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(dp(10), dp(42), dp(10), dp(42));
+            virtualCardHost.addView(empty,
+                new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
+            virtualRenderedItemIds = [];
+            virtualRenderedSignatures = [];
+            virtualState.firstRenderedIndex = 0;
+            virtualState.lastRenderedIndex = -1;
+            virtualState.firstVisibleIndex = 0;
+            virtualState.lastVisibleIndex = -1;
+            virtualState.topSpacerPx = 0;
+            virtualState.bottomSpacerPx = 0;
+            performance.firstBatchReadyAtNs = nowNanos();
+            performance.showToFirstBatchMs = elapsedMs(
+                performance.showStartedAtNs,
+                performance.firstBatchReadyAtNs);
+            return finishResultRender(generation, colors);
+        }
+        preferredIndex = virtualRowIndexById(
+            virtualState.anchorItemId);
+        if (preferredIndex < 0) {
+            preferredIndex = Math.max(0, Math.min(
+                previewRows.length - 1,
+                Number(virtualState.anchorIndex)));
+        }
+        if (virtualState.scrollToTopPending === true) {
+            preferredIndex = 0;
+        }
+        scrollPerformanceState.fullRefreshCallCount += 1;
+        scrollPerformanceState.fullRefreshLastPerformanceOrigin =
+            String(performance.lastRefreshOri
+
+===== FULL_REFRESH FUNCTION =====
+
+    function refreshResultsOnMain() {
+        var colors = palette();
+        var empty;
+        var generation;
+        var preferredIndex;
+        if (resultContainer === null) { return false; }
+        captureScrollAnchor();
+        renderGeneration += 1;
+        generation = renderGeneration;
+        renderCursor = 0;
+        renderBatchCount = 0;
+        state.contentReady = false;
+        cancelActiveSwipe(false);
+        createVirtualHierarchy();
+        state.resultCardCount = 0;
+        state.resultSourceIconCount = 0;
+        state.renderedTagLabelCount = 0;
+        state.cardActionButtonCount = 0;
+        state.pinnedBadgeCount = 0;
+        resultCardViews = [];
+        resultCardHolders = [];
+        resultActionViews = [];
+        resultTagMap = {};
+        dataTagLoadedById = {};
+        if (selectedItemId !== null && selectedResultRow() === null) {
+            clearSelectedResult();
+        }
+        if (previewRows.length === 0) {
+            empty = makeText("没有匹配的剪贴板记录",
+                12, colors.textSecondary, false);
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(dp(10), dp(42), dp(10), dp(42));
+            virtualCardHost.addView(empty,
+                new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
+            virtualRenderedItemIds = [];
+            virtualRenderedSignatures = [];
+            virtualState.firstRenderedIndex = 0;
+            virtualState.lastRenderedIndex = -1;
+            virtualState.firstVisibleIndex = 0;
+            virtualState.lastVisibleIndex = -1;
+            virtualState.topSpacerPx = 0;
+            virtualState.bottomSpacerPx = 0;
+            performance.firstBatchReadyAtNs = nowNanos();
+            performance.showToFirstBatchMs = elapsedMs(
+                performance.showStartedAtNs,
+                performance.firstBatchReadyAtNs);
+            return finishResultRender(generation, colors);
+        }
+        preferredIndex = virtualRowIndexById(
+            virtualState.anchorItemId);
+        if (preferredIndex < 0) {
+            preferredIndex = Math.max(0, Math.min(
+                previewRows.length - 1,
+                Number(virtualState.anchorIndex)));
+        }
+        if (virtualState.scrollToTopPending === true) {
+            preferredIndex = 0;
+        }
+        scrollPerformanceState.fullRefreshCallCount += 1;
+        scrollPerformanceState.fullRefreshLastPerformanceOrigin =
+            String(performance.lastRefreshOrigin || "");
+        scrollPerformanceState.fullRefreshLastPreferredIndex = Number(preferredIndex);
+        scrollPerformanceState.fullRefreshLastPreviewRowCount = Number(previewRows.length);
+        scrollPerformanceState.fullRefreshLastRenderedCount =
+            Math.max(0, Number(virtualState.lastRenderedIndex) -
+                Number(virtualState.firstRenderedIndex) + 1);
+        scrollPerformanceState.fullRefreshLastChildCount = virtualCardHost === null ?
+            -1 : Number(virtualCardHost.getChildCount());
+        rebuildVirtualWindow(
+            "full_refresh", true, preferredIndex);
+        renderCursor = Math.max(0,
+            Number(virtualState.lastRenderedIndex) + 1);
+        renderBatchCount = 1;
+        performance.firstBatchReadyAtNs = nowNanos();
+        performance.showToFirstBatchMs = elapsedMs(
+            performance.showStartedAtNs,
+            performance.firstBatchReadyAtNs);
+        return finishResultRender(generation, colors);
+    }
