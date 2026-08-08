@@ -1,1 +1,1 @@
-ping=1
+ping=stage16b1-finalize-v14
