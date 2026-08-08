@@ -1,4 +1,4 @@
-/* ClipHub Stage 12 safe hydration delta ES5 loader. */
+/* ClipHub Stage 13 unified virtual-view update ES5 loader. */
 (function (global) {
     var File = Packages.java.io.File;
     var FIS = Packages.java.io.FileInputStream;
@@ -27,10 +27,10 @@
         "stage-assets/pagination-stage9/ch11_full_v8s_07.b64"
     ];
     var PACKED_SHA256 =
-        "4df1abbf2b8c04836e314acc35c6c3c4a1771604cf5bd828bd151c3e2c300328";
+        "07cee4993097e5406a8f2696aa498506907bca7f2d034eb0f32fb9f6dd3195ef";
     var SOURCE_SHA256 =
-        "90847cd5694f436d93305c5d1b14d0564de29a3cf522c5ecb89f5224c9c5e669";
-    var CACHE_NAME = "ch_11_filter_stage12_v8s_safe_hydration_delta_full.b64";
+        "420e512787cf6dd223115585f89f7a749fa0687bc1b50700b9cec67e3e541698";
+    var CACHE_NAME = "ch_11_filter_stage13_v9_unified_view_update_full.b64";
 
     function closeQuietly(value) {
         if (value !== null && value !== undefined) {
@@ -130,7 +130,7 @@
             connection = new URL(
                 "https://raw.githubusercontent.com/7015725/ClipHub/" +
                 encodePath(REF) + "/" + encodePath(path) +
-                "?stage12v8s=" + Number(System.currentTimeMillis())
+                "?stage13v9=" + Number(System.currentTimeMillis())
             ).openConnection();
             connection.setConnectTimeout(10000);
             connection.setReadTimeout(30000);
