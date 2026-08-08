@@ -102,6 +102,12 @@ jobs:
               'source = mutate_function(source, "dataWindowRowSnapshot", patch_snapshot)'
           )
 
+          old = '        "PAGINATION_STAGE: 9",\n'
+          new = '        "PAGINATION_STAGE = 9",\n'
+          if s.count(old) != 1:
+              raise SystemExit('builder PAGINATION_STAGE validation anchor failed')
+          s = s.replace(old, new, 1)
+
           p.write_text(s, encoding='utf-8', newline='\n')
           PY
 
