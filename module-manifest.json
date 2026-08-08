@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260808.15",
+  "moduleSetVersion": "20260808.16",
   "entryMinVersion": 6,
   "sourceRef": "beta-pagination-stage10-20260808",
   "modules": [
@@ -57,7 +57,7 @@
     {
       "name": "ch_11_filter.js",
       "path": "src/ch_11_filter.js",
-      "sha": "72284929b4c86436a284f4d7f4448a72c127a401"
+      "sha": "a01977fc47264c22e847d2f5c0f324bce58c96fd"
     },
     {
       "name": "ch_12_translation.js",

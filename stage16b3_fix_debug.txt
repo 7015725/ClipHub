@@ -1,3 +1,0 @@
-oldTagls regression present
-
-EXIT_CODE=1
