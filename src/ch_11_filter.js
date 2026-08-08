@@ -15,22 +15,22 @@
     var MessageDigest = Packages.java.security.MessageDigest;
     var System = Packages.java.lang.System;
 
-    var REF = "beta-pagination-stage10-20260808";
+    var REF = "agent/beta-list-preview-on-demand-20260808";
     var PARTS = [
-        "stage-assets/pagination-stage9/ch11_full_v3_00.b64",
-        "stage-assets/pagination-stage9/ch11_full_v3_01.b64",
-        "stage-assets/pagination-stage9/ch11_full_v3_02.b64",
-        "stage-assets/pagination-stage9/ch11_full_v3_03.b64",
-        "stage-assets/pagination-stage9/ch11_full_v3_04.b64",
-        "stage-assets/pagination-stage9/ch11_full_v3_05.b64",
-        "stage-assets/pagination-stage9/ch11_full_v3_06.b64",
-        "stage-assets/pagination-stage9/ch11_full_v3_07.b64"
+        "stage-assets/pagination-stage9/ch11_full_v4_00.b64",
+        "stage-assets/pagination-stage9/ch11_full_v4_01.b64",
+        "stage-assets/pagination-stage9/ch11_full_v4_02.b64",
+        "stage-assets/pagination-stage9/ch11_full_v4_03.b64",
+        "stage-assets/pagination-stage9/ch11_full_v4_04.b64",
+        "stage-assets/pagination-stage9/ch11_full_v4_05.b64",
+        "stage-assets/pagination-stage9/ch11_full_v4_06.b64",
+        "stage-assets/pagination-stage9/ch11_full_v4_07.b64"
     ];
     var PACKED_SHA256 =
-        "07b0ae4b4a41700fe5abfb6338cf9d8ab825ecde05587a408667993179a59c6f";
+        "77deb0225545af17da7f9a0eac6f43ce4a623440d1e053e4276441deb18b01f4";
     var SOURCE_SHA256 =
-        "0205158c6c222383add5a9ad978883dba0d61145cd740fb1200d1c3011d38c01";
-    var CACHE_NAME = "ch_11_filter_stage9_v3_full.b64";
+        "6d85719de45449ac1d029081a50554b8592bf21e7717fa3ecbfce18c8aa913e7";
+    var CACHE_NAME = "ch_11_filter_stage9_v4_full.b64";
 
     function closeQuietly(value) {
         if (value !== null && value !== undefined) {
@@ -130,7 +130,7 @@
             connection = new URL(
                 "https://raw.githubusercontent.com/7015725/ClipHub/" +
                 encodePath(REF) + "/" + encodePath(path) +
-                "?stage9v3=" + Number(System.currentTimeMillis())
+                "?stage9v4=" + Number(System.currentTimeMillis())
             ).openConnection();
             connection.setConnectTimeout(10000);
             connection.setReadTimeout(30000);
