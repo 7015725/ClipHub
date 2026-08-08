@@ -1,0 +1,867 @@
+MODULE62=1
+
+===== rebindResultCardHolder =====
+    function rebindResultCardHolder(holder, row, colors) {
+        var startedAt = Number(System.currentTimeMillis());
+        var elapsed;
+        var stage = "validate";
+        var oldRow;
+        var oldTags;
+        var newTags;
+        var oldSelected;
+        var newSelected;
+        var oldPinned;
+        var newPinned;
+        var oldPackage;
+        var newPackage;
+        var oldHasTags;
+        var newHasTags;
+        var reason = "";
+        scrollPerformanceState.holderRebindAttemptCount += 1;
+        if (holder === null || holder === undefined || row === null || row === undefined ||
+                holder.row === null || holder.row === undefined ||
+                holder.contentView === null || holder.contentView === undefined ||
+                holder.tagBadge === null || holder.tagBadge === undefined ||
+                holder.sourceView === null || holder.sourceView === undefined) {
+            reason = noteCardHolderRebindReason(scrollPerformanceState.holderRebindRejectReasons, "invalid_holder");
+            scrollPerformanceState.holderRebindIneligibleCount += 1;
+            scrollPerformanceState.holderRebindLastRejectReason = reason;
+            return false;
+        }
+        try {
+            oldRow = holder.row;
+            stage = "eligibility";
+            oldSelected = holder.selected === true;
+            newSelected = SELECTION_ENABLED && selectedItemId !== null && Number(selectedItemId) === Number(row.id);
+            oldPinned = holder.pinned === true;
+            newPinned = Number(row.is_pinned || 0) === 1;
+            oldPackage = String(holder.sourcePackage || oldRow.source_package || "");
+            newPackage = String(row.source_package || "");
+            oldTags = tagsForResult(oldRow);
+            newTags = tagsForResult(row);
+            oldHasTags = oldTags.length > 0;
+            newHasTags = newTags.length > 0;
+            if (oldSelected !== newSelected) { reason = "selected_changed"; }
+            else if (oldPinned !== newPinned) { reason = "pinned_changed"; }
+            else if (oldPackage !== newPackage) { reason = "source_package_changed"; }
+            else if (oldHasTags !== newHasTags) { reason = "tag_presence_changed"; }
+            if (reason.length > 0) {
+                reason = noteCardHolderRebindReason(scrollPerformanceState.holderRebindRejectReasons, reason);
+                scrollPerformanceState.holderRebindIneligibleCount += 1;
+                scrollPerformanceState.holderRebindLastRejectReason = reason;
+                return false;
+            }
+            scrollPerformanceState.holderRebindEligibleCount += 1;
+            stage = "content_text";
+            holder.contentView.setText(String(resultPreviewText(row)));
+            stage = "tag_text";
+            holder.tagBadge.setText(String((newTags.length > 0 ? "●  " : "") + tagSummary(newTags)));
+            stage = "tag_color";
+            holder.tagBadge.setTextColor(newTags.length > 0 ? tagColorText(newTags[0], colors.accentStrong) : colors.textTertiary);
+            stage = "source_text";
+            holder.sourceView.setText(String(sourceLabel(row) + " · " + formatTime(row.last_copied_at)));
+            stage = "commit";
+            holder.row = row;
+            holder.itemId = Number(row.id);
+            holder.selected = newSelected;
+            holder.pinned = newPinned;
+            holder.sourcePackage = newPackage;
+            elapsed = Math.max(0, Number(System.currentTimeMillis()) - startedAt);
+            scrollPerformanceState.holderRebindCount += 1;
+            scrollPerformanceState.holderRebindLastMs = elapsed;
+            scrollPerformanceState.holderRebindMaxMs = Math.max(Number(scrollPerformanceState.holderRebindMaxMs), elapsed);
+            return true;
+        } catch (error) {
+            scrollPerformanceState.holderRebindFailureCount += 1;
+            scrollPerformanceState.holderRebindLastFailureStage = noteCardHolderRebindReason(scrollPerformanceState.holderRebindFailureStages, stage);
+            scrollPerformanceState.holderRebindLastError = String(error);
+            virtualState.lastError = "CardHolder rebind failed at " + stage + ": " + String(error);
+            return false;
+        }
+    }
+
+
+===== refreshResultsOnMain =====
+    function refreshResultsOnMain() {
+        var colors = palette();
+        var empty;
+        var generation;
+        var preferredIndex;
+        var fullRefreshDataKey;
+        if (resultContainer === null) { return false; }
+        scrollPerformanceState.fullRefreshRequestCount += 1;
+        fullRefreshDataKey = [
+            String(Number(panelDataVersion || 0)),
+            String(Number(paginationState.queryGeneration || 0)),
+            String(Number(searchGeneration || 0)),
+            String(Number(previewRows.length || 0)),
+            previewRows.length > 0 ? String(Number(previewRows[0].id)) : "-",
+            previewRows.length > 0 ? String(Number(previewRows[previewRows.length - 1].id)) : "-",
+            rootMode ? "1" : "0"
+        ].join("|");
+        scrollPerformanceState.fullRefreshLastDataKey = fullRefreshDataKey;
+        if (String(performance.lastRefreshOrigin || "") === "panel_first_content" &&
+                state.contentReady === true &&
+                virtualCardHost !== null &&
+                Number(virtualCardHost.getChildCount()) > 0 &&
+                String(scrollPerformanceState.fullRefreshLastAppliedDataKey || "") ===
+                    fullRefreshDataKey) {
+            scrollPerformanceState.fullRefreshDuplicateSuppressedCount += 1;
+            return false;
+        }
+        scrollPerformanceState.fullRefreshPendingDataKey = fullRefreshDataKey;
+        captureScrollAnchor();
+        renderGeneration += 1;
+        generation = renderGeneration;
+        renderCursor = 0;
+        renderBatchCount = 0;
+        state.contentReady = false;
+        cancelActiveSwipe(false);
+        createVirtualHierarchy();
+        state.resultCardCount = 0;
+        state.resultSourceIconCount = 0;
+        state.renderedTagLabelCount = 0;
+        state.cardActionButtonCount = 0;
+        state.pinnedBadgeCount = 0;
+        resultCardViews = [];
+        resultCardHolders = [];
+        resultActionViews = [];
+        virtualRenderedItemIds = [];
+        virtualRenderedSignatures = [];
+        virtualState.firstRenderedIndex = 0;
+        virtualState.lastRenderedIndex = -1;
+        scrollPerformanceState.virtualBookkeepingAtomicClearCount += 1;
+        resultTagMap = {};
+        dataTagLoadedById = {};
+        if (selectedItemId !== null && selectedResultRow() === null) {
+            clearSelectedResult();
+        }
+        if (previewRows.length === 0) {
+            empty = makeText("没有匹配的剪贴板记录",
+                12, colors.textSecondary, false);
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(dp(10), dp(42), dp(10), dp(42));
+            virtualCardHost.addView(empty,
+                new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
+            virtualRenderedItemIds = [];
+            virtualRenderedSignatures = [];
+            virtualState.firstRenderedIndex = 0;
+            virtualState.lastRenderedIndex = -1;
+            virtualState.firstVisibleIndex = 0;
+            virtualState.lastVisibleIndex = -1;
+            virtualState.topSpacerPx = 0;
+            virtualState.bottomSpacerPx = 0;
+            performance.firstBatchReadyAtNs = nowNanos();
+            performance.showToFirstBatchMs = elapsedMs(
+                performance.showStartedAtNs,
+                performance.firstBatchReadyAtNs);
+            return finishResultRender(generation, colors);
+        }
+        preferredIndex = virtualRowIndexById(
+            virtualState.anchorItemId);
+        if (preferredIndex < 0) {
+            preferredIndex = Math.max(0, Math.min(
+                previewRows.length - 1,
+                Number(virtualState.anchorIndex)));
+        }
+        if (virtualState.scrollToTopPending === true) {
+            preferredIndex = 0;
+        }
+        scrollPerformanceState.fullRefreshCallCount += 1;
+        scrollPerformanceState.fullRefreshLastPerformanceOrigin =
+            String(performance.lastRefreshOrigin || "");
+        scrollPerformanceState.fullRefreshLastPreferredIndex = Number(preferredIndex);
+        scrollPerformanceState.fullRefreshLastPreviewRowCount = Number(previewRows.length);
+        scrollPerformanceState.fullRefreshLastRenderedCount =
+            Math.max(0, Number(virtualState.lastRenderedIndex) -
+                Number(virtualState.firstRenderedIndex) + 1);
+        scrollPerformanceState.fullRefreshLastChildCount = virtualCardHost === null ?
+            -1 : Number(virtualCardHost.getChildCount());
+        rebuildVirtualWindow(
+            "full_refresh", true, preferredIndex);
+        renderCursor = Math.max(0,
+            Number(virtualState.lastRenderedIndex) + 1);
+        renderBatchCount = 1;
+        performance.firstBatchReadyAtNs = nowNanos();
+        performance.showToFirstBatchMs = elapsedMs(
+            performance.showStartedAtNs,
+            performance.firstBatchReadyAtNs);
+        return finishResultRender(generation, colors);
+    }
+
+
+===== finishResultRender =====
+    function finishResultRender(generation, colors) {
+        if (generation !== renderGeneration) { return false; }
+        appendLoadMoreControl(colors);
+        state.loadedResultCount = previewRows.length;
+        state.resultPageSize =
+            Number(paginationState.pageSize);
+        state.resultHasMore =
+            paginationState.hasMore === true;
+        state.resultPageLimit = Math.max(
+            Number(paginationState.pageSize),
+            previewRows.length);
+        state.contentReady = true;
+        state.renderedDataVersion = panelDataVersion;
+        state.renderBatchCount = renderBatchCount;
+        renderedDataVersion = panelDataVersion;
+        panelDataDirty = false;
+        performance.fullRenderReadyAtNs = nowNanos();
+        performance.showToFullRenderMs = elapsedMs(
+            performance.showStartedAtNs, performance.fullRenderReadyAtNs);
+        performance.renderBatchCount = renderBatchCount;
+        updateResultCountOnMain();
+        attachDeleteUndoBanner();
+        bindLazyScrollListener();
+        scheduleNextPagePrefetch(
+            "full_render_complete");
+        if (mainHandler !== null) {
+            mainHandler.post(new Packages.java.lang.Runnable({
+                run: function () {
+                    measureVirtualCards();
+                    restoreScrollAnchor();
+                    captureScrollAnchor();
+                    updateQuickResetView();
+                    updateResultScrollState();
+                    lazyLoadState.remainingPx =
+                        resultRemainingScrollPx();
+                }
+            }));
+        }
+        if (String(scrollPerformanceState.fullRefreshPendingDataKey || "").length > 0) {
+            scrollPerformanceState.fullRefreshLastAppliedDataKey =
+                String(scrollPerformanceState.fullRefreshPendingDataKey);
+            scrollPerformanceState.fullRefreshPendingDataKey = "";
+        }
+        return true;
+    }
+
+
+===== COLOR HELPERS =====
+
+--- parseColor @242170 ---
+alue,
+            metrics) {
+        var view = makeText(label, metrics.swipeTextSp, textColor, true);
+        view.setGravity(gravityValue | Gravity.CENTER_VERTICAL);
+        view.setPadding(metrics.swipeHorizontalPaddingPx, 0,
+            metrics.swipeHorizontalPaddingPx, 0);
+        view.setBackground(roundedBackground(fill, null,
+            metrics.actionRadiusDp));
+        view.setAlpha(0);
+        return view;
+    }
+
+    function safeColorInt(value, fallback) {
+        try { return Color.parseColor(String(value)); }
+        catch (ignoredColor) { return Color.parseColor(String(fallback)); }
+    }
+
+    function makeVectorIconDrawable(kind, colorValue, iconSizePx,
+            strokeWidthPx) {
+        var paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        var path = new Path();
+        var drawable;
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeJoin(Paint.Join.ROUND);
+        paint.setStrokeWidth(Number(strokeWidthPx));
+        paint["setColor(int)"](safeColorInt(colorValue, "#FF5A37E6"));
+        drawable = new JavaAdapter(Drawable, {
+            draw: function (canvas) {
+                var bounds = drawable.getBounds();
+
+
+--- parseColor @242243 ---
+wipeTextSp, textColor, true);
+        view.setGravity(gravityValue | Gravity.CENTER_VERTICAL);
+        view.setPadding(metrics.swipeHorizontalPaddingPx, 0,
+            metrics.swipeHorizontalPaddingPx, 0);
+        view.setBackground(roundedBackground(fill, null,
+            metrics.actionRadiusDp));
+        view.setAlpha(0);
+        return view;
+    }
+
+    function safeColorInt(value, fallback) {
+        try { return Color.parseColor(String(value)); }
+        catch (ignoredColor) { return Color.parseColor(String(fallback)); }
+    }
+
+    function makeVectorIconDrawable(kind, colorValue, iconSizePx,
+            strokeWidthPx) {
+        var paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        var path = new Path();
+        var drawable;
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeJoin(Paint.Join.ROUND);
+        paint.setStrokeWidth(Number(strokeWidthPx));
+        paint["setColor(int)"](safeColorInt(colorValue, "#FF5A37E6"));
+        drawable = new JavaAdapter(Drawable, {
+            draw: function (canvas) {
+                var bounds = drawable.getBounds();
+                var width = Number(bounds.width());
+                var h
+
+--- Color.parseColor @242164 ---
+avityValue,
+            metrics) {
+        var view = makeText(label, metrics.swipeTextSp, textColor, true);
+        view.setGravity(gravityValue | Gravity.CENTER_VERTICAL);
+        view.setPadding(metrics.swipeHorizontalPaddingPx, 0,
+            metrics.swipeHorizontalPaddingPx, 0);
+        view.setBackground(roundedBackground(fill, null,
+            metrics.actionRadiusDp));
+        view.setAlpha(0);
+        return view;
+    }
+
+    function safeColorInt(value, fallback) {
+        try { return Color.parseColor(String(value)); }
+        catch (ignoredColor) { return Color.parseColor(String(fallback)); }
+    }
+
+    function makeVectorIconDrawable(kind, colorValue, iconSizePx,
+            strokeWidthPx) {
+        var paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        var path = new Path();
+        var drawable;
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeJoin(Paint.Join.ROUND);
+        paint.setStrokeWidth(Number(strokeWidthPx));
+        paint["setColor(int)"](safeColorInt(colorValue, "#FF5A37E6"));
+        drawable = new JavaAdapter(Drawable, {
+            draw: function (canvas) {
+                var bounds = drawable.getBounds();
+
+
+--- Color.parseColor @242237 ---
+rics.swipeTextSp, textColor, true);
+        view.setGravity(gravityValue | Gravity.CENTER_VERTICAL);
+        view.setPadding(metrics.swipeHorizontalPaddingPx, 0,
+            metrics.swipeHorizontalPaddingPx, 0);
+        view.setBackground(roundedBackground(fill, null,
+            metrics.actionRadiusDp));
+        view.setAlpha(0);
+        return view;
+    }
+
+    function safeColorInt(value, fallback) {
+        try { return Color.parseColor(String(value)); }
+        catch (ignoredColor) { return Color.parseColor(String(fallback)); }
+    }
+
+    function makeVectorIconDrawable(kind, colorValue, iconSizePx,
+            strokeWidthPx) {
+        var paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        var path = new Path();
+        var drawable;
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeJoin(Paint.Join.ROUND);
+        paint.setStrokeWidth(Number(strokeWidthPx));
+        paint["setColor(int)"](safeColorInt(colorValue, "#FF5A37E6"));
+        drawable = new JavaAdapter(Drawable, {
+            draw: function (canvas) {
+                var bounds = drawable.getBounds();
+                var width = Number(bounds.width());
+                var h
+
+--- setTextColor @264966 ---
+t += 1;
+                scrollPerformanceState.holderRebindLastRejectReason = reason;
+                return false;
+            }
+            scrollPerformanceState.holderRebindEligibleCount += 1;
+            stage = "content_text";
+            holder.contentView.setText(String(resultPreviewText(row)));
+            stage = "tag_text";
+            holder.tagBadge.setText(String((newTags.length > 0 ? "●  " : "") + tagSummary(newTags)));
+            stage = "tag_color";
+            holder.tagBadge.setTextColor(newTags.length > 0 ? tagColorText(newTags[0], colors.accentStrong) : colors.textTertiary);
+            stage = "source_text";
+            holder.sourceView.setText(String(sourceLabel(row) + " · " + formatTime(row.last_copied_at)));
+            stage = "commit";
+            holder.row = row;
+            holder.itemId = Number(row.id);
+            holder.selected = newSelected;
+            holder.pinned = newPinned;
+            holder.sourcePackage = newPackage;
+            elapsed = Math.max(0, Number(System.currentTimeMillis()) - startedAt);
+            scrollPerformanceState.holderRebindCount += 1;
+            scrollPerformanceState.holderRebindLastMs = elapsed;
+            scrollPerforman
+
+--- tag_color @264926 ---
+formanceState.holderRebindIneligibleCount += 1;
+                scrollPerformanceState.holderRebindLastRejectReason = reason;
+                return false;
+            }
+            scrollPerformanceState.holderRebindEligibleCount += 1;
+            stage = "content_text";
+            holder.contentView.setText(String(resultPreviewText(row)));
+            stage = "tag_text";
+            holder.tagBadge.setText(String((newTags.length > 0 ? "●  " : "") + tagSummary(newTags)));
+            stage = "tag_color";
+            holder.tagBadge.setTextColor(newTags.length > 0 ? tagColorText(newTags[0], colors.accentStrong) : colors.textTertiary);
+            stage = "source_text";
+            holder.sourceView.setText(String(sourceLabel(row) + " · " + formatTime(row.last_copied_at)));
+            stage = "commit";
+            holder.row = row;
+            holder.itemId = Number(row.id);
+            holder.selected = newSelected;
+            holder.pinned = newPinned;
+            holder.sourcePackage = newPackage;
+            elapsed = Math.max(0, Number(System.currentTimeMillis()) - startedAt);
+            scrollPerformanceState.holderRebindCount += 1;
+            scrollPerformanceState.holderRebindLa
+
+--- tagColor @16308 ---
+meoutCount: 0,
+        copyFeedbackVisible: false,
+        copyFeedbackShowCount: 0,
+        copyFeedbackTimeoutCount: 0,
+        adaptiveLayoutRefreshCount: 0,
+        swipeEnabled: true,
+        swipeStartCount: 0,
+        swipeMoveCount: 0,
+        swipePinCount: 0,
+        swipeDeleteCount: 0,
+        swipeCancelCount: 0,
+        lastSwipeItemId: null,
+        lastSwipeAction: null,
+        settingsOpenCount: 0,
+        settingsButtonPresent: false,
+        renderedTagLabelCount: 0,
+        tagColorPreviewCount: 0,
+        loadedResultCount: 0,
+        resultPageSize: RESULT_PAGE_SIZE,
+        resultPageLimit: RESULT_PAGE_SIZE,
+        resultHasMore: false,
+        resultCanScroll: false,
+        loadMoreCount: 0,
+        toolbarEnabledCount: 1,
+        repositorySortUnchanged: true,
+        sortScope: "result_window",
+        panelAddThreadId: null,
+        panelAddThreadName: null,
+        panelRemoveThreadId: null,
+        panelRemoveThreadName: null,
+        lastUiThreadId: null,
+        lastUiThreadName: null,
+        inputFocused: false,
+        sourceOptionCount: 0,
+        tagOptionCount: 0,
+        sourceChipCount: 0,
+        tagChipCount: 0,
+        historyChipCount: 0,
+     
+
+--- tagColor @169164 ---
+colors.stroke),
+  String(colors.textPrimary),
+  String(colors.textSecondary),
+  String(colors.accentSoft),
+  String(colors.accentStrong),
+  Number(state.panelWidthPx || 0),
+  Number(state.panelHeightPx || 0)
+        ].join("\u001f");
+    }
+
+    function syncRenderedResultCounters(range) {
+        var index;
+        var row;
+        var tags;
+        var cardCount = Math.max(0, Number(range.end) -
+  Number(range.start) + 1);
+        var pinnedCount = 0;
+        var tagLabelCount = 0;
+        var tagColorCount = 0;
+        var sourceIconCount = 0;
+        for (index = range.start; index <= range.end; index += 1) {
+  row = previewRows[index];
+  if (!row) { continue; }
+  if (Number(row.is_pinned || 0) === 1) { pinnedCount += 1; }
+  tags = tagsForResult(row);
+  tagLabelCount += Math.min(2, tags.length);
+  if (tags.length > 0) { tagColorCount += 1; }
+  if (String(row.source_package || "").length > 0) {
+      sourceIconCount += 1;
+  }
+        }
+        state.resultCardCount = cardCount;
+        state.cardActionButtonCount = cardCount * 4;
+        state.pinnedBadgeCount = pinnedCount;
+        state.renderedTagLabelCount = tagLabelCount;
+        state.tagColorPreviewCount = tagColorCount;
+        s
+
+--- tagColor @169499 ---
+ar tags;
+        var cardCount = Math.max(0, Number(range.end) -
+  Number(range.start) + 1);
+        var pinnedCount = 0;
+        var tagLabelCount = 0;
+        var tagColorCount = 0;
+        var sourceIconCount = 0;
+        for (index = range.start; index <= range.end; index += 1) {
+  row = previewRows[index];
+  if (!row) { continue; }
+  if (Number(row.is_pinned || 0) === 1) { pinnedCount += 1; }
+  tags = tagsForResult(row);
+  tagLabelCount += Math.min(2, tags.length);
+  if (tags.length > 0) { tagColorCount += 1; }
+  if (String(row.source_package || "").length > 0) {
+      sourceIconCount += 1;
+  }
+        }
+        state.resultCardCount = cardCount;
+        state.cardActionButtonCount = cardCount * 4;
+        state.pinnedBadgeCount = pinnedCount;
+        state.renderedTagLabelCount = tagLabelCount;
+        state.tagColorPreviewCount = tagColorCount;
+        state.resultSourceIconCount = sourceIconCount;
+        return true;
+    }
+
+    function removeVirtualEntryAt(index) {
+        virtualCardHost.removeViewAt(index);
+        virtualRenderedItemIds.splice(index, 1);
+        virtualRenderedSignatures.splice(index, 1);
+        resultCardViews.splice(index, 1);
+        resultCardHolders.spli
+
+--- tagColor @169825 ---
+ continue; }
+  if (Number(row.is_pinned || 0) === 1) { pinnedCount += 1; }
+  tags = tagsForResult(row);
+  tagLabelCount += Math.min(2, tags.length);
+  if (tags.length > 0) { tagColorCount += 1; }
+  if (String(row.source_package || "").length > 0) {
+      sourceIconCount += 1;
+  }
+        }
+        state.resultCardCount = cardCount;
+        state.cardActionButtonCount = cardCount * 4;
+        state.pinnedBadgeCount = pinnedCount;
+        state.renderedTagLabelCount = tagLabelCount;
+        state.tagColorPreviewCount = tagColorCount;
+        state.resultSourceIconCount = sourceIconCount;
+        return true;
+    }
+
+    function removeVirtualEntryAt(index) {
+        virtualCardHost.removeViewAt(index);
+        virtualRenderedItemIds.splice(index, 1);
+        virtualRenderedSignatures.splice(index, 1);
+        resultCardViews.splice(index, 1);
+        resultCardHolders.splice(index, 1);
+        resultActionViews.splice(index, 1);
+        scrollPerformanceState.removedViewCount += 1;
+        scrollPerformanceState.structuralRemoveCount += 1;
+        return true;
+    }
+
+    function insertVirtualEntryAt(index, row, colors, signature) {
+        var params = new LinearLayout.LayoutParams(
+  Linear
+
+--- tagColor @169848 ---
+er(row.is_pinned || 0) === 1) { pinnedCount += 1; }
+  tags = tagsForResult(row);
+  tagLabelCount += Math.min(2, tags.length);
+  if (tags.length > 0) { tagColorCount += 1; }
+  if (String(row.source_package || "").length > 0) {
+      sourceIconCount += 1;
+  }
+        }
+        state.resultCardCount = cardCount;
+        state.cardActionButtonCount = cardCount * 4;
+        state.pinnedBadgeCount = pinnedCount;
+        state.renderedTagLabelCount = tagLabelCount;
+        state.tagColorPreviewCount = tagColorCount;
+        state.resultSourceIconCount = sourceIconCount;
+        return true;
+    }
+
+    function removeVirtualEntryAt(index) {
+        virtualCardHost.removeViewAt(index);
+        virtualRenderedItemIds.splice(index, 1);
+        virtualRenderedSignatures.splice(index, 1);
+        resultCardViews.splice(index, 1);
+        resultCardHolders.splice(index, 1);
+        resultActionViews.splice(index, 1);
+        scrollPerformanceState.removedViewCount += 1;
+        scrollPerformanceState.structuralRemoveCount += 1;
+        return true;
+    }
+
+    function insertVirtualEntryAt(index, row, colors, signature) {
+        var params = new LinearLayout.LayoutParams(
+  LinearLayout.LayoutParams.MAT
+
+--- tagColor @228983 ---
+ row && row.id !== undefined ? String(row.id) : "";
+        return resultTagMap[key] || [];
+    }
+
+    function tagSummary(tags) {
+        var labels = [];
+        var index;
+        tags = tags || [];
+        for (index = 0; index < tags.length && index < 2; index += 1) {
+            labels.push(String(tags[index].name || ""));
+        }
+        if (tags.length > 2) { labels.push("+" + String(tags.length - 2)); }
+        return labels.length > 0 ? labels.join("  ") : "无标签";
+    }
+
+    function tagColorText(tag, fallback) {
+        var value;
+        var hex;
+        if (!tag || tag.color_value === null || tag.color_value === undefined) {
+            return String(fallback || "#7C5CFC");
+        }
+        value = Number(tag.color_value) >>> 0;
+        hex = value.toString(16).toUpperCase();
+        while (hex.length < 8) { hex = "0" + hex; }
+        return "#" + hex;
+    }
+
+    function selectedResultRow() {
+        var index;
+        if (selectedItemId === null) { return null; }
+        for (index = 0; index < previewRows.length; index += 1) {
+            if (Number(previewRows[index].id) === Number(selectedItemId)) {
+                if (isDataWindowStub(previewRows[index])) {
+           
+
+--- tagColor @265000 ---
+ormanceState.holderRebindLastRejectReason = reason;
+                return false;
+            }
+            scrollPerformanceState.holderRebindEligibleCount += 1;
+            stage = "content_text";
+            holder.contentView.setText(String(resultPreviewText(row)));
+            stage = "tag_text";
+            holder.tagBadge.setText(String((newTags.length > 0 ? "●  " : "") + tagSummary(newTags)));
+            stage = "tag_color";
+            holder.tagBadge.setTextColor(newTags.length > 0 ? tagColorText(newTags[0], colors.accentStrong) : colors.textTertiary);
+            stage = "source_text";
+            holder.sourceView.setText(String(sourceLabel(row) + " · " + formatTime(row.last_copied_at)));
+            stage = "commit";
+            holder.row = row;
+            holder.itemId = Number(row.id);
+            holder.selected = newSelected;
+            holder.pinned = newPinned;
+            holder.sourcePackage = newPackage;
+            elapsed = Math.max(0, Number(System.currentTimeMillis()) - startedAt);
+            scrollPerformanceState.holderRebindCount += 1;
+            scrollPerformanceState.holderRebindLastMs = elapsed;
+            scrollPerformanceState.holderRebindMaxMs = Ma
+
+--- tagColor @267497 ---
+ors);
+        var center = new LinearLayout(appContext);
+        var contentRow = new LinearLayout(appContext);
+        var pinBadge = null;
+        var content = makeText(resultPreviewText(row),
+            metrics.contentTextSp, colors.textPrimary, selected);
+        var metaRow = new LinearLayout(appContext);
+        var tags = tagsForResult(row);
+        var tagBadge = makeText((tags.length > 0 ? "●  " : "") +
+            tagSummary(tags), metrics.sourceTextSp,
+            tags.length > 0 ? tagColorText(tags[0], colors.accentStrong) :
+                colors.textTertiary, tags.length > 0);
+        var source = makeText(sourceLabel(row) + " · " +
+            formatTime(row.last_copied_at), metrics.sourceTextSp,
+            colors.textSecondary, false);
+        var holder = {
+            itemId: Number(row.id),
+            row: row,
+            wrapper: wrapper,
+            actionLayer: actionLayer,
+            deleteAction: deleteAction,
+            pinAction: pinAction,
+            card: card,
+            iconView: icon,
+            center: center,
+            contentRow: contentRow,
+            contentView: content,
+            metaRow: metaRow,
+            tagBadge: tagBadge,
+        
+
+--- tagColor @272861 ---
+s.TruncateAt.END);
+        tagBadge.setBackground(roundedBackground(
+            tags.length > 0 ? colors.accentSoft : colors.surfaceMuted,
+            null, metrics.actionRadiusDp));
+        params = new LinearLayout.LayoutParams(metrics.tagWidthPx,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.rightMargin = metrics.contentGapPx;
+        metaRow.addView(tagBadge, params);
+        state.renderedTagLabelCount += Math.min(2, tags.length);
+        if (tags.length > 0) { state.tagColorPreviewCount += 1; }
+        source.setSingleLine(true);
+        source.setEllipsize(TextUtils.TruncateAt.END);
+        metaRow.addView(source, new LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        center.addView(metaRow, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT));
+        params = new LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+        params.rightMargin = metrics.contentGapPx;
+        card.addView(center, params);
+        card.addView(actionGrid, new LinearLayout.LayoutParams(
+            metrics.actionGridWidthPx
+
+--- tagColor @383326 ---
+aderControlHeightDp),
+            headerActionSizeDp: Number(state.headerActionSizeDp),
+            headerGapDp: Number(state.headerGapDp),
+            headerFilterActiveCount:
+                Number(state.headerFilterActiveCount),
+            resultCardCount: Number(state.resultCardCount),
+            settingsButtonPresent: settingsButton !== null,
+            settingsOpenCount: Number(state.settingsOpenCount),
+            renderedTagLabelCount: Number(state.renderedTagLabelCount),
+            tagColorPreviewCount: Number(state.tagColorPreviewCount),
+            loadedResultCount: Number(state.loadedResultCount),
+            resultPageSize: Number(state.resultPageSize),
+            resultPageLimit: Number(state.resultPageLimit),
+            resultHasMore: state.resultHasMore === true,
+            resultCanScroll: state.resultCanScroll === true,
+            loadMorePresent: loadMoreView !== null,
+            loadMoreCount: Number(state.loadMoreCount),
+            resultSourceIconCount:
+                Number(state.resultSourceIconCount),
+            advancedDrawerVisible: advancedVisible,
+            advancedButtonText: advancedView !== null ?
+                (activeAdvancedFilterCount() >
+
+--- tagColor @383361 ---
+eaderActionSizeDp: Number(state.headerActionSizeDp),
+            headerGapDp: Number(state.headerGapDp),
+            headerFilterActiveCount:
+                Number(state.headerFilterActiveCount),
+            resultCardCount: Number(state.resultCardCount),
+            settingsButtonPresent: settingsButton !== null,
+            settingsOpenCount: Number(state.settingsOpenCount),
+            renderedTagLabelCount: Number(state.renderedTagLabelCount),
+            tagColorPreviewCount: Number(state.tagColorPreviewCount),
+            loadedResultCount: Number(state.loadedResultCount),
+            resultPageSize: Number(state.resultPageSize),
+            resultPageLimit: Number(state.resultPageLimit),
+            resultHasMore: state.resultHasMore === true,
+            resultCanScroll: state.resultCanScroll === true,
+            loadMorePresent: loadMoreView !== null,
+            loadMoreCount: Number(state.loadMoreCount),
+            resultSourceIconCount:
+                Number(state.resultSourceIconCount),
+            advancedDrawerVisible: advancedVisible,
+            advancedButtonText: advancedView !== null ?
+                (activeAdvancedFilterCount() > 0 ?
+                    "筛选(" + St
+
+--- tagColor @396848 ---
+e.copyFeedbackTimeoutCount = 0;
+        state.adaptiveLayoutRefreshCount = 0;
+        state.swipeEnabled = true;
+        state.swipeStartCount = 0;
+        state.swipeMoveCount = 0;
+        state.swipePinCount = 0;
+        state.swipeDeleteCount = 0;
+        state.swipeCancelCount = 0;
+        state.lastSwipeItemId = null;
+        state.lastSwipeAction = null;
+        state.settingsOpenCount = 0;
+        state.settingsButtonPresent = false;
+        state.renderedTagLabelCount = 0;
+        state.tagColorPreviewCount = 0;
+        state.loadedResultCount = 0;
+        state.resultPageSize =
+            Number(paginationState.pageSize);
+        state.resultPageLimit =
+            Number(paginationState.pageSize);
+        state.resultHasMore = false;
+        state.resultCanScroll = false;
+        state.loadMoreCount = 0;
+        state.toolbarEnabledCount = 0;
+        state.repositorySortUnchanged = true;
+        state.sortScope = "result_window";
+        state.panelAddThreadId = null;
+        state.panelAddThreadName = null;
+        state.panelRemoveThreadId = null;
+        state.panelRemoveThreadName = null;
+        state.lastUiThreadId = null;
+        state.lastUiThreadName = null;
+        sta
+
+--- colorValue @242324 ---
+ER_VERTICAL);
+        view.setPadding(metrics.swipeHorizontalPaddingPx, 0,
+            metrics.swipeHorizontalPaddingPx, 0);
+        view.setBackground(roundedBackground(fill, null,
+            metrics.actionRadiusDp));
+        view.setAlpha(0);
+        return view;
+    }
+
+    function safeColorInt(value, fallback) {
+        try { return Color.parseColor(String(value)); }
+        catch (ignoredColor) { return Color.parseColor(String(fallback)); }
+    }
+
+    function makeVectorIconDrawable(kind, colorValue, iconSizePx,
+            strokeWidthPx) {
+        var paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        var path = new Path();
+        var drawable;
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeJoin(Paint.Join.ROUND);
+        paint.setStrokeWidth(Number(strokeWidthPx));
+        paint["setColor(int)"](safeColorInt(colorValue, "#FF5A37E6"));
+        drawable = new JavaAdapter(Drawable, {
+            draw: function (canvas) {
+                var bounds = drawable.getBounds();
+                var width = Number(bounds.width());
+                var height = Number(bounds.height());
+                var size = Math.min(width, heigh
+
+--- colorValue @242717 ---
+oredColor) { return Color.parseColor(String(fallback)); }
+    }
+
+    function makeVectorIconDrawable(kind, colorValue, iconSizePx,
+            strokeWidthPx) {
+        var paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        var path = new Path();
+        var drawable;
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeJoin(Paint.Join.ROUND);
+        paint.setStrokeWidth(Number(strokeWidthPx));
+        paint["setColor(int)"](safeColorInt(colorValue, "#FF5A37E6"));
+        drawable = new JavaAdapter(Drawable, {
+            draw: function (canvas) {
+                var bounds = drawable.getBounds();
+                var width = Number(bounds.width());
+                var height = Number(bounds.height());
+                var size = Math.min(width, height,
+                    Math.max(1, Number(iconSizePx)));
+                var left = Number(bounds.left) + (width - size) / 2;
+                var top = Number(bounds.top) + (height - size) / 2;
+                var right = left + size;
+                var bottom = top + size;
+                var radius = Math.max(1, size * 0.08);
+                var rect;
+                path.reset();
+      
