@@ -8,29 +8,36 @@ jobs:
   diag:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Decode Filter 50 and print view paths
+      - name: Decode Filter 50 and write view paths
         shell: bash
         run: |
           python - <<'PY'
-          import base64,gzip,glob,re
+          import base64,gzip,glob
           parts=sorted(glob.glob('stage-assets/pagination-stage9/ch11_full_v5_*.b64'))
           packed=base64.b64decode(''.join(open(p,encoding='utf-8').read().strip() for p in parts))
           src=gzip.decompress(packed).decode('utf-8')
           lines=src.splitlines()
-          print('SOURCE_LINES',len(lines))
           keys=['virtualCardHost','rebuildVirtualWindow','scheduleVirtualUpdate','createResultCard','buildResultCard','renderResult','resultCard','bind','removeAllViews','addView','dehydrateDataWindowOutside']
-          hit=[]
-          for i,line in enumerate(lines):
-              if any(k in line for k in keys): hit.append(i)
+          hit=[i for i,line in enumerate(lines) if any(k in line for k in keys)]
           ranges=[]
           for i in hit:
-              a=max(0,i-35); b=min(len(lines),i+90)
+              a=max(0,i-45); b=min(len(lines),i+110)
               if ranges and a<=ranges[-1][1]+5: ranges[-1]=(ranges[-1][0],max(ranges[-1][1],b))
               else: ranges.append((a,b))
-          for n,(a,b) in enumerate(ranges[:18],1):
-              print('\n===== RANGE %d L%d-L%d ====='%(n,a+1,b))
-              for j in range(a,b): print('%05d %s'%(j+1,lines[j]))
+          with open('stage12_view_diag.txt','w',encoding='utf-8') as f:
+              f.write('SOURCE_LINES %d\n'%len(lines))
+              for n,(a,b) in enumerate(ranges[:24],1):
+                  f.write('\n===== RANGE %d L%d-L%d =====\n'%(n,a+1,b))
+                  for j in range(a,b): f.write('%05d %s\n'%(j+1,lines[j]))
           PY
+      - name: Commit diagnostics
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add stage12_view_diag.txt
+          git commit -m "记录 Stage12 View 诊断" || exit 0
+          git push
