@@ -8,6 +8,7 @@
 - `Filter.PAGINATION_STAGE = 9`
 - 模块数量：15
 - Stage 10 测试入口版本：7
+- Stage 10 状态：PASS（最近任务手工项按约定跳过）
 
 Stage 10 不修改生产模块和正式入口，仅新增隔离真机回归入口、压缩载荷及测试说明。
 
@@ -46,6 +47,24 @@ v6 在提示“准备完成”前等待监听器重新进入 `running=true` 并�
 真机确认在最近任务步骤中，ClipHub 浮窗覆盖桌面时无法完成底部上划进入最近任务操作。按用户要求，v7 跳过该手工项目，不再重新显示浮窗或等待手势，结果固定记录 `skipped = true`、`skipReason = user_confirmed_coloros_recents_gesture_blocked` 和 `ok = true`，随后直接执行最终停止、设置恢复及隔离清理。
 
 该跳过项不等同于最近任务关闭能力已验证；Stage 10 其余自动与真实交互项目仍按原条件执行。生产模块和版本不变。
+
+## v7 真机结果
+
+Android 14 / ColorOS / ShortX 返回 `ok = true`、`lastCheckpoint = completed`、`error = null`：
+
+- 20 轮暖启动全部完成，缓存复用 20 次，20 次均在 Android `main` 线程 attach；
+- 20 轮快速显示/关闭全部完成，无延迟附加和命令失败；
+- 普通隐藏恢复保持 `anchorItemId = 20`、`scrollY = 4700`、锚点误差 `0px`；
+- IME 展开、焦点、`1093px` 避让和关闭恢复通过；
+- 系统侧滑返回与浮窗外部点击通过；
+- 真实拖动激活 1 次、MOVE 69 次，位置变化且保持安全区；
+- 真实缩放激活 1 次、MOVE 102 次、提交 1 次，尺寸变化且保持安全区；
+- 横屏变化和恢复竖屏通过；
+- Home 确认信号、UI 关闭和返回回调清零通过；
+- 最近任务记录为 `skipped = true`，原因是 `user_confirmed_coloros_recents_gesture_blocked`；
+- 最终数据库关闭、运行锁释放、UI 清除、原设置恢复和隔离目录清理通过。
+
+结论：Stage 10 PASS。最近任务关闭能力不在本次通过范围内，保留为明确的未验证例外。
 
 ## 回归目标
 
@@ -99,7 +118,6 @@ ClipHubPaginationStage10SystemRegression
 4. 长按右下角缩放手柄并改变尺寸；
 5. 将设备旋转到另一方向，再转回原方向；
 6. 按 Home 键；
-7. 从底部上拉进入最近任务并停留。
 
 每个动作限时 35 秒。不要提前执行下一步，以顶部提示内容为准。
 
@@ -132,13 +150,15 @@ ClipHubPaginationStage10SystemRegression
 - `boundsRefreshCount` 增加；
 - 两个方向的窗口均在安全区域内。
 
-Home 与最近任务分别要求：
+Home 要求：
 
 - `RecentsWatch.hideCount` 增加；
 - `confirmedSignalCount` 增加；
 - UI 全部关闭；
 - 返回回调清零；
 - 后台实例仍运行，直到最后统一停止。
+
+最近任务手工项不执行，固定记录 `skipped = true`；该项不计作能力验证通过。
 
 ## 完全停止与清理
 
