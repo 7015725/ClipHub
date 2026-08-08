@@ -1,4 +1,4 @@
-/* ClipHub Stage 12 delta virtual-card window ES5 loader. */
+/* ClipHub Stage 12 safe hydration delta ES5 loader. */
 (function (global) {
     var File = Packages.java.io.File;
     var FIS = Packages.java.io.FileInputStream;
@@ -17,20 +17,20 @@
 
     var REF = "beta-pagination-stage10-20260808";
     var PARTS = [
-        "stage-assets/pagination-stage9/ch11_full_v7_00.b64",
-        "stage-assets/pagination-stage9/ch11_full_v7_01.b64",
-        "stage-assets/pagination-stage9/ch11_full_v7_02.b64",
-        "stage-assets/pagination-stage9/ch11_full_v7_03.b64",
-        "stage-assets/pagination-stage9/ch11_full_v7_04.b64",
-        "stage-assets/pagination-stage9/ch11_full_v7_05.b64",
-        "stage-assets/pagination-stage9/ch11_full_v7_06.b64",
-        "stage-assets/pagination-stage9/ch11_full_v7_07.b64"
+        "stage-assets/pagination-stage9/ch11_full_v8s_00.b64",
+        "stage-assets/pagination-stage9/ch11_full_v8s_01.b64",
+        "stage-assets/pagination-stage9/ch11_full_v8s_02.b64",
+        "stage-assets/pagination-stage9/ch11_full_v8s_03.b64",
+        "stage-assets/pagination-stage9/ch11_full_v8s_04.b64",
+        "stage-assets/pagination-stage9/ch11_full_v8s_05.b64",
+        "stage-assets/pagination-stage9/ch11_full_v8s_06.b64",
+        "stage-assets/pagination-stage9/ch11_full_v8s_07.b64"
     ];
     var PACKED_SHA256 =
-        "2431f565d51588195b18cfd700c4361817c187edeb5a6a48bd5b0e96e4044641";
+        "4df1abbf2b8c04836e314acc35c6c3c4a1771604cf5bd828bd151c3e2c300328";
     var SOURCE_SHA256 =
-        "cea91a4d91ff90d7975dcb43b73e8260816e7e504be0c078fe4fa409ba3566cc";
-    var CACHE_NAME = "ch_11_filter_stage12_v7_delta_views_full.b64";
+        "90847cd5694f436d93305c5d1b14d0564de29a3cf522c5ecb89f5224c9c5e669";
+    var CACHE_NAME = "ch_11_filter_stage12_v8s_safe_hydration_delta_full.b64";
 
     function closeQuietly(value) {
         if (value !== null && value !== undefined) {
@@ -130,7 +130,7 @@
             connection = new URL(
                 "https://raw.githubusercontent.com/7015725/ClipHub/" +
                 encodePath(REF) + "/" + encodePath(path) +
-                "?stage12v7=" + Number(System.currentTimeMillis())
+                "?stage12v8s=" + Number(System.currentTimeMillis())
             ).openConnection();
             connection.setConnectTimeout(10000);
             connection.setReadTimeout(30000);
