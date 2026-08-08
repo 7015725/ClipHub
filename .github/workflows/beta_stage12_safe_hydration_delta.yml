@@ -1,0 +1,108 @@
+name: Beta Stage12 Safe Hydration Delta
+on:
+  push:
+    branches: [beta-pagination-stage10-20260808]
+    paths:
+      - .github/workflows/beta_stage12_safe_hydration_delta.yml
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build safe Filter 54
+        shell: bash
+        run: |
+          python - <<'PY'
+          import base64,gzip,glob,hashlib,json,pathlib,re,math
+          root=pathlib.Path('.')
+          loader_path=root/'src/ch_11_filter.js'
+          loader=loader_path.read_text(encoding='utf-8')
+          sm=re.search(r'var SOURCE_SHA256 =\s*\n\s*"([0-9a-f]+)";',loader)
+          if not sm: raise SystemExit('source sha missing')
+          expected=sm.group(1)
+          parts=sorted(glob.glob('stage-assets/pagination-stage9/ch11_full_v7_*.b64'))
+          if len(parts)!=8: raise SystemExit('expected 8 v7 parts')
+          packed=''.join(pathlib.Path(p).read_text(encoding='utf-8').strip() for p in parts)
+          src=gzip.decompress(base64.b64decode(packed)).decode('utf-8')
+          if hashlib.sha256(src.encode()).hexdigest()!=expected: raise SystemExit('source sha mismatch')
+          if src.count('MODULE_VERSION: 52')!=1: raise SystemExit('expected Filter 52')
+          if src.count('scheduleVirtualUpdate("hydration_apply", true);')!=1: raise SystemExit('hydration force anchor mismatch')
+          src=src.replace('MODULE_VERSION: 52','MODULE_VERSION: 54',1)
+          # Diagnostics only; no View references are added.
+          metric='''        mainApplyLastMs: 0,\n        mainApplyMaxMs: 0,\n'''
+          if src.count(metric)!=1: raise SystemExit('metric anchor mismatch')
+          src=src.replace(metric,'''        mainApplyLastMs: 0,\n        mainApplyMaxMs: 0,\n        visualForceCount: 0,\n        visualDeltaCount: 0,\n''',1)
+          # Safe ID-only overlap test. It reads existing virtualRenderedItemIds but never mutates a View.
+          helper='''\n    function hydrationResultTouchesRendered(result) {\n        var lists = [result.ids || [], result.tagIds || []];\n        var listIndex;\n        var itemIndex;\n        var itemId;\n        for (listIndex = 0; listIndex < lists.length; listIndex += 1) {\n            for (itemIndex = 0;\n                    itemIndex < lists[listIndex].length; itemIndex += 1) {\n                itemId = Number(lists[listIndex][itemIndex]);\n                if (virtualRenderedItemIds.indexOf(itemId) >= 0) {\n                    return true;\n                }\n            }\n        }\n        return false;\n    }\n\n'''
+          anchor='    function applyHydrationResult(resultJson) {'
+          if src.count(anchor)!=1: raise SystemExit('apply anchor mismatch')
+          src=src.replace(anchor,helper+anchor,1)
+          # Decide force before scheduling. missing IDs always retain force behavior.
+          old='''        hydrationWorkerState.mainApplyMaxMs = Math.max(\n            Number(hydrationWorkerState.mainApplyMaxMs), elapsed);\n        scheduleVirtualUpdate("hydration_apply", true);\n        return true;\n'''
+          new='''        hydrationWorkerState.mainApplyMaxMs = Math.max(\n            Number(hydrationWorkerState.mainApplyMaxMs), elapsed);\n        var forceVisual = missing > 0 ||\n            hydrationResultTouchesRendered(result);\n        if (forceVisual) {\n            hydrationWorkerState.visualForceCount += 1;\n        } else {\n            hydrationWorkerState.visualDeltaCount += 1;\n        }\n        scheduleVirtualUpdate("hydration_apply", forceVisual);\n        return true;\n'''
+          if src.count(old)!=1: raise SystemExit('apply replacement mismatch')
+          src=src.replace(old,new,1)
+          # Safety invariants.
+          for token in ['var VIRTUAL_BEFORE_SCREENS = 3;','var VIRTUAL_AFTER_SCREENS = 5;','var VIRTUAL_UPDATE_DELAY_MS = 24;','result_scroll_same_range_fast','virtualCardHost.removeAllViews();']:
+              if token not in src: raise SystemExit('missing invariant '+token)
+          if src.count('.newSingleThreadExecutor();')!=1: raise SystemExit('executor count changed')
+          if 'resultTagBadgeViews' in src: raise SystemExit('unsafe Filter53 view refs reintroduced')
+          if 'refreshRenderedTagBadges' in src: raise SystemExit('unsafe in-place tag patch reintroduced')
+          if 'scheduleVirtualUpdate("hydration_apply", true);' in src: raise SystemExit('unconditional force remained')
+          source_sha=hashlib.sha256(src.encode()).hexdigest()
+          gz=gzip.compress(src.encode('utf-8'),compresslevel=9,mtime=0)
+          b64=base64.b64encode(gz).decode('ascii')
+          packed_sha=hashlib.sha256(b64.encode()).hexdigest()
+          chunk=math.ceil(len(b64)/8)
+          new_parts=[]
+          for i in range(8):
+              p='stage-assets/pagination-stage9/ch11_full_v8s_%02d.b64'%i
+              pathlib.Path(p).write_text(b64[i*chunk:(i+1)*chunk]+'\n',encoding='utf-8')
+              new_parts.append(p)
+          loader=loader.replace('/* ClipHub Stage 12 delta virtual-card window ES5 loader. */','/* ClipHub Stage 12 safe hydration delta ES5 loader. */')
+          loader,n=re.subn(r'    var PARTS = \[.*?\n    \];','    var PARTS = [\n'+',\n'.join('        "'+p+'"' for p in new_parts)+'\n    ];',loader,count=1,flags=re.S)
+          if n!=1: raise SystemExit('parts replacement failed')
+          loader,n=re.subn(r'(    var PACKED_SHA256 =\s*\n\s*")[0-9a-f]+(";)',r'\g<1>'+packed_sha+r'\2',loader,count=1)
+          if n!=1: raise SystemExit('packed sha replacement failed')
+          loader,n=re.subn(r'(    var SOURCE_SHA256 =\s*\n\s*")[0-9a-f]+(";)',r'\g<1>'+source_sha+r'\2',loader,count=1)
+          if n!=1: raise SystemExit('source sha replacement failed')
+          loader,n=re.subn(r'    var CACHE_NAME = "[^"]+";','    var CACHE_NAME = "ch_11_filter_stage12_v8s_safe_hydration_delta_full.b64";',loader,count=1)
+          if n!=1: raise SystemExit('cache replacement failed')
+          loader=loader.replace('?stage12v7=','?stage12v8s=')
+          loader_path.write_text(loader,encoding='utf-8')
+          def blob_sha(path):
+              data=pathlib.Path(path).read_bytes()
+              return hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+          mp=root/'module-manifest.json'
+          manifest=json.loads(mp.read_text(encoding='utf-8'))
+          if manifest.get('moduleSetVersion')!='20260808.06': raise SystemExit('expected .06 baseline')
+          if manifest.get('sourceRef')!='beta-pagination-stage10-20260808': raise SystemExit('wrong sourceRef')
+          manifest['moduleSetVersion']='20260808.08'
+          for m in manifest['modules']:
+              if m['name']=='ch_11_filter.js': m['sha']=blob_sha(loader_path)
+          mp.write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          pathlib.Path('/tmp/filter54.js').write_text(src,encoding='utf-8')
+          print('source_sha='+source_sha)
+          print('packed_sha='+packed_sha)
+          print('loader_blob='+blob_sha(loader_path))
+          PY
+          node --check /tmp/filter54.js
+          node --check src/ch_11_filter.js
+          ! grep -Eq '(^|[^A-Za-z0-9_])(let|const|class)[[:space:]]|=>' /tmp/filter54.js
+          grep -Fq 'MODULE_VERSION: 54' /tmp/filter54.js
+          grep -Fq 'hydrationResultTouchesRendered(result)' /tmp/filter54.js
+          grep -Fq 'scheduleVirtualUpdate("hydration_apply", forceVisual);' /tmp/filter54.js
+          grep -Fq '"moduleSetVersion": "20260808.08"' module-manifest.json
+          git diff --check
+      - name: Commit safe Filter 54
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm -f .github/workflows/beta_stage12_safe_hydration_delta.yml
+          if [ -f stage12_safe_diag.txt ]; then git rm -f stage12_safe_diag.txt; fi
+          git add src/ch_11_filter.js module-manifest.json stage-assets/pagination-stage9/ch11_full_v8s_*.b64
+          git commit -m "安全优化 Beta 水合差量更新"
+          git push
