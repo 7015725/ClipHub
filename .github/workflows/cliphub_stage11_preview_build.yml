@@ -7,6 +7,10 @@ on:
     paths:
       - tools/cliphub_stage11_preview_build.py
       - .github/workflows/cliphub_stage11_preview_build.yml
+  pull_request:
+    types: [opened, reopened, synchronize]
+    branches:
+      - beta-pagination-stage10-20260808
 
 permissions:
   contents: write
@@ -19,6 +23,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
 
       - name: Build preview-on-demand implementation
         run: python tools/cliphub_stage11_preview_build.py
@@ -42,4 +47,5 @@ jobs:
           git add -A
           git diff --cached --check
           git commit -m "实现首页200字符预览与正文按需读取"
-          git push origin HEAD:${GITHUB_REF_NAME}
+          BRANCH="${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}"
+          git push origin HEAD:${BRANCH}
