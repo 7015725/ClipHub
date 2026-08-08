@@ -44,9 +44,9 @@ new_calls = '''source = insert_named_head(
     "paging invalidation"
 )
 source = insert_named_head(
-    source, "rememberMutationRefresh",
-    '        invalidateHydrationWorker("mutation_refresh");',
-    "mutation invalidation"
+    source, "scheduleCoalescedRefresh",
+    '        invalidateHydrationWorker("coalesced_refresh");',
+    "refresh invalidation"
 )
 '''
 if text.count(old_helper) != 1:
