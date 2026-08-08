@@ -1,1 +1,1 @@
-trigger=stage17-build-fix-v3
+trigger=stage17-simple-build-v1
