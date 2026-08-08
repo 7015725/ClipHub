@@ -1,0 +1,210 @@
+name: Beta Stage16B4 Fix
+on:
+  push:
+    branches: [beta-pagination-stage10-20260808]
+    paths:
+      - .github/stage16b4-fix-trigger.txt
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build Filter63
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64,gzip,glob,hashlib,json,pathlib,re,subprocess
+          root=pathlib.Path('.')
+          loader_path=root/'src/ch_11_filter.js'
+          manifest_path=root/'module-manifest.json'
+          loader=loader_path.read_text(encoding='utf-8')
+          manifest=json.loads(manifest_path.read_text(encoding='utf-8'))
+          if manifest.get('moduleSetVersion')!='20260808.16': raise SystemExit('expected .16 baseline')
+          if manifest.get('sourceRef')!='beta-pagination-stage10-20260808': raise SystemExit('wrong sourceRef')
+          if '/* ClipHub Stage 16B.3 atomic virtual clear and full-refresh dedupe ES5 loader. */' not in loader:
+              raise SystemExit('Stage16B.3 loader baseline missing')
+          m=re.search(r'var PATCH_B64 =\n((?:\s*"[A-Za-z0-9+/=]+"\s*\+?\n?)+);',loader)
+          if not m: raise SystemExit('PATCH_B64 missing')
+          patch=base64.b64decode(''.join(re.findall(r'"([A-Za-z0-9+/=]+)"',m.group(1)))).decode('utf-8')
+
+          stage4=r'''
+    function transformStage16B4Source(source) {
+        var info;
+        var value;
+
+        source = replaceOnceStrict(source,
+            "MODULE_VERSION: 62", "MODULE_VERSION: 63",
+            "Stage16B4 module version");
+
+        source = replaceOnceStrict(source,
+            "        virtualBookkeepingAtomicClearCount: 0,\n",
+            "        virtualBookkeepingAtomicClearCount: 0,\n" +
+            "        fullRefreshSamples: [],\n",
+            "Stage16B4 sample metric");
+
+        source = replaceOnceStrict(source,
+            "        scrollPerformanceState.virtualBookkeepingAtomicClearCount = 0;\n",
+            "        scrollPerformanceState.virtualBookkeepingAtomicClearCount = 0;\n" +
+            "        scrollPerformanceState.fullRefreshSamples = [];\n",
+            "Stage16B4 sample reset");
+
+        source = replaceOnceStrict(source,
+            "            virtualBookkeepingAtomicClearCount:\n" +
+            "                Number(scrollPerformanceState.virtualBookkeepingAtomicClearCount),\n" +
+            "            spacerApplyCount:\n",
+            "            virtualBookkeepingAtomicClearCount:\n" +
+            "                Number(scrollPerformanceState.virtualBookkeepingAtomicClearCount),\n" +
+            "            fullRefreshSamples:\n" +
+            "                scrollPerformanceState.fullRefreshSamples.slice(0),\n" +
+            "            spacerApplyCount:\n",
+            "Stage16B4 sample copy");
+
+        info = section(source,
+            "    function rebindResultCardHolder(holder, row, colors) {",
+            "\n    function ",
+            "Stage16B4 holder rebind");
+        value = info.text;
+        value = replaceOnceStrict(value,
+            "            holder.tagBadge.setTextColor(newTags.length > 0 ? tagColorText(newTags[0], colors.accentStrong) : colors.textTertiary);\n",
+            "            holder.tagBadge[\"setTextColor(int)\"](" +
+            "safeColorInt(newTags.length > 0 ? " +
+            "tagColorText(newTags[0], colors.accentStrong) : " +
+            "colors.textTertiary, colors.textTertiary));\n",
+            "Stage16B4 tag color int");
+        source = replaceSection(source, info, value);
+
+        info = section(source,
+            "    function refreshResultsOnMain() {",
+            "\n    function ",
+            "Stage16B4 refresh results");
+        value = info.text;
+        value = replaceOnceStrict(value,
+            "        var fullRefreshDataKey;\n",
+            "        var fullRefreshDataKey;\n" +
+            "        var fullRefreshSample;\n",
+            "Stage16B4 sample variable");
+        value = replaceOnceStrict(value,
+            "        scrollPerformanceState.fullRefreshLastDataKey = fullRefreshDataKey;\n",
+            "        scrollPerformanceState.fullRefreshLastDataKey = fullRefreshDataKey;\n" +
+            "        fullRefreshSample = {\n" +
+            "            origin: String(performance.lastRefreshOrigin || \"\"),\n" +
+            "            dataKey: String(fullRefreshDataKey),\n" +
+            "            panelDataVersion: Number(panelDataVersion || 0),\n" +
+            "            queryGeneration: Number(paginationState.queryGeneration || 0),\n" +
+            "            searchGeneration: Number(searchGeneration || 0),\n" +
+            "            previewRowCount: Number(previewRows.length || 0),\n" +
+            "            firstId: previewRows.length > 0 ? Number(previewRows[0].id) : -1,\n" +
+            "            lastId: previewRows.length > 0 ? Number(previewRows[previewRows.length - 1].id) : -1,\n" +
+            "            contentReady: state.contentReady === true,\n" +
+            "            childCount: virtualCardHost === null ? -1 : Number(virtualCardHost.getChildCount()),\n" +
+            "            renderGeneration: Number(renderGeneration || 0),\n" +
+            "            atMs: Number(System.currentTimeMillis()),\n" +
+            "            called: false,\n" +
+            "            suppressed: false\n" +
+            "        };\n" +
+            "        scrollPerformanceState.fullRefreshSamples.push(fullRefreshSample);\n" +
+            "        while (scrollPerformanceState.fullRefreshSamples.length > 8) {\n" +
+            "            scrollPerformanceState.fullRefreshSamples.shift();\n" +
+            "        }\n",
+            "Stage16B4 sample capture");
+        value = replaceOnceStrict(value,
+            "            scrollPerformanceState.fullRefreshDuplicateSuppressedCount += 1;\n" +
+            "            return false;\n",
+            "            scrollPerformanceState.fullRefreshDuplicateSuppressedCount += 1;\n" +
+            "            fullRefreshSample.suppressed = true;\n" +
+            "            return false;\n",
+            "Stage16B4 sample suppressed");
+        value = replaceOnceStrict(value,
+            "        scrollPerformanceState.fullRefreshCallCount += 1;\n",
+            "        scrollPerformanceState.fullRefreshCallCount += 1;\n" +
+            "        fullRefreshSample.called = true;\n",
+            "Stage16B4 sample called");
+        source = replaceSection(source, info, value);
+
+        if (source.indexOf("MODULE_VERSION: 63") < 0 ||
+                source.indexOf("fullRefreshSamples") < 0 ||
+                source.indexOf("fullRefreshSample.called = true") < 0 ||
+                source.indexOf("fullRefreshSample.suppressed = true") < 0 ||
+                source.indexOf("holder.tagBadge[\"setTextColor(int)\"]") < 0 ||
+                source.indexOf("safeColorInt(newTags.length > 0") < 0) {
+            throw new Error("Stage16B4 wiring incomplete");
+        }
+        return source;
+    }
+'''
+          patch=patch.rstrip()+"\n\n"+stage4.strip()+"\n"
+          enc=base64.b64encode(patch.encode()).decode()
+          pieces=[enc[i:i+120] for i in range(0,len(enc),120)]
+          assignment='var PATCH_B64 =\n'+''.join('        '+json.dumps(p)+(' +\n' if i<len(pieces)-1 else ';\n') for i,p in enumerate(pieces))
+          loader=loader[:m.start()]+assignment+loader[m.end():]
+
+          start=loader.index('        var newEval =\n')
+          end=loader.index('        loader = replaceOnce(loader, oldEval, newEval, "baseline eval");',start)
+          new_block='''        var newEval =
+            patchSourceText() + "\\n" +
+            "    try {\\n" +
+            "        eval(transformStage16B4Source(\\n" +
+            "            transformStage16B3Source(\\n" +
+            "                transformStage16B2Source(\\n" +
+            "                    transformRecycleFixSource(\\n" +
+            "                        transformRecycleSource(\\n" +
+            "                            transformCardHolderSource(\\n" +
+            "                                transformSource(decodeSource(loadPackedSource())))))))));\\n";
+'''
+          loader=loader[:start]+new_block+loader[end:]
+          loader=loader.replace('/* ClipHub Stage 16B.3 atomic virtual clear and full-refresh dedupe ES5 loader. */','/* ClipHub Stage 16B.4 tag-color int rebind and full-refresh samples ES5 loader. */',1)
+          loader=loader.replace('?stage16b3v16=','?stage16b4v17=',1)
+          loader=loader.replace('ch_11_filter.js Stage 16B.3 loader failed:','ch_11_filter.js Stage 16B.4 loader failed:',1)
+          loader=loader.replace('ch_11_filter.js Stage 16B.3 wrapper failed:','ch_11_filter.js Stage 16B.4 wrapper failed:',1)
+          loader_path.write_text(loader,encoding='utf-8')
+
+          # Generate actual Filter63 for static validation.
+          baseline=subprocess.check_output(['git','show','338a811e538ab526b59eed05102d4f4b66f19953:src/ch_11_filter.js'],text=True)
+          s=baseline.index('    function replaceOnceStrict('); e=baseline.index('\n    try {',s)
+          pure=baseline[s:e]
+          packed=''.join(pathlib.Path(p).read_text(encoding='utf-8').strip() for p in sorted(glob.glob('stage-assets/pagination-stage9/ch11_full_v8s_*.b64')))
+          stable=gzip.decompress(base64.b64decode(packed)).decode('utf-8')
+          harness='var __source='+json.dumps(stable)+';\n'+pure+'\n'+patch+'\nvar __out=transformStage16B4Source(transformStage16B3Source(transformStage16B2Source(transformRecycleFixSource(transformRecycleSource(transformCardHolderSource(transformSource(__source)))))));\nrequire("fs").writeFileSync("/tmp/filter63.js",__out);\n'
+          pathlib.Path('/tmp/stage16b4_build.js').write_text(harness,encoding='utf-8')
+          subprocess.check_call(['node','/tmp/stage16b4_build.js'])
+          src=pathlib.Path('/tmp/filter63.js').read_text(encoding='utf-8')
+          if src.count('MODULE_VERSION: 63')!=1: raise SystemExit('Filter63 version mismatch')
+          if 'oldTagls' in src or 'newTagls' in src: raise SystemExit('tag typo remains in Filter63')
+          if 'holder.tagBadge["setTextColor(int)"](safeColorInt(' not in src: raise SystemExit('tag color int binding missing')
+          if 'fullRefreshSamples' not in src or 'fullRefreshSample.called = true' not in src or 'fullRefreshSample.suppressed = true' not in src: raise SystemExit('full refresh samples missing')
+          if 'while (scrollPerformanceState.fullRefreshSamples.length > 8)' not in src: raise SystemExit('sample cap missing')
+          if 'VIRTUAL_BEFORE_SCREENS = 3' not in src or 'VIRTUAL_AFTER_SCREENS = 5' not in src or 'VIRTUAL_UPDATE_DELAY_MS = 24' not in src: raise SystemExit('virtual constants changed')
+          if src.count('.newSingleThreadExecutor();')!=1: raise SystemExit('worker invariant changed')
+          if re.search(r'(^|[^A-Za-z0-9_])(let|const|class)[\s]+|=>',src): raise SystemExit('non-ES5 syntax in Filter63')
+          subprocess.check_call(['node','--check','/tmp/filter63.js'])
+          subprocess.check_call(['node','--check',str(loader_path)])
+
+          data=loader_path.read_bytes()
+          blob_sha=hashlib.sha1(('blob %d\0' % len(data)).encode()+data).hexdigest()
+          manifest['moduleSetVersion']='20260808.17'
+          found=False
+          for mod in manifest.get('modules',[]):
+              if mod.get('name')=='ch_11_filter.js':
+                  mod['sha']=blob_sha; found=True
+          if not found: raise SystemExit('filter manifest entry missing')
+          manifest_path.write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          print('Filter63 blob',blob_sha)
+          PY
+      - name: Commit Stage16B4 atomically
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          rm -f .github/stage16b4-diag-trigger.txt .github/stage16b4-fix-trigger.txt
+          rm -f .github/workflows/beta_stage16b4_diag.yml .github/workflows/beta_stage16b4_fix.yml
+          rm -f stage16b4_diag.txt
+          git add -A
+          git diff --cached --check
+          git commit -m "修复 Beta Holder 标签颜色并记录完整刷新序列"
+          git push
