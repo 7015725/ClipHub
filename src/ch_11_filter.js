@@ -1,4 +1,4 @@
-/* ClipHub Stage 12 same-range scroll fast-path ES5 loader. */
+/* ClipHub Stage 12 delta virtual-card window ES5 loader. */
 (function (global) {
     var File = Packages.java.io.File;
     var FIS = Packages.java.io.FileInputStream;
@@ -17,20 +17,20 @@
 
     var REF = "beta-pagination-stage10-20260808";
     var PARTS = [
-        "stage-assets/pagination-stage9/ch11_full_v6_00.b64",
-        "stage-assets/pagination-stage9/ch11_full_v6_01.b64",
-        "stage-assets/pagination-stage9/ch11_full_v6_02.b64",
-        "stage-assets/pagination-stage9/ch11_full_v6_03.b64",
-        "stage-assets/pagination-stage9/ch11_full_v6_04.b64",
-        "stage-assets/pagination-stage9/ch11_full_v6_05.b64",
-        "stage-assets/pagination-stage9/ch11_full_v6_06.b64",
-        "stage-assets/pagination-stage9/ch11_full_v6_07.b64"
+        "stage-assets/pagination-stage9/ch11_full_v7_00.b64",
+        "stage-assets/pagination-stage9/ch11_full_v7_01.b64",
+        "stage-assets/pagination-stage9/ch11_full_v7_02.b64",
+        "stage-assets/pagination-stage9/ch11_full_v7_03.b64",
+        "stage-assets/pagination-stage9/ch11_full_v7_04.b64",
+        "stage-assets/pagination-stage9/ch11_full_v7_05.b64",
+        "stage-assets/pagination-stage9/ch11_full_v7_06.b64",
+        "stage-assets/pagination-stage9/ch11_full_v7_07.b64"
     ];
     var PACKED_SHA256 =
-        "7b689e1ebec7b414dd3e055ae2919fe9a550a49d02f7a890bdb132b9d3f8a3de";
+        "2431f565d51588195b18cfd700c4361817c187edeb5a6a48bd5b0e96e4044641";
     var SOURCE_SHA256 =
-        "88e0accc4842ab4c873245a9e46c1fce0d9c4e920dc96624d0dac63c8a3a25fd";
-    var CACHE_NAME = "ch_11_filter_stage12_v6_full.b64";
+        "cea91a4d91ff90d7975dcb43b73e8260816e7e504be0c078fe4fa409ba3566cc";
+    var CACHE_NAME = "ch_11_filter_stage12_v7_delta_views_full.b64";
 
     function closeQuietly(value) {
         if (value !== null && value !== undefined) {
@@ -130,7 +130,7 @@
             connection = new URL(
                 "https://raw.githubusercontent.com/7015725/ClipHub/" +
                 encodePath(REF) + "/" + encodePath(path) +
-                "?stage12v6=" + Number(System.currentTimeMillis())
+                "?stage12v7=" + Number(System.currentTimeMillis())
             ).openConnection();
             connection.setConnectTimeout(10000);
             connection.setReadTimeout(30000);
