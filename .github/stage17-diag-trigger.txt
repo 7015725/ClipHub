@@ -1,1 +1,1 @@
-trigger=stage17-build-debug-v1
+trigger=stage17-build-fix-v1
