@@ -1,0 +1,270 @@
+/*
+ * ShortX 任务名称：ClipHub Beta 状态查询
+ * 作用：只读取 beta-pagination-stage10-20260808 分支运行实例状态，不改变浮窗显示状态。
+ * 同时将最近一次成功/失败结果覆盖保存到：
+ * /data/system/shortx_OYdazjKnxMzhQykL/ClipHub/cache/control_status_latest.json
+ * 运行环境：Rhino ES5。
+ */
+(function (global) {
+    var File = Packages.java.io.File;
+    var FIS = Packages.java.io.FileInputStream;
+    var ISR = Packages.java.io.InputStreamReader;
+    var BR = Packages.java.io.BufferedReader;
+    var SB = Packages.java.lang.StringBuilder;
+    var Thread = Packages.java.lang.Thread;
+    var System = Packages.java.lang.System;
+    var RAF = Packages.java.io.RandomAccessFile;
+    var FOS = Packages.java.io.FileOutputStream;
+    var OSW = Packages.java.io.OutputStreamWriter;
+    var BW = Packages.java.io.BufferedWriter;
+    var Intent = Packages.android.content.Intent;
+
+    var TASK_VERSION = 1;
+    var EXPECTED_SOURCE_REF = "beta-pagination-stage10-20260808";
+    var REQUIRED_ENDPOINT_SCHEMA = 3;
+    var MIN_ENTRY_VERSION = 6;
+
+    function now() { return Number(System.currentTimeMillis()); }
+
+    function close(value) {
+        if (value !== null && value !== undefined) {
+            try { value.close(); } catch (ignored) {}
+        }
+    }
+
+    function read(file) {
+        var reader = null;
+        var builder = new SB();
+        var line;
+        try {
+            reader = new BR(new ISR(new FIS(file), "UTF-8"));
+            while ((line = reader.readLine()) !== null) {
+                builder.append(line).append("\n");
+            }
+            return String(builder.toString());
+        } finally {
+            close(reader);
+        }
+    }
+
+    function ensureDir(file) {
+        if (!file.exists() && !file.mkdirs() && !file.isDirectory()) {
+            throw new Error("Cannot create directory: " + file.getAbsolutePath());
+        }
+        if (!file.isDirectory()) {
+            throw new Error("Not a directory: " + file.getAbsolutePath());
+        }
+        return file;
+    }
+
+    function writeUtf8Atomic(file, text) {
+        var parent = ensureDir(file.getParentFile());
+        var temp = new File(parent, file.getName() + ".tmp");
+        var writer = null;
+        try {
+            writer = new BW(new OSW(new FOS(temp, false), "UTF-8"));
+            writer.write(String(text));
+            writer.flush();
+        } finally {
+            close(writer);
+        }
+        if (file.exists() && !file.delete()) {
+            temp.delete();
+            throw new Error("Cannot replace file: " + file.getAbsolutePath());
+        }
+        if (!temp.renameTo(file)) {
+            temp.delete();
+            throw new Error("Cannot commit file: " + file.getAbsolutePath());
+        }
+        return true;
+    }
+
+    function lockFree(runtimeDir) {
+        var dataDir = ensureDir(new File(runtimeDir, "data"));
+        var raf = null;
+        var channel = null;
+        var handle = null;
+        try {
+            raf = new RAF(new File(dataDir, "cliphub.lock"), "rw");
+            channel = raf.getChannel();
+            handle = channel.tryLock();
+            return handle !== null;
+        } catch (error) {
+            if (String(error).indexOf("OverlappingFileLockException") >= 0) {
+                return false;
+            }
+            throw error;
+        } finally {
+            if (handle !== null) {
+                try { handle.release(); } catch (ignoredRelease) {}
+            }
+            close(channel);
+            close(raf);
+        }
+    }
+
+    function waitFor(predicate, timeoutMs) {
+        var started = now();
+        while (now() - started < timeoutMs) {
+            if (predicate()) { return true; }
+            Thread.sleep(25);
+        }
+        return predicate();
+    }
+
+    function containsCommand(commands, command) {
+        var index;
+        if (!commands || typeof commands.length !== "number") { return false; }
+        for (index = 0; index < commands.length; index += 1) {
+            if (String(commands[index]) === String(command)) { return true; }
+        }
+        return false;
+    }
+
+    function saveResult(cacheDir, result) {
+        var outputFile = new File(cacheDir, "control_status_latest.json");
+        try {
+            writeUtf8Atomic(outputFile, JSON.stringify(result, null, 2) + "\n");
+            result.statusFile = String(outputFile.getAbsolutePath());
+        } catch (ignoredWrite) {
+            result.statusFileError = String(ignoredWrite);
+        }
+        return result;
+    }
+
+    function main() {
+        var root = String(shortx.getShortXDir());
+        var runtimeDir = new File(root, "ClipHub");
+        var cacheDir = ensureDir(new File(runtimeDir, "cache"));
+        var endpointFile = new File(cacheDir, "control_endpoint.json");
+        var endpoint;
+        var requestId;
+        var ackFile;
+        var intent;
+        var ack = null;
+        var result;
+
+        if (lockFree(runtimeDir)) {
+            result = {
+                ok: false,
+                command: "status",
+                running: false,
+                taskVersion: TASK_VERSION,
+                expectedSourceRef: EXPECTED_SOURCE_REF,
+                error: "ClipHub 后台未运行，请先执行 Beta ClipHub.js"
+            };
+            return saveResult(cacheDir, result);
+        }
+
+        if (!endpointFile.isFile()) {
+            result = {
+                ok: false,
+                command: "status",
+                running: true,
+                taskVersion: TASK_VERSION,
+                expectedSourceRef: EXPECTED_SOURCE_REF,
+                error: "ClipHub control endpoint is missing"
+            };
+            return saveResult(cacheDir, result);
+        }
+
+        endpoint = JSON.parse(read(endpointFile));
+        if (!endpoint ||
+                String(endpoint.transport || "") !== "dynamic_broadcast_token" ||
+                String(endpoint.runtimeDir || "") !== String(runtimeDir.getAbsolutePath())) {
+            result = {
+                ok: false,
+                command: "status",
+                running: true,
+                taskVersion: TASK_VERSION,
+                expectedSourceRef: EXPECTED_SOURCE_REF,
+                error: "Invalid ClipHub control endpoint"
+            };
+            return saveResult(cacheDir, result);
+        }
+
+        if (Number(endpoint.schemaVersion || 0) < REQUIRED_ENDPOINT_SCHEMA ||
+                Number(endpoint.entryVersion || 0) < MIN_ENTRY_VERSION ||
+                !containsCommand(endpoint.commands, "status")) {
+            result = {
+                ok: false,
+                command: "status",
+                taskVersion: TASK_VERSION,
+                error: "ClipHub Beta 控制协议不支持 status",
+                endpointSchemaVersion: Number(endpoint.schemaVersion || 0),
+                entryVersion: Number(endpoint.entryVersion || 0),
+                moduleSetVersion: String(endpoint.moduleSetVersion || ""),
+                sourceRef: String(endpoint.sourceRef || "")
+            };
+            return saveResult(cacheDir, result);
+        }
+
+        if (String(endpoint.sourceRef || "") !== EXPECTED_SOURCE_REF) {
+            result = {
+                ok: false,
+                command: "status",
+                taskVersion: TASK_VERSION,
+                error: "当前运行实例不是 Beta 分支，已拒绝查询",
+                expectedSourceRef: EXPECTED_SOURCE_REF,
+                actualSourceRef: String(endpoint.sourceRef || ""),
+                moduleSetVersion: String(endpoint.moduleSetVersion || "")
+            };
+            return saveResult(cacheDir, result);
+        }
+
+        requestId = "beta-status-" + String(now()) + "-" +
+            Number(Thread.currentThread().getId());
+        ackFile = new File(cacheDir, "control_ack_" + requestId + ".json");
+        if (ackFile.exists()) { ackFile.delete(); }
+
+        intent = new Intent(String(endpoint.action));
+        intent.putExtra("runtimeDir", String(runtimeDir.getAbsolutePath()));
+        intent.putExtra("command", "status");
+        intent.putExtra("requestId", requestId);
+        intent.putExtra("controlToken", String(endpoint.token));
+        global.context.sendBroadcast(intent);
+
+        waitFor(function () { return ackFile.isFile(); }, 3000);
+        if (ackFile.isFile()) {
+            try {
+                ack = JSON.parse(read(ackFile));
+            } finally {
+                ackFile.delete();
+            }
+        }
+
+        if (ack === null) {
+            result = {
+                ok: false,
+                command: "status",
+                running: true,
+                taskVersion: TASK_VERSION,
+                expectedSourceRef: EXPECTED_SOURCE_REF,
+                actualSourceRef: String(endpoint.sourceRef || ""),
+                moduleSetVersion: String(endpoint.moduleSetVersion || ""),
+                error: "ClipHub Beta status 回执超时"
+            };
+            return saveResult(cacheDir, result);
+        }
+
+        ack.taskVersion = TASK_VERSION;
+        ack.expectedSourceRef = EXPECTED_SOURCE_REF;
+        ack.endpointSourceRef = String(endpoint.sourceRef || "");
+        ack.endpointModuleSetVersion = String(endpoint.moduleSetVersion || "");
+        return saveResult(cacheDir, ack);
+    }
+
+    try {
+        global.ClipHubBetaStatusResult = main();
+    } catch (error) {
+        global.ClipHubBetaStatusResult = {
+            ok: false,
+            command: "status",
+            taskVersion: TASK_VERSION,
+            expectedSourceRef: EXPECTED_SOURCE_REF,
+            error: String(error)
+        };
+    }
+}((function () { return this; }())));
+
+JSON.stringify(ClipHubBetaStatusResult);
