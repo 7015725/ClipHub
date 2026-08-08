@@ -30,12 +30,10 @@ def extract_builder():
             line = line[10:]
         lines.append(line)
     script = '\n'.join(lines) + '\n'
-    old = (
-        '    function stage17DecodeText(encoded) {\n'
-        '        return String(new JavaString(\n'
-        '            Base64.decode(String(encoded), Base64.DEFAULT), "UTF-8"));\n'
-        '    }\n'
-    )
+    start = script.find('    function stage17DecodeText(encoded) {')
+    end = script.find('\n    function transformStage17Source(source) {', start)
+    if start < 0 or end < 0:
+        raise RuntimeError('Stage17 decode function bounds missing')
     new = (
         '    function stage17DecodeText(encoded) {\n'
         '        if (typeof Buffer !== "undefined") {\n'
@@ -45,10 +43,7 @@ def extract_builder():
         '            Base64.decode(String(encoded), Base64.DEFAULT), "UTF-8"));\n'
         '    }\n'
     )
-    count = script.count(old)
-    if count != 1:
-        raise RuntimeError('Stage17 decode anchor mismatch: %d' % count)
-    return script.replace(old, new, 1)
+    return script[:start] + new.rstrip('\n') + script[end:]
 
 
 def restore_runtime_files():
