@@ -1,1 +1,1 @@
-trigger=stage17-diag-v1
+trigger=stage17-diag-v2
