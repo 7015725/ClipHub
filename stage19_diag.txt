@@ -129,6 +129,73 @@
     }
 
 
+===== insertVirtualEntryAt =====
+    function insertVirtualEntryAt(index, row, colors, signature) {
+        var params = new LinearLayout.LayoutParams(
+  LinearLayout.LayoutParams.MATCH_PARENT,
+  LinearLayout.LayoutParams.WRAP_CONTENT);
+        var wrapper;
+        var cardRef;
+        var actionRef;
+        var holderRef;
+        params.bottomMargin = dp(6);
+        wrapper = makeResultCard(row, colors);
+        cardRef = resultCardViews.pop();
+        holderRef = resultCardHolders.pop();
+        actionRef = resultActionViews.pop();
+        virtualCardHost.addView(wrapper, index, params);
+        virtualRenderedItemIds.splice(index, 0, Number(row.id));
+        virtualRenderedSignatures.splice(index, 0, signature);
+        resultCardViews.splice(index, 0, cardRef);
+        resultCardHolders.splice(index, 0, holderRef);
+        resultActionViews.splice(index, 0, actionRef);
+        scrollPerformanceState.createdViewCount += 1;
+        scrollPerformanceState.structuralInsertCount += 1;
+        scrollPerformanceState.signatureRebuildCount += 1;
+        return true;
+    }
+
+
+===== removeVirtualEntryAt =====
+    function removeVirtualEntryAt(index) {
+        virtualCardHost.removeViewAt(index);
+        virtualRenderedItemIds.splice(index, 1);
+        virtualRenderedSignatures.splice(index, 1);
+        resultCardViews.splice(index, 1);
+        resultCardHolders.splice(index, 1);
+        resultActionViews.splice(index, 1);
+        scrollPerformanceState.removedViewCount += 1;
+        scrollPerformanceState.structuralRemoveCount += 1;
+        return true;
+    }
+
+
+===== moveVirtualEntry =====
+    function moveVirtualEntry(fromIndex, toIndex) {
+        var wrapper = virtualCardHost.getChildAt(fromIndex);
+        var params = wrapper.getLayoutParams();
+        var itemId = virtualRenderedItemIds[fromIndex];
+        var signature = virtualRenderedSignatures[fromIndex];
+        var cardRef = resultCardViews[fromIndex];
+        var holderRef = resultCardHolders[fromIndex];
+        var actionRef = resultActionViews[fromIndex];
+        virtualCardHost.removeViewAt(fromIndex);
+        virtualRenderedItemIds.splice(fromIndex, 1);
+        virtualRenderedSignatures.splice(fromIndex, 1);
+        resultCardViews.splice(fromIndex, 1);
+        resultCardHolders.splice(fromIndex, 1);
+        resultActionViews.splice(fromIndex, 1);
+        virtualCardHost.addView(wrapper, toIndex, params);
+        virtualRenderedItemIds.splice(toIndex, 0, itemId);
+        virtualRenderedSignatures.splice(toIndex, 0, signature);
+        resultCardViews.splice(toIndex, 0, cardRef);
+        resultCardHolders.splice(toIndex, 0, holderRef);
+        resultActionViews.splice(toIndex, 0, actionRef);
+        scrollPerformanceState.movedViewCount += 1;
+        return true;
+    }
+
+
 ===== startStagedAjaxAttach =====
     function startStagedAjaxAttach(generation, appendedRows, colors) {
         var range;
@@ -934,7 +1001,14 @@
 ===== OCCURRENCES startStagedAjaxAttach( =====
 
 --- 1 ---
-VisibleIndex = Number(range.first);
+           resultActionViews.pop();
+        }
+        removedCount = removeTop + removeBottom;
+        retainedCount = Number(virtualCardHost.getChildCount());
+        ajaxStagedAttachState.targetStart = Number(range.start);
+        ajaxStagedAttachState.targetEnd = Number(range.end);
+        ajaxStagedAttachState.nextIndex = Number(range.start) + retainedCount;
+        ajaxStagedAttachState.startVisibleIndex = Number(range.first);
         pendingCount = Math.max(0,
             Number(range.end) - Number(ajaxStagedAttachState.nextIndex) + 1);
         virtualState.firstVisibleIndex = Number(range.first);
@@ -1055,612 +1129,6 @@ VisibleIndex = Number(range.first);
         measureVirtualCards();
         restoreScrollAnchor();
         ajaxFooterState.lastScrollYAfterAppend =
-   
-
---- 2 ---
-Math.min(context.rows.length,
-            context.index + RENDER_BATCH_COUNT);
-        for (index = context.index; index < end;
-                index += 1) {
-            params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-            params.bottomMargin = dp(6);
-            resultContainer.addView(makeResultCard(
-                context.rows[index],
-                context.colors), params);
-        }
-        context.index = end;
-        ajaxFooterState.renderBatchCount += 1;
-        if (context.index < context.rows.length) {
-            if (context.synchronous === true) {
-                return true;
-            }
-            if (mainHandler !== null) {
-                mainHandler.post(
-                    new Packages.java.lang.Runnable({
-                        run: function () {
-                            renderAjaxAppendBatch(context);
-                        }
-                    }));
-                return true;
-            }
-        }
-        return finishAjaxAppendRender(
-            context.generation,
-            context.rows,
-            context.colors);
-    }
-
-    function startAjaxAppendRender(appendedRows) {
-        var colors = palette();
-        captureScrollAnchor();
-        if (loadMoreView !== null) {
-            try {
-                if (loadMoreView.getParent() !== null) {
-                    loadMoreView.getParent()
-                        .removeView(loadMoreView);
-                }
-            } catch (ignoredFooterRemove) {}
-        }
-        loadMoreView = null;
-        cancelStagedAjaxAttach("superseded_ajax");
-        ajaxAppendGeneration += 1;
-        ajaxFooterState.loading = true;
-        ajaxFooterState.renderBatchCount += 1;
-        if (startStagedAjaxAttach(
-                ajaxAppendGeneration, appendedRows, colors)) {
-            return true;
-        }
-        rebuildVirtualWindow(
-            "ajax_append", false,
-            virtualState.firstVisibleIndex);
-        return finishAjaxAppendRender(
-            ajaxAppendGeneration,
-            appendedRows, colors);
-    }
-    function loadMoreResults(origin) {
-        var pageResult;
-        var lazyOrigin;
-        origin = String(origin || "footer_click");
-        lazyOrigin = origin !== "footer_click";
-        if (!state.panelAttached ||
-                paginationState.mode !== "ajax" ||
-                !paginationState.hasMore) {
-            if (!lazyOrigin) {
-                ajaxFooterState.blockedClickCount += 1;
-            }
-            return false;
-        }
-        if (ajaxFooterState.loading) {
-            if (!lazyOrigin) {
-                ajaxFooterState.blockedClickCount += 1;
-            }
-            return false;
-        }
-        if (!lazyOrigin) {
-            ajaxFooterState.clickCount += 1;
-        }
-        ajaxFooterState.loading = true;
-        ajaxFooterState.lastError = null;
-        ajaxFooterState.lastScrollYBeforeAppend =
-            currentResultScrollY();
-        appendLoadMoreControl(palette());
-        try {
-            pageResult = loadPaginationPageInternal({
-                append: true,
-                includeTotal: false
-            });
-            return startAjaxAppendRender(
-                pageResult.appendedRows);
-        } catch (error) {
-            ajaxFooterState.loading = false;
-            ajaxFooterState.lastError =
-                String(error);
-            if (lazyOrigin) {
-                lazyLoadState.pending = false;
-                lazyLoadState.failureCount += 1;
-                lazyLoadState.lastError =
-                    String(error);
-            }
-            appendLoadMoreControl(palette());
-            state.lastError = String(error);
-            return false;
-        }
-    }
-
-    function removePaginationFooterViews() {
-        var parent;
-        if (loadMoreView !== null) {
-            try {
-                parent = loadMoreView.getParent();
-                if (parent !== null) {
-                    parent.removeView(loadMoreView);
-                }
-            } catch (ignoredRemoveLoadMore) {}
-        }
-        if (numberPagerView !== null) {
-            try {
-                parent = numberPagerView.getParent();
-                if (parent !== null) {
-                    parent.removeView(numberPagerView);
-                }
-            } catch (ignoredRemoveNumberPager) {}
-        }
-        loadMoreView = null;
-        numberPagerView = null;
-        numberPageViews = {};
-        numberActionViews = {};
-        return true;
-    }
-
-    function calculatePageButtons(currentPage, totalPages) {
-        var current = Math.max(1,
-            Math.floor(Number(currentPage || 1)));
-        var total = Math.max(0,
-            Math.floor(Number(totalPages || 0)));
-        var start;
-        var end;
-        var page;
-        var output = [];
-        if (total <= 0) { return output; }
-        current = Math.min(current, total);
-        if (total <= 7) {
-            for (page = 1; page <= total; page += 1) {
-                output.push({
-                    type: "page",
-                    page: page,
-                    label: String(page)
-                });
-            }
-            return output;
-        }
-        output.push({
-            type: "page",
-            page: 1,
-            label: "1"
-        });
-        start = Math.max(2, current - 2);
-        end = Math.min(total - 1, current + 2);
-        if (end - start + 1 < 5) {
-            if (start === 2) {
-                end = Math.min(total - 1, start + 4);
-            } else if (end === total - 1) {
-                start = Math.max(2, end - 4);
-            }
-        }
-        if (start > 2) {
-            output.push({
-                type: "ellipsis",
-                page: null,
-                label: "…"
-            });
-        }
-        for (page = start; page <= end; page += 1) {
-            output.push({
-                type: "page",
-                page: page,
-                labe
-
-===== OCCURRENCES ajax_append =====
-
---- 1 ---
-  mainHandler.post(runnable);
-        } else {
-            mainHandler.postDelayed(runnable,
-                Math.max(0, Number(delayMs || 0)));
-        }
-        return true;
-    }
-    function finishStagedAjaxAttach(generation) {
-        var rows;
-        var colors;
-        var deferredOrigin;
-        var deferredForce;
-        var totalElapsed;
-        var result;
-        if (ajaxStagedAttachState.active !== true ||
-                Number(ajaxStagedAttachState.generation) !== Number(generation) ||
-                Number(ajaxAppendGeneration) !== Number(generation) ||
-                !state.panelAttached) {
-            return false;
-        }
-        rows = ajaxStagedAttachState.appendedRows;
-        colors = ajaxStagedAttachState.colors;
-        deferredOrigin = String(ajaxStagedAttachState.deferredOrigin || "");
-        deferredForce = ajaxStagedAttachState.deferredForce === true;
-        totalElapsed = Math.max(0, Number(System.currentTimeMillis()) -
-            Number(ajaxStagedAttachState.startedAtMs));
-        ajaxStagedAttachState.active = false;
-        ajaxStagedAttachState.colors = null;
-        ajaxStagedAttachState.appendedRows = null;
-        ajaxStagedAttachState.deferredOrigin = "";
-        ajaxStagedAttachState.deferredForce = false;
-        scrollPerformanceState.stagedAttachPendingCount = 0;
-        scrollPerformanceState.stagedAttachRetargetPendingCount = 0;
-        scrollPerformanceState.stagedAttachCompletedCount += 1;
-        scrollPerformanceState.stagedAttachLastTotalMs = totalElapsed;
-        scrollPerformanceState.stagedAttachMaxTotalMs = Math.max(
-            Number(scrollPerformanceState.stagedAttachMaxTotalMs), totalElapsed);
-        virtualState.updateCount += 1;
-        virtualState.rebuildCount += 1;
-        virtualState.lastOrigin = "ajax_append_staged";
-        virtualState.lastError = null;
-        virtualState.updateDeferred = false;
-        state.resultCardCount = virtualCardHost === null ? 0 :
-            Number(virtualCardHost.getChildCount());
-        result = finishAjaxAppendRender(generation, rows, colors);
-        if (deferredOrigin.length > 0 && state.panelAttached &&
-                mainHandler !== null) {
-            scheduleVirtualUpdate(deferredOrigin, deferredForce);
-        }
-        return result;
-    }
-
-    function recoverStagedAjaxAttach(generation, reason) {
-        var rows = ajaxStagedAttachState.appendedRows;
-        var colors = ajaxStagedAttachState.colors;
-        if (Number(generation) !== Number(ajaxAppendGeneration)) {
-            cancelStagedAjaxAttach(reason);
-            return false;
-        }
-        cancelStagedAjaxAttach(reason);
-        if (!state.panelAttached) { return false; }
-        rebuildVirtualWindow(
-            "ajax_append_recover", true,
-            virtualState.firstVisibleIndex);
-        return finishAjaxAppendRender(generation, rows, colors);
-    }
-
-    function runStagedAjaxAttachBatch(generation) {
-        var startedAt;
-        var elapsed = 0;
-        var batchCards = 0;
-        var index;
-        var params;
-        var wrapper;
-        var cardRef;
-        var holderRef;
-        var actionRef;
-        if (ajaxStagedAttachState.active !== true ||
-                Number(ajaxStagedAttachState.generation) !== Number(generation)) {
-            return false;
-        }
-        if (Number(ajaxAppendGeneration) !== Number(generation)) {
-            cancelStagedAjaxAttach("stale_generation");
-            return false;
-        }
-        if (!state.panelAttached || virtualCardHost === null) {
-            cancelStagedAjaxAttach("panel_detached");
-            return false;
-        }
-        startedAt = Number(System.currentTimeMillis());
-        while (Number(ajaxStagedAttachState.nextIndex) <=
-                Number(ajaxStagedAttachState.targetEnd)) {
-            index = Number(ajaxStagedAttachState.nextIndex);
-            if (index < 0 || index >= previewRows.length ||
-                    previewRows[index] === null ||
-                    previewRows[index] === undefined) {
-                return recoverStagedAjaxAttach(
-                    generation, "row_missing");
-            }
-            params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-            params.bottomMargin = dp(6);
-            wrapper = makeResultCard(previewRows[index],
-                ajaxStagedAttachState.colors);
-            cardRef = resultCardViews.pop();
-            holderRef = resultCardHolders.pop();
-            actionRef = resultActionViews.pop();
-            virtualCardHost.addView(wrapper, params);
-            resultCardViews.push(cardRef);
-            resultCardHolders.push(holderRef);
-            resultActionViews.push(actionRef);
-            virtualRenderedItemIds.push(Number(previewRows[index].id));
-            virtualRenderedSignatures.push(virtualRenderSignature(
-                previewRows[index], ajaxStagedAttachState.colors));
-            scrollPerformanceState.createdViewCount += 1;
-            scrollPerformanceState.structuralInsertCount += 1;
-            scrollPerformanceState.stagedAttachCardCount += 1;
-            ajaxStagedAttachState.nextIndex = index + 1;
-            batchCards += 1;
-            elapsed = Math.max(0, Number(System.currentTimeMillis()) - startedAt);
-            if (batchCards >= AJAX_STAGED_ATTACH_MAX_CARDS_PER_BATCH ||
-                    elapsed >= AJAX_STAGED_ATTACH_BUDGET_MS) {
-                break;
-            }
-        }
-        elapsed = Math.max(0, Number(System.currentTimeMillis()) - startedAt);
-        scrollPerformanceState.stagedAttachBatchCount += 1;
-        scrollPerformanceState.stagedAttachLastBatchMs = elapsed;
-        scrollPerformanceState.stagedAttachMaxBatchMs = Math.max(
-            Number(scrollPerformanceState.stagedAttachMaxBatchMs), elapsed);
-        scrollPerformanceState.stagedAttachLastBatchCards = batchCards;
-        scrollPerformanceState.stagedAttachMaxCardsPe
-
---- 2 ---
-em.currentTimeMillis()) -
-            Number(ajaxStagedAttachState.startedAtMs));
-        ajaxStagedAttachState.active = false;
-        ajaxStagedAttachState.colors = null;
-        ajaxStagedAttachState.appendedRows = null;
-        ajaxStagedAttachState.deferredOrigin = "";
-        ajaxStagedAttachState.deferredForce = false;
-        scrollPerformanceState.stagedAttachPendingCount = 0;
-        scrollPerformanceState.stagedAttachRetargetPendingCount = 0;
-        scrollPerformanceState.stagedAttachCompletedCount += 1;
-        scrollPerformanceState.stagedAttachLastTotalMs = totalElapsed;
-        scrollPerformanceState.stagedAttachMaxTotalMs = Math.max(
-            Number(scrollPerformanceState.stagedAttachMaxTotalMs), totalElapsed);
-        virtualState.updateCount += 1;
-        virtualState.rebuildCount += 1;
-        virtualState.lastOrigin = "ajax_append_staged";
-        virtualState.lastError = null;
-        virtualState.updateDeferred = false;
-        state.resultCardCount = virtualCardHost === null ? 0 :
-            Number(virtualCardHost.getChildCount());
-        result = finishAjaxAppendRender(generation, rows, colors);
-        if (deferredOrigin.length > 0 && state.panelAttached &&
-                mainHandler !== null) {
-            scheduleVirtualUpdate(deferredOrigin, deferredForce);
-        }
-        return result;
-    }
-
-    function recoverStagedAjaxAttach(generation, reason) {
-        var rows = ajaxStagedAttachState.appendedRows;
-        var colors = ajaxStagedAttachState.colors;
-        if (Number(generation) !== Number(ajaxAppendGeneration)) {
-            cancelStagedAjaxAttach(reason);
-            return false;
-        }
-        cancelStagedAjaxAttach(reason);
-        if (!state.panelAttached) { return false; }
-        rebuildVirtualWindow(
-            "ajax_append_recover", true,
-            virtualState.firstVisibleIndex);
-        return finishAjaxAppendRender(generation, rows, colors);
-    }
-
-    function runStagedAjaxAttachBatch(generation) {
-        var startedAt;
-        var elapsed = 0;
-        var batchCards = 0;
-        var index;
-        var params;
-        var wrapper;
-        var cardRef;
-        var holderRef;
-        var actionRef;
-        if (ajaxStagedAttachState.active !== true ||
-                Number(ajaxStagedAttachState.generation) !== Number(generation)) {
-            return false;
-        }
-        if (Number(ajaxAppendGeneration) !== Number(generation)) {
-            cancelStagedAjaxAttach("stale_generation");
-            return false;
-        }
-        if (!state.panelAttached || virtualCardHost === null) {
-            cancelStagedAjaxAttach("panel_detached");
-            return false;
-        }
-        startedAt = Number(System.currentTimeMillis());
-        while (Number(ajaxStagedAttachState.nextIndex) <=
-                Number(ajaxStagedAttachState.targetEnd)) {
-            index = Number(ajaxStagedAttachState.nextIndex);
-            if (index < 0 || index >= previewRows.length ||
-                    previewRows[index] === null ||
-                    previewRows[index] === undefined) {
-                return recoverStagedAjaxAttach(
-                    generation, "row_missing");
-            }
-            params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-            params.bottomMargin = dp(6);
-            wrapper = makeResultCard(previewRows[index],
-                ajaxStagedAttachState.colors);
-            cardRef = resultCardViews.pop();
-            holderRef = resultCardHolders.pop();
-            actionRef = resultActionViews.pop();
-            virtualCardHost.addView(wrapper, params);
-            resultCardViews.push(cardRef);
-            resultCardHolders.push(holderRef);
-            resultActionViews.push(actionRef);
-            virtualRenderedItemIds.push(Number(previewRows[index].id));
-            virtualRenderedSignatures.push(virtualRenderSignature(
-                previewRows[index], ajaxStagedAttachState.colors));
-            scrollPerformanceState.createdViewCount += 1;
-            scrollPerformanceState.structuralInsertCount += 1;
-            scrollPerformanceState.stagedAttachCardCount += 1;
-            ajaxStagedAttachState.nextIndex = index + 1;
-            batchCards += 1;
-            elapsed = Math.max(0, Number(System.currentTimeMillis()) - startedAt);
-            if (batchCards >= AJAX_STAGED_ATTACH_MAX_CARDS_PER_BATCH ||
-                    elapsed >= AJAX_STAGED_ATTACH_BUDGET_MS) {
-                break;
-            }
-        }
-        elapsed = Math.max(0, Number(System.currentTimeMillis()) - startedAt);
-        scrollPerformanceState.stagedAttachBatchCount += 1;
-        scrollPerformanceState.stagedAttachLastBatchMs = elapsed;
-        scrollPerformanceState.stagedAttachMaxBatchMs = Math.max(
-            Number(scrollPerformanceState.stagedAttachMaxBatchMs), elapsed);
-        scrollPerformanceState.stagedAttachLastBatchCards = batchCards;
-        scrollPerformanceState.stagedAttachMaxCardsPerBatch = Math.max(
-            Number(scrollPerformanceState.stagedAttachMaxCardsPerBatch),
-            batchCards);
-        scrollPerformanceState.stagedAttachPendingCount = Math.max(0,
-            Number(ajaxStagedAttachState.targetEnd) -
-            Number(ajaxStagedAttachState.nextIndex) + 1);
-        scrollPerformanceState.viewRebuildLastMs = elapsed;
-        scrollPerformanceState.viewRebuildMaxMs = Math.max(
-            Number(scrollPerformanceState.viewRebuildMaxMs), elapsed);
-        virtualState.firstRenderedIndex =
-            Number(ajaxStagedAttachState.targetStart);
-        virtualState.lastRenderedIndex = Math.max(
-            Number(ajaxStagedAttachState.targetStart) - 1,
-            Number(ajaxStagedAttachState.nextIndex) - 1);
-        virtualState.topSpacerPx = setVirtualSpacerHeight(
-            virtualTopSpacer, virtualHeightRange(0,
-                virtualState.firstRenderedIndex));
-        virtualState.bottomS
-
---- 3 ---
-ax(0, Number(System.currentTimeMillis()) - startedAt);
-        scrollPerformanceState.stagedAttachBatchCount += 1;
-        scrollPerformanceState.stagedAttachLastBatchMs = elapsed;
-        scrollPerformanceState.stagedAttachMaxBatchMs = Math.max(
-            Number(scrollPerformanceState.stagedAttachMaxBatchMs), elapsed);
-        scrollPerformanceState.stagedAttachLastBatchCards = batchCards;
-        scrollPerformanceState.stagedAttachMaxCardsPerBatch = Math.max(
-            Number(scrollPerformanceState.stagedAttachMaxCardsPerBatch),
-            batchCards);
-        scrollPerformanceState.stagedAttachPendingCount = Math.max(0,
-            Number(ajaxStagedAttachState.targetEnd) -
-            Number(ajaxStagedAttachState.nextIndex) + 1);
-        scrollPerformanceState.viewRebuildLastMs = elapsed;
-        scrollPerformanceState.viewRebuildMaxMs = Math.max(
-            Number(scrollPerformanceState.viewRebuildMaxMs), elapsed);
-        virtualState.firstRenderedIndex =
-            Number(ajaxStagedAttachState.targetStart);
-        virtualState.lastRenderedIndex = Math.max(
-            Number(ajaxStagedAttachState.targetStart) - 1,
-            Number(ajaxStagedAttachState.nextIndex) - 1);
-        virtualState.topSpacerPx = setVirtualSpacerHeight(
-            virtualTopSpacer, virtualHeightRange(0,
-                virtualState.firstRenderedIndex));
-        virtualState.bottomSpacerPx = setVirtualSpacerHeight(
-            virtualBottomSpacer, virtualHeightRange(
-                virtualState.lastRenderedIndex + 1, previewRows.length));
-        state.resultCardCount = Number(virtualCardHost.getChildCount());
-        if (elapsed > 32) {
-            scrollPerformanceState.slowRebuildCount += 1;
-            scrollPerformanceState.slowRebuildSamples.push({
-                origin: "ajax_append_stage",
-                force: false,
-                mode: "staged",
-                elapsedMs: elapsed,
-                rangeStart: Number(ajaxStagedAttachState.targetStart),
-                rangeEnd: Number(ajaxStagedAttachState.targetEnd),
-                oldCount: Math.max(0, Number(virtualCardHost.getChildCount()) - batchCards),
-                newCount: Number(virtualCardHost.getChildCount()),
-                created: batchCards,
-                removed: 0,
-                reused: 0,
-                recycled: 0,
-                newBuilt: batchCards,
-                measureMs: 0,
-                keyedMs: 0,
-                signatureMs: 0,
-                structureMs: elapsed
-            });
-            while (scrollPerformanceState.slowRebuildSamples.length > 8) {
-                scrollPerformanceState.slowRebuildSamples.shift();
-            }
-        }
-        if (Number(ajaxStagedAttachState.nextIndex) <=
-                Number(ajaxStagedAttachState.targetEnd)) {
-            if (!postStagedAjaxAttachBatch(
-                    generation, AJAX_STAGED_ATTACH_DELAY_MS)) {
-                return recoverStagedAjaxAttach(
-                    generation, "post_failed");
-            }
-            return true;
-        }
-        return finishStagedAjaxAttach(generation);
-    }
-
-    function preemptStagedAjaxAttachForScroll(origin, force, preferredIndex) {
-        var requestedOrigin = String(origin || "virtual_rebuild");
-        var range;
-        var threshold;
-        var pendingStart;
-        var pendingEnd;
-        var overlapStart;
-        var overlapEnd;
-        var overlapPending;
-        var avoided;
-        var hydration;
-        var oldCount;
-        var oldStart;
-        var oldEnd;
-        var removeTop;
-        var removeBottom;
-        var removeIndex;
-        var removedCount;
-        var retainedCount;
-        var pendingCount;
-        var generation;
-        if (ajaxStagedAttachState.active !== true ||
-                requestedOrigin !== "result_scroll") {
-            return false;
-        }
-        range = virtualTargetRange(preferredIndex);
-        threshold = Math.max(1, Number(virtualState.visibleCount || 1));
-        if (Number(range.first) <=
-                Number(ajaxStagedAttachState.startVisibleIndex) ||
-                Number(range.first) -
-                Number(ajaxStagedAttachState.startVisibleIndex) < threshold) {
-            return false;
-        }
-        if (virtualCardHost === null || !state.panelAttached ||
-                Number(range.start) < Number(virtualState.firstRenderedIndex)) {
-            return false;
-        }
-        oldCount = Number(virtualCardHost.getChildCount());
-        if (virtualRenderedItemIds.length !== oldCount ||
-                virtualRenderedSignatures.length !== oldCount ||
-                resultCardViews.length !== oldCount ||
-                resultCardHolders.length !== oldCount ||
-                resultActionViews.length !== oldCount) {
-            return false;
-        }
-        hydration = hydrateDataWindowRange(
-            range.start, range.end, "result_scroll_retarget_hydrate");
-        if (hydration.pending === true &&
-                hydration.requiresRows === true) {
-            deferVirtualUpdateDuringStagedAttach(origin, force);
-            return true;
-        }
-        dehydrateDataWindowOutside(
-            range.start, range.end, "result_scroll_retarget_dehydrate");
-        generation = Number(ajaxStagedAttachState.generation);
-        pendingStart = Number(ajaxStagedAttachState.nextIndex);
-        pendingEnd = Number(ajaxStagedAttachState.targetEnd);
-        overlapStart = Math.max(pendingStart, Number(range.start));
-        overlapEnd = Math.min(pendingEnd, Number(range.end));
-        overlapPending = overlapEnd >= overlapStart ?
-            overlapEnd - overlapStart + 1 : 0;
-        avoided = Math.max(0,
-            pendingEnd - pendingStart + 1 - overlapPending);
-        oldStart = Number(virtualState.firstRenderedIndex);
-        oldEnd = oldCount > 0 ? oldStart + oldCount - 1 : oldStart - 1;
-        removeTop = Math.min(oldCount,
-            Math.max(0, Number(range.start) - oldStart));
-        for (removeIndex = 0; removeInde
-
---- 4 ---
-ollPerformanceState.stagedAttachFallbackCount += 1;
-            return false;
-        }
-        return true;
-    }
-
-    function finishAjaxAppendRender(generation,
-            appendedRows, colors) {
-        if (generation !== ajaxAppendGeneration ||
-                !state.panelAttached) {
-            return false;
-        }
-        ajaxFooterState.loading = false;
-        ajaxFooterState.successCount += 1;
-        ajaxFooterState.appendedRowCount +=
-            appendedRows.length;
-        measureVirtualCards();
-        restoreScrollAnchor();
-        ajaxFooterState.lastScrollYAfterAppend =
             currentResultScrollY();
         ajaxFooterState.positionPreserved =
             Number(ajaxFooterState
@@ -1687,28 +1155,10 @@ ollPerformanceState.stagedAttachFallbackCount += 1;
         updateQuickResetView();
         attachDeleteUndoBanner();
         updateResultScrollState();
-        if (lazyLoadState.pending) {
-            lazyLoadState.pending = false;
-            lazyLoadState.successCount += 1;
-            lazyLoadState.lastError = null;
-        }
-        scheduleNextPagePrefetch(
-            "ajax_append_complete");
-        if (mainHandler !== null) {
-            mainHandler.post(new Packages.java.lang.Runnable({
-                run: function () {
-                    if (!state.panelAttached) { return; }
-                    measureVirtualCards();
-                    restoreScrollAnchor();
-                    captureScrollAnchor();
-                    ajaxFooterState.lastScrollYAfterAppend =
-                        currentResultScrollY();
-                    ajaxFooterState.positionPreserved =
-                        Number(ajaxFooterState
-                            .lastScrollYBeforeAppend) ===
-                        Number(ajaxFooterState
-                            .lastScrollYAfterAppend);
-                }
+        if (lazyLoadState.pe
+
+--- 2 ---
+   }
             }));
         }
         return true;
@@ -1729,93 +1179,6 @@ ollPerformanceState.stagedAttachFallbackCount += 1;
         for (index = context.index; index < end;
                 index += 1) {
             params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-            params.bottomMargin = dp(6);
-            resultContainer.addView(makeResultCard(
-                context.rows[index],
-                context.colors), params);
-        }
-        context.index = end;
-        ajaxFooterState.renderBatchCount += 1;
-        if (context.index < context.rows.length) {
-            if (context.synchronous === true) {
-                return true;
-            }
-            if (mainHandler !== null) {
-                mainHandler.post(
-                    new Packages.java.lang.Runnable({
-                        run: function () {
-                            renderAjaxAppendBatch(context);
-                        }
-                    }));
-                return true;
-            }
-        }
-        return finishAjaxAppendRender(
-            context.generation,
-            context.rows,
-            context.colors);
-    }
-
-    function startAjaxAppendRender(appendedRows) {
-        var colors = palette();
-        captureScrollAnchor();
-        if (loadMoreView !== null) {
-            try {
-                if (loadMoreView.getParent() !== null) {
-                    loadMoreView.getParent()
-                        .removeView(loadMoreView);
-                }
-            } catch (ignoredFooterRemove) {}
-        }
-        loadMoreView = null;
-        cancelStagedAjaxAttach("superseded_ajax");
-        ajaxAppendGeneration += 1;
-        ajaxFooterState.loading = true;
-        ajaxFooterState.renderBatchCount += 1;
-        if (startStagedAjaxAttach(
-                ajaxAppendGeneration, appendedRows, colors)) {
-            return true;
-        }
-        rebuildVirtualWindow(
-            "ajax_append", false,
-            virtualState.firstVisibleIndex);
-        return finishAjaxAppendRender(
-            ajaxAppendGeneration,
-            appendedRows, colors);
-    }
-    function loadMoreResults(origin) {
-        var pageResult;
-        var lazyOrigin;
-        origin = String(origin || "footer_click");
-        lazyOrigin = origin !== "footer_click";
-        if (!state.panelAttached ||
-                paginationState.mode !== "ajax" ||
-                !paginationState.hasMore) {
-            if (!lazyOrigin) {
-                ajaxFooterState.blockedClickCount += 1;
-            }
-            return false;
-        }
-        if (ajaxFooterState.loading) {
-            if (!lazyOrigin) {
-                ajaxFooterState.blockedClickCount += 1;
-            }
-            return false;
-        }
-        if (!lazyOrigin) {
-            ajaxFooterState.clickCount += 1;
-        }
-        ajaxFooterState.loading = true;
-        ajaxFooterState.lastError = null;
-        ajaxFooterState.lastScrollYBeforeAppend =
-            currentResultScrollY();
-        appendLoadMoreControl(palette());
-     
-
---- 5 ---
-      params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
             params.bottomMargin = dp(6);
@@ -2000,12 +1363,1377 @@ ollPerformanceState.stagedAttachFallbackCount += 1;
             output.push({
                 type: "ellipsis",
                 page: null,
-   
+                label: "…"
+            });
+        }
+        output.push({
+            type: "page",
+            page: total,
+            label: String(total)
+        });
+        return output;
+    }
 
-===== OCCURRENCES signatureRebuildCount += 1 =====
+    function numberTokenLabels(tokens) {
+        var labels = [];
+        var index;
+        tokens = tokens || [];
+        for (index = 0; index < tokens.length;
+                index += 1) {
+            labels.push(String(tokens[index].label));
+        }
+        return labels;
+    }
+
+    function makeNumberPagerButton(label, selected,
+            enabled, colors, description) {
+        var view = makeText(String(label), 10,
+            selected ? "#FFFFFFFF" :
+                (enabled ?
+                    colors.accentStrong :
+                    colors.textTertiary),
+            selected === true);
+        view.setGravity(Grav
+
+===== OCCURRENCES rebuildVirtualWindow(
+            "ajax_append" =====
 
 --- 1 ---
- }
+  var index;
+        var params;
+        if (context.generation !== ajaxAppendGeneration ||
+                resultContainer === null ||
+                !state.panelAttached) {
+            ajaxFooterState.loading = false;
+            return false;
+        }
+        end = Math.min(context.rows.length,
+            context.index + RENDER_BATCH_COUNT);
+        for (index = context.index; index < end;
+                index += 1) {
+            params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+            params.bottomMargin = dp(6);
+            resultContainer.addView(makeResultCard(
+                context.rows[index],
+                context.colors), params);
+        }
+        context.index = end;
+        ajaxFooterState.renderBatchCount += 1;
+        if (context.index < context.rows.length) {
+            if (context.synchronous === true) {
+                return true;
+            }
+            if (mainHandler !== null) {
+                mainHandler.post(
+                    new Packages.java.lang.Runnable({
+                        run: function () {
+                            renderAjaxAppendBatch(context);
+                        }
+                    }));
+                return true;
+            }
+        }
+        return finishAjaxAppendRender(
+            context.generation,
+            context.rows,
+            context.colors);
+    }
+
+    function startAjaxAppendRender(appendedRows) {
+        var colors = palette();
+        captureScrollAnchor();
+        if (loadMoreView !== null) {
+            try {
+                if (loadMoreView.getParent() !== null) {
+                    loadMoreView.getParent()
+                        .removeView(loadMoreView);
+                }
+            } catch (ignoredFooterRemove) {}
+        }
+        loadMoreView = null;
+        cancelStagedAjaxAttach("superseded_ajax");
+        ajaxAppendGeneration += 1;
+        ajaxFooterState.loading = true;
+        ajaxFooterState.renderBatchCount += 1;
+        if (startStagedAjaxAttach(
+                ajaxAppendGeneration, appendedRows, colors)) {
+            return true;
+        }
+        rebuildVirtualWindow(
+            "ajax_append", false,
+            virtualState.firstVisibleIndex);
+        return finishAjaxAppendRender(
+            ajaxAppendGeneration,
+            appendedRows, colors);
+    }
+    function loadMoreResults(origin) {
+        var pageResult;
+        var lazyOrigin;
+        origin = String(origin || "footer_click");
+        lazyOrigin = origin !== "footer_click";
+        if (!state.panelAttached ||
+                paginationState.mode !== "ajax" ||
+                !paginationState.hasMore) {
+            if (!lazyOrigin) {
+                ajaxFooterState.blockedClickCount += 1;
+            }
+            return false;
+        }
+        if (ajaxFooterState.loading) {
+            if (!lazyOrigin) {
+                ajaxFooterState.blockedClickCount += 1;
+            }
+            return false;
+        }
+        if (!lazyOrigin) {
+            ajaxFooterState.clickCount += 1;
+        }
+        ajaxFooterState.loading = true;
+        ajaxFooterState.lastError = null;
+        ajaxFooterState.lastScrollYBeforeAppend =
+            currentResultScrollY();
+        appendLoadMoreControl(palette());
+        try {
+            pageResult = loadPaginationPageInternal({
+                append: true,
+                includeTotal: false
+            });
+            return startAjaxAppendRender(
+                pageResult.appendedRows);
+        } catch (error) {
+            ajaxFooterState.loading = false;
+            ajaxFooterState.lastError =
+                String(error);
+            if (lazyOrigin) {
+                lazyLoadState.pending = false;
+                lazyLoadState.failureCount += 1;
+                lazyLoadState.lastError =
+                    String(error);
+            }
+            appendLoadMoreControl(palette());
+            state.lastError = String(error);
+            return false;
+        }
+    }
+
+    function removePaginationFooterViews() {
+        var parent;
+        if (loadMoreView !== null) {
+            try {
+                parent = loadMoreView.getParent();
+                if (parent !== null) {
+                    parent.removeView(loadMoreView);
+                }
+            } catch (ignoredRemoveLoadMore) {}
+        }
+        if (numberPagerView !== null) {
+            try {
+                parent = numberPagerView.getParent();
+                if (parent !== null) {
+                    parent.removeView(numberPagerView);
+                }
+            } catch (ignoredRemoveNumberPager) {}
+        }
+        loadMoreView = null;
+        numberPagerView = null;
+        numberPageViews = {};
+        numberActionViews = {};
+        return true;
+    }
+
+    function calculatePageButtons(currentPage, totalPages) {
+        var current = Math.max(1,
+            Math.floor(Number(currentPage || 1)));
+        var total = Math.max(0,
+            Math.floor(Number(totalPages || 0)));
+        var start;
+        var end;
+        var page;
+        var output = [];
+        if (total <= 0) { return output; }
+        current = Math.min(current, total);
+        if (total <= 7) {
+            for (page = 1; page <= total; page += 1) {
+                output.push({
+                    type: "page",
+                    page: page,
+                    label: String(page)
+                });
+            }
+            return output;
+        }
+        output.push({
+            type: "page",
+            page: 1,
+            label: "1"
+        });
+        start = Math.max(2, current - 2);
+        end = Math.min(total - 1, current + 2);
+        if (end - start + 1 < 5) {
+            if (start === 2) {
+                end = Math.min(total - 1, start + 4);
+            } else if (end === total - 1) {
+                start = Math.max(2, end - 4);
+            }
+        }
+        if (start > 2) {
+            output.push({
+                type: "ellipsis",
+                page: null,
+                label: "…"
+            });
+        }
+        for (page = start; page <= end; page += 1) {
+            output.push({
+                type: "page",
+                page: page,
+                label: String(page)
+            });
+        }
+        if (end < total - 1) {
+            output.push({
+                type: "ellipsis",
+                page: null,
+                label: "…"
+            });
+        }
+        output.push({
+            type: "page",
+            page: total,
+            label: String(total)
+        });
+        return output;
+    }
+
+    function numberTokenLabels(tokens) {
+        var labels = [];
+        var index;
+        tokens = tokens || [];
+        for (index = 0; index < tokens.length;
+                index += 1) {
+            labels.push(String(tokens[index].label));
+        }
+        return labels;
+    }
+
+    function makeNumberPagerButton(label, selected,
+            enabled, colors, description) {
+        var view = makeText(String(label), 10,
+            selected ? "#FFFFFFFF" :
+                (enabled ?
+                    colors.accentStrong :
+                    colors.textTertiary),
+            selected === true);
+        view.setGravity(Gravity.CENTER);
+        view.setSingleLine(true);
+        view.setMinWidth(dp(34));
+        view.setPadding(dp(8), 0, dp(8), 0);
+   
+
+===== OCCURRENCES ajaxFooterState.renderBatchCount += 1; =====
+
+--- 1 ---
+ist &&
+                typeof ClipHub.List.setItems === "function") {
+            ClipHub.List.setItems(previewRows);
+        }
+        appendLoadMoreControl(colors);
+        updateResultCountOnMain();
+        updateQuickResetView();
+        attachDeleteUndoBanner();
+        updateResultScrollState();
+        if (lazyLoadState.pending) {
+            lazyLoadState.pending = false;
+            lazyLoadState.successCount += 1;
+            lazyLoadState.lastError = null;
+        }
+        scheduleNextPagePrefetch(
+            "ajax_append_complete");
+        if (mainHandler !== null) {
+            mainHandler.post(new Packages.java.lang.Runnable({
+                run: function () {
+                    if (!state.panelAttached) { return; }
+                    measureVirtualCards();
+                    restoreScrollAnchor();
+                    captureScrollAnchor();
+                    ajaxFooterState.lastScrollYAfterAppend =
+                        currentResultScrollY();
+                    ajaxFooterState.positionPreserved =
+                        Number(ajaxFooterState
+                            .lastScrollYBeforeAppend) ===
+                        Number(ajaxFooterState
+                            .lastScrollYAfterAppend);
+                }
+            }));
+        }
+        return true;
+    }
+
+    function renderAjaxAppendBatch(context) {
+        var end;
+        var index;
+        var params;
+        if (context.generation !== ajaxAppendGeneration ||
+                resultContainer === null ||
+                !state.panelAttached) {
+            ajaxFooterState.loading = false;
+            return false;
+        }
+        end = Math.min(context.rows.length,
+            context.index + RENDER_BATCH_COUNT);
+        for (index = context.index; index < end;
+                index += 1) {
+            params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+            params.bottomMargin = dp(6);
+            resultContainer.addView(makeResultCard(
+                context.rows[index],
+                context.colors), params);
+        }
+        context.index = end;
+        ajaxFooterState.renderBatchCount += 1;
+        if (context.index < context.rows.length) {
+            if (context.synchronous === true) {
+                return true;
+            }
+            if (mainHandler !== null) {
+                mainHandler.post(
+                    new Packages.java.lang.Runnable({
+                        run: function () {
+                            renderAjaxAppendBatch(context);
+                        }
+                    }));
+                return true;
+            }
+        }
+        return finishAjaxAppendRender(
+            context.generation,
+            context.rows,
+            context.colors);
+    }
+
+    function startAjaxAppendRender(appendedRows) {
+        var colors = palette();
+        captureScrollAnchor();
+        if (loadMoreView !== null) {
+            try {
+                if (loadMoreView.getParent() !== null) {
+                    loadMoreView.getParent()
+                        .removeView(loadMoreView);
+                }
+            } catch (ignoredFooterRemove) {}
+        }
+        loadMoreView = null;
+        cancelStagedAjaxAttach("superseded_ajax");
+        ajaxAppendGeneration += 1;
+        ajaxFooterState.loading = true;
+        ajaxFooterState.renderBatchCount += 1;
+        if (startStagedAjaxAttach(
+                ajaxAppendGeneration, appendedRows, colors)) {
+            return true;
+        }
+        rebuildVirtualWindow(
+            "ajax_append", false,
+            virtualState.firstVisibleIndex);
+        return finishAjaxAppendRender(
+            ajaxAppendGeneration,
+            appendedRows, colors);
+    }
+    function loadMoreResults(origin) {
+        var pageResult;
+        var lazyOrigin;
+        origin = String(origin || "footer_click");
+        lazyOrigin = origin !== "footer_click";
+        if (!state.panelAttached ||
+                paginationState.mode !== "ajax" ||
+                !paginationState.hasMore) {
+            if (!lazyOrigin) {
+                ajaxFooterState.blockedClickCount += 1;
+            }
+            return false;
+        }
+        if (ajaxFooterState.loading) {
+            if (!lazyOrigin) {
+                ajaxFooterState.blockedClickCount += 1;
+            }
+            return false;
+        }
+        if (!lazyOrigin) {
+            ajaxFooterState.clickCount += 1;
+        }
+        ajaxFooterState.loading = true;
+        ajaxFooterState.lastError = null;
+        ajaxFooterState.lastScrollYBeforeAppend =
+            currentResultScrollY();
+        appendLoadMoreControl(palette());
+        try {
+            pageResult = loadPaginationPageInternal({
+                append: true,
+                includeTotal: false
+            });
+            return startAjaxAppendRender(
+                pageResult.appendedRows);
+        } catch (error) {
+            ajaxFooterState.loading = false;
+            ajaxFooterState.lastError =
+                String(error);
+            if (lazyOrigin) {
+                lazyLoadState.pending = false;
+                lazyLoadState.failureCount += 1;
+                lazyLoadState.lastError =
+                    String(error);
+            }
+            appendLoadMoreControl(palette());
+            state.lastError = String(error);
+            return false;
+        }
+    }
+
+    function removePaginationFooterViews() {
+        var parent;
+        if (loadMoreView !== null) {
+            try {
+                parent = loadMoreView.getParent();
+                if (parent !== null) {
+                    parent.removeView(loadMoreView);
+                }
+            } catch (ignoredRemoveLoadMore) {}
+        }
+        if (numberPagerView !== null) {
+            try {
+                parent = numberPagerView.getParent();
+                if (parent !== null) {
+                    parent.removeView(numberPagerView);
+                }
+            } catch (ignoredRemoveNumberPager) {}
+        }
+        loadMoreView = null;
+        numberPagerView = null;
+        numberPageViews = {};
+        numberActionViews = {};
+        return true;
+    }
+
+    function calculatePageButtons(currentPage, totalPages) {
+        var current = Math.max(1,
+            Math.floor(Number(currentPage || 1)));
+        var total = Math.max(0,
+            Math.floor(Number(totalPages || 0)));
+        var start;
+        var end;
+        var page;
+        var output = [];
+        if (total <= 0) { return output; }
+        current = Math.min(current, total);
+        if (total <= 7) {
+            for (page = 1; page <= total; page += 1) {
+                output.push({
+                    type: "page",
+                    page: page,
+                    label: String(page)
+                });
+            }
+            return output;
+        }
+        output.push({
+            type: "page",
+            page: 1,
+            label: "1"
+        });
+        start = Math.max(2, current - 2);
+        end = Math.min(total - 1, current + 2);
+        if (end - start + 1 < 5) {
+            if (start === 2) {
+                end = Math.min(total - 1, start + 4);
+            } else if (end === total - 1) {
+                start = Math.max(2, end - 4);
+            }
+        }
+        if (start > 2) {
+            output.push({
+              
+
+--- 2 ---
+            .lastScrollYAfterAppend);
+                }
+            }));
+        }
+        return true;
+    }
+
+    function renderAjaxAppendBatch(context) {
+        var end;
+        var index;
+        var params;
+        if (context.generation !== ajaxAppendGeneration ||
+                resultContainer === null ||
+                !state.panelAttached) {
+            ajaxFooterState.loading = false;
+            return false;
+        }
+        end = Math.min(context.rows.length,
+            context.index + RENDER_BATCH_COUNT);
+        for (index = context.index; index < end;
+                index += 1) {
+            params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+            params.bottomMargin = dp(6);
+            resultContainer.addView(makeResultCard(
+                context.rows[index],
+                context.colors), params);
+        }
+        context.index = end;
+        ajaxFooterState.renderBatchCount += 1;
+        if (context.index < context.rows.length) {
+            if (context.synchronous === true) {
+                return true;
+            }
+            if (mainHandler !== null) {
+                mainHandler.post(
+                    new Packages.java.lang.Runnable({
+                        run: function () {
+                            renderAjaxAppendBatch(context);
+                        }
+                    }));
+                return true;
+            }
+        }
+        return finishAjaxAppendRender(
+            context.generation,
+            context.rows,
+            context.colors);
+    }
+
+    function startAjaxAppendRender(appendedRows) {
+        var colors = palette();
+        captureScrollAnchor();
+        if (loadMoreView !== null) {
+            try {
+                if (loadMoreView.getParent() !== null) {
+                    loadMoreView.getParent()
+                        .removeView(loadMoreView);
+                }
+            } catch (ignoredFooterRemove) {}
+        }
+        loadMoreView = null;
+        cancelStagedAjaxAttach("superseded_ajax");
+        ajaxAppendGeneration += 1;
+        ajaxFooterState.loading = true;
+        ajaxFooterState.renderBatchCount += 1;
+        if (startStagedAjaxAttach(
+                ajaxAppendGeneration, appendedRows, colors)) {
+            return true;
+        }
+        rebuildVirtualWindow(
+            "ajax_append", false,
+            virtualState.firstVisibleIndex);
+        return finishAjaxAppendRender(
+            ajaxAppendGeneration,
+            appendedRows, colors);
+    }
+    function loadMoreResults(origin) {
+        var pageResult;
+        var lazyOrigin;
+        origin = String(origin || "footer_click");
+        lazyOrigin = origin !== "footer_click";
+        if (!state.panelAttached ||
+                paginationState.mode !== "ajax" ||
+                !paginationState.hasMore) {
+            if (!lazyOrigin) {
+                ajaxFooterState.blockedClickCount += 1;
+            }
+            return false;
+        }
+        if (ajaxFooterState.loading) {
+            if (!lazyOrigin) {
+                ajaxFooterState.blockedClickCount += 1;
+            }
+            return false;
+        }
+        if (!lazyOrigin) {
+            ajaxFooterState.clickCount += 1;
+        }
+        ajaxFooterState.loading = true;
+        ajaxFooterState.lastError = null;
+        ajaxFooterState.lastScrollYBeforeAppend =
+            currentResultScrollY();
+        appendLoadMoreControl(palette());
+        try {
+            pageResult = loadPaginationPageInternal({
+                append: true,
+                includeTotal: false
+            });
+            return startAjaxAppendRender(
+                pageResult.appendedRows);
+        } catch (error) {
+            ajaxFooterState.loading = false;
+            ajaxFooterState.lastError =
+                String(error);
+            if (lazyOrigin) {
+                lazyLoadState.pending = false;
+                lazyLoadState.failureCount += 1;
+                lazyLoadState.lastError =
+                    String(error);
+            }
+            appendLoadMoreControl(palette());
+            state.lastError = String(error);
+            return false;
+        }
+    }
+
+    function removePaginationFooterViews() {
+        var parent;
+        if (loadMoreView !== null) {
+            try {
+                parent = loadMoreView.getParent();
+                if (parent !== null) {
+                    parent.removeView(loadMoreView);
+                }
+            } catch (ignoredRemoveLoadMore) {}
+        }
+        if (numberPagerView !== null) {
+            try {
+                parent = numberPagerView.getParent();
+                if (parent !== null) {
+                    parent.removeView(numberPagerView);
+                }
+            } catch (ignoredRemoveNumberPager) {}
+        }
+        loadMoreView = null;
+        numberPagerView = null;
+        numberPageViews = {};
+        numberActionViews = {};
+        return true;
+    }
+
+    function calculatePageButtons(currentPage, totalPages) {
+        var current = Math.max(1,
+            Math.floor(Number(currentPage || 1)));
+        var total = Math.max(0,
+            Math.floor(Number(totalPages || 0)));
+        var start;
+        var end;
+        var page;
+        var output = [];
+        if (total <= 0) { return output; }
+        current = Math.min(current, total);
+        if (total <= 7) {
+            for (page = 1; page <= total; page += 1) {
+                output.push({
+                    type: "page",
+                    page: page,
+                    label: String(page)
+                });
+            }
+            return output;
+        }
+        output.push({
+            type: "page",
+            page: 1,
+            label: "1"
+        });
+        start = Math.max(2, current - 2);
+        end = Math.min(total - 1, current + 2);
+        if (end - start + 1 < 5) {
+            if (start === 2) {
+                end = Math.min(total - 1, start + 4);
+            } else if (end === total - 1) {
+                start = Math.max(2, end - 4);
+            }
+        }
+        if (start > 2) {
+            output.push({
+                type: "ellipsis",
+                page: null,
+                label: "…"
+            });
+        }
+        for (page = start; page <= end; page += 1) {
+            output.push({
+                type: "page",
+                page: page,
+                label: String(page)
+            });
+        }
+        if (end < total - 1) {
+            output.push({
+                type: "ellipsis",
+                page: null,
+                label: "…"
+            });
+        }
+        output.push({
+            type: "page",
+            page: total,
+            label: String(total)
+        });
+        return output;
+    }
+
+    function numberTokenLabels(tokens) {
+        var labels = [];
+        var index;
+        tokens = tokens || [];
+        for (index = 0; index < tokens.length;
+                index += 1) {
+            labels.push(String(tokens[index].label));
+        }
+        return labels;
+    }
+
+    function makeNumberPagerButton(label, selected,
+            enabled, colors, description) {
+        var view = makeText(String(label), 10,
+            selected ? "#FFFFFFFF" :
+                (enabled ?
+                    colors.accentStrong :
+                    colors.textTertiary),
+         
+
+===== OCCURRENCES signatureRebuildCount =====
+
+--- 1 ---
+Limit = Math.max(
+                Number(paginationState.pageSize),
+                previewRows.length);
+            state.resultPageLimit = resultPageLimit;
+            if (ClipHub.List &&
+                    typeof ClipHub.List.setItems === "function") {
+                ClipHub.List.setItems(previewRows);
+            }
+        }
+        return removed;
+    }
+
+
+    var hydrationLatestRequestRef =
+        new Packages.java.util.concurrent.atomic.AtomicReference();
+    var hydrationWorkerBusyFlag =
+        new Packages.java.util.concurrent.atomic.AtomicBoolean(false);
+    var hydrationWorkerStoppingFlag =
+        new Packages.java.util.concurrent.atomic.AtomicBoolean(false);
+    var hydrationRequestSequence =
+        new Packages.java.util.concurrent.atomic.AtomicLong(0);
+    var hydrationEpochSequence =
+        new Packages.java.util.concurrent.atomic.AtomicLong(0);
+    var hydrationResultQueue =
+        new Packages.java.util.concurrent.ConcurrentLinkedQueue();
+    var hydrationExecutor = null;
+    var hydrationActiveFuture = null;
+    var hydrationApplyRunnable = null;
+    var hydrationWorkerState = {
+        enabled: true,
+        requestCount: 0,
+        queryCount: 0,
+        successCount: 0,
+        failureCount: 0,
+        latestRequestReplaceCount: 0,
+        staleResultDropCount: 0,
+        postCloseDropCount: 0,
+        workerQueryLastMs: 0,
+        workerQueryMaxMs: 0,
+        mainApplyLastMs: 0,
+        mainApplyMaxMs: 0,
+        visualForceCount: 0,
+        visualDeltaCount: 0,
+        lastRequestId: 0,
+        lastOrigin: "",
+        lastError: null,
+        lastInvalidateReason: "",
+        pendingSignature: null
+    };
+    var scrollPerformanceState = {
+        scrollEventCount: 0,
+        virtualScheduleCount: 0,
+        virtualUpdateCount: 0,
+        virtualUpdateLastMs: 0,
+        virtualUpdateMaxMs: 0,
+        viewRebuildCount: 0,
+        viewRebuildLastMs: 0,
+        viewRebuildMaxMs: 0,
+        createdViewCount: 0,
+        removedViewCount: 0,
+        hydrateRequestedCount: 0,
+        updateRequestCount: 0,
+        updateCoalescedCount: 0,
+        forceEscalationCount: 0,
+        keyedReconcileCount: 0,
+        sameIdReuseCount: 0,
+        signatureRebuildCount: 0,
+        movedViewCount: 0,
+        structuralInsertCount: 0,
+        structuralRemoveCount: 0,
+        alignmentFallbackCount: 0,
+        alignmentFallbackLastReason: "",
+        alignmentFallbackReasonCounts: {},
+        alignmentFallbackLastSnapshot: null,
+        fullRefreshCallCount: 0,
+        fullRefreshLastPerformanceOrigin: "",
+        fullRefreshLastPreferredIndex: -1,
+        fullRefreshLastPreviewRowCount: 0,
+        fullRefreshLastRenderedCount: 0,
+        fullRefreshLastChildCount: 0,
+        fullRefreshRequestCount: 0,
+        fullRefreshDuplicateSuppressedCount: 0,
+        fullRefreshLastDataKey: "",
+        fullRefreshPendingDataKey: "",
+        fullRefreshLastAppliedDataKey: "",
+        virtualBookkeepingAtomicClearCount: 0,
+        fullRefreshSamples: [],
+        spacerApplyCount: 0,
+        spacerNoopCount: 0,
+        sameRangeNoLayoutCount: 0,
+        anchorScrollApplyCount: 0,
+        anchorScrollNoopCount: 0,
+        measurePassCount: 0,
+        measureLastMs: 0,
+        measureMaxMs: 0,
+        keyedReconcileLastMs: 0,
+        keyedReconcileMaxMs: 0,
+        keyedSignatureLastMs: 0,
+        keyedSignatureMaxMs: 0,
+        keyedStructureLastMs: 0,
+        keyedStructureMaxMs: 0,
+        overlapUpdateLastMs: 0,
+        overlapUpdateMaxMs: 0,
+        slowRebuildCount: 0,
+        slowRebuildSamples: [],
+        stagedAttachStartCount: 0,
+        stagedAttachBatchCount: 0,
+        stagedAttachCardCount: 0,
+        stagedAttachCompletedCount: 0,
+        stagedAttachCancelCount: 0,
+        stagedAttachFallbackCount: 0,
+        stagedAttachDeferredUpdateCount: 0,
+        stagedAttachScrollPreemptCount: 0,
+        stagedAttachObsoleteCardAvoidedCount: 0,
+        stagedAttachRetargetCount: 0,
+        stagedAttachRetargetReusedCount: 0,
+        stagedAttachRetargetRemovedCount: 0,
+        stagedAttachRetargetPendingCount: 0,
+        stagedAttachSyncCatchupAvoidedCount: 0,
+        stagedAttachPendingCount: 0,
+        stagedAttachLastBatchMs: 0,
+        stagedAttachMaxBatchMs: 0,
+        stagedAttachLastBatchCards: 0,
+        stagedAttachMaxCardsPerBatch: 0,
+        stagedAttachLastTotalCards: 0,
+        stagedAttachLastTotalMs: 0,
+        stagedAttachMaxTotalMs: 0,
+        stagedAttachLastCancelReason: "",
+        overlapStagedStartCount: 0,
+        overlapStagedBatchCount: 0,
+        overlapStagedCardCount: 0,
+        overlapStagedNewBuildCount: 0,
+        overlapStagedRecycleAttachCount: 0,
+        overlapStagedCompletedCount: 0,
+        overlapStagedCancelCount: 0,
+        overlapStagedDeferredUpdateCount: 0,
+        overlapStagedPendingCount: 0,
+        overlapStagedLastBatchMs: 0,
+        overlapStagedMaxBatchMs: 0,
+        overlapStagedLastBatchCards: 0,
+        overlapStagedMaxCardsPerBatch: 0,
+        overlapStagedLastTotalCards: 0,
+        overlapStagedLastNewBuildTotal: 0,
+        overlapStagedLastTotalMs: 0,
+        overlapStagedMaxTotalMs: 0,
+        overlapStagedSyncBuildAvoidedCount: 0,
+        overlapStagedLastCancelReason: "",
+        holderRecycleReleaseCount: 0,
+        holderRecycleReuseCount: 0,
+        holderRecycleMissCount: 0,
+        holderRecycleDiscardCount: 0,
+        holderRecycleKeyHitCount: 0,
+        holderRecycleKeyMissCount: 0,
+        holderRecyclePoolScanCount: 0,
+        holderRecyclePoolPeakCount: 0,
+        holderRebindCount: 0,
+        holderRebindLastMs: 0,
+        holderRebindMaxMs: 0,
+        holderNewBuildCount: 0,
+        holderRebindAttemptCount: 0,
+        holderRebindEligibleCount: 0,
+        holderRebindIneligibleCount: 0,
+        holderRebindFailureCount: 0,
+        holderRebindLastRejectReason: "",
+        holderRebindLastFailureStage: "",
+        holderRebindLastError: "",
+        holderRebindRejectReasons: {},
+        holderRebindFailureStages: {}
+    };
+
+    function resetHydrationWorkerDiagnostics() {
+        hydrationWorkerStoppingFlag.set(false);
+        hydrationLatestRequestRef.set(null);
+        hydrationResultQueue.clear();
+        hydrationWorkerBusyFlag.set(false);
+        hydrationWorkerState.enabled = true;
+        hydrationWorkerState.requestCount = 0;
+        hydrationWorkerState.queryCount = 0;
+        hydrationWorkerState.successCount = 0;
+        hydrationWorkerState.failureCount = 0;
+        hydrationWorkerState.latestRequestReplaceCount = 0;
+        hydrationWorkerState.staleResultDropCount = 0;
+        hydrationWorkerState.postCloseDropCount = 0;
+        hydrationWorkerState.workerQueryLastMs = 0;
+        hydrationWorkerState.workerQueryMaxMs = 0;
+        hydrationWorkerState.mainApplyLastMs = 0;
+        hydrationWorkerState.mainApplyMaxMs = 0;
+        hydrationWorkerState.lastRequestId = 0;
+        hydrationWorkerState.lastOrigin = "";
+        hydrationWorkerState.lastError = null;
+        hydrationWorkerState.lastInvalidateReason = "";
+        hydrationWorkerState.pendingSignature = null;
+        scrollPerformanceState.scrollEventCount = 0;
+        scrollPerformanceState.virtualScheduleCount = 0;
+        scrollPerformanceState.virtualUpdateCount = 0;
+        scrollPerformanceState.virtualUpdateLastMs = 0;
+        scrollPerformanceState.virtualUpdateMaxMs = 0;
+        scrollPerformanceState.view
+
+--- 2 ---
+eCount: 0,
+        holderRebindLastRejectReason: "",
+        holderRebindLastFailureStage: "",
+        holderRebindLastError: "",
+        holderRebindRejectReasons: {},
+        holderRebindFailureStages: {}
+    };
+
+    function resetHydrationWorkerDiagnostics() {
+        hydrationWorkerStoppingFlag.set(false);
+        hydrationLatestRequestRef.set(null);
+        hydrationResultQueue.clear();
+        hydrationWorkerBusyFlag.set(false);
+        hydrationWorkerState.enabled = true;
+        hydrationWorkerState.requestCount = 0;
+        hydrationWorkerState.queryCount = 0;
+        hydrationWorkerState.successCount = 0;
+        hydrationWorkerState.failureCount = 0;
+        hydrationWorkerState.latestRequestReplaceCount = 0;
+        hydrationWorkerState.staleResultDropCount = 0;
+        hydrationWorkerState.postCloseDropCount = 0;
+        hydrationWorkerState.workerQueryLastMs = 0;
+        hydrationWorkerState.workerQueryMaxMs = 0;
+        hydrationWorkerState.mainApplyLastMs = 0;
+        hydrationWorkerState.mainApplyMaxMs = 0;
+        hydrationWorkerState.lastRequestId = 0;
+        hydrationWorkerState.lastOrigin = "";
+        hydrationWorkerState.lastError = null;
+        hydrationWorkerState.lastInvalidateReason = "";
+        hydrationWorkerState.pendingSignature = null;
+        scrollPerformanceState.scrollEventCount = 0;
+        scrollPerformanceState.virtualScheduleCount = 0;
+        scrollPerformanceState.virtualUpdateCount = 0;
+        scrollPerformanceState.virtualUpdateLastMs = 0;
+        scrollPerformanceState.virtualUpdateMaxMs = 0;
+        scrollPerformanceState.viewRebuildCount = 0;
+        scrollPerformanceState.viewRebuildLastMs = 0;
+        scrollPerformanceState.viewRebuildMaxMs = 0;
+        scrollPerformanceState.createdViewCount = 0;
+        scrollPerformanceState.removedViewCount = 0;
+        scrollPerformanceState.hydrateRequestedCount = 0;
+        scrollPerformanceState.updateRequestCount = 0;
+        scrollPerformanceState.updateCoalescedCount = 0;
+        scrollPerformanceState.forceEscalationCount = 0;
+        scrollPerformanceState.keyedReconcileCount = 0;
+        scrollPerformanceState.sameIdReuseCount = 0;
+        scrollPerformanceState.signatureRebuildCount = 0;
+        scrollPerformanceState.movedViewCount = 0;
+        scrollPerformanceState.structuralInsertCount = 0;
+        scrollPerformanceState.structuralRemoveCount = 0;
+        scrollPerformanceState.alignmentFallbackCount = 0;
+        scrollPerformanceState.alignmentFallbackLastReason = "";
+        scrollPerformanceState.alignmentFallbackReasonCounts = {};
+        scrollPerformanceState.alignmentFallbackLastSnapshot = null;
+        scrollPerformanceState.fullRefreshCallCount = 0;
+        scrollPerformanceState.fullRefreshLastPerformanceOrigin = "";
+        scrollPerformanceState.fullRefreshLastPreferredIndex = -1;
+        scrollPerformanceState.fullRefreshLastPreviewRowCount = 0;
+        scrollPerformanceState.fullRefreshLastRenderedCount = 0;
+        scrollPerformanceState.fullRefreshLastChildCount = 0;
+        scrollPerformanceState.fullRefreshRequestCount = 0;
+        scrollPerformanceState.fullRefreshDuplicateSuppressedCount = 0;
+        scrollPerformanceState.fullRefreshLastDataKey = "";
+        scrollPerformanceState.fullRefreshPendingDataKey = "";
+        scrollPerformanceState.fullRefreshLastAppliedDataKey = "";
+        scrollPerformanceState.virtualBookkeepingAtomicClearCount = 0;
+        scrollPerformanceState.fullRefreshSamples = [];
+        scrollPerformanceState.spacerApplyCount = 0;
+        scrollPerformanceState.spacerNoopCount = 0;
+        scrollPerformanceState.sameRangeNoLayoutCount = 0;
+        scrollPerformanceState.anchorScrollApplyCount = 0;
+        scrollPerformanceState.anchorScrollNoopCount = 0;
+        scrollPerformanceState.measurePassCount = 0;
+        scrollPerformanceState.measureLastMs = 0;
+        scrollPerformanceState.measureMaxMs = 0;
+        scrollPerformanceState.keyedReconcileLastMs = 0;
+        scrollPerformanceState.keyedReconcileMaxMs = 0;
+        scrollPerformanceState.keyedSignatureLastMs = 0;
+        scrollPerformanceState.keyedSignatureMaxMs = 0;
+        scrollPerformanceState.keyedStructureLastMs = 0;
+        scrollPerformanceState.keyedStructureMaxMs = 0;
+        scrollPerformanceState.overlapUpdateLastMs = 0;
+        scrollPerformanceState.overlapUpdateMaxMs = 0;
+        scrollPerformanceState.slowRebuildCount = 0;
+        scrollPerformanceState.slowRebuildSamples = [];
+        scrollPerformanceState.stagedAttachStartCount = 0;
+        scrollPerformanceState.stagedAttachBatchCount = 0;
+        scrollPerformanceState.stagedAttachCardCount = 0;
+        scrollPerformanceState.stagedAttachCompletedCount = 0;
+        scrollPerformanceState.stagedAttachCancelCount = 0;
+        scrollPerformanceState.stagedAttachFallbackCount = 0;
+        scrollPerformanceState.stagedAttachDeferredUpdateCount = 0;
+        scrollPerformanceState.stagedAttachScrollPreemptCount = 0;
+        scrollPerformanceState.stagedAttachObsoleteCardAvoidedCount = 0;
+        scrollPerformanceState.stagedAttachRetargetCount = 0;
+        scrollPerformanceState.stagedAttachRetargetReusedCount = 0;
+        scrollPerformanceState.stagedAttachRetargetRemovedCount = 0;
+        scrollPerformanceState.stagedAttachRetargetPendingCount = 0;
+        scrollPerformanceState.stagedAttachSyncCatchupAvoidedCount = 0;
+        scrollPerformanceState.stagedAttachPendingCount = 0;
+        scrollPerformanceState.stagedAttachLastBatchMs = 0;
+        scrollPerformanceState.stagedAttachMaxBatchMs = 0;
+        scrollPerformanceState.stagedAttachLastBatchCards = 0;
+        scrollPerformanceState.stagedAttachMaxCardsPerBatch = 0;
+        scrollPerformanceState.stagedAttachLastTotalCards = 0;
+        scrollPerformanceState.stagedAttachLastTotalMs = 0;
+        scrollPerformanceState.stagedAttachMaxTotalMs = 0;
+        scrollPerformanceState.stagedAttachLastCancelReason = "";
+        scrollPerformanceState.overlapStagedStartCount = 0;
+        scrollPerformanceState.overlapStagedBatchCount = 0;
+        scrollPerformanceState.overlapStagedCardCount = 0;
+        scrollPerformanceState.overlapStagedNewBuildCount = 0;
+        scrollPerformanceState.overlapStagedRecycleAttachCount = 0;
+        scrollPerformanceState.overlapStagedCompletedCount = 0;
+        scrollPerformanceState.overlapStagedCancelCount = 0;
+        scrollPerformanceState.overlapStagedDeferredUpdateCount = 0;
+        scrollPerformanceState.overlapStagedPendingCount = 0;
+        scrollPerformanceState.overlapStagedLastBatchMs = 0;
+        scrollPerformanceState.overlapStagedMaxBatchMs = 0;
+        scrollPerformanceState.overlapStagedLastBatchCards = 0;
+        scrollPerformanceState.overlapStagedMaxCardsPerBatch = 0;
+        scrollPerformanceState.overlapStagedLastTotalCards = 0;
+        scrollPerformanceState.overlapStagedLastNewBuildTotal = 0;
+        scrollPerformanceState.overlapStagedLastTotalMs = 0;
+        scrollPerformanceState.overlapStagedMaxTotalMs = 0;
+        scrollPerformanceState.overlapStagedSyncBuildAvoidedCount = 0;
+        scrollPerformanceState.overlapStagedLastCancelReason = "";
+        scrollPerformanceState.holderRecycleReleaseCount = 0;
+        scrollPerformanceState.holderRecycleReuseCount = 0;
+        scrollPerformanceState.holderRecycleMissCount = 0;
+        scrollPerformanceState.holderRecycleDiscardCount = 0;
+  
+
+--- 3 ---
+MaxMs),
+            mainApplyLastMs:
+                Number(hydrationWorkerState.mainApplyLastMs),
+            mainApplyMaxMs:
+                Number(hydrationWorkerState.mainApplyMaxMs),
+            lastRequestId: Number(hydrationWorkerState.lastRequestId),
+            lastOrigin: hydrationWorkerState.lastOrigin,
+            lastError: hydrationWorkerState.lastError,
+            hydrationEpoch: Number(hydrationEpochSequence.get()),
+            lastInvalidateReason:
+                hydrationWorkerState.lastInvalidateReason
+        };
+    }
+
+    function copyScrollPerformanceState() {
+        return {
+            scrollEventCount:
+                Number(scrollPerformanceState.scrollEventCount),
+            virtualScheduleCount:
+                Number(scrollPerformanceState.virtualScheduleCount),
+            virtualUpdateCount:
+                Number(scrollPerformanceState.virtualUpdateCount),
+            virtualUpdateLastMs:
+                Number(scrollPerformanceState.virtualUpdateLastMs),
+            virtualUpdateMaxMs:
+                Number(scrollPerformanceState.virtualUpdateMaxMs),
+            viewRebuildCount:
+                Number(scrollPerformanceState.viewRebuildCount),
+            viewRebuildLastMs:
+                Number(scrollPerformanceState.viewRebuildLastMs),
+            viewRebuildMaxMs:
+                Number(scrollPerformanceState.viewRebuildMaxMs),
+            createdViewCount:
+                Number(scrollPerformanceState.createdViewCount),
+            removedViewCount:
+                Number(scrollPerformanceState.removedViewCount),
+            hydrateRequestedCount:
+                Number(scrollPerformanceState.hydrateRequestedCount),
+            updateRequestCount:
+                Number(scrollPerformanceState.updateRequestCount),
+            updateCoalescedCount:
+                Number(scrollPerformanceState.updateCoalescedCount),
+            forceEscalationCount:
+                Number(scrollPerformanceState.forceEscalationCount),
+            keyedReconcileCount:
+                Number(scrollPerformanceState.keyedReconcileCount),
+            sameIdReuseCount:
+                Number(scrollPerformanceState.sameIdReuseCount),
+            signatureRebuildCount:
+                Number(scrollPerformanceState.signatureRebuildCount),
+            movedViewCount:
+                Number(scrollPerformanceState.movedViewCount),
+            structuralInsertCount:
+                Number(scrollPerformanceState.structuralInsertCount),
+            structuralRemoveCount:
+                Number(scrollPerformanceState.structuralRemoveCount),
+            alignmentFallbackCount:
+                Number(scrollPerformanceState.alignmentFallbackCount),
+            alignmentFallbackLastReason:
+                String(scrollPerformanceState.alignmentFallbackLastReason || ""),
+            alignmentFallbackReasonCounts:
+                scrollPerformanceState.alignmentFallbackReasonCounts,
+            alignmentFallbackLastSnapshot:
+                scrollPerformanceState.alignmentFallbackLastSnapshot,
+            fullRefreshCallCount:
+                Number(scrollPerformanceState.fullRefreshCallCount),
+            fullRefreshLastPerformanceOrigin:
+                String(scrollPerformanceState.fullRefreshLastPerformanceOrigin || ""),
+            fullRefreshLastPreferredIndex:
+                Number(scrollPerformanceState.fullRefreshLastPreferredIndex),
+            fullRefreshLastPreviewRowCount:
+                Number(scrollPerformanceState.fullRefreshLastPreviewRowCount),
+            fullRefreshLastRenderedCount:
+                Number(scrollPerformanceState.fullRefreshLastRenderedCount),
+            fullRefreshLastChildCount:
+                Number(scrollPerformanceState.fullRefreshLastChildCount),
+            fullRefreshRequestCount:
+                Number(scrollPerformanceState.fullRefreshRequestCount),
+            fullRefreshDuplicateSuppressedCount:
+                Number(scrollPerformanceState.fullRefreshDuplicateSuppressedCount),
+            fullRefreshLastDataKey:
+                String(scrollPerformanceState.fullRefreshLastDataKey || ""),
+            fullRefreshPendingDataKey:
+                String(scrollPerformanceState.fullRefreshPendingDataKey || ""),
+            fullRefreshLastAppliedDataKey:
+                String(scrollPerformanceState.fullRefreshLastAppliedDataKey || ""),
+            virtualBookkeepingAtomicClearCount:
+                Number(scrollPerformanceState.virtualBookkeepingAtomicClearCount),
+            fullRefreshSamples:
+                scrollPerformanceState.fullRefreshSamples.slice(0),
+            spacerApplyCount:
+                Number(scrollPerformanceState.spacerApplyCount),
+            spacerNoopCount:
+                Number(scrollPerformanceState.spacerNoopCount),
+            sameRangeNoLayoutCount:
+                Number(scrollPerformanceState.sameRangeNoLayoutCount),
+            anchorScrollApplyCount:
+                Number(scrollPerformanceState.anchorScrollApplyCount),
+            anchorScrollNoopCount:
+                Number(scrollPerformanceState.anchorScrollNoopCount),
+            measurePassCount:
+                Number(scrollPerformanceState.measurePassCount),
+            measureLastMs:
+                Number(scrollPerformanceState.measureLastMs),
+            measureMaxMs:
+                Number(scrollPerformanceState.measureMaxMs),
+            keyedReconcileLastMs:
+                Number(scrollPerformanceState.keyedReconcileLastMs),
+            keyedReconcileMaxMs:
+                Number(scrollPerformanceState.keyedReconcileMaxMs),
+            keyedSignatureLastMs:
+                Number(scrollPerformanceState.keyedSignatureLastMs),
+            keyedSignatureMaxMs:
+                Number(scrollPerformanceState.keyedSignatureMaxMs),
+            keyedStructureLastMs:
+                Number(scrollPerformanceState.keyedStructureLastMs),
+            keyedStructureMaxMs:
+                Number(scrollPerformanceState.keyedStructureMaxMs),
+            overlapUpdateLastMs:
+                Number(scrollPerformanceState.overlapUpdateLastMs),
+            overlapUpdateMaxMs:
+                Number(scrollPerformanceState.overlapUpdateMaxMs),
+            slowRebuildCount:
+                Number(scrollPerformanceState.slowRebuildCount),
+            slowRebuildSamples:
+                scrollPerformanceState.slowRebuildSamples.slice(0),
+            stagedAttachStartCount:
+                Number(scrollPerformanceState.stagedAttachStartCount),
+            stagedAttachBatchCount:
+                Number(scrollPerformanceState.stagedAttachBatchCount),
+            stagedAttachCardCount:
+                Number(scrollPerformanceState.stagedAttachCardCount),
+            stagedAttachCompletedCount:
+                Number(scrollPerformanceState.stagedAttachCompletedCount),
+            stagedAttachCancelCount:
+                Number(scrollPerformanceState.stagedAttachCancelCount),
+            stagedAttachFallbackCount:
+                Number(scrollPerformanceState.stagedAttachFallbackCount),
+            stagedAttachDeferredUpdateCount:
+                Number(scrollPerformanceState.stagedAttachDeferredUpdateCount),
+            stagedAttachScrollPreemptCount:
+                Number(scrollPerformanceState.stagedAttachScrollPreemptCount),
+            stagedAttachObsoleteCardAvoidedCount:
+                Number(scrollPerformanceState.stagedAttachObsoleteC
+
+--- 4 ---
+WorkerState.mainApplyLastMs),
+            mainApplyMaxMs:
+                Number(hydrationWorkerState.mainApplyMaxMs),
+            lastRequestId: Number(hydrationWorkerState.lastRequestId),
+            lastOrigin: hydrationWorkerState.lastOrigin,
+            lastError: hydrationWorkerState.lastError,
+            hydrationEpoch: Number(hydrationEpochSequence.get()),
+            lastInvalidateReason:
+                hydrationWorkerState.lastInvalidateReason
+        };
+    }
+
+    function copyScrollPerformanceState() {
+        return {
+            scrollEventCount:
+                Number(scrollPerformanceState.scrollEventCount),
+            virtualScheduleCount:
+                Number(scrollPerformanceState.virtualScheduleCount),
+            virtualUpdateCount:
+                Number(scrollPerformanceState.virtualUpdateCount),
+            virtualUpdateLastMs:
+                Number(scrollPerformanceState.virtualUpdateLastMs),
+            virtualUpdateMaxMs:
+                Number(scrollPerformanceState.virtualUpdateMaxMs),
+            viewRebuildCount:
+                Number(scrollPerformanceState.viewRebuildCount),
+            viewRebuildLastMs:
+                Number(scrollPerformanceState.viewRebuildLastMs),
+            viewRebuildMaxMs:
+                Number(scrollPerformanceState.viewRebuildMaxMs),
+            createdViewCount:
+                Number(scrollPerformanceState.createdViewCount),
+            removedViewCount:
+                Number(scrollPerformanceState.removedViewCount),
+            hydrateRequestedCount:
+                Number(scrollPerformanceState.hydrateRequestedCount),
+            updateRequestCount:
+                Number(scrollPerformanceState.updateRequestCount),
+            updateCoalescedCount:
+                Number(scrollPerformanceState.updateCoalescedCount),
+            forceEscalationCount:
+                Number(scrollPerformanceState.forceEscalationCount),
+            keyedReconcileCount:
+                Number(scrollPerformanceState.keyedReconcileCount),
+            sameIdReuseCount:
+                Number(scrollPerformanceState.sameIdReuseCount),
+            signatureRebuildCount:
+                Number(scrollPerformanceState.signatureRebuildCount),
+            movedViewCount:
+                Number(scrollPerformanceState.movedViewCount),
+            structuralInsertCount:
+                Number(scrollPerformanceState.structuralInsertCount),
+            structuralRemoveCount:
+                Number(scrollPerformanceState.structuralRemoveCount),
+            alignmentFallbackCount:
+                Number(scrollPerformanceState.alignmentFallbackCount),
+            alignmentFallbackLastReason:
+                String(scrollPerformanceState.alignmentFallbackLastReason || ""),
+            alignmentFallbackReasonCounts:
+                scrollPerformanceState.alignmentFallbackReasonCounts,
+            alignmentFallbackLastSnapshot:
+                scrollPerformanceState.alignmentFallbackLastSnapshot,
+            fullRefreshCallCount:
+                Number(scrollPerformanceState.fullRefreshCallCount),
+            fullRefreshLastPerformanceOrigin:
+                String(scrollPerformanceState.fullRefreshLastPerformanceOrigin || ""),
+            fullRefreshLastPreferredIndex:
+                Number(scrollPerformanceState.fullRefreshLastPreferredIndex),
+            fullRefreshLastPreviewRowCount:
+                Number(scrollPerformanceState.fullRefreshLastPreviewRowCount),
+            fullRefreshLastRenderedCount:
+                Number(scrollPerformanceState.fullRefreshLastRenderedCount),
+            fullRefreshLastChildCount:
+                Number(scrollPerformanceState.fullRefreshLastChildCount),
+            fullRefreshRequestCount:
+                Number(scrollPerformanceState.fullRefreshRequestCount),
+            fullRefreshDuplicateSuppressedCount:
+                Number(scrollPerformanceState.fullRefreshDuplicateSuppressedCount),
+            fullRefreshLastDataKey:
+                String(scrollPerformanceState.fullRefreshLastDataKey || ""),
+            fullRefreshPendingDataKey:
+                String(scrollPerformanceState.fullRefreshPendingDataKey || ""),
+            fullRefreshLastAppliedDataKey:
+                String(scrollPerformanceState.fullRefreshLastAppliedDataKey || ""),
+            virtualBookkeepingAtomicClearCount:
+                Number(scrollPerformanceState.virtualBookkeepingAtomicClearCount),
+            fullRefreshSamples:
+                scrollPerformanceState.fullRefreshSamples.slice(0),
+            spacerApplyCount:
+                Number(scrollPerformanceState.spacerApplyCount),
+            spacerNoopCount:
+                Number(scrollPerformanceState.spacerNoopCount),
+            sameRangeNoLayoutCount:
+                Number(scrollPerformanceState.sameRangeNoLayoutCount),
+            anchorScrollApplyCount:
+                Number(scrollPerformanceState.anchorScrollApplyCount),
+            anchorScrollNoopCount:
+                Number(scrollPerformanceState.anchorScrollNoopCount),
+            measurePassCount:
+                Number(scrollPerformanceState.measurePassCount),
+            measureLastMs:
+                Number(scrollPerformanceState.measureLastMs),
+            measureMaxMs:
+                Number(scrollPerformanceState.measureMaxMs),
+            keyedReconcileLastMs:
+                Number(scrollPerformanceState.keyedReconcileLastMs),
+            keyedReconcileMaxMs:
+                Number(scrollPerformanceState.keyedReconcileMaxMs),
+            keyedSignatureLastMs:
+                Number(scrollPerformanceState.keyedSignatureLastMs),
+            keyedSignatureMaxMs:
+                Number(scrollPerformanceState.keyedSignatureMaxMs),
+            keyedStructureLastMs:
+                Number(scrollPerformanceState.keyedStructureLastMs),
+            keyedStructureMaxMs:
+                Number(scrollPerformanceState.keyedStructureMaxMs),
+            overlapUpdateLastMs:
+                Number(scrollPerformanceState.overlapUpdateLastMs),
+            overlapUpdateMaxMs:
+                Number(scrollPerformanceState.overlapUpdateMaxMs),
+            slowRebuildCount:
+                Number(scrollPerformanceState.slowRebuildCount),
+            slowRebuildSamples:
+                scrollPerformanceState.slowRebuildSamples.slice(0),
+            stagedAttachStartCount:
+                Number(scrollPerformanceState.stagedAttachStartCount),
+            stagedAttachBatchCount:
+                Number(scrollPerformanceState.stagedAttachBatchCount),
+            stagedAttachCardCount:
+                Number(scrollPerformanceState.stagedAttachCardCount),
+            stagedAttachCompletedCount:
+                Number(scrollPerformanceState.stagedAttachCompletedCount),
+            stagedAttachCancelCount:
+                Number(scrollPerformanceState.stagedAttachCancelCount),
+            stagedAttachFallbackCount:
+                Number(scrollPerformanceState.stagedAttachFallbackCount),
+            stagedAttachDeferredUpdateCount:
+                Number(scrollPerformanceState.stagedAttachDeferredUpdateCount),
+            stagedAttachScrollPreemptCount:
+                Number(scrollPerformanceState.stagedAttachScrollPreemptCount),
+            stagedAttachObsoleteCardAvoidedCount:
+                Number(scrollPerformanceState.stagedAttachObsoleteCardAvoidedCount),
+            stagedAttachRetargetCount:
+            
+
+--- 5 ---
+onCount = 0;
+        for (index = range.start; index <= range.end; index += 1) {
+  row = previewRows[index];
+  if (!row) { continue; }
+  if (Number(row.is_pinned || 0) === 1) { pinnedCount += 1; }
+  tags = tagsForResult(row);
+  tagLabelCount += Math.min(2, tags.length);
+  if (tags.length > 0) { tagColorCount += 1; }
+  if (String(row.source_package || "").length > 0) {
+      sourceIconCount += 1;
+  }
         }
         state.resultCardCount = cardCount;
         state.cardActionButtonCount = cardCount * 4;
@@ -2140,12 +2868,43 @@ ollPerformanceState.stagedAttachFallbackCount += 1;
   row = previewRows[index];
   desiredIds.push(Number(row.id));
   desiredSignatures.push(virtualRenderSignature(row, colors));
-  key = "k:
+  key = "k:" + String(Number(row.id)) + "\u001e" +
+      desiredSignatures[desiredSignatures.length - 1];
+  desiredKeys[key] = true;
+        }
+        keyedSignatureElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) - keyedSignatureStartedAt);
+        keyedStructureStartedAt = Number(System.currentTimeMillis());
+        for (localIndex = Number(virtualCardHost.getChildCount()) - 1;
+      localIndex >= 0; localIndex -= 1) {
+  key = "k:" + String(Number(virtualRenderedItemIds[localIndex])) +
+      "\u001e" + String(virtualRenderedSignatures[localIndex]);
+  if (desiredKeys[key] !== true) {
+      removeVirtualEntryAt(localIndex);
+  }
+        }
+        for (localIndex = 0; localIndex < desiredCount; localIndex += 1) {
+  if (localIndex < virtualRenderedItemIds.length &&
+          Number(virtualRenderedItemIds[localIndex]) ===
+              Number(desiredIds[localIndex]) &&
+          String(virtualRenderedSignatures[localIndex]) ===
+              String(desiredSignatures[localIndex])) 
 
 ===== OCCURRENCES keyedReconcileVirtualWindow(range, colors) =====
 
 --- 1 ---
-f = resultCardHolders.pop();
+(index, row, colors, signature) {
+        var params = new LinearLayout.LayoutParams(
+  LinearLayout.LayoutParams.MATCH_PARENT,
+  LinearLayout.LayoutParams.WRAP_CONTENT);
+        var wrapper;
+        var cardRef;
+        var actionRef;
+        var holderRef;
+        params.bottomMargin = dp(6);
+        wrapper = makeResultCard(row, colors);
+        cardRef = resultCardViews.pop();
+        holderRef = resultCardHolders.pop();
         actionRef = resultActionViews.pop();
         virtualCardHost.addView(wrapper, index, params);
         virtualRenderedItemIds.splice(index, 0, Number(row.id));
@@ -2273,10 +3032,44 @@ f = resultCardHolders.pop();
   scanIndex = -1;
   for (index = localIndex + 1;
           index < virtualRenderedItemIds.length; index += 1) {
-      if (Number(virtualRenderedItemIds[index]) ==
+      if (Number(virtualRenderedItemIds[index]) ===
+              Number(desiredIds[localIndex]) &&
+              String(virtualRenderedSignatures[index]) ===
+                  String(desiredSignatures[localIndex])) {
+          scanIndex = index;
+          break;
+      }
+  }
+  if (scanIndex >= 0) {
+      moveVirtualEntry(scanIndex, localIndex);
+      scrollPerformanceState.sameIdReuseCount += 1;
+  } else {
+      insertVirtualEntryAt(localIndex,
+          previewRows[range.start + localIndex], colors,
+          desiredSignatures[localIndex]);
+  }
+        }
+        while (virtualCardHost.getChildCount() > desiredCount) {
+  removeVirtualEntryAt(
+      Number(virtualCardHost.getChildCount()) - 1);
+        }
+        syncRenderedResultCounters(range);
+        keyedStructureElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) - keyedStructureStartedAt);
+        keyedElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) - keyedStartedAt);
+        scrollPerformanceState.keyedReconcileLastMs = keyedElapsed;
+      
 
 --- 2 ---
-        }
+           scrollPerformanceState.holderRecycleReuseCount += 1;
+                            } else {
+                                scrollPerformanceState.holderRecycleDiscardCount += 1;
+                                holderRef = null;
+                            }
+                        } else {
+                            scrollPerformanceState.holderRecycleKeyMissCount += 1;
+                        }
                     }
                     if (holderRef === null) {
                         wrapper = makeResultCard(previewRows[index], colors);
@@ -2403,4 +3196,31 @@ f = resultCardHolders.pop();
         scrollPerformanceState.updateRequestCount += 1;
         if (requestedOrigin.indexOf("scroll") >= 0) {
   scrollPerformanceState.scrollEventCount += 1;
-      
+        }
+        if (mainHandler === null) { return false; }
+        if (virtualPendingOrigin.length === 0 || requestedForce === true ||
+      virtualPendingOrigin === "result_scroll") {
+  virtualPendingOrigin = requestedOrigin;
+        }
+        if (requestedForce === true && virtualPendingForce !== true) {
+  if (virtualState.updateScheduled) {
+      scrollPerformanceState.forceEscalationCount += 1;
+  }
+  virtualPendingForce = true;
+        }
+        if (virtualState.updateScheduled) {
+  scrollPerformanceState.updateCoalescedCount += 1;
+  return false;
+        }
+        virtualState.updateScheduled = true;
+        scrollPerformanceState.virtualScheduleCount += 1;
+        virtualGeneration += 1;
+        generation = virtualGeneration;
+        mainHandler.postDelayed(new Packages.java.lang.Runnable({
+  run: function () {
+      var commitOrigin;
+      var commitForce;
+      var virtualUpdateStartedAt;
+      var virtualUpdateElapsed;
+      if (generation !== virtualGeneration ||
+              
