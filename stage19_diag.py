@@ -18,6 +18,9 @@ def function_block(name):
 out=[]
 for name in [
     'keyedReconcileVirtualWindow',
+    'insertVirtualEntryAt',
+    'removeVirtualEntryAt',
+    'moveVirtualEntry',
     'startStagedAjaxAttach',
     'finishAjaxAppendRender',
     'rebuildVirtualWindow',
@@ -29,14 +32,20 @@ for name in [
 ]:
     out.append('\n===== '+name+' =====\n'+function_block(name))
 
-for needle in ['startStagedAjaxAttach(', 'ajax_append', 'signatureRebuildCount += 1', 'keyedReconcileVirtualWindow(range, colors)']:
+for needle in [
+    'startStagedAjaxAttach(',
+    'rebuildVirtualWindow(\n            "ajax_append"',
+    'ajaxFooterState.renderBatchCount += 1;',
+    'signatureRebuildCount',
+    'keyedReconcileVirtualWindow(range, colors)'
+]:
     out.append('\n===== OCCURRENCES '+needle+' =====')
     pos=0; n=0
     while True:
         p=src.find(needle,pos)
         if p<0: break
         n+=1
-        out.append('\n--- %d ---\n%s' % (n,src[max(0,p-1800):min(len(src),p+4200)]))
+        out.append('\n--- %d ---\n%s' % (n,src[max(0,p-2200):min(len(src),p+5200)]))
         pos=p+len(needle)
     if n==0: out.append('MISSING')
 pathlib.Path('stage19_diag.txt').write_text('\n'.join(out),encoding='utf-8')
