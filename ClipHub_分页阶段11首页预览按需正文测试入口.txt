@@ -1,0 +1,468 @@
+/* ClipHub 分页阶段 11：首页 200 字符预览与完整正文按需读取探测。
+ * ShortX / Rhino ES5。
+ * 使用隔离运行目录和隔离数据库夹具，不修改正式 ClipHub 数据库。
+ * 运行前请完全停止其他 ClipHub 实例。
+ */
+(function (global) {
+    var URL = Packages.java.net.URL;
+    var URLEncoder = Packages.java.net.URLEncoder;
+    var BAOS = Packages.java.io.ByteArrayOutputStream;
+    var ReflectArray = Packages.java.lang.reflect.Array;
+    var JavaByte = Packages.java.lang.Byte;
+    var JavaString = Packages.java.lang.String;
+    var System = Packages.java.lang.System;
+
+    var OWNER = "7015725";
+    var REPO = "ClipHub";
+    var REF = "beta-pagination-stage10-20260808";
+    var ENTRY_PATH = "ClipHub.js";
+    var EXPECTED_MODULE_SET_VERSION = "20260808.05";
+    var TEST_ENTRY_VERSION = 1;
+    var RUNTIME_NAME = "ClipHubPaginationStage11PreviewOnDemand";
+    var PREVIEW_LIMIT = 200;
+    var DEEP_MARKER = "STAGE11_DEEP_SEARCH_MARKER_20260808";
+
+    function now() {
+        return Number(System.currentTimeMillis());
+    }
+
+    function closeQuietly(value) {
+        if (value !== null && value !== undefined) {
+            try { value.close(); } catch (ignored) {}
+        }
+    }
+
+    function errorText(error) {
+        try {
+            if (error && error.javaException) {
+                return String(error.javaException.getClass().getName()) +
+                    ": " + String(error);
+            }
+        } catch (ignored) {}
+        return String(error);
+    }
+
+    function encodeSegment(value) {
+        return String(URLEncoder.encode(String(value), "UTF-8"))
+            .replace(/\+/g, "%20");
+    }
+
+    function readBytes(stream) {
+        var output = new BAOS();
+        var buffer = ReflectArray.newInstance(JavaByte.TYPE, 8192);
+        var count;
+        try {
+            while ((count = stream.read(buffer)) >= 0) {
+                if (count > 0) { output.write(buffer, 0, count); }
+            }
+            return output.toByteArray();
+        } finally {
+            closeQuietly(stream);
+            closeQuietly(output);
+        }
+    }
+
+    function fetchEntry() {
+        var url = "https://raw.githubusercontent.com/" + OWNER + "/" +
+            REPO + "/" + encodeSegment(REF) + "/" + ENTRY_PATH +
+            "?paginationStage11=" + now();
+        var connection = null;
+        var code;
+        var bytes;
+        var text;
+        try {
+            connection = new URL(url).openConnection();
+            connection.setConnectTimeout(10000);
+            connection.setReadTimeout(30000);
+            connection.setUseCaches(false);
+            connection.setRequestProperty("Accept-Encoding", "identity");
+            connection.setRequestProperty("Cache-Control", "no-cache");
+            connection.setRequestProperty("Pragma", "no-cache");
+            connection.setRequestProperty(
+                "User-Agent", "ClipHub-Pagination-Stage11-Test/1"
+            );
+            code = Number(connection.getResponseCode());
+            bytes = readBytes(code >= 200 && code < 300 ?
+                connection.getInputStream() : connection.getErrorStream());
+            text = String(new JavaString(bytes, "UTF-8"));
+            if (code < 200 || code >= 300) {
+                throw new Error("ClipHub entry HTTP " + code + ": " +
+                    text.substring(0, 400));
+            }
+            return text;
+        } finally {
+            if (connection !== null) {
+                try { connection.disconnect(); } catch (ignored) {}
+            }
+        }
+    }
+
+    function repeatText(value, count) {
+        var output = "";
+        var index;
+        for (index = 0; index < count; index += 1) {
+            output += value;
+        }
+        return output;
+    }
+
+    function rowMap(rows) {
+        var output = {};
+        var index;
+        rows = rows || [];
+        for (index = 0; index < rows.length; index += 1) {
+            output[String(Number(rows[index].id))] = rows[index];
+        }
+        return output;
+    }
+
+    function containsId(rows, id) {
+        var index;
+        rows = rows || [];
+        for (index = 0; index < rows.length; index += 1) {
+            if (Number(rows[index].id) === Number(id)) { return true; }
+        }
+        return false;
+    }
+
+    function insertFixture(database, content, label, timestamp) {
+        return Number(database.executeInsert(
+            "INSERT INTO clipboard_items(" +
+            "content, normalized_hash, content_type, " +
+            "source_package, source_label, source_uid, " +
+            "source_confidence, is_pinned, manual_order, copy_count, " +
+            "created_at, last_copied_at, updated_at, deleted_at, " +
+            "is_sensitive) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                String(content),
+                "stage11-preview-" + String(label) + "-" + String(timestamp),
+                "text",
+                "cliphub.stage11.preview.probe",
+                "Stage11 " + String(label),
+                null,
+                100,
+                0,
+                0,
+                1,
+                Number(timestamp),
+                Number(timestamp),
+                Number(timestamp),
+                null,
+                0
+            ]
+        ));
+    }
+
+    function dbShape(database, id) {
+        return database.queryOne(
+            "SELECT substr(COALESCE(content, ''), 1, 200) AS preview, " +
+            "length(COALESCE(content, '')) AS content_length " +
+            "FROM clipboard_items WHERE id = ?",
+            [Number(id)]
+        );
+    }
+
+    function cleanupRows(database, ids) {
+        var index;
+        if (!database || !database.isOpen()) { return; }
+        for (index = 0; index < ids.length; index += 1) {
+            try {
+                database.executeUpdateDelete(
+                    "DELETE FROM clipboard_items WHERE id = ?",
+                    [Number(ids[index])]
+                );
+            } catch (ignored) {}
+        }
+    }
+
+    function run() {
+        var previousOptions = global.ClipHubBootstrapOptions;
+        var bootstrap;
+        var database = null;
+        var repository = null;
+        var fixtureIds = [];
+        var fixtureContent = {};
+        var fixtureLabels = [];
+        var timestamp = now() - 10000;
+        var listRows;
+        var page;
+        var hydrated;
+        var fullRows;
+        var listMap;
+        var pageMap;
+        var hydrateMap;
+        var fullMap;
+        var shape;
+        var preview;
+        var full;
+        var id;
+        var index;
+        var key;
+        var searchRows;
+        var searchPreview;
+        var deletedId;
+        var oldPreview;
+        var checks = {
+            identity: false,
+            listPreviewProjection: true,
+            pagePreviewProjection: true,
+            hydrationPreviewProjection: true,
+            defaultHydrationStillFull: true,
+            getItemStillFull: true,
+            boundary199: false,
+            boundary200: false,
+            boundary201: false,
+            searchAfter200: false,
+            searchCardStillPreview: false,
+            deletedItemNoFullFallbackBasis: false
+        };
+
+        if (global.ClipHub && global.ClipHub.App &&
+                typeof global.ClipHub.App.isStarted === "function" &&
+                global.ClipHub.App.isStarted()) {
+            throw new Error("请先完全停止当前 ClipHub 后台");
+        }
+
+        try {
+            global.ClipHubBootstrapOptions = {
+                remoteRef: REF,
+                runtimeName: RUNTIME_NAME
+            };
+            global.ClipHubBootstrapResult = null;
+            eval(fetchEntry());
+            bootstrap = global.ClipHubBootstrapResult || {};
+            database = global.ClipHub && global.ClipHub.Database;
+            repository = global.ClipHub && global.ClipHub.Repository;
+
+            if (!bootstrap.ok || !database || !repository ||
+                    String(bootstrap.sync &&
+                        bootstrap.sync.moduleSetVersion || "") !==
+                        EXPECTED_MODULE_SET_VERSION ||
+                    Number(repository.MODULE_VERSION) !== 16 ||
+                    Number(repository.LIST_PREVIEW_CHAR_LIMIT) !== PREVIEW_LIMIT ||
+                    Number(global.ClipHub.List.MODULE_VERSION) !== 20 ||
+                    Number(global.ClipHub.Filter.MODULE_VERSION) !== 50 ||
+                    Number(global.ClipHub.Filter.PAGINATION_STAGE) !== 9) {
+                throw new Error("Stage 11 bootstrap identity mismatch: " +
+                    JSON.stringify(bootstrap));
+            }
+            checks.identity = true;
+
+            fixtureLabels = [
+                "ascii199", "ascii200", "ascii201", "long5000",
+                "multiline1000", "mixed", "deepSearch"
+            ];
+            fixtureContent.ascii199 = repeatText("a", 199);
+            fixtureContent.ascii200 = repeatText("b", 200);
+            fixtureContent.ascii201 = repeatText("c", 201);
+            fixtureContent.long5000 = repeatText("L", 5000);
+            fixtureContent.multiline1000 =
+                repeatText("line-stage11\n", 1000);
+            fixtureContent.mixed =
+                "中文😀CRLF\r\n空行\r\n\r\n" + repeatText("混", 260);
+            fixtureContent.deepSearch =
+                repeatText("D", 240) + DEEP_MARKER + repeatText("Z", 80);
+
+            for (index = 0; index < fixtureLabels.length; index += 1) {
+                key = fixtureLabels[index];
+                id = insertFixture(
+                    database,
+                    fixtureContent[key],
+                    key,
+                    timestamp + index
+                );
+                if (id <= 0) {
+                    throw new Error("fixture insert failed: " + key);
+                }
+                fixtureIds.push(id);
+            }
+
+            listRows = repository.listItems({
+                previewOnly: true,
+                limit: 1000,
+                offset: 0,
+                sortMode: "latest"
+            });
+            page = repository.listItemPage({
+                previewOnly: true,
+                mode: "number",
+                page: 1,
+                pageSize: 1000,
+                includeTotal: true,
+                sortMode: "latest"
+            });
+            hydrated = repository.listItemsByIds(fixtureIds, true);
+            fullRows = repository.listItemsByIds(fixtureIds);
+
+            listMap = rowMap(listRows);
+            pageMap = rowMap(page.rows);
+            hydrateMap = rowMap(hydrated);
+            fullMap = rowMap(fullRows);
+
+            for (index = 0; index < fixtureIds.length; index += 1) {
+                id = Number(fixtureIds[index]);
+                key = String(id);
+                shape = dbShape(database, id);
+                full = repository.getItem(id, false);
+                if (!shape || !full) {
+                    throw new Error("fixture read missing id=" + id);
+                }
+
+                preview = listMap[key];
+                if (!preview ||
+                        String(preview.content || "") !==
+                        String(shape.preview || "") ||
+                        Number(preview.content_length || 0) !==
+                        Number(shape.content_length || 0) ||
+                        Number(preview.content_truncated || 0) !==
+                        (Number(shape.content_length || 0) > PREVIEW_LIMIT ? 1 : 0)) {
+                    checks.listPreviewProjection = false;
+                }
+
+                preview = pageMap[key];
+                if (!preview ||
+                        String(preview.content || "") !==
+                        String(shape.preview || "") ||
+                        Number(preview.content_length || 0) !==
+                        Number(shape.content_length || 0)) {
+                    checks.pagePreviewProjection = false;
+                }
+
+                preview = hydrateMap[key];
+                if (!preview ||
+                        String(preview.content || "") !==
+                        String(shape.preview || "") ||
+                        Number(preview.content_length || 0) !==
+                        Number(shape.content_length || 0)) {
+                    checks.hydrationPreviewProjection = false;
+                }
+
+                if (!fullMap[key] ||
+                        String(fullMap[key].content || "") !==
+                        String(full.content || "")) {
+                    checks.defaultHydrationStillFull = false;
+                }
+                if (String(full.content || "") !==
+                        String(fixtureContent[fixtureLabels[index]])) {
+                    checks.getItemStillFull = false;
+                }
+            }
+
+            checks.boundary199 =
+                Number(listMap[String(fixtureIds[0])].content_length) === 199 &&
+                Number(listMap[String(fixtureIds[0])].content_truncated) === 0 &&
+                String(listMap[String(fixtureIds[0])].content).length === 199;
+            checks.boundary200 =
+                Number(listMap[String(fixtureIds[1])].content_length) === 200 &&
+                Number(listMap[String(fixtureIds[1])].content_truncated) === 0 &&
+                String(listMap[String(fixtureIds[1])].content).length === 200;
+            checks.boundary201 =
+                Number(listMap[String(fixtureIds[2])].content_length) === 201 &&
+                Number(listMap[String(fixtureIds[2])].content_truncated) === 1 &&
+                String(listMap[String(fixtureIds[2])].content).length === 200;
+
+            searchRows = repository.listItems({
+                previewOnly: true,
+                keyword: DEEP_MARKER,
+                limit: 100,
+                offset: 0,
+                sortMode: "latest"
+            });
+            checks.searchAfter200 =
+                containsId(searchRows, fixtureIds[6]);
+            searchPreview = rowMap(searchRows)[String(fixtureIds[6])];
+            checks.searchCardStillPreview = !!searchPreview &&
+                String(searchPreview.content || "").indexOf(DEEP_MARKER) < 0 &&
+                Number(searchPreview.content_truncated || 0) === 1;
+
+            deletedId = Number(fixtureIds[2]);
+            oldPreview = listMap[String(deletedId)];
+            database.executeUpdateDelete(
+                "UPDATE clipboard_items SET deleted_at = ?, updated_at = ? " +
+                "WHERE id = ?",
+                [now(), now(), deletedId]
+            );
+            checks.deletedItemNoFullFallbackBasis = !!oldPreview &&
+                repository.getItem(deletedId, false) === null;
+
+            for (key in checks) {
+                if (checks.hasOwnProperty(key) && checks[key] !== true) {
+                    return {
+                        ok: false,
+                        project: "ClipHub",
+                        testEntry: "pagination_stage11_preview_on_demand",
+                        testEntryVersion: TEST_ENTRY_VERSION,
+                        sourceRef: REF,
+                        expectedModuleSetVersion:
+                            EXPECTED_MODULE_SET_VERSION,
+                        checks: checks,
+                        fixtureIds: fixtureIds,
+                        bootstrap: bootstrap,
+                        error: "Stage 11 assertion failed: " + key
+                    };
+                }
+            }
+
+            return {
+                ok: true,
+                project: "ClipHub",
+                testEntry: "pagination_stage11_preview_on_demand",
+                testEntryVersion: TEST_ENTRY_VERSION,
+                sourceRef: REF,
+                expectedModuleSetVersion: EXPECTED_MODULE_SET_VERSION,
+                repositoryModuleVersion: Number(repository.MODULE_VERSION),
+                listModuleVersion: Number(global.ClipHub.List.MODULE_VERSION),
+                filterModuleVersion: Number(global.ClipHub.Filter.MODULE_VERSION),
+                paginationStage: Number(global.ClipHub.Filter.PAGINATION_STAGE),
+                previewLimit: Number(repository.LIST_PREVIEW_CHAR_LIMIT),
+                fixtureCount: fixtureIds.length,
+                checks: checks,
+                manualRegressionStillRequired: [
+                    "首页真实长代码滑动体验",
+                    "复制完整正文",
+                    "输入完整正文",
+                    "编辑完整正文",
+                    "翻译完整正文",
+                    "详情完整正文",
+                    "Stage 6-10 UI/anchor/预加载/数字分页回归"
+                ],
+                bootstrap: bootstrap
+            };
+        } finally {
+            try { cleanupRows(database, fixtureIds); }
+            catch (ignoredCleanup) {}
+            try {
+                if (global.ClipHub && global.ClipHub.App &&
+                        global.ClipHub.App.isStarted()) {
+                    global.ClipHub.App.stop(
+                        "pagination_stage11_preview_on_demand_finally"
+                    );
+                }
+            } catch (ignoredStop) {}
+            if (previousOptions === undefined) {
+                try { delete global.ClipHubBootstrapOptions; }
+                catch (ignoredDelete) {
+                    global.ClipHubBootstrapOptions = undefined;
+                }
+            } else {
+                global.ClipHubBootstrapOptions = previousOptions;
+            }
+        }
+    }
+
+    try {
+        global.ClipHubPaginationStage11PreviewResult = run();
+    } catch (error) {
+        global.ClipHubPaginationStage11PreviewResult = {
+            ok: false,
+            project: "ClipHub",
+            testEntry: "pagination_stage11_preview_on_demand",
+            testEntryVersion: TEST_ENTRY_VERSION,
+            sourceRef: REF,
+            expectedModuleSetVersion: EXPECTED_MODULE_SET_VERSION,
+            error: errorText(error)
+        };
+    }
+}((function () { return this; }())));
+
+JSON.stringify(ClipHubPaginationStage11PreviewResult, null, 2);

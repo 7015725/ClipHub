@@ -158,11 +158,14 @@ function sourceText(row) {
 return String(row.source_label || row.source_package || "未知来源");
 }
 function isLongText(row) {
+var contentLength = Number(row && row.content_length || 0);
 var content = String(row && row.content !== undefined ?
 row.content : "");
+if (contentLength > LONG_TEXT_THRESHOLD) { return true; }
 return content.length > LONG_TEXT_THRESHOLD ||
 content.split("\n").length >= LONG_TEXT_LINE_THRESHOLD;
 }
+
 function filterState() {
 try {
 if (ClipHub.Filter &&
@@ -207,7 +210,7 @@ ClipHub.Filter.isActive() &&
 typeof ClipHub.Filter.query === "function") {
 return ClipHub.Filter.query({ limit: limit, offset: 0 });
 }
-return ClipHub.Repository.listItems({ limit: limit, offset: 0 });
+return ClipHub.Repository.listItems({ previewOnly: true, limit: limit, offset: 0 });
 }
 function refresh(fromEvent) {
 if (!ready) {
@@ -233,11 +236,14 @@ return false;
 function copyRow(row) {
 var thread = Thread.currentThread();
 var result;
+var full;
 var closeAfter = false;
 try {
-result = ClipHub.Clipboard.writeText(String(row.content), {
+full = ClipHub.Repository.getItem(Number(row.id), false);
+if (full === null || full === undefined) { return false; }
+result = ClipHub.Clipboard.writeText(String(full.content), {
 label: "ClipHub",
-sensitive: Number(row.is_sensitive || 0) === 1
+sensitive: Number(full.is_sensitive || 0) === 1
 });
 state.copyCount += 1;
 state.lastCopiedId = Number(row.id);
@@ -861,7 +867,7 @@ state.lastError = null;
 }
 ClipHub.List = {
 MODULE_NAME: "ch_09_list",
-MODULE_VERSION: 19,
+MODULE_VERSION: 20,
 LONG_TEXT_THRESHOLD: LONG_TEXT_THRESHOLD,
 init: function (context) {
 androidContext = context && context.androidContext ?
@@ -921,7 +927,7 @@ return copyRow(items[index]);
 performCardOpenClick: function (index) {
 index = Math.floor(Number(index));
 if (index < 0 || index >= items.length) { return false; }
-return openDetail(items[index], true);
+return ClipHub.List.openDetail(Number(items[index].id));
 },
 performReorder: function (fromIndex, toIndex) {
 return ClipHub.Window.runOnMain(function () {
