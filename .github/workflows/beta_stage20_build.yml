@@ -17,4 +17,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('stage20_build.py')
+          s=p.read_text(encoding='utf-8')
+          old='initialStagedFillState.startedAtMs = Number(System.currentTimeMillis());'
+          new='initialStagedFillState.startedAtMs = Number(rebuildStartedAt);'
+          if s.count(old)!=1:
+              raise SystemExit('Stage20 startedAt patch anchor count=%d' % s.count(old))
+          p.write_text(s.replace(old,new,1),encoding='utf-8')
+          PY
           python stage20_build.py
