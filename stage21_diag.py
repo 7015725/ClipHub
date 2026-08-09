@@ -31,7 +31,8 @@ for name in [
     'finishOverlapStagedFill',
     'rebuildVirtualWindow',
     'resetVirtualState',
-    'closePanel'
+    'closePanel',
+    'ensureHydrationExecutor'
 ]:
     out.append('\n===== '+name+' =====\n'+block(name))
 
@@ -42,7 +43,11 @@ for needle in [
     'estimateOverlapStagedNewBuildCount(',
     'startOverlapStagedFill(',
     'overlapStagedStartCount:',
-    'initialStagedStartCount:'
+    'initialStagedStartCount:',
+    'hydrationExecutor =',
+    'newSingleThreadExecutor',
+    'ThreadPoolExecutor',
+    'Executors.'
 ]:
     out.append('\n===== OCCURRENCES '+needle+' =====')
     pos=0
