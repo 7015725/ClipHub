@@ -7,21 +7,20 @@ if not m: raise SystemExit('PACKED_B64 missing')
 packed=''.join(re.findall(r'"([A-Za-z0-9+/=]+)"',m.group(1)))
 src=gzip.decompress(base64.b64decode(packed)).decode('utf-8')
 needles=[
- 'var scrollPerformanceState = {',
- 'stagedAttachSyncCatchupAvoidedCount: 0,',
- 'scrollPerformanceState.stagedAttachSyncCatchupAvoidedCount = 0;',
- 'stagedAttachSyncCatchupAvoidedCount:',
+ 'function cardHolderCompatibilityKeyForRow',
+ 'function cardHolderCompatibilityKeyForHolder',
+ 'function takeCompatibleRecycleHolder',
  'function resetVirtualState',
- 'function closePanel',
- 'function rebuildVirtualWindow(origin, force, preferredIndex)',
- 'if (range.end > oldEnd) {'
+ 'function closePanel'
 ]
-out=[]
 for needle in needles:
-    p=src.find(needle)
-    out.append('\n===== '+needle+' =====')
-    if p<0:
-        out.append('MISSING'); continue
-    a=max(0,p-1800); b=min(len(src),p+7000)
-    out.append(src[a:b])
-pathlib.Path('stage18_diag.txt').write_text('\n'.join(out),encoding='utf-8')
+ p=src.find(needle)
+ name=re.sub(r'[^A-Za-z0-9_]+','_',needle).strip('_')
+ if p<0:
+  pathlib.Path('stage18_'+name+'.txt').write_text('MISSING\n',encoding='utf-8'); continue
+ a=src.rfind('\n    function ',0,p)
+ if a<0: a=max(0,p-1000)
+ else: a+=1
+ b=src.find('\n    function ',p+len(needle))
+ if b<0 or b-a>18000: b=min(len(src),p+12000)
+ pathlib.Path('stage18_'+name+'.txt').write_text(src[a:b],encoding='utf-8')
