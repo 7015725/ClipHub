@@ -21,33 +21,19 @@ def block(name):
 
 out=[]
 for name in [
-    'startInitialStagedFill',
-    'runInitialStagedFillBatch',
-    'finishInitialStagedFill',
-    'cancelInitialStagedFill',
-    'estimateOverlapStagedNewBuildCount',
-    'startOverlapStagedFill',
-    'runOverlapStagedFillBatch',
-    'finishOverlapStagedFill',
-    'rebuildVirtualWindow',
-    'resetVirtualState',
-    'closePanel',
-    'ensureHydrationExecutor'
+    'startInitialStagedFill','runInitialStagedFillBatch','finishInitialStagedFill',
+    'cancelInitialStagedFill','estimateOverlapStagedNewBuildCount',
+    'startOverlapStagedFill','runOverlapStagedFillBatch','finishOverlapStagedFill',
+    'rebuildVirtualWindow','resetVirtualState','closePanel','ensureHydrationExecutor'
 ]:
     out.append('\n===== '+name+' =====\n'+block(name))
 
 for needle in [
-    'INITIAL_STAGED_SYNC_MIN_CARDS',
-    'INITIAL_STAGED_MAX_CARDS_PER_BATCH',
-    'String(origin || "") === "hydration_apply"',
-    'estimateOverlapStagedNewBuildCount(',
-    'startOverlapStagedFill(',
-    'overlapStagedStartCount:',
-    'initialStagedStartCount:',
-    'hydrationExecutor =',
-    'newSingleThreadExecutor',
-    'ThreadPoolExecutor',
-    'Executors.'
+    'INITIAL_STAGED_SYNC_MIN_CARDS','INITIAL_STAGED_MAX_CARDS_PER_BATCH',
+    'String(origin || "") === "hydration_apply"','estimateOverlapStagedNewBuildCount(',
+    'startOverlapStagedFill(','overlapStagedStartCount:','initialStagedStartCount:',
+    'hydrationExecutor =','newSingleThreadExecutor','ThreadPoolExecutor','Executors.',
+    'Executor','executor','hydrationWorker'
 ]:
     out.append('\n===== OCCURRENCES '+needle+' =====')
     pos=0
@@ -57,8 +43,11 @@ for needle in [
         if p<0:
             break
         n+=1
-        out.append('\n--- %d ---\n%s' % (n,src[max(0,p-1800):min(len(src),p+5000)]))
+        out.append('\n--- %d ---\n%s' % (n,src[max(0,p-1200):min(len(src),p+3200)]))
         pos=p+len(needle)
+        if n>=20:
+            out.append('\nTRUNCATED AFTER 20 MATCHES')
+            break
     if n==0:
         out.append('MISSING')
 
