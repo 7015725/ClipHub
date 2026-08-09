@@ -1006,6 +1006,9 @@
     }
 
 
+===== ensureHydrationExecutor =====
+MISSING ensureHydrationExecutor
+
 ===== OCCURRENCES INITIAL_STAGED_SYNC_MIN_CARDS =====
 
 --- 1 ---
@@ -3237,3 +3240,934 @@ on: "",
     function ensureHydrationWorker() {
         if (hydrationWorkerStoppingFlag.get() === true ||
                 !hydrationWorkerState.enabled) {
+
+===== OCCURRENCES hydrationExecutor = =====
+
+--- 1 ---
+te virtualState.heightById[key];
+                removed += 1;
+            } else {
+                next.push(previewRows[index]);
+            }
+        }
+        if (removed > 0) {
+            previewRows = next;
+            paginationState.loadedCount = previewRows.length;
+            paginationState.totalCount = Math.max(
+                previewRows.length,
+                Number(paginationState.totalCount) - removed);
+            paginationState.totalPages =
+                paginationState.totalCount > 0 ?
+                    Math.ceil(paginationState.totalCount /
+                        Math.max(1,
+                            Number(paginationState.pageSize))) : 0;
+            state.loadedResultCount = previewRows.length;
+            state.lastResultCount = previewRows.length;
+            resultPageLimit = Math.max(
+                Number(paginationState.pageSize),
+                previewRows.length);
+            state.resultPageLimit = resultPageLimit;
+            if (ClipHub.List &&
+                    typeof ClipHub.List.setItems === "function") {
+                ClipHub.List.setItems(previewRows);
+            }
+        }
+        return removed;
+    }
+
+
+    var hydrationLatestRequestRef =
+        new Packages.java.util.concurrent.atomic.AtomicReference();
+    var hydrationWorkerBusyFlag =
+        new Packages.java.util.concurrent.atomic.AtomicBoolean(false);
+    var hydrationWorkerStoppingFlag =
+        new Packages.java.util.concurrent.atomic.AtomicBoolean(false);
+    var hydrationRequestSequence =
+        new Packages.java.util.concurrent.atomic.AtomicLong(0);
+    var hydrationEpochSequence =
+        new Packages.java.util.concurrent.atomic.AtomicLong(0);
+    var hydrationResultQueue =
+        new Packages.java.util.concurrent.ConcurrentLinkedQueue();
+    var hydrationExecutor = null;
+    var hydrationActiveFuture = null;
+    var hydrationApplyRunnable = null;
+    var hydrationWorkerState = {
+        enabled: true,
+        requestCount: 0,
+        queryCount: 0,
+        successCount: 0,
+        failureCount: 0,
+        latestRequestReplaceCount: 0,
+        staleResultDropCount: 0,
+        postCloseDropCount: 0,
+        workerQueryLastMs: 0,
+        workerQueryMaxMs: 0,
+        mainApplyLastMs: 0,
+        mainApplyMaxMs: 0,
+        visualForceCount: 0,
+        visualDeltaCount: 0,
+        lastRequestId: 0,
+        lastOrigin: "",
+        lastError: null,
+        lastInvalidateReason: "",
+        pendingSignature: null
+    };
+    var scrollPerformanceState = {
+        scrollEventCount: 0,
+        virtualScheduleCount: 0,
+        virtualUpdateCount: 0,
+        virtualUpdateLastMs: 0,
+        virtualUpdateMaxMs: 0,
+        viewRebuildCount: 0,
+        viewRebuildLastMs: 0,
+        viewRebuildMaxMs: 0,
+        createdViewCount: 0,
+        removedViewCount: 0,
+        hydrateRequestedCount: 0,
+        updateRequestCount: 0,
+        updateCoalescedCount: 0,
+        forceEscalationCount: 0,
+        keyedReconcileCount: 0,
+        sameIdReuseCount: 0,
+        signatureRebuildCount: 0,
+        movedViewCount: 0,
+        structuralInsertCount: 0,
+        structuralRemoveCount: 0,
+        alignmentFallbackCount: 0,
+        alignmentFallbackLastReason: "",
+        alignmentFallbackReasonCounts: {},
+        alignmentFallbackLastSnapshot: null,
+        fullRefreshCallCount: 0,
+        fullRefreshLastPerformanceOrigin: "",
+        fullRefreshLastPreferredIndex: -1,
+        fullRefreshLastPreviewRowCount: 0,
+        fullRefreshLastRenderedCount: 0,
+        fullRefreshLastChildCount: 0,
+        fullRefreshRequestCount: 0,
+        fullRefreshDuplicateSuppressedCount: 0,
+        fullRefreshLastDataKey: "",
+        fullRefreshPendingDataKey: "",
+        fullRefreshLastAppliedDataKey: "",
+        virtualBookkeepingAtomicClearCount: 0,
+        fullRefreshSamples: [],
+        spacerApplyCount: 0,
+        spacerNoopCount: 0,
+        sameRangeNoLayoutCount: 0,
+        anchorScrollApplyCount: 0,
+        anchorScrollNoopCount: 0,
+        measurePassCount: 0,
+        measureLastMs: 0,
+        measureMaxMs: 0,
+        keyedReconcileLastMs: 0,
+        keyedReconcileMaxMs: 0,
+        keyedSignatureLastMs: 0,
+        keyedSignatureMaxMs: 0,
+        keyedStructureLastMs: 0,
+        keyedStructureMaxMs: 0,
+        overlapUpdateLastMs: 0,
+        overlapUpdateMaxMs: 0,
+        slowRebuildCount: 0,
+        slowRebuildSamples: [],
+        stagedAttachStartCount: 0,
+        stagedAttachBatchCount: 0,
+        stagedAttachCardCount: 0,
+        stagedAttachCompletedCount: 0,
+        stagedAttachCancelCount: 0,
+        stagedAttachFallbackCount: 0,
+        stagedAttachDeferredUpdateCount: 0,
+        stagedAttachScrollPreemptCount: 0,
+        stagedAttachObsoleteCardAvoidedCount: 0,
+        stagedAttachRetargetCount: 0,
+        stagedAttachRetargetReusedCount: 0,
+        stagedAttachRetargetRemovedCount: 0,
+        stagedAttachRetargetPendingCount: 0,
+        stagedAttachSyncCatchupAvoidedCount: 0,
+        stagedAttachPendingCount: 0,
+        stagedAttachLastBatchMs: 0,
+        stagedAttachMaxBatchMs: 0,
+        stagedAttachLastBatchCards: 0,
+        stagedAttachMaxCardsPerBatch: 0,
+        stagedAttachLastTotalCards: 0,
+        stagedAttachLastTotalMs: 0,
+        stagedAttachMaxTotalMs: 0,
+        stagedAttachLastCancelReason: "",
+        overlapStagedStartCount: 0,
+        overlapStagedBatchCount: 0,
+        overlapStagedCardCount: 0,
+        overlapStagedNewBuildCount: 0,
+        overlapStagedRecycleAttachCount: 0,
+        overlapStagedCompletedCount: 0,
+        overlapStagedCancelCount: 0,
+        overlapStagedDeferredUpdateCount: 0,
+        overlapStagedPendingCount: 0,
+        overlapStagedLastBatchMs: 0,
+        overlapStagedMaxBatchMs: 0,
+        overlapStagedLastBatchCards: 0,
+        overlapStagedMaxCardsPerBatch: 0,
+        overlapStagedLastTotalCards: 0,
+        overlapStagedLastNewBuildTotal: 0,
+        overlapStagedLastTotalMs: 0,
+        overlapStagedMaxTotalMs: 0,
+        overlapStagedSyncBuildAvoidedCount: 0,
+        overlapStagedLastCancelReason: "",
+        keyedStagedStartCount: 0,
+        keyedStagedBatchCount: 0,
+        keyedStagedProcessedCount: 0,
+        keyedStagedNewBuildCount: 0,
+        keyedStagedReuseCount: 0,
+        keyedStagedMoveCount: 0,
+        keyedStagedCompletedCount: 0,
+        keyedStagedCancelCount: 0,
+        keyedStagedDeferredUpdateCount: 0,
+        keyedStagedPendingCount: 0,
+        keyedStagedLastBatchMs: 0,
+        keyedStagedMaxBatchMs: 0,
+        keyedStagedLastBatchBuilds: 0,
+        keyedStagedMaxBuildsPerBatch: 0,
+        keyedStagedLastExpectedNewBuildCount: 0,
+        keyedStagedLastActualNewBuildCount: 0,
+        keyedStagedLastInitialRemoveMs: 0,
+        keyedStagedMaxInitialRemoveMs: 0,
+        keyedStagedLastTotalMs: 0,
+        keyedStagedMaxTo
+
+--- 2 ---
+xMs),
+            holderNewBuildCount:
+                Number(scrollPerformanceState.holderNewBuildCount),
+            holderRebindAttemptCount:
+                Number(scrollPerformanceState.holderRebindAttemptCount),
+            holderRebindEligibleCount:
+                Number(scrollPerformanceState.holderRebindEligibleCount),
+            holderRebindIneligibleCount:
+                Number(scrollPerformanceState.holderRebindIneligibleCount),
+            holderRebindFailureCount:
+                Number(scrollPerformanceState.holderRebindFailureCount),
+            holderRebindLastRejectReason:
+                String(scrollPerformanceState.holderRebindLastRejectReason || ""),
+            holderRebindLastFailureStage:
+                String(scrollPerformanceState.holderRebindLastFailureStage || ""),
+            holderRebindLastError:
+                String(scrollPerformanceState.holderRebindLastError || ""),
+            holderRebindRejectReasons:
+                scrollPerformanceState.holderRebindRejectReasons,
+            holderRebindFailureStages:
+                scrollPerformanceState.holderRebindFailureStages,
+            pendingOrigin: virtualPendingOrigin,
+            pendingForce: virtualPendingForce === true
+        };
+    }
+
+    function invalidateHydrationWorker(reason) {
+        hydrationEpochSequence.incrementAndGet();
+        hydrationLatestRequestRef.set(null);
+        hydrationWorkerState.pendingSignature = null;
+        hydrationWorkerState.lastInvalidateReason =
+            String(reason || "invalidate");
+        return Number(hydrationEpochSequence.get());
+    }
+
+    function ensureHydrationWorker() {
+        if (hydrationWorkerStoppingFlag.get() === true ||
+                !hydrationWorkerState.enabled) {
+            return false;
+        }
+        if (hydrationExecutor === null ||
+                hydrationExecutor.isShutdown() ||
+                hydrationExecutor.isTerminated()) {
+            hydrationExecutor =
+                Packages.java.util.concurrent.Executors
+                    .newSingleThreadExecutor();
+        }
+        if (hydrationApplyRunnable === null) {
+            hydrationApplyRunnable = new Packages.java.lang.Runnable({
+                run: function () {
+                    drainHydrationResultsOnMain();
+                }
+            });
+        }
+        return true;
+    }
+
+    function findPreviewRowIndexByIdForHydration(itemId) {
+        var index;
+        for (index = 0; index < previewRows.length; index += 1) {
+            if (Number(previewRows[index].id) === Number(itemId)) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    function hydrationRequestSignature(request) {
+        return [
+            Number(request.hydrationEpoch),
+            Number(request.queryGeneration),
+            Number(request.renderGeneration),
+            Number(request.startIndex),
+            Number(request.endIndex),
+            request.ids.join(","),
+            request.tagIds.join(",")
+        ].join("|");
+    }
+
+    function collectHydrationRequest(startIndex, endIndex, origin) {
+        var start;
+        var end;
+        var ids = [];
+        var tagIds = [];
+        var seenIds = {};
+        var seenTagIds = {};
+        var index;
+        var row;
+        var key;
+        var request;
+        if (previewRows.length === 0) { return null; }
+        start = Math.max(0, Math.min(
+            previewRows.length - 1,
+            Math.floor(Number(startIndex || 0))));
+        end = Math.max(start, Math.min(
+            previewRows.length - 1,
+            Math.floor(Number(endIndex))));
+        for (index = start; index <= end; index += 1) {
+            row = previewRows[index];
+            if (row === null || row === undefined) { continue; }
+            key = String(Number(row.id));
+            if (isDataWindowStub(row) && seenIds[key] !== true) {
+                seenIds[key] = true;
+                ids.push(Number(row.id));
+            }
+            if (dataTagLoadedById[key] !== true &&
+                    seenTagIds[key] !== true) {
+                seenTagIds[key] = true;
+                tagIds.push(Number(row.id));
+            }
+        }
+        if (ids.length === 0 && tagIds.length === 0) {
+            return null;
+        }
+        request = {
+            requestId: Number(hydrationRequestSequence.incrementAndGet()),
+            hydrationEpoch: Number(hydrationEpochSequence.get()),
+            queryGeneration: Number(paginationState.queryGeneration),
+            renderGeneration: Number(renderGeneration),
+            startIndex: start,
+            endIndex: end,
+            ids: ids,
+            tagIds: tagIds,
+            origin: String(origin || "virtual_scroll")
+        };
+        request.signature = hydrationRequestSignature(request);
+        return request;
+    }
+
+    function postHydrationResult(resultJson) {
+        hydrationResultQueue.offer(
+            new Packages.java.lang.String(String(resultJson)));
+        if (mainHandler !== null && hydrationApplyRunnable !== null) {
+            mainHandler.post(hydrationApplyRunnable);
+        }
+    }
+
+    function queryHydrationRequest(requestJson) {
+        var request = JSON.parse(String(requestJson));
+        var rows = [];
+        var tags = {};
+        var startedAt = Number(System.currentTimeMillis());
+        var finishedAt;
+        var error = null;
+        try {
+            if (request.ids.length > 0) {
+                if (!ClipHub.Repository ||
+                        typeof ClipHub.Repository.listItemsByIds !==
+                            "function") {
+                    throw new Error(
+                        "Repository.listItemsByIds unavailable");
+                }
+                rows = ClipHub.Repository.listItemsByIds(
+                    request.ids, true);
+            }
+            if (request.tagIds.length > 0) {
+                if (!ClipHub.Repository ||
+                        typeof ClipHub.Repository.listItemTagMap !==
+                            "function") {
+                    throw new Error(
+                        "Repository.listItemTagMap unavailable");
+                }
+                tags = ClipHub.Repository.listItemTagMap(
+                    request.tagIds);
+            }
+        } catch (queryError) {
+            error = String(queryError);
+        }
+        finishedAt = Number(System.currentTimeMillis());
+        return JSON.stringify({
+            requestId: Number(request.requestId),
+            hydrationEpoch: Number(request.hydrationEpoch),
+            queryGeneration: Number(request.queryGeneration),
+            renderGeneration: Number(request.renderGeneration),
+            startIndex: Number(request.startIndex),
+            endIndex: Number(request.endIndex),
+            ids: request.ids,
+            tagIds: r
+
+--- 3 ---
+
+                Number(scrollPerformanceState.holderRebindAttemptCount),
+            holderRebindEligibleCount:
+                Number(scrollPerformanceState.holderRebindEligibleCount),
+            holderRebindIneligibleCount:
+                Number(scrollPerformanceState.holderRebindIneligibleCount),
+            holderRebindFailureCount:
+                Number(scrollPerformanceState.holderRebindFailureCount),
+            holderRebindLastRejectReason:
+                String(scrollPerformanceState.holderRebindLastRejectReason || ""),
+            holderRebindLastFailureStage:
+                String(scrollPerformanceState.holderRebindLastFailureStage || ""),
+            holderRebindLastError:
+                String(scrollPerformanceState.holderRebindLastError || ""),
+            holderRebindRejectReasons:
+                scrollPerformanceState.holderRebindRejectReasons,
+            holderRebindFailureStages:
+                scrollPerformanceState.holderRebindFailureStages,
+            pendingOrigin: virtualPendingOrigin,
+            pendingForce: virtualPendingForce === true
+        };
+    }
+
+    function invalidateHydrationWorker(reason) {
+        hydrationEpochSequence.incrementAndGet();
+        hydrationLatestRequestRef.set(null);
+        hydrationWorkerState.pendingSignature = null;
+        hydrationWorkerState.lastInvalidateReason =
+            String(reason || "invalidate");
+        return Number(hydrationEpochSequence.get());
+    }
+
+    function ensureHydrationWorker() {
+        if (hydrationWorkerStoppingFlag.get() === true ||
+                !hydrationWorkerState.enabled) {
+            return false;
+        }
+        if (hydrationExecutor === null ||
+                hydrationExecutor.isShutdown() ||
+                hydrationExecutor.isTerminated()) {
+            hydrationExecutor =
+                Packages.java.util.concurrent.Executors
+                    .newSingleThreadExecutor();
+        }
+        if (hydrationApplyRunnable === null) {
+            hydrationApplyRunnable = new Packages.java.lang.Runnable({
+                run: function () {
+                    drainHydrationResultsOnMain();
+                }
+            });
+        }
+        return true;
+    }
+
+    function findPreviewRowIndexByIdForHydration(itemId) {
+        var index;
+        for (index = 0; index < previewRows.length; index += 1) {
+            if (Number(previewRows[index].id) === Number(itemId)) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    function hydrationRequestSignature(request) {
+        return [
+            Number(request.hydrationEpoch),
+            Number(request.queryGeneration),
+            Number(request.renderGeneration),
+            Number(request.startIndex),
+            Number(request.endIndex),
+            request.ids.join(","),
+            request.tagIds.join(",")
+        ].join("|");
+    }
+
+    function collectHydrationRequest(startIndex, endIndex, origin) {
+        var start;
+        var end;
+        var ids = [];
+        var tagIds = [];
+        var seenIds = {};
+        var seenTagIds = {};
+        var index;
+        var row;
+        var key;
+        var request;
+        if (previewRows.length === 0) { return null; }
+        start = Math.max(0, Math.min(
+            previewRows.length - 1,
+            Math.floor(Number(startIndex || 0))));
+        end = Math.max(start, Math.min(
+            previewRows.length - 1,
+            Math.floor(Number(endIndex))));
+        for (index = start; index <= end; index += 1) {
+            row = previewRows[index];
+            if (row === null || row === undefined) { continue; }
+            key = String(Number(row.id));
+            if (isDataWindowStub(row) && seenIds[key] !== true) {
+                seenIds[key] = true;
+                ids.push(Number(row.id));
+            }
+            if (dataTagLoadedById[key] !== true &&
+                    seenTagIds[key] !== true) {
+                seenTagIds[key] = true;
+                tagIds.push(Number(row.id));
+            }
+        }
+        if (ids.length === 0 && tagIds.length === 0) {
+            return null;
+        }
+        request = {
+            requestId: Number(hydrationRequestSequence.incrementAndGet()),
+            hydrationEpoch: Number(hydrationEpochSequence.get()),
+            queryGeneration: Number(paginationState.queryGeneration),
+            renderGeneration: Number(renderGeneration),
+            startIndex: start,
+            endIndex: end,
+            ids: ids,
+            tagIds: tagIds,
+            origin: String(origin || "virtual_scroll")
+        };
+        request.signature = hydrationRequestSignature(request);
+        return request;
+    }
+
+    function postHydrationResult(resultJson) {
+        hydrationResultQueue.offer(
+            new Packages.java.lang.String(String(resultJson)));
+        if (mainHandler !== null && hydrationApplyRunnable !== null) {
+            mainHandler.post(hydrationApplyRunnable);
+        }
+    }
+
+    function queryHydrationRequest(requestJson) {
+        var request = JSON.parse(String(requestJson));
+        var rows = [];
+        var tags = {};
+        var startedAt = Number(System.currentTimeMillis());
+        var finishedAt;
+        var error = null;
+        try {
+            if (request.ids.length > 0) {
+                if (!ClipHub.Repository ||
+                        typeof ClipHub.Repository.listItemsByIds !==
+                            "function") {
+                    throw new Error(
+                        "Repository.listItemsByIds unavailable");
+                }
+                rows = ClipHub.Repository.listItemsByIds(
+                    request.ids, true);
+            }
+            if (request.tagIds.length > 0) {
+                if (!ClipHub.Repository ||
+                        typeof ClipHub.Repository.listItemTagMap !==
+                            "function") {
+                    throw new Error(
+                        "Repository.listItemTagMap unavailable");
+                }
+                tags = ClipHub.Repository.listItemTagMap(
+                    request.tagIds);
+            }
+        } catch (queryError) {
+            error = String(queryError);
+        }
+        finishedAt = Number(System.currentTimeMillis());
+        return JSON.stringify({
+            requestId: Number(request.requestId),
+            hydrationEpoch: Number(request.hydrationEpoch),
+            queryGeneration: Number(request.queryGeneration),
+            renderGeneration: Number(request.renderGeneration),
+            startIndex: Number(request.startIndex),
+            endIndex: Number(request.endIndex),
+            ids: request.ids,
+            tagIds: request.tagIds,
+            rows: rows,
+            tags: tags,
+            origin: request.origin,
+            startedAt: startedAt,
+           
+
+--- 4 ---
+ Math.max(
+            Number(hydrationWorkerState.mainApplyMaxMs), elapsed);
+        var forceVisual = missing > 0 ||
+            hydrationResultTouchesRendered(result);
+        if (forceVisual) {
+            hydrationWorkerState.visualForceCount += 1;
+        } else {
+            hydrationWorkerState.visualDeltaCount += 1;
+        }
+        scheduleVirtualUpdate("hydration_apply", forceVisual);
+        return true;
+    }
+
+    function drainHydrationResultsOnMain() {
+        var resultJson;
+        if (Looper.myLooper() !== Looper.getMainLooper()) {
+            if (mainHandler !== null && hydrationApplyRunnable !== null) {
+                mainHandler.post(hydrationApplyRunnable);
+            }
+            return false;
+        }
+        while ((resultJson = hydrationResultQueue.poll()) !== null) {
+            applyHydrationResult(String(resultJson));
+        }
+        return true;
+    }
+
+    function shutdownHydrationWorker() {
+        var executor = hydrationExecutor;
+        var future = hydrationActiveFuture;
+        invalidateHydrationWorker("shutdown");
+        hydrationWorkerState.enabled = false;
+        hydrationWorkerStoppingFlag.set(true);
+        hydrationLatestRequestRef.set(null);
+        if (future !== null) {
+            try { future.cancel(true); }
+            catch (ignoredFutureCancel) {}
+        }
+        if (executor !== null) {
+            try { executor.shutdownNow(); }
+            catch (ignoredExecutorShutdown) {}
+            try {
+                executor.awaitTermination(
+                    5000,
+                    Packages.java.util.concurrent.TimeUnit.MILLISECONDS);
+            } catch (ignoredAwait) {}
+        }
+        hydrationResultQueue.clear();
+        hydrationWorkerBusyFlag.set(false);
+        hydrationActiveFuture = null;
+        hydrationExecutor = null;
+        hydrationApplyRunnable = null;
+        hydrationWorkerState.pendingSignature = null;
+        return true;
+    }
+
+    function hydrateDataWindowRange(startIndex, endIndex, origin) {
+        var start;
+        var end;
+        var request;
+        if (previewRows.length === 0) {
+            return {
+                hydratedCount: 0,
+                missingCount: 0,
+                tagCount: 0,
+                pending: false,
+                requiresRows: false
+            };
+        }
+        start = Math.max(0, Math.min(
+            previewRows.length - 1,
+            Math.floor(Number(startIndex || 0))));
+        end = Math.max(start, Math.min(
+            previewRows.length - 1,
+            Math.floor(Number(endIndex))));
+        dataWindowState.lastHydrateStartIndex = start;
+        dataWindowState.lastHydrateEndIndex = end;
+        dataWindowState.lastOrigin = String(
+            origin || "data_window_hydrate");
+        dataWindowState.lastError = null;
+        dataWindowState.hydrationPassCount += 1;
+        request = collectHydrationRequest(
+            start, end, origin || "data_window_hydrate");
+        if (request === null) {
+            updateDataWindowCounts();
+            return {
+                hydratedCount: 0,
+                missingCount: 0,
+                tagCount: 0,
+                pending: false,
+                requiresRows: false
+            };
+        }
+        submitHydrationRequest(request);
+        updateDataWindowCounts();
+        return {
+            hydratedCount: 0,
+            missingCount: 0,
+            tagCount: request.tagIds.length,
+            pending: true,
+            requiresRows: request.ids.length > 0,
+            requestId: Number(request.requestId)
+        };
+    }
+
+    function dehydrateDataWindowOutside(startIndex, endIndex, origin) {
+        var blockSize;
+        var startBlock;
+        var endBlock;
+        var keepStart;
+        var keepEnd;
+        var index;
+        var row;
+        var itemId;
+        var key;
+        var changed = 0;
+        if (previewRows.length === 0) {
+            return 0;
+        }
+        blockSize = dataWindowBlockSize();
+        startBlock = Math.max(0,
+            Math.floor(Math.max(0,
+                Number(startIndex || 0)) / blockSize) -
+                DATA_BLOCK_KEEP_BEFORE);
+        endBlock = Math.min(
+            Math.max(0,
+                Math.ceil(previewRows.length / blockSize) - 1),
+            Math.floor(Math.max(0,
+                Number(endIndex || 0)) / blockSize) +
+                DATA_BLOCK_KEEP_AFTER);
+        keepStart = startBlock * blockSize;
+        keepEnd = Math.min(previewRows.length - 1,
+            (endBlock + 1) * blockSize - 1);
+        dataWindowState.keepStartIndex = keepStart;
+        dataWindowState.keepEndIndex = keepEnd;
+        dataWindowState.lastOrigin = String(
+            origin || "data_window_dehydrate");
+        dataWindowState.lastError = null;
+        for (index = 0; index < previewRows.length; index += 1) {
+            if (index >= keepStart && index <= keepEnd) {
+                continue;
+            }
+            row = previewRows[index];
+            if (isDataWindowStub(row)) { continue; }
+            itemId = Number(row.id);
+            if ((selectedItemId !== null &&
+                    itemId === Number(selectedItemId)) ||
+                    (virtualState.anchorItemId !== null &&
+                    itemId === Number(virtualState.anchorItemId))) {
+                continue;
+            }
+            key = String(itemId);
+            previewRows[index] = dataWindowStub(itemId);
+            delete resultTagMap[key];
+            delete dataTagLoadedById[key];
+            changed += 1;
+        }
+        dataWindowState.dehydrationPassCount += 1;
+        dataWindowState.dehydratedRowTotal += changed;
+        if (changed > 0 && ClipHub.List &&
+                typeof ClipHub.List.setItems === "function") {
+            ClipHub.List.setItems(previewRows);
+        }
+        updateDataWindowCounts();
+        return changed;
+    }
+
+    function dataWindowRowSnapshot(itemId) {
+        var index;
+        var row;
+        var key = String(Number(itemId));
+        for (index = 0; index < previewRows.length; index += 1) {
+            row = previewRows[index];
+            if (Number(row.id) === Number(itemId)) {
+                return {
+                    index: index,
+                    id: Number(row.id),
+                    hydrated: !isDataWindowStub(row),
+                    content: isDataWindowStub(row) ? null :
+                        String(row.content || ""),
+                    previewLength: isDataWindowStub(row) ? 0 :
+                        String(row.content || "").length,
+                    contentLength: isDataWindowStub(row) ? 0 :
+                        Number(row.content_length || 0),
+                    contentTruncated: isDataWindowStub(row) ? 0 :
+                        Number(row.content_truncated || 0),
+                    full
+
+===== OCCURRENCES newSingleThreadExecutor =====
+
+--- 1 ---
+dEligibleCount:
+                Number(scrollPerformanceState.holderRebindEligibleCount),
+            holderRebindIneligibleCount:
+                Number(scrollPerformanceState.holderRebindIneligibleCount),
+            holderRebindFailureCount:
+                Number(scrollPerformanceState.holderRebindFailureCount),
+            holderRebindLastRejectReason:
+                String(scrollPerformanceState.holderRebindLastRejectReason || ""),
+            holderRebindLastFailureStage:
+                String(scrollPerformanceState.holderRebindLastFailureStage || ""),
+            holderRebindLastError:
+                String(scrollPerformanceState.holderRebindLastError || ""),
+            holderRebindRejectReasons:
+                scrollPerformanceState.holderRebindRejectReasons,
+            holderRebindFailureStages:
+                scrollPerformanceState.holderRebindFailureStages,
+            pendingOrigin: virtualPendingOrigin,
+            pendingForce: virtualPendingForce === true
+        };
+    }
+
+    function invalidateHydrationWorker(reason) {
+        hydrationEpochSequence.incrementAndGet();
+        hydrationLatestRequestRef.set(null);
+        hydrationWorkerState.pendingSignature = null;
+        hydrationWorkerState.lastInvalidateReason =
+            String(reason || "invalidate");
+        return Number(hydrationEpochSequence.get());
+    }
+
+    function ensureHydrationWorker() {
+        if (hydrationWorkerStoppingFlag.get() === true ||
+                !hydrationWorkerState.enabled) {
+            return false;
+        }
+        if (hydrationExecutor === null ||
+                hydrationExecutor.isShutdown() ||
+                hydrationExecutor.isTerminated()) {
+            hydrationExecutor =
+                Packages.java.util.concurrent.Executors
+                    .newSingleThreadExecutor();
+        }
+        if (hydrationApplyRunnable === null) {
+            hydrationApplyRunnable = new Packages.java.lang.Runnable({
+                run: function () {
+                    drainHydrationResultsOnMain();
+                }
+            });
+        }
+        return true;
+    }
+
+    function findPreviewRowIndexByIdForHydration(itemId) {
+        var index;
+        for (index = 0; index < previewRows.length; index += 1) {
+            if (Number(previewRows[index].id) === Number(itemId)) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    function hydrationRequestSignature(request) {
+        return [
+            Number(request.hydrationEpoch),
+            Number(request.queryGeneration),
+            Number(request.renderGeneration),
+            Number(request.startIndex),
+            Number(request.endIndex),
+            request.ids.join(","),
+            request.tagIds.join(",")
+        ].join("|");
+    }
+
+    function collectHydrationRequest(startIndex, endIndex, origin) {
+        var start;
+        var end;
+        var ids = [];
+        var tagIds = [];
+        var seenIds = {};
+        var seenTagIds = {};
+        var index;
+        var row;
+        var key;
+        var request;
+        if (previewRows.length === 0) { return null; }
+        start = Math.max(0, Math.min(
+            previewRows.length - 1,
+            Math.floor(Number(startIndex || 0))));
+        end = Math.max(start, Math.min(
+            previewRows.length - 1,
+            Math.floor(Number(endIndex))));
+        for (index = start; index <= end; index += 1) {
+            row = previewRows[index];
+            if (row === null || row === undefined) { continue; }
+            key = String(Number(row.id));
+            if (isDataWindowStub(row) && seenIds[key] !== true) {
+                seenIds[key] = true;
+                ids.push(Number(row.id));
+            }
+            if (dataTagLoadedById[key] !== true &&
+                    seenTagIds[key] !== true) {
+                seenTagIds[key] = true;
+                tagIds.push(Number(row.id));
+            }
+        }
+        if (ids.length === 0 && tagIds.length === 0) {
+            return null;
+        }
+        request = {
+            requestId: Number(hydrationRequestSequence.incrementAndGet()),
+            hydrationEpoch: Number(hydrationEpochSequence.get()),
+            queryGeneration: Number(paginationState.queryGeneration),
+            renderGeneration: Number(renderGeneration),
+            startIndex: start,
+            endIndex: end,
+            ids: ids,
+            tagIds: tagIds,
+            origin: String(origin || "virtual_scroll")
+        };
+        request.signature = hydrationRequestSignature(request);
+        return request;
+    }
+
+    function postHydrationResult(resultJson) {
+        hydrationResultQueue.offer(
+            new Packages.java.lang.String(String(resultJson)));
+        if (mainHandler !== null && hydrationApplyRunnable !== null) {
+            mainHandler.post(hydrationApplyRunnable);
+        }
+    }
+
+    function queryHydrationRequest(requestJson) {
+        var request = JSON.parse(String(requestJson));
+        var rows = [];
+        var tags = {};
+        var startedAt = Number(System.currentTimeMillis());
+        var finishedAt;
+        var error = null;
+        try {
+            if (request.ids.length > 0) {
+                if (!ClipHub.Repository ||
+                        typeof ClipHub.Repository.listItemsByIds !==
+                            "function") {
+                    throw new Error(
+                        "Repository.listItemsByIds unavailable");
+                }
+                rows = ClipHub.Repository.listItemsByIds(
+                    request.ids, true);
+            }
+            if (request.tagIds.length > 0) {
+                if (!ClipHub.Repository ||
+                        typeof ClipHub.Repository.listItemTagMap !==
+                            "function") {
+                    throw new Error(
+                        "Repository.listItemTagMap unavailable");
+                }
+                tags = ClipHub.Repository.listItemTagMap(
+                    request.tagIds);
+            }
+        } catch (queryError) {
+            error = String(queryError);
+        }
+        finishedAt = Number(System.currentTimeMillis());
+        return JSON.stringify({
+            requestId: Number(request.requestId),
+            hydrationEpoch: Number(request.hydrationEpoch),
+            queryGeneration: Number(request.queryGeneration),
+            renderGeneration: Number(request.renderGeneration),
+            startIndex: Number(request.startIndex),
+            endIndex: Number(request.endIndex),
+            ids: request.ids,
+            tagIds: request.tagIds,
+            rows: rows,
+            tags: tags,
+            origin: request.origin,
+            startedAt: startedAt,
+            finishedAt: finishedAt,
+            queryMs: Math.max(0, finishedAt - startedAt),
+            er
+
+===== OCCURRENCES ThreadPoolExecutor =====
+MISSING
+
+===== OCCURRENCES Executors. =====
+MISSING
