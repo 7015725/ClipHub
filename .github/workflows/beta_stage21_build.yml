@@ -25,6 +25,9 @@ jobs:
           new="""    executor_matches=re.findall(r'Executors\\s*\\.newSingleThreadExecutor\\s*\\(\\s*\\)',out)\n    if len(executor_matches)!=1:\n        raise RuntimeError('hydration executor count='+str(len(executor_matches)))\n"""
           if old not in s:
               raise SystemExit('executor validator anchor missing')
-          p.write_text(s.replace(old,new,1),encoding='utf-8')
+          s=s.replace(old,new,1)
+          s=s.replace("'BUFFER_SCREENS_BEFORE = 3'","'VIRTUAL_BEFORE_SCREENS = 3'",1)
+          s=s.replace("'BUFFER_SCREENS_AFTER = 5'","'VIRTUAL_AFTER_SCREENS = 5'",1)
+          p.write_text(s,encoding='utf-8')
           PY
           python stage21_build.py
