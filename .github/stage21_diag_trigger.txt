@@ -1,1 +1,1 @@
-trigger=stage21-diag-v2
+trigger=stage21-diag-v3
