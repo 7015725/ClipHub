@@ -1,1 +1,1 @@
-trigger=stage18-build-v1
+trigger=stage18-build-v2
