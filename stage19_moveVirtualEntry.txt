@@ -1,0 +1,23 @@
+    function moveVirtualEntry(fromIndex, toIndex) {
+        var wrapper = virtualCardHost.getChildAt(fromIndex);
+        var params = wrapper.getLayoutParams();
+        var itemId = virtualRenderedItemIds[fromIndex];
+        var signature = virtualRenderedSignatures[fromIndex];
+        var cardRef = resultCardViews[fromIndex];
+        var holderRef = resultCardHolders[fromIndex];
+        var actionRef = resultActionViews[fromIndex];
+        virtualCardHost.removeViewAt(fromIndex);
+        virtualRenderedItemIds.splice(fromIndex, 1);
+        virtualRenderedSignatures.splice(fromIndex, 1);
+        resultCardViews.splice(fromIndex, 1);
+        resultCardHolders.splice(fromIndex, 1);
+        resultActionViews.splice(fromIndex, 1);
+        virtualCardHost.addView(wrapper, toIndex, params);
+        virtualRenderedItemIds.splice(toIndex, 0, itemId);
+        virtualRenderedSignatures.splice(toIndex, 0, signature);
+        resultCardViews.splice(toIndex, 0, cardRef);
+        resultCardHolders.splice(toIndex, 0, holderRef);
+        resultActionViews.splice(toIndex, 0, actionRef);
+        scrollPerformanceState.movedViewCount += 1;
+        return true;
+    }

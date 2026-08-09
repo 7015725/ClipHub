@@ -1,0 +1,11 @@
+    function removeVirtualEntryAt(index) {
+        virtualCardHost.removeViewAt(index);
+        virtualRenderedItemIds.splice(index, 1);
+        virtualRenderedSignatures.splice(index, 1);
+        resultCardViews.splice(index, 1);
+        resultCardHolders.splice(index, 1);
+        resultActionViews.splice(index, 1);
+        scrollPerformanceState.removedViewCount += 1;
+        scrollPerformanceState.structuralRemoveCount += 1;
+        return true;
+    }
