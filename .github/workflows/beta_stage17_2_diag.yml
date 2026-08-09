@@ -1,23 +1,20 @@
-name: Beta Stage17.2 Diagnostic
+name: Beta Stage17.2 Build
 on:
   push:
     branches: [beta-pagination-stage10-20260808]
     paths:
       - .github/stage17_2_diag_trigger.txt
 jobs:
-  diag:
+  build:
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Extract Filter66 staged paths
+        with:
+          fetch-depth: 0
+      - name: Build packed Filter67 staged retarget
         shell: bash
         run: |
           set -euo pipefail
-          python stage17_2_diag.py
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add stage17_2_*.txt
-          git commit -m "记录 Stage17.2 staged retarget 诊断"
-          git push
+          python stage17_2_build_runner.py
