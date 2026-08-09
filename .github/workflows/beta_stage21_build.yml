@@ -17,4 +17,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('stage21_build.py')
+          s=p.read_text(encoding='utf-8')
+          old="""    if out.count('Executors.newSingleThreadExecutor')!=1:\n        raise RuntimeError('hydration executor count='+str(out.count('Executors.newSingleThreadExecutor')))\n"""
+          new="""    executor_matches=re.findall(r'Executors\\s*\\.newSingleThreadExecutor\\s*\\(\\s*\\)',out)\n    if len(executor_matches)!=1:\n        raise RuntimeError('hydration executor count='+str(len(executor_matches)))\n"""
+          if old not in s:
+              raise SystemExit('executor validator anchor missing')
+          p.write_text(s.replace(old,new,1),encoding='utf-8')
+          PY
           python stage21_build.py
