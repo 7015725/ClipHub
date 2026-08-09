@@ -84,6 +84,30 @@
         return Number(System.currentTimeMillis());
     }
 
+    function isMainThread() {
+        var mainLooper;
+        var mainThread;
+        try {
+            if (ClipHub.Window &&
+                    typeof ClipHub.Window.isMainThread === "function") {
+                return ClipHub.Window.isMainThread();
+            }
+        } catch (ignoredWindow) {}
+        mainLooper = Looper.getMainLooper();
+        if (mainLooper === null) { return false; }
+        try {
+            if (Build.VERSION.SDK_INT >= 23) {
+                return mainLooper.isCurrentThread();
+            }
+        } catch (ignoredCurrentThread) {}
+        try {
+            mainThread = mainLooper.getThread();
+            return mainThread !== null &&
+                Number(JavaThread.currentThread().getId()) ===
+                Number(mainThread.getId());
+        } catch (ignoredThread) { return false; }
+    }
+
     function dp(value) {
         return Math.max(1, Math.floor(Number(value) * density + 0.5));
     }
@@ -116,8 +140,7 @@
                 }
             }
         });
-        if (Looper.myLooper() === Looper.getMainLooper() &&
-                Number(delayMs || 0) <= 0) {
+        if (isMainThread() && Number(delayMs || 0) <= 0) {
             runnable.run();
             return true;
         }
@@ -135,7 +158,7 @@
         if (typeof callback !== "function") {
             throw new Error("Navigation main callback must be a function");
         }
-        if (Looper.myLooper() === Looper.getMainLooper()) {
+        if (isMainThread()) {
             return callback();
         }
         try {
@@ -457,16 +480,22 @@
             catch (ignoredAttached) {}
             if (!attached) { continue; }
             try {
-                windowManager.removeViewImmediate(view);
-                removed += 1;
-            } catch (errorImmediate) {
-                try {
+                if (ClipHub.Window &&
+                        typeof ClipHub.Window.requestViewRemoval ===
+                            "function") {
+                    ClipHub.Window.requestViewRemoval({
+                        manager: windowManager,
+                        view: view,
+                        role: "navigation_residual",
+                        reason: "navigation_purge"
+                    });
+                    removed += 1;
+                } else {
                     windowManager.removeView(view);
                     removed += 1;
-                } catch (errorRemove) {
-                    navState.lastError = String(errorImmediate) +
-                        "; fallback=" + String(errorRemove);
                 }
+            } catch (removeError) {
+                navState.lastError = String(removeError);
             }
         }
         unregisterAllEntries(false);
@@ -1122,7 +1151,7 @@
 
     ClipHub.Navigation = {
         MODULE_NAME: "ch_14_navigation_embedded",
-        MODULE_VERSION: 6,
+        MODULE_VERSION: 7,
         init: navigationInit,
         dispatchBack: function (reason) {
             return dispatchBack("", reason || "api_back");
@@ -1155,6 +1184,10 @@
     var translationHeaderCloseView = null;
     var translationFooterCloseView = null;
     var translationGeneration = 0;
+    var translationClosing = false;
+    var translationRemovalPending = false;
+    var translationRemovalGeneration = 0;
+    var pendingTranslationItemId = null;
     var translationState = {
         attached: false,
         itemId: null,
@@ -1789,9 +1822,17 @@
         var size;
         var type;
         if (!initialized) { throw new Error("翻译模块尚未初始化"); }
+        if (translationRemovalPending) {
+            pendingTranslationItemId = Number(itemId);
+            return getTranslationState();
+        }
+        if (translationState.attached || translationRoot !== null) {
+            pendingTranslationItemId = Number(itemId);
+            closeTranslationPanel("replace");
+            return getTranslationState();
+        }
         row = ClipHub.Repository.getItem(Number(itemId), false);
         if (row === null) { throw new Error("翻译目标不存在"); }
-        closeTranslationPanel("replace");
         translationState.itemId = Number(row.id);
         translationState.sourceText = String(row.content || "");
         translationState.translatedText = "";
@@ -1863,50 +1904,88 @@
     }
 
     function closeTranslationPanel(reason) {
+        var reasonText = String(reason || "close");
         translationGeneration += 1;
-        if (!translationState.attached && translationRoot === null) {
+        if (translationRemovalPending) {
+            return true;
+        }
+        if (!translationState.attached && translationRoot === null &&
+                !translationRemovalPending) {
             return true;
         }
         return runOnMainSync(function () {
-            try {
-                if (translationWindowRoot !== null && ClipHub.Window &&
-                        typeof ClipHub.Window.detachWindow === "function") {
-                    try { ClipHub.Window.detachWindow(translationWindowRoot); }
-                    catch (ignoredDetach) {}
-                }
-                if (translationRoot !== null) {
-                    try {
-                        windowManager.removeViewImmediate(
-                            translationWindowRoot !== null ?
-                                translationWindowRoot : translationRoot);
-                    } catch (error) {
-                        if (translationWindowRoot !== null ?
-                                translationWindowRoot.isAttachedToWindow() :
-                                translationRoot.isAttachedToWindow()) {
-                            throw error;
-                        }
+            var capturedRoot = translationWindowRoot !== null ?
+                translationWindowRoot : translationRoot;
+            var capturedManager = windowManager;
+            var generation;
+            var removal;
+            translationClosing = true;
+            translationRemovalPending = capturedRoot !== null;
+            translationRemovalGeneration += 1;
+            generation = translationRemovalGeneration;
+            if (capturedRoot !== null && ClipHub.Window &&
+                    typeof ClipHub.Window.detachWindow === "function") {
+                try { ClipHub.Window.detachWindow(capturedRoot); }
+                catch (ignoredDetach) {}
+            }
+            translationState.closeCount += 1;
+            translationState.attached = false;
+            translationState.running = false;
+            translationRoot = null;
+            translationWindowRoot = null;
+            translationManagedFrame = null;
+            translationParams = null;
+            translationOriginalView = null;
+            translationResultView = null;
+            translationStatusView = null;
+            translationProviderView = null;
+            translationCopyView = null;
+            translationReplaceView = null;
+            translationSaveView = null;
+            translationRetryView = null;
+            translationHeaderCloseView = null;
+            translationFooterCloseView = null;
+            if (capturedRoot === null) {
+                translationClosing = false;
+                translationRemovalPending = false;
+                return true;
+            }
+            removal = ClipHub.Window.requestViewRemoval({
+                manager: capturedManager,
+                view: capturedRoot,
+                role: "translation",
+                reason: reasonText,
+                generation: generation,
+                onDetached: function (result) {
+                    var nextItemId;
+                    if (generation !== translationRemovalGeneration) {
+                        return;
+                    }
+                    translationClosing = false;
+                    translationRemovalPending = false;
+                    if (!result || result.ok !== true) {
+                        translationState.lastError = String(
+                            result && result.error ? result.error :
+                                "Translation removal failed");
+                        pendingTranslationItemId = null;
+                        return;
+                    }
+                    nextItemId = pendingTranslationItemId;
+                    pendingTranslationItemId = null;
+                    if (nextItemId !== null && initialized) {
+                        openTranslationForItem(nextItemId);
                     }
                 }
-                translationState.closeCount += 1;
-                return true;
-            } finally {
-                translationState.attached = false;
-                translationState.running = false;
-                translationRoot = null;
-                translationWindowRoot = null;
-                translationManagedFrame = null;
-                translationParams = null;
-                translationOriginalView = null;
-                translationResultView = null;
-                translationStatusView = null;
-                translationProviderView = null;
-                translationCopyView = null;
-                translationReplaceView = null;
-                translationSaveView = null;
-                translationRetryView = null;
-                translationHeaderCloseView = null;
-                translationFooterCloseView = null;
+            });
+            if (!removal || removal.ok !== true) {
+                translationClosing = false;
+                translationRemovalPending = false;
+                pendingTranslationItemId = null;
+                translationState.lastError = String(
+                    removal && removal.error ? removal.error :
+                        "Translation removal queue failed");
             }
+            return removal && removal.ok === true;
         }, 3000);
     }
 
@@ -1920,6 +1999,8 @@
             ready: initialized,
             attached: translationState.attached,
             attachedToWindow: attachedToWindow,
+            closing: translationClosing === true,
+            removalPending: translationRemovalPending === true,
             open: translationState.attached,
             itemId: translationState.itemId,
             provider: translationState.provider,
@@ -1947,7 +2028,7 @@
     }
     ClipHub.Translation = {
         MODULE_NAME: "ch_12_translation",
-        MODULE_VERSION: 12,
+        MODULE_VERSION: 13,
         init: function (context) {
             translationConfig = { enabled: true, provider: "settings" };
             navigationInit(context || {});
@@ -1958,6 +2039,10 @@
             translationState.translatedText = "";
             translationState.running = false;
             translationState.lastError = null;
+            translationClosing = false;
+            translationRemovalPending = false;
+            translationRemovalGeneration = 0;
+            pendingTranslationItemId = null;
             return true;
         },
         configure: function (provider, enabled) {
@@ -1991,6 +2076,7 @@
             try { navigationShutdown(); }
             catch (ignoredNavigation) {}
             translationConfig.enabled = false;
+            pendingTranslationItemId = null;
             translationGeneration += 1;
             return true;
         }

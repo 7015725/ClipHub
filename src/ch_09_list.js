@@ -37,6 +37,10 @@ var detailEditView = null;
 var detailCloseView = null;
 var detailWidthPx = 0;
 var detailHeightPx = 0;
+var detailClosing = false;
+var detailRemovalPending = false;
+var detailRemovalGeneration = 0;
+var pendingDetailOpen = null;
 var state = {
 refreshCount: 0,
 eventRefreshCount: 0,
@@ -452,7 +456,17 @@ heightDp: 650
 };
 }
 function closeDetail(reason) {
-if (detailRoot === null) {
+var reasonText = String(reason || "close");
+if (detailRemovalPending) {
+return {
+ok: true,
+attached: false,
+alreadyClosed: true,
+removalPending: true,
+state: getDetailState()
+};
+}
+if (detailRoot === null && !detailRemovalPending) {
 detailRow = null;
 return {
 ok: true,
@@ -463,27 +477,24 @@ state: getDetailState()
 }
 return ClipHub.Window.runOnMain(function () {
 var thread = Thread.currentThread();
+var capturedRoot = detailWindowRoot !== null ?
+detailWindowRoot : detailRoot;
+var capturedManager = detailWindowManager;
+var generation;
+var removal;
+detailClosing = true;
+detailRemovalPending = capturedRoot !== null;
+detailRemovalGeneration += 1;
+generation = detailRemovalGeneration;
 try {
-try {
-if (ClipHub.Window && detailWindowRoot !== null &&
+if (ClipHub.Window && capturedRoot !== null &&
 typeof ClipHub.Window.detachWindow === "function") {
-ClipHub.Window.detachWindow(detailWindowRoot);
+ClipHub.Window.detachWindow(capturedRoot);
 }
 } catch (ignoredDetach) {}
-try {
-detailWindowManager.removeViewImmediate(
-detailWindowRoot !== null ? detailWindowRoot : detailRoot);
-} catch (error) {
-if (detailWindowRoot !== null ?
-detailWindowRoot.isAttachedToWindow() :
-detailRoot.isAttachedToWindow()) {
-throw error;
-}
-}
 state.detailCloseCount += 1;
 state.detailRemoveThreadName = String(thread.getName());
-state.lastDetailAction = String(reason || "close");
-} finally {
+state.lastDetailAction = reasonText;
 detailRoot = null;
 detailWindowRoot = null;
 detailManagedFrame = null;
@@ -494,8 +505,44 @@ detailEditView = null;
 detailCloseView = null;
 detailWidthPx = 0;
 detailHeightPx = 0;
-}
+if (capturedRoot === null) {
+detailClosing = false;
+detailRemovalPending = false;
 return { ok: true, attached: false, alreadyClosed: false };
+}
+removal = ClipHub.Window.requestViewRemoval({
+manager: capturedManager,
+view: capturedRoot,
+role: "detail",
+reason: reasonText,
+generation: generation,
+onDetached: function (result) {
+var request;
+if (generation !== detailRemovalGeneration) { return; }
+detailClosing = false;
+detailRemovalPending = false;
+if (!result || result.ok !== true) {
+state.lastError = String(result && result.error ?
+result.error : "Detail removal failed");
+pendingDetailOpen = null;
+return;
+}
+request = pendingDetailOpen;
+pendingDetailOpen = null;
+if (request !== null && ready) {
+openDetail(request.row, request.force);
+}
+}
+});
+if (!removal || removal.ok !== true) {
+detailClosing = false;
+detailRemovalPending = false;
+pendingDetailOpen = null;
+state.lastError = String(removal && removal.error ?
+removal.error : "Detail removal queue failed");
+}
+return { ok: removal && removal.ok === true, attached: false,
+alreadyClosed: false, removalPending: detailRemovalPending };
 }, 3000);
 }
 function copyDetail() {
@@ -641,8 +688,14 @@ return root;
 }
 function openDetail(row, force) {
 if (!force && !isLongText(row)) { return false; }
+if (detailRemovalPending) {
+pendingDetailOpen = { row: row, force: force };
+return { ok: true, attached: false, pending: true };
+}
 if (detailRoot !== null) {
 closeDetail("replace");
+pendingDetailOpen = { row: row, force: force };
+return { ok: true, attached: false, pending: true };
 }
 return ClipHub.Window.runOnMain(function () {
 var size = detailDimensions();
@@ -710,6 +763,8 @@ detailRoot.isAttachedToWindow();
 return {
 attached: detailRoot !== null,
 attachedToWindow: attached,
+closing: detailClosing === true,
+removalPending: detailRemovalPending === true,
 itemId: detailRow === null ? null : Number(detailRow.id),
 sensitive: detailRow !== null &&
 Number(detailRow.is_sensitive || 0) === 1,
@@ -867,7 +922,7 @@ state.lastError = null;
 }
 ClipHub.List = {
 MODULE_NAME: "ch_09_list",
-MODULE_VERSION: 20,
+MODULE_VERSION: 21,
 LONG_TEXT_THRESHOLD: LONG_TEXT_THRESHOLD,
 init: function (context) {
 androidContext = context && context.androidContext ?
@@ -896,6 +951,10 @@ detailEditView = null;
 detailCloseView = null;
 detailWidthPx = 0;
 detailHeightPx = 0;
+detailClosing = false;
+detailRemovalPending = false;
+detailRemovalGeneration = 0;
+pendingDetailOpen = null;
 resetState();
 ready = true;
 refresh(false);
@@ -977,6 +1036,7 @@ shutdown: function () {
 try {
 closeDetail("shutdown");
 } catch (ignoredDetail) {}
+pendingDetailOpen = null;
 items = [];
 lastDeleted = null;
 ready = false;

@@ -72,6 +72,10 @@
     var exitConfirmOverlay = null;
     var exitConfirmReason = "";
     var pendingDraft = null;
+    var editorClosing = false;
+    var editorRemovalPending = false;
+    var editorRemovalGeneration = 0;
+    var pendingOpenRequest = null;
     var ready = false;
     var state = {
         open: false,
@@ -207,20 +211,41 @@
         return { id: Number(thread.getId()), name: String(thread.getName()) };
     }
 
+    function isMainThread() {
+        var mainLooper;
+        var mainThread;
+        try {
+            if (ClipHub.Window &&
+                    typeof ClipHub.Window.isMainThread === "function") {
+                return ClipHub.Window.isMainThread();
+            }
+        } catch (ignoredWindow) {}
+        mainLooper = Looper.getMainLooper();
+        if (mainLooper === null) { return false; }
+        try {
+            if (Build.VERSION.SDK_INT >= 23) {
+                return mainLooper.isCurrentThread();
+            }
+        } catch (ignoredCurrentThread) {}
+        try {
+            mainThread = mainLooper.getThread();
+            return mainThread !== null &&
+                Number(Thread.currentThread().getId()) ===
+                Number(mainThread.getId());
+        } catch (ignoredThread) { return false; }
+    }
+
     function runOnMainSync(callback, timeoutMs) {
-        var mainLooper = Looper.getMainLooper();
         if (mainHandler === null) {
             return { ok: false,
                 error: new Error("Editor main handler unavailable") };
         }
-        var currentLooper = Looper.myLooper();
         var box;
         var latch;
         var runnable;
         var posted;
         var completed;
-        if (mainLooper !== null && currentLooper !== null &&
-                currentLooper === mainLooper) {
+        if (isMainThread()) {
             return { ok: true, value: callback(), direct: true };
         }
         box = { ok: false, value: null, error: null };
@@ -1380,7 +1405,7 @@
         }
         colors = editorPalette();
         overlay = new FrameLayout(appContext);
-        overlay.setBackgroundColor(Color.argb(118, 0, 0, 0));
+        ClipHub.Theme.applyBackgroundColor(overlay, "#76000000");
         overlay.setClickable(true);
         overlay.setFocusable(true);
         overlay.setFocusableInTouchMode(true);
@@ -1582,6 +1607,8 @@
     }
 
     function closePanel(reason) {
+        var reasonText = String(reason || "close");
+        var removalOk;
         if (state.mode === "tags" && tagReturnMode !== null &&
                 String(reason || "") !== "shutdown" &&
                 String(reason || "") !== "replace" &&
@@ -1599,42 +1626,74 @@
             return { ok: true, attached: false, alreadyClosed: true,
                 state: getState() };
         }
-        requireMain(runOnMainSync(function () {
+        removalOk = requireMain(runOnMainSync(function () {
             var thread = nowThread();
-            try {
-                hideKeyboardOnMain();
-                if (panelWindowRoot !== null && ClipHub.Window &&
-                        typeof ClipHub.Window.detachWindow === "function") {
-                    try { ClipHub.Window.detachWindow(panelWindowRoot); }
-                    catch (ignoredDetach) {}
-                }
-                if (panelRoot !== null) {
-                    try {
-                        windowManager.removeViewImmediate(
-                            panelWindowRoot !== null ? panelWindowRoot : panelRoot);
-                    } catch (error) {
-                        if (panelWindowRoot !== null ?
-                                panelWindowRoot.isAttachedToWindow() :
-                                panelRoot.isAttachedToWindow()) { throw error; }
+            var capturedRoot = panelWindowRoot !== null ?
+                panelWindowRoot : panelRoot;
+            var capturedManager = windowManager;
+            var generation;
+            var removal;
+            hideKeyboardOnMain();
+            editorClosing = true;
+            editorRemovalPending = capturedRoot !== null;
+            editorRemovalGeneration += 1;
+            generation = editorRemovalGeneration;
+            if (capturedRoot !== null && ClipHub.Window &&
+                    typeof ClipHub.Window.detachWindow === "function") {
+                try { ClipHub.Window.detachWindow(capturedRoot); }
+                catch (ignoredDetach) {}
+            }
+            state.closeCount += 1;
+            if (reasonText === "cancel") { state.cancelCount += 1; }
+            state.removeThreadId = thread.id;
+            state.removeThreadName = thread.name;
+            state.lastError = null;
+            state.open = false;
+            state.attached = false;
+            state.inputFocused = false;
+            state.itemId = null;
+            clearViews();
+            if (capturedRoot === null) {
+                editorClosing = false;
+                editorRemovalPending = false;
+                return true;
+            }
+            removal = ClipHub.Window.requestViewRemoval({
+                manager: capturedManager,
+                view: capturedRoot,
+                role: "editor",
+                reason: reasonText,
+                generation: generation,
+                onDetached: function (result) {
+                    var request;
+                    if (generation !== editorRemovalGeneration) { return; }
+                    editorClosing = false;
+                    editorRemovalPending = false;
+                    if (!result || result.ok !== true) {
+                        state.lastError = String(result && result.error ?
+                            result.error : "Editor removal failed");
+                        pendingOpenRequest = null;
+                        return;
+                    }
+                    request = pendingOpenRequest;
+                    pendingOpenRequest = null;
+                    if (request !== null && ready) {
+                        openPanel(request.mode, request.itemId,
+                            request.options);
                     }
                 }
-                state.closeCount += 1;
-                if (String(reason || "") === "cancel") {
-                    state.cancelCount += 1;
-                }
-                state.removeThreadId = thread.id;
-                state.removeThreadName = thread.name;
-                state.lastError = null;
-                return true;
-            } finally {
-                state.open = false;
-                state.attached = false;
-                state.inputFocused = false;
-                state.itemId = null;
-                clearViews();
+            });
+            if (!removal || removal.ok !== true) {
+                editorClosing = false;
+                editorRemovalPending = false;
+                pendingOpenRequest = null;
+                state.lastError = String(removal && removal.error ?
+                    removal.error : "Editor removal queue failed");
             }
+            return removal && removal.ok === true;
         }, 3000));
-        return { ok: true, attached: false, alreadyClosed: false,
+        return { ok: removalOk === true, attached: false,
+            alreadyClosed: false,
             state: getState() };
     }
 
@@ -2378,6 +2437,12 @@
         options = options || {};
         if (!ready) { throw new Error("ClipHub editor is not ready"); }
         mode = String(mode || "new");
+        if (editorRemovalPending) {
+            pendingOpenRequest = { mode: mode, itemId: itemId,
+                options: options };
+            return { ok: true, attached: false, pending: true,
+                state: getState() };
+        }
         if (mode === "edit" || mode === "tags") {
             row = ClipHub.Repository.getItem(Number(itemId), false);
             if (row === null || row === undefined) {
@@ -2385,7 +2450,13 @@
             }
             initialText = String(row.content);
         }
-        if (state.attached) { closePanel("replace"); }
+        if (state.attached) {
+            closePanel("replace");
+            pendingOpenRequest = { mode: mode, itemId: itemId,
+                options: options };
+            return { ok: true, attached: false, pending: true,
+                state: getState() };
+        }
         state.mode = mode === "edit" ? "edit" :
             (mode === "tags" ? "tags" : "new");
         state.itemId = state.mode === "new" ? null : Number(itemId);
@@ -2547,6 +2618,8 @@
             ready: ready,
             open: state.open,
             attached: state.attached,
+            closing: editorClosing === true,
+            removalPending: editorRemovalPending === true,
             attachedToWindow: attachedToWindow,
             mode: state.mode,
             itemId: state.itemId,
@@ -2778,7 +2851,7 @@
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 23,
+        MODULE_VERSION: 24,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
@@ -2796,6 +2869,10 @@
             density = Number(appContext.getResources()
                 .getDisplayMetrics().density || 1);
             pendingDraft = null;
+            editorClosing = false;
+            editorRemovalPending = false;
+            editorRemovalGeneration = 0;
+            pendingOpenRequest = null;
             clearViews();
             resetState();
             ready = true;
@@ -2932,6 +3009,7 @@
             stopEditorImePolling();
             try { closePanel("shutdown"); } catch (ignoredClose) {}
             pendingDraft = null;
+            pendingOpenRequest = null;
             clearViews();
             androidContext = null;
             appContext = null;

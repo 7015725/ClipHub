@@ -61,17 +61,39 @@
         return String(error);
     }
 
+    function isMainThread() {
+        var mainLooper;
+        var mainThread;
+        try {
+            if (ClipHub.Window &&
+                    typeof ClipHub.Window.isMainThread === "function") {
+                return ClipHub.Window.isMainThread();
+            }
+        } catch (ignoredWindow) {}
+        mainLooper = Looper.getMainLooper();
+        if (mainLooper === null) { return false; }
+        try {
+            if (Build.VERSION.SDK_INT >= 23) {
+                return mainLooper.isCurrentThread();
+            }
+        } catch (ignoredCurrentThread) {}
+        try {
+            mainThread = mainLooper.getThread();
+            return mainThread !== null &&
+                Number(Thread.currentThread().getId()) ===
+                Number(mainThread.getId());
+        } catch (ignoredThread) { return false; }
+    }
+
     function runOnMainSync(fn, timeoutMs) {
         var mainLooper = Looper.getMainLooper();
-        var currentLooper = Looper.myLooper();
         var box;
         var latch;
         var handler;
         var task;
         var posted;
         var done;
-        if (mainLooper !== null && currentLooper !== null &&
-                currentLooper === mainLooper) {
+        if (isMainThread()) {
             return { ok: true, value: fn(), direct: true };
         }
         box = { ok: false, value: null, error: null };
@@ -376,6 +398,9 @@
         var settings = safeState(ClipHub.Settings, "getState", {});
         var translation = safeState(ClipHub.Translation, "getState", {});
         var geometry = safeState(ClipHub.Window, "getState", {});
+        var removal = safeState(ClipHub.Window, "getRemovalState", {});
+        var colorSafety = safeState(
+            ClipHub.Theme, "getColorSafetyState", {});
         var detailAttached = detail.attachedToWindow === true ||
             detail.attached === true;
         var editorAttached = editor.attachedToWindow === true ||
@@ -424,6 +449,8 @@
             windowCacheBuilt: filter.panelBuilt === true,
             windowCacheReused: filter.lastShowReused === true,
             startupPerformance: filter.performance || null,
+            windowRemoval: removal,
+            colorSafety: colorSafety,
             hydrationWorker: safeState(
                 ClipHub.Filter, "getHydrationWorkerState", null),
             scrollPerformance: safeState(
@@ -671,7 +698,7 @@
 
     ClipHub.App = {
         MODULE_NAME: "ch_15_app",
-        MODULE_VERSION: 19,
+        MODULE_VERSION: 20,
         CONTROL_ACTION_BASE: CONTROL_ACTION_BASE,
         CONTROL_ENDPOINT_SCHEMA: CONTROL_ENDPOINT_SCHEMA,
         CONTROL_COMMANDS: CONTROL_COMMANDS,

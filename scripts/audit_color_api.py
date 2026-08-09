@@ -9,6 +9,9 @@ not silently reintroduce the known Rhino overload hazard.
 from __future__ import annotations
 
 import argparse
+import base64
+import gzip
+import hashlib
 import json
 import re
 import sys
@@ -192,69 +195,89 @@ def line_number(text: str, offset: int) -> int:
     return text.count("\n", 0, offset) + 1
 
 
-def add_method_findings(path: Path, source: str, clean: str) -> list[Finding]:
+def classify_method(method: str, args: str, context: str) -> tuple[str, str]:
+    severity = "HIGH"
+    reason = "Rhino 直接调用数值/歧义颜色重载"
+
+    if method in ("setTextColor", "setHintTextColor", "setLinkTextColor"):
+        if has_safe_csl(args):
+            severity = "SAFE"
+            reason = "显式 ColorStateList 对象重载"
+    elif method == "setColor":
+        if has_safe_csl(args):
+            severity = "SAFE"
+            reason = "GradientDrawable 使用显式 ColorStateList"
+    elif method == "setStroke":
+        parts = top_level_args(args)
+        if len(parts) >= 2 and has_safe_csl(parts[1]):
+            severity = "SAFE"
+            reason = "描边颜色使用显式 ColorStateList"
+        else:
+            reason = "GradientDrawable.setStroke 的颜色参数仍为数值/歧义重载"
+    elif method == "setColorFilter":
+        drawable_callback = re.search(
+            r"setColorFilter\s*:\s*function\s*\(\s*filter\s*\)",
+            context,
+        )
+        if args.strip() == "filter" and drawable_callback:
+            severity = "SAFE"
+            reason = "Drawable.setColorFilter(ColorFilter) 合同回调转发"
+        elif any(marker in args for marker in SAFE_COLOR_FILTER_MARKERS):
+            severity = "WARN"
+            reason = "使用 ColorFilter 对象，但其构造函数颜色参数仍需审查"
+        else:
+            reason = "Drawable/ImageView 直接调用数值颜色过滤重载"
+    elif method == "setBackgroundColor":
+        reason = "View.setBackgroundColor 仅走数值颜色路径，应改为安全 Drawable"
+    elif method == "setTint":
+        reason = "Drawable.setTint(int) 应改为 setTintList(ColorStateList)"
+    elif method == "setHighlightColor":
+        reason = "TextView.setHighlightColor(int) 为直接数值颜色调用"
+    elif method == "setColors":
+        reason = "GradientDrawable.setColors(int[]) 为直接数值颜色数组调用"
+    elif method == "drawColor":
+        reason = "Canvas.drawColor 的数值颜色重载禁止用于正式 Rhino UI"
+    elif method == "setShadowLayer":
+        reason = "Paint.setShadowLayer 的颜色参数为直接数值颜色"
+    return severity, reason
+
+
+def add_method_findings(relative: str, source: str, clean: str) -> list[Finding]:
     findings: list[Finding] = []
-    relative = str(path.relative_to(ROOT))
     method_pattern = re.compile(r"\.\s*(%s)\s*\(" % "|".join(METHODS))
-    for match in method_pattern.finditer(clean):
+    bracket_pattern = re.compile(
+        r"\[\s*['\"](setColor|setTextColor|setBackgroundColor|setTint)"
+        r"\(int\)['\"]\s*\]\s*\("
+    )
+
+    def inspect(match: re.Match[str], method: str, open_paren: int) -> None:
         method = match.group(1)
-        open_paren = clean.find("(", match.start())
         scanned = scan_balanced_call(clean, open_paren)
         if scanned is None:
             findings.append(Finding(
                 "HIGH", relative, line_number(source, match.start()), method,
                 "无法解析调用参数，需人工检查 Rhino 颜色重载", "",
             ))
-            continue
+            return
         args, end = scanned
         expression = compact(source[match.start() : end])
-        severity = "HIGH"
-        reason = "Rhino 直接调用数值/歧义颜色重载"
-
-        if method in ("setTextColor", "setHintTextColor", "setLinkTextColor"):
-            if has_safe_csl(args):
-                severity = "SAFE"
-                reason = "显式 ColorStateList 对象重载"
-        elif method == "setColor":
-            if has_safe_csl(args):
-                severity = "SAFE"
-                reason = "GradientDrawable 使用显式 ColorStateList"
-        elif method == "setStroke":
-            parts = top_level_args(args)
-            if len(parts) >= 2 and has_safe_csl(parts[1]):
-                severity = "SAFE"
-                reason = "描边颜色使用显式 ColorStateList"
-            else:
-                reason = "GradientDrawable.setStroke 的颜色参数仍为数值/歧义重载"
-        elif method == "setColorFilter":
-            if any(marker in args for marker in SAFE_COLOR_FILTER_MARKERS):
-                severity = "WARN"
-                reason = "使用 ColorFilter 对象，但其构造函数颜色参数仍需审查"
-            else:
-                reason = "Drawable/ImageView 直接调用数值颜色过滤重载"
-        elif method == "setBackgroundColor":
-            reason = "View.setBackgroundColor 仅走数值颜色路径，应改为安全 Drawable"
-        elif method == "setTint":
-            reason = "Drawable.setTint(int) 应改为 setTintList(ColorStateList)"
-        elif method == "setHighlightColor":
-            reason = "TextView.setHighlightColor(int) 为直接数值颜色调用"
-        elif method == "setColors":
-            reason = "GradientDrawable.setColors(int[]) 为直接数值颜色数组调用"
-        elif method == "drawColor":
-            reason = "Canvas.drawColor 的数值颜色重载禁止用于正式 Rhino UI"
-        elif method == "setShadowLayer":
-            reason = "Paint.setShadowLayer 的颜色参数为直接数值颜色"
-
+        context = clean[max(0, match.start() - 500) : match.start()]
+        severity, reason = classify_method(method, args, context)
         findings.append(Finding(
             severity, relative, line_number(source, match.start()), method,
             reason, expression,
         ))
+
+    for match in method_pattern.finditer(clean):
+        inspect(match, match.group(1), clean.find("(", match.start()))
+    for match in bracket_pattern.finditer(clean):
+        inspect(match, match.group(1), clean.find("(", match.start()))
     return findings
 
 
-def add_constructor_findings(path: Path, source: str, clean: str) -> list[Finding]:
+def add_constructor_findings(relative: str, source: str,
+                             clean: str) -> list[Finding]:
     findings: list[Finding] = []
-    relative = str(path.relative_to(ROOT))
     patterns = (
         (re.compile(r"ColorStateList\s*\.\s*valueOf\s*\("),
          "ColorStateList.valueOf", "HIGH",
@@ -301,13 +324,55 @@ def add_constructor_findings(path: Path, source: str, clean: str) -> list[Findin
     return findings
 
 
+def packed_source(relative: str, source: str) -> tuple[str, str] | None:
+    assignment = re.search(
+        r"\bvar\s+PACKED_B64\s*=\s*(.*?);", source, re.S
+    )
+    if assignment is None:
+        return None
+    sha_match = re.search(
+        r"\bvar\s+SOURCE_SHA256\s*=\s*['\"]([0-9a-fA-F]{64})['\"]",
+        source,
+    )
+    if sha_match is None:
+        raise ValueError(f"{relative}: packed source SHA is missing")
+    pieces = re.findall(r'"(?:\\.|[^"\\])*"', assignment.group(1))
+    if not pieces:
+        raise ValueError(f"{relative}: PACKED_B64 is empty")
+    encoded = "".join(json.loads(piece) for piece in pieces)
+    expanded = gzip.decompress(base64.b64decode(encoded)).decode("utf-8")
+    actual = hashlib.sha256(expanded.encode("utf-8")).hexdigest()
+    expected = sha_match.group(1).lower()
+    if actual != expected:
+        raise ValueError(
+            f"{relative}: packed source SHA mismatch: {actual} != {expected}"
+        )
+    return relative + "::packed", expanded
+
+
 def audit(paths: Iterable[Path]) -> list[Finding]:
     findings: list[Finding] = []
     for path in iter_js_files(paths):
         source = path.read_text(encoding="utf-8")
-        clean = strip_comments_preserve_lines(source)
-        findings.extend(add_method_findings(path, source, clean))
-        findings.extend(add_constructor_findings(path, source, clean))
+        relative = str(path.relative_to(ROOT))
+        units = [(relative, source)]
+        try:
+            expanded = packed_source(relative, source)
+            if expanded is not None:
+                units.append(expanded)
+        except Exception as error:
+            findings.append(Finding(
+                "HIGH", relative, 1, "packed_source_sha",
+                str(error), "",
+            ))
+        for unit_path, unit_source in units:
+            clean = strip_comments_preserve_lines(unit_source)
+            findings.extend(add_method_findings(
+                unit_path, unit_source, clean
+            ))
+            findings.extend(add_constructor_findings(
+                unit_path, unit_source, clean
+            ))
     return sorted(findings, key=lambda item: (item.path, item.line, item.api))
 
 

@@ -3,6 +3,10 @@
 
 from __future__ import annotations
 
+import base64
+import gzip
+import hashlib
+import json
 import re
 import sys
 from pathlib import Path
@@ -94,17 +98,46 @@ def iter_javascript_files(root: Path):
             yield path
 
 
-def validate_file(path: Path) -> list[str]:
-    source = path.read_text(encoding="utf-8")
+def validate_source(source_label: str, source: str) -> list[str]:
     stripped = strip_comments_and_strings(source)
     errors: list[str] = []
 
-    for label, pattern in FORBIDDEN:
+    for label_name, pattern in FORBIDDEN:
         match = pattern.search(stripped)
         if match:
             line = stripped.count("\n", 0, match.start()) + 1
-            errors.append(f"{path}:{line}: forbidden {label}")
+            errors.append(f"{source_label}:{line}: forbidden {label_name}")
 
+    return errors
+
+
+def validate_file(path: Path) -> list[str]:
+    source = path.read_text(encoding="utf-8")
+    errors = validate_source(str(path), source)
+    assignment = re.search(
+        r"\bvar\s+PACKED_B64\s*=\s*(.*?);", source, re.S
+    )
+    if assignment is None:
+        return errors
+    sha_match = re.search(
+        r"\bvar\s+SOURCE_SHA256\s*=\s*['\"]([0-9a-fA-F]{64})['\"]",
+        source,
+    )
+    try:
+        if sha_match is None:
+            raise ValueError("packed source SHA is missing")
+        pieces = re.findall(r'"(?:\\.|[^"\\])*"', assignment.group(1))
+        encoded = "".join(json.loads(piece) for piece in pieces)
+        expanded = gzip.decompress(base64.b64decode(encoded)).decode("utf-8")
+        actual = hashlib.sha256(expanded.encode("utf-8")).hexdigest()
+        expected = sha_match.group(1).lower()
+        if actual != expected:
+            raise ValueError(
+                f"packed source SHA mismatch: {actual} != {expected}"
+            )
+        errors.extend(validate_source(str(path) + "::packed", expanded))
+    except Exception as error:
+        errors.append(f"{path}:1: {error}")
     return errors
 
 

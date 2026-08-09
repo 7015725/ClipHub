@@ -41,6 +41,7 @@
     var longPressTimeoutMs = 500;
     var managedWindows = [];
     var preparedFrames = [];
+    var pendingSafeRemovals = [];
     var nextManagedId = 1;
     var activeBinding = null;
     var frameUpdate = {
@@ -144,6 +145,16 @@
         outsideGestureCancelCount: 0,
         lastOutsideRole: "",
         lastOutsideAction: "",
+        safeRemoveRequestCount: 0,
+        safeRemoveQueuedCount: 0,
+        safeRemoveCompleteCount: 0,
+        safeRemoveAlreadyDetachedCount: 0,
+        safeRemoveFailureCount: 0,
+        safeRemoveTimeoutCount: 0,
+        pendingSafeRemoveCount: 0,
+        lastSafeRemoveRole: "",
+        lastSafeRemoveReason: "",
+        lastSafeRemoveError: null,
         lastError: null
     };
 
@@ -152,16 +163,32 @@
         return { id: Number(thread.getId()), name: String(thread.getName()) };
     }
 
-    function runOnMainSync(callback, timeoutMs) {
+    function isMainThread() {
         var mainLooper = Looper.getMainLooper();
-        var currentLooper = Looper.myLooper();
+        var mainThread;
+        if (mainLooper === null) { return false; }
+        try {
+            if (Build.VERSION.SDK_INT >= 23) {
+                return mainLooper.isCurrentThread();
+            }
+        } catch (ignoredCurrentThread) {}
+        try {
+            mainThread = mainLooper.getThread();
+            return mainThread !== null &&
+                Number(Thread.currentThread().getId()) ===
+                Number(mainThread.getId());
+        } catch (ignoredThread) {
+            return false;
+        }
+    }
+
+    function runOnMainSync(callback, timeoutMs) {
         var box;
         var latch;
         var runnable;
         var posted;
         var completed;
-        if (mainLooper !== null && currentLooper !== null &&
-                currentLooper === mainLooper) {
+        if (isMainThread()) {
             return { ok: true, value: callback(), direct: true };
         }
         box = { ok: false, value: null, error: null };
@@ -191,6 +218,183 @@
                 error: new Error("Window geometry main handler timeout") };
         }
         return box;
+    }
+
+    function findPendingSafeRemoval(view) {
+        var index;
+        for (index = 0; index < pendingSafeRemovals.length; index += 1) {
+            if (pendingSafeRemovals[index].view === view) {
+                return pendingSafeRemovals[index];
+            }
+        }
+        return null;
+    }
+
+    function finishSafeRemoval(entry, result) {
+        var kept = [];
+        var callbacks;
+        var index;
+        if (!entry || entry.completed === true) { return false; }
+        entry.completed = true;
+        try { entry.handler.removeCallbacks(entry.timeoutRunnable); }
+        catch (ignoredTimeout) {}
+        try { entry.view.removeOnAttachStateChangeListener(entry.listener); }
+        catch (ignoredListener) {}
+        for (index = 0; index < pendingSafeRemovals.length; index += 1) {
+            if (pendingSafeRemovals[index] !== entry) {
+                kept.push(pendingSafeRemovals[index]);
+            }
+        }
+        pendingSafeRemovals = kept;
+        state.pendingSafeRemoveCount = pendingSafeRemovals.length;
+        if (result && result.ok === true) {
+            state.safeRemoveCompleteCount += 1;
+            state.lastSafeRemoveError = null;
+        } else {
+            state.safeRemoveFailureCount += 1;
+            state.lastSafeRemoveError = String(result && result.error ?
+                result.error : "safe removal failed");
+            state.lastError = state.lastSafeRemoveError;
+        }
+        callbacks = entry.callbacks.slice(0);
+        for (index = 0; index < callbacks.length; index += 1) {
+            try { callbacks[index](result || { ok: false }); }
+            catch (callbackError) {
+                state.lastSafeRemoveError = String(callbackError);
+                state.lastError = state.lastSafeRemoveError;
+            }
+        }
+        return true;
+    }
+
+    function requestViewRemoval(options) {
+        var manager;
+        var view;
+        var handler;
+        var existing;
+        var attached = false;
+        var entry;
+        var runnable;
+        var timeoutPosted;
+        options = options || {};
+        manager = options.manager || windowManager;
+        view = options.view || null;
+        if (manager === null || manager === undefined || view === null) {
+            state.safeRemoveFailureCount += 1;
+            state.lastSafeRemoveError = "Safe removal manager/view unavailable";
+            return { ok: false, queued: false,
+                error: state.lastSafeRemoveError };
+        }
+        state.safeRemoveRequestCount += 1;
+        state.lastSafeRemoveRole = String(options.role || "unknown");
+        state.lastSafeRemoveReason = String(options.reason || "remove");
+        existing = findPendingSafeRemoval(view);
+        if (existing !== null) {
+            if (typeof options.onDetached === "function") {
+                existing.callbacks.push(options.onDetached);
+            }
+            return { ok: true, queued: true, reused: true,
+                generation: existing.generation };
+        }
+        handler = mainHandler || new Handler(Looper.getMainLooper());
+        try { attached = view.isAttachedToWindow() === true; }
+        catch (ignoredAttached) {}
+        entry = {
+            manager: manager,
+            view: view,
+            handler: handler,
+            role: String(options.role || "unknown"),
+            reason: String(options.reason || "remove"),
+            generation: Number(options.generation || 0),
+            callbacks: typeof options.onDetached === "function" ?
+                [options.onDetached] : [],
+            listener: null,
+            timeoutRunnable: null,
+            completed: false
+        };
+        entry.listener = new JavaAdapter(View.OnAttachStateChangeListener, {
+            onViewAttachedToWindow: function () {},
+            onViewDetachedFromWindow: function (detachedView) {
+                finishSafeRemoval(entry, { ok: true, detached: true,
+                    generation: entry.generation });
+            }
+        });
+        entry.timeoutRunnable = new Packages.java.lang.Runnable({
+            run: function () {
+                if (entry.completed === true) { return; }
+                state.safeRemoveTimeoutCount += 1;
+                finishSafeRemoval(entry, { ok: false, timeout: true,
+                    detached: false, generation: entry.generation,
+                    error: new Error("Safe removal detach timeout: " +
+                        entry.role) });
+            }
+        });
+        pendingSafeRemovals.push(entry);
+        state.pendingSafeRemoveCount = pendingSafeRemovals.length;
+        try { view.addOnAttachStateChangeListener(entry.listener); }
+        catch (listenerError) {
+            finishSafeRemoval(entry, { ok: false,
+                error: listenerError });
+            return { ok: false, queued: false, error: listenerError };
+        }
+        runnable = new Packages.java.lang.Runnable({
+            run: function () {
+                var stillAttached = false;
+                if (entry.completed === true) { return; }
+                try {
+                    entry.manager.removeView(entry.view);
+                } catch (removeError) {
+                    try { stillAttached = entry.view.isAttachedToWindow(); }
+                    catch (ignoredStillAttached) {}
+                    if (stillAttached) {
+                        finishSafeRemoval(entry, { ok: false,
+                            error: removeError, generation: entry.generation });
+                        return;
+                    }
+                }
+                try { stillAttached = entry.view.isAttachedToWindow(); }
+                catch (ignoredAfterRemove) {}
+                if (!stillAttached) {
+                    finishSafeRemoval(entry, { ok: true, detached: true,
+                        generation: entry.generation });
+                }
+            }
+        });
+        if (!attached) {
+            state.safeRemoveAlreadyDetachedCount += 1;
+        }
+        if (!handler.post(runnable)) {
+            finishSafeRemoval(entry, { ok: false,
+                error: new Error("Safe removal post failed") });
+            return { ok: false, queued: false };
+        }
+        state.safeRemoveQueuedCount += 1;
+        timeoutPosted = handler.postDelayed(entry.timeoutRunnable,
+            Math.max(250, Number(options.timeoutMs || 2000)));
+        if (!timeoutPosted) {
+            try { handler.removeCallbacks(runnable); } catch (ignoredPost) {}
+            finishSafeRemoval(entry, { ok: false,
+                error: new Error("Safe removal timeout post failed") });
+            return { ok: false, queued: false };
+        }
+        return { ok: true, queued: true, reused: false,
+            generation: entry.generation };
+    }
+
+    function getRemovalState() {
+        return {
+            safeRemoveRequestCount: Number(state.safeRemoveRequestCount),
+            safeRemoveQueuedCount: Number(state.safeRemoveQueuedCount),
+            safeRemoveCompleteCount: Number(state.safeRemoveCompleteCount),
+            safeRemoveAlreadyDetachedCount:
+                Number(state.safeRemoveAlreadyDetachedCount),
+            safeRemoveFailureCount: Number(state.safeRemoveFailureCount),
+            safeRemoveTimeoutCount: Number(state.safeRemoveTimeoutCount),
+            pendingSafeRemoveCount: Number(state.pendingSafeRemoveCount),
+            lastSafeRemoveRole: state.lastSafeRemoveRole,
+            lastSafeRemoveReason: state.lastSafeRemoveReason,
+            lastSafeRemoveError: state.lastSafeRemoveError
+        };
     }
 
     function requireMainResult(result) {
@@ -451,14 +655,6 @@
         };
     }
 
-    function parseColor(value, fallback) {
-        try { return Number(Color.parseColor(String(value))); }
-        catch (ignored) {
-            try { return Number(Color.parseColor(String(fallback))); }
-            catch (ignoredFallback) { return Number(Color.WHITE); }
-        }
-    }
-
     function createResizeVisual(colorText) {
         var visual = { active: false, alpha: 1 };
         var paint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -467,7 +663,8 @@
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeCap(Paint.Cap.ROUND);
         paint.setStrokeJoin(Paint.Join.ROUND);
-        paint["setColor(int)"](parseColor(colorText, "#7C5CFC"));
+        ClipHub.Theme.applyPaintColor(paint,
+            String(colorText || "#7C5CFC"));
         drawable = new JavaAdapter(Drawable, {
             draw: function (canvas) {
                 var width = Number(canvas.getWidth());
@@ -558,7 +755,6 @@
         hostRoot = new FrameLayout(appContext);
         hostRoot.setClipChildren(false);
         hostRoot.setClipToPadding(false);
-        hostRoot.setBackgroundColor(Color.TRANSPARENT);
         hostRoot.setClickable(true);
         hostRoot.setFocusable(true);
         hostRoot.setFocusableInTouchMode(true);
@@ -1083,15 +1279,13 @@
         var drawable;
         var view;
         fillPaint.setStyle(Paint.Style.FILL);
-        fillPaint["setColor(int)"](parseColor(previewAccentColor(),
-            "#7C5CFC"));
+        ClipHub.Theme.applyPaintColor(fillPaint, previewAccentColor());
         fillPaint.setAlpha(18);
         strokePaint.setStyle(Paint.Style.STROKE);
         strokePaint.setStrokeCap(Paint.Cap.ROUND);
         strokePaint.setStrokeJoin(Paint.Join.ROUND);
         strokePaint.setStrokeWidth(dp(1.4));
-        strokePaint["setColor(int)"](parseColor(previewAccentColor(),
-            "#7C5CFC"));
+        ClipHub.Theme.applyPaintColor(strokePaint, previewAccentColor());
         strokePaint.setAlpha(168);
         drawable = new JavaAdapter(Drawable, {
             draw: function (canvas) {
@@ -1147,17 +1341,11 @@
         var manager = resizePreview.manager;
         var root = resizePreview.rootView;
         var wasAttached = resizePreview.attached === true;
-        if (manager !== null && root !== null) {
-            try { manager.removeViewImmediate(root); }
-            catch (error) {
-                try {
-                    if (root.isAttachedToWindow()) {
-                        state.lastError = String(error);
-                    }
-                } catch (ignoredAttached) {}
-            }
-        }
         clearResizePreviewState();
+        if (manager !== null && root !== null) {
+            requestViewRemoval({ manager: manager, view: root,
+                role: "resize_preview", reason: "gesture_end" });
+        }
         if (wasAttached) { state.resizePreviewCloseCount += 1; }
         return wasAttached;
     }
@@ -1857,10 +2045,11 @@
         return getState();
     }
 
-    function detachWindow(rootView) {
+    function detachWindow(rootView, options) {
         var kept = [];
         var removed = null;
         var index;
+        options = options || {};
         if (!rootView) { return false; }
         for (index = 0; index < managedWindows.length; index += 1) {
             if (managedWindows[index].rootView === rootView) {
@@ -1886,7 +2075,9 @@
                         removed.rootView.setOnTouchListener(null);
                     }
                 } catch (ignoredOutside) {}
-                removePreparedFrame(removed.rootView);
+                if (options.preservePreparedFrame !== true) {
+                    removePreparedFrame(removed.rootView);
+                }
                 setResizeVisual(removed, false);
             } else {
                 kept.push(managedWindows[index]);
@@ -1900,7 +2091,9 @@
         state.primaryAttached = activeBinding !== null;
         state.primaryPinned = activeBinding !== null &&
             activeBinding.pinned === true;
-        removePreparedFrame(rootView);
+        if (options.preservePreparedFrame !== true) {
+            removePreparedFrame(rootView);
+        }
         return removed !== null;
     }
 
@@ -1978,8 +2171,7 @@
     }
 
     function refreshPrimaryBoundsSafe(reason) {
-        var currentLooper = Looper.myLooper();
-        if (currentLooper !== null && currentLooper === Looper.getMainLooper()) {
+        if (isMainThread()) {
             return refreshPrimaryBounds(reason);
         }
         return requireMainResult(runOnMainSync(function () {
@@ -2178,6 +2370,17 @@
                 Number(state.outsideGestureCancelCount),
             lastOutsideRole: state.lastOutsideRole,
             lastOutsideAction: state.lastOutsideAction,
+            safeRemoveRequestCount: Number(state.safeRemoveRequestCount),
+            safeRemoveQueuedCount: Number(state.safeRemoveQueuedCount),
+            safeRemoveCompleteCount: Number(state.safeRemoveCompleteCount),
+            safeRemoveAlreadyDetachedCount:
+                Number(state.safeRemoveAlreadyDetachedCount),
+            safeRemoveFailureCount: Number(state.safeRemoveFailureCount),
+            safeRemoveTimeoutCount: Number(state.safeRemoveTimeoutCount),
+            pendingSafeRemoveCount: Number(state.pendingSafeRemoveCount),
+            lastSafeRemoveRole: state.lastSafeRemoveRole,
+            lastSafeRemoveReason: state.lastSafeRemoveReason,
+            lastSafeRemoveError: state.lastSafeRemoveError,
             lastBoundsReason: state.lastBoundsReason,
             lastPersistedGeometry: state.lastPersistedGeometry,
             stateThreadId: thread.id,
@@ -2188,7 +2391,7 @@
 
     ClipHub.Window = {
         MODULE_NAME: "ch_08_window",
-        MODULE_VERSION: 18,
+        MODULE_VERSION: 19,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
@@ -2209,6 +2412,7 @@
             longPressTimeoutMs = Number(ViewConfiguration.getLongPressTimeout());
             managedWindows = [];
             preparedFrames = [];
+            pendingSafeRemovals = [];
             activeBinding = null;
             clearFrameUpdate();
             clearResizePreviewState();
@@ -2251,6 +2455,9 @@
         applyExternalLayout: applyExternalLayout,
         requestBack: requestBack,
         requestOutsideDismiss: requestOutsideDismiss,
+        requestViewRemoval: requestViewRemoval,
+        isMainThread: isMainThread,
+        getRemovalState: getRemovalState,
         getTopRole: function () {
             var binding = topAttachedBinding();
             return binding ? String(binding.role || "shared") : null;
@@ -2292,6 +2499,12 @@
             clearFrameUpdate();
             for (index = 0; index < snapshot.length; index += 1) {
                 detachWindow(snapshot[index].rootView);
+                requestViewRemoval({
+                    manager: snapshot[index].manager,
+                    view: snapshot[index].rootView,
+                    role: snapshot[index].role,
+                    reason: "window_shutdown"
+                });
             }
             unregisterObservers();
             androidContext = null;
