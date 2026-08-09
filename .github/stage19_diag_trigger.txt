@@ -1,1 +1,1 @@
-trigger=stage19-diag-v1
+trigger=stage19-diag-v2
