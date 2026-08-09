@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260809.04",
+  "moduleSetVersion": "20260809.05",
   "entryMinVersion": 6,
-  "sourceRef": "agent/cliphub-ui-drag-handle-unify-20260809",
+  "sourceRef": "main",
   "modules": [
     {
       "name": "ch_01_base.js",

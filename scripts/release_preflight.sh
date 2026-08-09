@@ -12,7 +12,12 @@ CHECK_FILTER_LOADER_REF='0'
 REQUIRE_CLEAN='1'
 case "$MODE" in
   --candidate) EXPECTED_REF='agent/initialize-project-skeleton' ;;
-  --main) EXPECTED_REF='main' ;;
+  --main)
+    EXPECTED_REF='main'
+    EXPECTED_MODULE_SET='20260809.05'
+    EXPECTED_ENTRY_VERSION='6'
+    EXPECTED_APP_MODULE_VERSION='20'
+    ;;
   --beta)
     EXPECTED_REF='beta-pagination-stage10-20260808'
     EXPECTED_MODULE_SET='20260808.01'
@@ -182,7 +187,7 @@ assert re.search(r"MODULE_NAME:\s*\"ch_07_theme\"\s*,\s*MODULE_VERSION:\s*4", th
 assert "getColorSafetyState: getColorSafetyState" in theme
 assert not (root / "tasks/ClipHub_打开全局剪贴板.js").exists()
 
-if mode == "--current":
+if mode in ("--current", "--main"):
     required_versions = {
         "ch_08_window.js": ("ch_08_window", 19),
         "ch_09_list.js": ("ch_09_list", 21),
@@ -205,7 +210,7 @@ if mode == "--current":
         navigation,
         re.S,
     )
-    assert expected_module_set == "20260809.04", expected_module_set
+    assert expected_module_set == "20260809.05", expected_module_set
     combined = "\n".join(actual_sources.values())
     assert "removeViewImmediate(" not in combined
     assert not re.search(
@@ -223,8 +228,8 @@ print("endpointSchemaVersion: 3")
 print("moduleSetVersion: " + expected_module_set)
 print("sourceRef: " + expected_ref)
 print("Theme: 4")
-if mode == "--current":
-    print("Current branch safety contracts: passed")
+if mode in ("--current", "--main"):
+    print("Current safety contracts: passed")
 PY
 
 git diff --check
