@@ -18,6 +18,6 @@ jobs:
           python stage18_diag.py
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add stage18_diag.txt
-          git commit -m "记录 Stage18 overlap 分帧诊断"
+          git add stage18_*.txt
+          git commit -m "记录 Stage18 Holder 兼容性诊断"
           git push
