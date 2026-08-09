@@ -21,10 +21,15 @@ jobs:
           from pathlib import Path
           p=Path('stage18_build.py')
           s=p.read_text(encoding='utf-8')
-          old="src=replace_once(src,'    function resetVirtualState() {\\n','    function resetVirtualState() {\\n        cancelOverlapStagedFill(\"reset_virtual_state\");\\n','reset cancel')"
-          new="src=replace_once(src,'    function resetVirtualState(clearHeights) {\\n','    function resetVirtualState(clearHeights) {\\n        cancelOverlapStagedFill(\"reset_virtual_state\");\\n','reset cancel')"
-          if old not in s:
+          old_reset="src=replace_once(src,'    function resetVirtualState() {\\n','    function resetVirtualState() {\\n        cancelOverlapStagedFill(\"reset_virtual_state\");\\n','reset cancel')"
+          new_reset="src=replace_once(src,'    function resetVirtualState(clearHeights) {\\n','    function resetVirtualState(clearHeights) {\\n        cancelOverlapStagedFill(\"reset_virtual_state\");\\n','reset cancel')"
+          old_close="src=replace_once(src,'    function closePanel() {\\n','    function closePanel() {\\n        cancelOverlapStagedFill(\"close_panel\");\\n','close cancel')"
+          new_close="src=replace_once(src,'    function closePanel(options) {\\n','    function closePanel(options) {\\n        cancelOverlapStagedFill(\"close_panel\");\\n','close cancel')"
+          if old_reset not in s:
               raise SystemExit('reset anchor patch source missing')
-          p.write_text(s.replace(old,new,1),encoding='utf-8')
+          if old_close not in s:
+              raise SystemExit('close anchor patch source missing')
+          s=s.replace(old_reset,new_reset,1).replace(old_close,new_close,1)
+          p.write_text(s,encoding='utf-8')
           PY
           python stage18_build.py
