@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260809.02",
+  "moduleSetVersion": "20260809.03",
   "entryMinVersion": 6,
   "sourceRef": "agent/cliphub-ui-drag-handle-unify-20260809",
   "modules": [
@@ -57,7 +57,7 @@
     {
       "name": "ch_11_filter.js",
       "path": "src/ch_11_filter.js",
-      "sha": "9827525f5e2040d07d089042e3b9e38c50dd7f16"
+      "sha": "e74546695f8d580d70756de69551180d892dcee1"
     },
     {
       "name": "ch_12_translation.js",
