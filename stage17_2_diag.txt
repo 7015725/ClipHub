@@ -1,0 +1,1371 @@
+
+===== var ajaxStagedAttachState = =====
+     layoutStyle:
+            "first_previous_nearby_next_last",
+        firstEnabled: false,
+        previousEnabled: false,
+        nextEnabled: false,
+        lastEnabled: false,
+        clickCount: 0,
+        pageClickCount: 0,
+        actionClickCount: 0,
+        blockedClickCount: 0,
+        samePageBlockedCount: 0,
+        successCount: 0,
+        failureCount: 0,
+        pageReplaceCount: 0,
+        scrollResetCount: 0,
+        nonZeroScrollResetCount: 0,
+        maximumScrollYBeforeChange: 0,
+        lastScrollYBeforeChange: 0,
+        lastScrollYAfterChange: 0,
+        lastTargetPage: 1,
+        lastAction: "",
+        lastOrigin: "",
+        lastError: null
+    };
+    var ajaxAppendGeneration = 0;
+    var AJAX_STAGED_ATTACH_BUDGET_MS = 14;
+    var AJAX_STAGED_ATTACH_DELAY_MS = 0;
+    var AJAX_STAGED_ATTACH_MAX_CARDS_PER_BATCH = 3;
+    var AJAX_STAGED_ATTACH_MIN_CARDS = 8;
+    var ajaxStagedAttachState = {
+        active: false,
+        generation: 0,
+        targetStart: 0,
+        targetEnd: -1,
+        nextIndex: 0,
+        startVisibleIndex: 0,
+        colors: null,
+        appendedRows: null,
+        deferredOrigin: "",
+        deferredForce: false,
+        startedAtMs: 0
+    };
+    var LAZY_TRIGGER_MIN_DP = 120;
+    var LAZY_TRIGGER_VIEWPORT_RATIO = 0.38;
+    var LAZY_TRIGGER_COOLDOWN_MS = 260;
+    var PREFETCH_DELAY_MS = 160;
+    var lazyScrollListener = null;
+    var lazyGeneration = 0;
+    var lazyLoadState = {
+        listenerBound: false,
+        enabled: false,
+        pending: false,
+        thresholdPx: 0,
+        remainingPx: 0,
+        lastScrollY: 0,
+        lastOldScrollY: 0,
+        scrollEventCount: 0,
+        downwardScrollCount: 0,
+        nearBottomCount: 0,
+        triggerCount: 0,
+        successCount: 0,
+        failureCount: 0,
+        blockedCount: 0,
+        lastTriggeredLoadedCount: -1,
+        lastTriggerAt: 0,
+        lastOrigin: "",
+        lastError: null
+    };
+    var prefetchGeneration = 0;
+    var prefetchedPage = null;
+    var prefetchState = {
+        enabled: true,
+        scheduled: false,
+        inFlight: false,
+        ready: false,
+        mode: "",
+        targetPage: 0,
+        rowCount: 0,
+        scheduleCount: 0,
+        requestCount: 0,
+        successCount: 0,
+        hitCount: 0,
+        missCount: 0,
+        invalidationCount: 0,
+        staleDiscardCount: 0,
+        lastOrigin: "",
+        lastInvalidationReason: "",
+        lastError: null
+    };
+    var VIRTUAL_BEFORE_SCREENS = 3;
+    var VIRTUAL_AFTER_SCREENS = 5;
+    var VIRTUAL_UPDATE_DELAY_MS = 24;
+    var virtualTopSpacer = null;
+    var virtualCardHost = null;
+    var virtualBottomSpacer = null;
+    var paginationFooterHost = null;
+    var quickResetView = null;
+    var virtualRenderedItemIds = [];
+    var virtualRenderedSignatures = [];
+    var virtualGeneration = 0;
+    var virtualPendingOrigin = "";
+    var virtualPendingForce = false;
+    var virtualState = {
+        firstRenderedIndex: 0,
+        lastRenderedIndex: -1,
+        firstVisibleIndex: 0,
+        lastVisibleIndex: -1,
+        visibleCount: 1,
+        averageHeightPx: 0,
+        defaultHeightPx: 0,
+        heightById: {},
+        topSpacerPx: 0,
+        bottomSpacerPx: 0,
+        anchorItemId: null,
+        anchorIndex: -1,
+        anchorOffsetPx: 0,
+        anchorRestoreErrorPx: 0,
+        updateScheduled: false,
+        updateDeferred: false,
+        scrollListenerBound: false,
+        scrollToTopPending: false,
+        updateCount: 0,
+        recycleCount: 0,
+        rebuildCount: 0,
+        staleUpdateCount: 0,
+        lastOrigin: "",
+        lastError: null
+    };
+    var DATA_BLOCK_MIN_ROWS = 24;
+    var DATA_BLOCK_MAX_ROWS = 100;
+    var DATA_BLOCK_VISIBLE_MULTIPLIER = 2;
+    var DATA_BLOCK_KEEP_BEFORE = 1;
+    var DATA_BLOCK_KEEP_AFTER = 1;
+    var dataTagLoadedById = {};
+    var dataWindowState = {
+        blockSize: DATA_BLOCK_MIN_ROWS,
+        blockCount: 0,
+        hydratedBlockCount: 0,
+        hydratedRowCount: 0,
+        dehydratedRowCount: 0,
+        hydrationPassCount: 0,
+        dehydrationPassCount: 0,
+        hydrateQueryCount: 0,
+        tagQueryCount: 0,
+        hydratedRowTotal: 0,
+        dehydratedRowTotal: 0,
+        missingIdCount: 0,
+        resetCount: 0,
+        keepStartIndex: 0,
+        keepEndIndex: -1,
+        lastHydrateStartIndex: 0,
+        lastHydrateEndIndex: -1,
+        lastOrigin: "",
+        lastError: null
+    };
+    var pendingNewItemId = null;
+    var mutationRefreshPlan = null;
+    var mutationAnchorLocked = false;
+    var mutationState = {
+        eventCount: 0,
+        refreshRequestCount: 0,
+        refreshCount: 0,
+        coalescedCount: 0,
+        addedPendingCount: 0,
+        relatedEventSuppressedCount: 0,
+        settingsChangeCount: 0,
+        anchorRestoreCount: 0,
+        anchorFallbackCount: 0,
+        lastEventName: "",
+        lastAction: "",
+        lastOrigin: "",
+        lastModeBefore: "",
+        lastModeAfter: "",
+        lastPageNumberBefore: 1,
+        lastPageNumberAfter: 1,
+        lastLoadedCountBefore: 0,
+        lastLoadedCountAfter: 0,
+        lastReloadPageCount: 0,
+        lastAnchorItemIdBefore: null,
+        lastAnchorItemIdAfter: null,
+        lastAnchorIndexBefore: -1,
+        lastAnchorIndexAfter: -1,
+        lastAnchorOffsetPxBefore: 0,
+        lastAnchorOffsetPxAfter: 0,
+        lastAnchorRestoreErrorPx: 0,
+        lastPositionPreserved: true,
+        lastError: null
+    };
+    var activeSwipeCard = null;
+    var resultBodyFrame = null;
+    var resultActionViews = [];
+    var sourceIconConstantStateCache = {};
+    var deleteUndoView = null;
+    var pendingDeleteUndo = null;
+    var deleteUndoGeneration = 0;
+    var copyFeedbackView = null;
+    var copyFeedbackGeneration = 0;
+    var adaptiveRenderGeneration = 0;
+    var searchExpanded = false;
+    var searchStatusRow = null;
+    var searchInputRow = null;
+    var searchToggleView = null;
+    var searchClearView = null;
+    var historyContainerView = null;
+    var inputDispatchGeneration = 0;
+    var inputDispatchPending = false;
+    var panelBuilt = false;
+    var panelBuiltRootMode = null;
+    var panelStructureDirty = true;
+    var panelDataDirty = true;
+    var panelDataVersion = 1;
+    var renderedDataVersion = 0;
+    var renderGeneration = 0;
+    var renderCursor = 0;
+    var renderBatchCount = 0;
+    var optionCountsCache = null;
+    var optionCountsDirty = true;
+    var refreshGeneration = 0;
+    var refreshScheduled = false;
+    var refreshReason = "";
+    var lastShowReused = false;
+    var timeFormatter = null;
+    var performance = {
+        showGeneration: 0,
+        showStartedAtNs: 0,
+        windowAttachedAtNs: 0,
+        firstDrawAtNs: 0,
+        firstBatchReadyAtNs: 0,
+        fullRenderReadyAtNs: 0,
+        showToAttachMs: null,
+        showToFirstDrawMs: null,
+        showToFirstBatchMs: null,
+        showToFullRenderMs: null,
+        renderBatchCount: 0,
+        lastRefreshOrigin: "",
+        lastError: null
+    };
+
+    var state = {
+        applyCount: 0,
+        eventApplyCount: 0,
+        lastResultCount: 0,
+        lastApplyThreadId: null,
+        lastApplyThreadName: null,
+        panelAttached: false,
+        panelOpenCount: 0,
+        panelCloseCount: 0,
+        panelRenderCount: 0,
+        searchActionCount: 0,
+        realtimeSearchCount: 0,
+        searchExpanded: false,
+        searchExpandCount: 0,
+        searchCollapseCount: 0,
+        headerHeightDp: 0,
+        headerControlHeightDp: 0,
+        headerActionSizeDp: 0,
+        headerGapDp: 0,
+        headerFilterActiveCount: 0,
+        sourceToggleCount: 0,
+        tagToggleCount: 0,
+        pinnedToggleCount: 0,
+        sensitiveToggleCount: 0,
+        sortToggleCount: 0,
+        resetActionCount: 0,
+        applyActionCount: 0,
+        advancedOpenCount: 0,
+        advancedCloseCount: 0,
+        historyUseCount: 0,
+        historyClearCount: 0,
+        keyboardRequestCount: 0,
+        panelWindowType: null,
+        panelFlags: null,
+        panelWidthPx: null,
+        panelHeightPx: null,
+        panelWidthDp: null,
+        panelHeightDp: null,
+        panelX: 0,
+        panelY: 0,
+        primaryGeometryManaged: false,
+        primaryDragViewPresent: false,
+        primaryResizeViewPresent: false,
+        resizeCorner: "bottom_right",
+        dimAmount: 0,
+        modalWindow: false,
+        opaqueBackground: false,
+        horizontalFadeEnabled: false,
+        chipSingleLineEnforced: true,
+        chipEllipsizeEndEnforced: true,
+        drawerContentBottomPaddingDp: 0,
+        drawerFooterTopGapDp: 0,
+        drawerFooterHeightDp: 0,
+        advancedChipVerticalPaddingDp: 0,
+        drawerMeasured: false,
+        drawerContentHeightDp: 0,
+        drawerViewportHeightDp: 0,
+        drawerScrollYDp: 0,
+        drawerCanScrollDownAtTop: false,
+        drawerContentFitsViewport: false,
+        advancedKeywordInputPresent: false,
+        sortOptionCount: 0,
+        sourceWrapRowCount: 0,
+        tagWrapRowCount: 0,
+        drawerWidthDp: 0,
+        drawerHeightDp: 0,
+        backLayerCloseCount: 0,
+        lastBackLayer: "",
+        homeWindowSuspended: false,
+        homeSuspendCount: 0,
+        homeRestoreCount: 0,
+        homeRestoreCancelCount: 0,
+        exclusiveHomeFilter: true,
+        rootMode: false,
+        primarySurface: "filter_overlay",
+        selectedItemId: null,
+        selectionMode: false,
+        resultCardClickCount: 0,
+        resultCardLongPressCount: 0,
+        inputActionCount: 0,
+        inputSuccessCount: 0,
+        inputFailureCount: 0,
+        inputRetryCount: 0,
+        inputDuplicateBlockedCount: 0,
+        lastInputItemId: null,
+        lastInputContentLength: 0,
+        lastInputAttemptCount: 0,
+        lastInputAt: 0,
+        lastInputOrigin: "",
+        lastInputError: null,
+        copyActionCount: 0,
+        pinActionCount: 0,
+        editActionCount: 0,
+        addActionCount: 0,
+        deleteActionCount: 0,
+        detailActionCount: 0,
+        cardActionButtonCount: 0,
+        cardEditActionCount: 0,
+        cardTranslateActionCount: 0,
+        cardCopyActionCount: 0,
+        cardDeleteActionCount: 0,
+        cardActionGridWidthDp: 0,
+        cardActionCellHeightDp: 0,
+        cardActionFontScale: 1,
+        cardActionIconSizeDp: 0,
+        pinnedBadgeCount: 0,
+        pinBadgeSizeDp: 0,
+        deleteUndoVisible: false,
+        deleteUndoItemId: null,
+        deleteUndoShowCount: 0,
+        deleteUndoActionCount: 0,
+        deleteUndoTimeoutCount: 0,
+        copyFeedbackVisible: false,
+        copyFeedbackShowCount: 0,
+        copyFeedbackTimeoutCount: 0,
+        adaptiveLayoutRefreshCount: 0,
+        swipeEnabled: true,
+        swipeStartCount: 0,
+        swipeMoveCount: 0,
+        swipePinCount: 0,
+        swipeDeleteCount: 0,
+        swipeCancelCount: 0,
+        lastSwipeItemId: null,
+        lastSwipeAction: null,
+        settingsOpenCount: 0,
+        settingsButtonPresent: false,
+        renderedTagLabelCount: 0,
+        tagColorPreviewCount: 0,
+        loadedResultCount: 0,
+        resultPageSize: RESULT_PAGE_SIZE,
+        resultPageLimit: RESULT_PAGE_SIZE,
+        resultHasMore: false,
+        resultCanScroll: false,
+        loadMoreCount: 0,
+        toolbarEnabledCount: 1,
+        repositorySortUnchanged: true,
+        sortScope: "result_window",
+        panelAddThreadId: null,
+        panelAddThreadName: null,
+        panelRemoveThreadId: null,
+        panelRemoveThreadName: null,
+        lastUiThreadId: null,
+        lastUiThreadName: null,
+        inputFocused: false,
+        sourceOptionCount: 0,
+        tagOptionCount: 0,
+        sourceChipCount: 0,
+        tagChipCount: 0,
+        historyChipCount: 0,
+        resultCardCount: 0,
+        resultSourceIconCount: 0,
+        advancedDrawerVisible: false,
+        searchPageStyle: "reference_search_v14_fast_start",
+        panelBuilt: false,
+        panelStructureDirty: true,
+        panelDataDirty: true,
+        panelDataVersion: 1,
+        renderedDataVersion: 0,
+        contentReady: false,
+        lastShowReused: false,
+        panelCacheReuseCount: 0,
+        panelCacheBuildCount: 0,
+        panelCacheDestroyCount: 0,
+        renderBatchCount: 0,
+        firstRenderCount: FIRST_RENDER_COUNT,
+        renderBatchSize: RENDER_BATCH_COUNT,
+        refreshCoalescedCount: 0,
+        lastError: null
+    };
+
+
+===== function cancelStagedAjaxAttach =====
+    function updateResultScrollState() {
+        try {
+            state.resultCanScroll = resultScrollView !== null &&
+                resultScrollView.canScrollVertically(1);
+        } catch (ignored) {
+            state.resultCanScroll = false;
+        }
+        return state.resultCanScroll;
+    }
+
+    function cancelStagedAjaxAttach(reason) {
+        if (ajaxStagedAttachState === null ||
+                ajaxStagedAttachState === undefined ||
+                ajaxStagedAttachState.active !== true) {
+            return false;
+        }
+        ajaxStagedAttachState.active = false;
+        ajaxStagedAttachState.colors = null;
+        ajaxStagedAttachState.appendedRows = null;
+        ajaxStagedAttachState.deferredOrigin = "";
+        ajaxStagedAttachState.deferredForce = false;
+        scrollPerformanceState.stagedAttachPendingCount = 0;
+        scrollPerformanceState.stagedAttachCancelCount += 1;
+        scrollPerformanceState.stagedAttachLastCancelReason =
+            String(reason || "cancelled");
+        ajaxFooterState.loading = false;
+        return true;
+    }
+
+
+===== function preemptStagedAjaxAttachForScroll =====
+    function runStagedAjaxAttachBatch(generation) {
+        var startedAt;
+        var elapsed = 0;
+        var batchCards = 0;
+        var index;
+        var params;
+        var wrapper;
+        var cardRef;
+        var holderRef;
+        var actionRef;
+        if (ajaxStagedAttachState.active !== true ||
+                Number(ajaxStagedAttachState.generation) !== Number(generation)) {
+            return false;
+        }
+        if (Number(ajaxAppendGeneration) !== Number(generation)) {
+            cancelStagedAjaxAttach("stale_generation");
+            return false;
+        }
+        if (!state.panelAttached || virtualCardHost === null) {
+            cancelStagedAjaxAttach("panel_detached");
+            return false;
+        }
+        startedAt = Number(System.currentTimeMillis());
+        while (Number(ajaxStagedAttachState.nextIndex) <=
+                Number(ajaxStagedAttachState.targetEnd)) {
+            index = Number(ajaxStagedAttachState.nextIndex);
+            if (index < 0 || index >= previewRows.length ||
+                    previewRows[index] === null ||
+                    previewRows[index] === undefined) {
+                return recoverStagedAjaxAttach(
+                    generation, "row_missing");
+            }
+            params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+            params.bottomMargin = dp(6);
+            wrapper = makeResultCard(previewRows[index],
+                ajaxStagedAttachState.colors);
+            cardRef = resultCardViews.pop();
+            holderRef = resultCardHolders.pop();
+            actionRef = resultActionViews.pop();
+            virtualCardHost.addView(wrapper, params);
+            resultCardViews.push(cardRef);
+            resultCardHolders.push(holderRef);
+            resultActionViews.push(actionRef);
+            virtualRenderedItemIds.push(Number(previewRows[index].id));
+            virtualRenderedSignatures.push(virtualRenderSignature(
+                previewRows[index], ajaxStagedAttachState.colors));
+            scrollPerformanceState.createdViewCount += 1;
+            scrollPerformanceState.structuralInsertCount += 1;
+            scrollPerformanceState.stagedAttachCardCount += 1;
+            ajaxStagedAttachState.nextIndex = index + 1;
+            batchCards += 1;
+            elapsed = Math.max(0, Number(System.currentTimeMillis()) - startedAt);
+            if (batchCards >= AJAX_STAGED_ATTACH_MAX_CARDS_PER_BATCH ||
+                    elapsed >= AJAX_STAGED_ATTACH_BUDGET_MS) {
+                break;
+            }
+        }
+        elapsed = Math.max(0, Number(System.currentTimeMillis()) - startedAt);
+        scrollPerformanceState.stagedAttachBatchCount += 1;
+        scrollPerformanceState.stagedAttachLastBatchMs = elapsed;
+        scrollPerformanceState.stagedAttachMaxBatchMs = Math.max(
+            Number(scrollPerformanceState.stagedAttachMaxBatchMs), elapsed);
+        scrollPerformanceState.stagedAttachLastBatchCards = batchCards;
+        scrollPerformanceState.stagedAttachMaxCardsPerBatch = Math.max(
+            Number(scrollPerformanceState.stagedAttachMaxCardsPerBatch),
+            batchCards);
+        scrollPerformanceState.stagedAttachPendingCount = Math.max(0,
+            Number(ajaxStagedAttachState.targetEnd) -
+            Number(ajaxStagedAttachState.nextIndex) + 1);
+        scrollPerformanceState.viewRebuildLastMs = elapsed;
+        scrollPerformanceState.viewRebuildMaxMs = Math.max(
+            Number(scrollPerformanceState.viewRebuildMaxMs), elapsed);
+        virtualState.firstRenderedIndex =
+            Number(ajaxStagedAttachState.targetStart);
+        virtualState.lastRenderedIndex = Math.max(
+            Number(ajaxStagedAttachState.targetStart) - 1,
+            Number(ajaxStagedAttachState.nextIndex) - 1);
+        virtualState.topSpacerPx = setVirtualSpacerHeight(
+            virtualTopSpacer, virtualHeightRange(0,
+                virtualState.firstRenderedIndex));
+        virtualState.bottomSpacerPx = setVirtualSpacerHeight(
+            virtualBottomSpacer, virtualHeightRange(
+                virtualState.lastRenderedIndex + 1, previewRows.length));
+        state.resultCardCount = Number(virtualCardHost.getChildCount());
+        if (elapsed > 32) {
+            scrollPerformanceState.slowRebuildCount += 1;
+            scrollPerformanceState.slowRebuildSamples.push({
+                origin: "ajax_append_stage",
+                force: false,
+                mode: "staged",
+                elapsedMs: elapsed,
+                rangeStart: Number(ajaxStagedAttachState.targetStart),
+                rangeEnd: Number(ajaxStagedAttachState.targetEnd),
+                oldCount: Math.max(0, Number(virtualCardHost.getChildCount()) - batchCards),
+                newCount: Number(virtualCardHost.getChildCount()),
+                created: batchCards,
+                removed: 0,
+                reused: 0,
+                recycled: 0,
+                newBuilt: batchCards,
+                measureMs: 0,
+                keyedMs: 0,
+                signatureMs: 0,
+                structureMs: elapsed
+            });
+            while (scrollPerformanceState.slowRebuildSamples.length > 8) {
+                scrollPerformanceState.slowRebuildSamples.shift();
+            }
+        }
+        if (Number(ajaxStagedAttachState.nextIndex) <=
+                Number(ajaxStagedAttachState.targetEnd)) {
+            if (!postStagedAjaxAttachBatch(
+                    generation, AJAX_STAGED_ATTACH_DELAY_MS)) {
+                return recoverStagedAjaxAttach(
+                    generation, "post_failed");
+            }
+            return true;
+        }
+        return finishStagedAjaxAttach(generation);
+    }
+
+    function preemptStagedAjaxAttachForScroll(origin, force, preferredIndex) {
+        var requestedOrigin = String(origin || "virtual_rebuild");
+        var range;
+        var threshold;
+        var pendingStart;
+        var pendingEnd;
+        var overlapStart;
+        var overlapEnd;
+        var overlapPending;
+        var avoided;
+        var generation;
+        var rows;
+        var colors;
+        var deferredOrigin;
+        var deferredForce;
+        if (ajaxStagedAttachState.active !== true ||
+                requestedOrigin !== "result_scroll") {
+            return false;
+        }
+        range = virtualTargetRange(preferredIndex);
+        threshold = Math.max(1, Number(virtualState.visibleCount || 1));
+        if (Math.abs(Number(range.first) -
+                Number(ajaxStagedAttachState.startVisibleIndex)) < threshold) {
+            return false;
+        }
+        generation = Number(ajaxStagedAttachState.generation);
+        rows = ajaxStagedAttachState.appendedRows;
+        colors = ajaxStagedAttachState.colors;
+        deferredOrigin = String(ajaxStagedAttachState.deferredOrigin || "");
+        deferredForce = ajaxStagedAttachState.deferredForce === true;
+        pendingStart = Number(ajaxStagedAttachState.nextIndex);
+        pendingEnd = Number(ajaxStagedAttachState.targetEnd);
+        overlapStart = Math.max(pendingStart, Number(range.start));
+        overlapEnd = Math.min(pendingEnd, Number(range.end));
+        overlapPending = overlapEnd >= overlapStart ?
+            overlapEnd - overlapStart + 1 : 0;
+        avoided = Math.max(0, pendingEnd - pendingStart + 1 - overlapPending);
+        scrollPerformanceState.stagedAttachScrollPreemptCount += 1;
+        scrollPerformanceState.stagedAttachObsoleteCardAvoidedCount += avoided;
+        cancelStagedAjaxAttach("scroll_preempt");
+        if (!state.panelAttached) { return true; }
+        rebuildVirtualWindow(requestedOrigin, force === true, preferredIndex);
+        if (Number(generation) === Number(ajaxAppendGeneration) &&
+                state.panelAttached && rows !== null && rows !== undefined) {
+            finishAjaxAppendRender(generation, rows, colors);
+        }
+        if (deferredOrigin.length > 0 && state.panelAttached &&
+                (deferredForce || deferredOrigin !== requestedOrigin)) {
+            scheduleVirtualUpdate(deferredOrigin, deferredForce);
+        }
+        return true;
+    }
+
+
+===== function startStagedAjaxAttach =====
+    function preemptStagedAjaxAttachForScroll(origin, force, preferredIndex) {
+        var requestedOrigin = String(origin || "virtual_rebuild");
+        var range;
+        var threshold;
+        var pendingStart;
+        var pendingEnd;
+        var overlapStart;
+        var overlapEnd;
+        var overlapPending;
+        var avoided;
+        var generation;
+        var rows;
+        var colors;
+        var deferredOrigin;
+        var deferredForce;
+        if (ajaxStagedAttachState.active !== true ||
+                requestedOrigin !== "result_scroll") {
+            return false;
+        }
+        range = virtualTargetRange(preferredIndex);
+        threshold = Math.max(1, Number(virtualState.visibleCount || 1));
+        if (Math.abs(Number(range.first) -
+                Number(ajaxStagedAttachState.startVisibleIndex)) < threshold) {
+            return false;
+        }
+        generation = Number(ajaxStagedAttachState.generation);
+        rows = ajaxStagedAttachState.appendedRows;
+        colors = ajaxStagedAttachState.colors;
+        deferredOrigin = String(ajaxStagedAttachState.deferredOrigin || "");
+        deferredForce = ajaxStagedAttachState.deferredForce === true;
+        pendingStart = Number(ajaxStagedAttachState.nextIndex);
+        pendingEnd = Number(ajaxStagedAttachState.targetEnd);
+        overlapStart = Math.max(pendingStart, Number(range.start));
+        overlapEnd = Math.min(pendingEnd, Number(range.end));
+        overlapPending = overlapEnd >= overlapStart ?
+            overlapEnd - overlapStart + 1 : 0;
+        avoided = Math.max(0, pendingEnd - pendingStart + 1 - overlapPending);
+        scrollPerformanceState.stagedAttachScrollPreemptCount += 1;
+        scrollPerformanceState.stagedAttachObsoleteCardAvoidedCount += avoided;
+        cancelStagedAjaxAttach("scroll_preempt");
+        if (!state.panelAttached) { return true; }
+        rebuildVirtualWindow(requestedOrigin, force === true, preferredIndex);
+        if (Number(generation) === Number(ajaxAppendGeneration) &&
+                state.panelAttached && rows !== null && rows !== undefined) {
+            finishAjaxAppendRender(generation, rows, colors);
+        }
+        if (deferredOrigin.length > 0 && state.panelAttached &&
+                (deferredForce || deferredOrigin !== requestedOrigin)) {
+            scheduleVirtualUpdate(deferredOrigin, deferredForce);
+        }
+        return true;
+    }
+
+    function startStagedAjaxAttach(generation, appendedRows, colors) {
+        var range;
+        var oldCount;
+        var oldStart;
+        var oldEnd;
+        var removeTop;
+        var removeIndex;
+        var addCount;
+        if (mainHandler === null || virtualCardHost === null ||
+                !state.panelAttached || activeSwipeCard !== null) {
+            scrollPerformanceState.stagedAttachFallbackCount += 1;
+            return false;
+        }
+        range = virtualTargetRange(virtualState.firstVisibleIndex);
+        oldCount = Number(virtualCardHost.getChildCount());
+        oldStart = Number(virtualState.firstRenderedIndex);
+        oldEnd = Number(virtualState.lastRenderedIndex);
+        if (oldCount <= 0 || oldEnd < oldStart ||
+                range.start < oldStart || range.start > oldEnd ||
+                range.end <= oldEnd ||
+                virtualRenderedItemIds.length !== oldCount ||
+                virtualRenderedSignatures.length !== oldCount ||
+                resultCardViews.length !== oldCount ||
+                resultCardHolders.length !== oldCount ||
+                resultActionViews.length !== oldCount) {
+            scrollPerformanceState.stagedAttachFallbackCount += 1;
+            return false;
+        }
+        addCount = Math.max(0, Number(range.end) - oldEnd);
+        if (addCount < AJAX_STAGED_ATTACH_MIN_CARDS) {
+            scrollPerformanceState.stagedAttachFallbackCount += 1;
+            return false;
+        }
+        removeTop = Math.max(0, Number(range.start) - oldStart);
+        for (removeIndex = 0; removeIndex < removeTop; removeIndex += 1) {
+            virtualCardHost.removeViewAt(0);
+            virtualRenderedItemIds.shift();
+            virtualRenderedSignatures.shift();
+            resultCardViews.shift();
+            resultCardHolders.shift();
+            resultActionViews.shift();
+            scrollPerformanceState.removedViewCount += 1;
+            scrollPerformanceState.structuralRemoveCount += 1;
+        }
+        ajaxStagedAttachState.active = true;
+        ajaxStagedAttachState.generation = Number(generation);
+        ajaxStagedAttachState.targetStart = Number(range.start);
+        ajaxStagedAttachState.targetEnd = Number(range.end);
+        ajaxStagedAttachState.nextIndex = oldEnd + 1;
+        ajaxStagedAttachState.startVisibleIndex = Number(range.first);
+        ajaxStagedAttachState.colors = colors;
+        ajaxStagedAttachState.appendedRows = appendedRows;
+        ajaxStagedAttachState.deferredOrigin = "";
+        ajaxStagedAttachState.deferredForce = false;
+        ajaxStagedAttachState.startedAtMs = Number(System.currentTimeMillis());
+        virtualState.firstVisibleIndex = Number(range.first);
+        virtualState.lastVisibleIndex = Number(range.last);
+        virtualState.firstRenderedIndex = Number(range.start);
+        virtualState.lastRenderedIndex = oldEnd;
+        virtualState.topSpacerPx = setVirtualSpacerHeight(
+            virtualTopSpacer, virtualHeightRange(0, range.start));
+        virtualState.bottomSpacerPx = setVirtualSpacerHeight(
+            virtualBottomSpacer, virtualHeightRange(oldEnd + 1, previewRows.length));
+        state.resultCardCount = Number(virtualCardHost.getChildCount());
+        scrollPerformanceState.viewRebuildCount += 1;
+        scrollPerformanceState.stagedAttachStartCount += 1;
+        scrollPerformanceState.stagedAttachLastTotalCards = addCount;
+        scrollPerformanceState.stagedAttachPendingCount = addCount;
+        if (!postStagedAjaxAttachBatch(generation, 0)) {
+            cancelStagedAjaxAttach("initial_post_failed");
+            scrollPerformanceState.stagedAttachFallbackCount += 1;
+            return false;
+        }
+        return true;
+    }
+
+
+===== function runStagedAjaxAttachBatch =====
+    function recoverStagedAjaxAttach(generation, reason) {
+        var rows = ajaxStagedAttachState.appendedRows;
+        var colors = ajaxStagedAttachState.colors;
+        if (Number(generation) !== Number(ajaxAppendGeneration)) {
+            cancelStagedAjaxAttach(reason);
+            return false;
+        }
+        cancelStagedAjaxAttach(reason);
+        if (!state.panelAttached) { return false; }
+        rebuildVirtualWindow(
+            "ajax_append_recover", true,
+            virtualState.firstVisibleIndex);
+        return finishAjaxAppendRender(generation, rows, colors);
+    }
+
+    function runStagedAjaxAttachBatch(generation) {
+        var startedAt;
+        var elapsed = 0;
+        var batchCards = 0;
+        var index;
+        var params;
+        var wrapper;
+        var cardRef;
+        var holderRef;
+        var actionRef;
+        if (ajaxStagedAttachState.active !== true ||
+                Number(ajaxStagedAttachState.generation) !== Number(generation)) {
+            return false;
+        }
+        if (Number(ajaxAppendGeneration) !== Number(generation)) {
+            cancelStagedAjaxAttach("stale_generation");
+            return false;
+        }
+        if (!state.panelAttached || virtualCardHost === null) {
+            cancelStagedAjaxAttach("panel_detached");
+            return false;
+        }
+        startedAt = Number(System.currentTimeMillis());
+        while (Number(ajaxStagedAttachState.nextIndex) <=
+                Number(ajaxStagedAttachState.targetEnd)) {
+            index = Number(ajaxStagedAttachState.nextIndex);
+            if (index < 0 || index >= previewRows.length ||
+                    previewRows[index] === null ||
+                    previewRows[index] === undefined) {
+                return recoverStagedAjaxAttach(
+                    generation, "row_missing");
+            }
+            params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+            params.bottomMargin = dp(6);
+            wrapper = makeResultCard(previewRows[index],
+                ajaxStagedAttachState.colors);
+            cardRef = resultCardViews.pop();
+            holderRef = resultCardHolders.pop();
+            actionRef = resultActionViews.pop();
+            virtualCardHost.addView(wrapper, params);
+            resultCardViews.push(cardRef);
+            resultCardHolders.push(holderRef);
+            resultActionViews.push(actionRef);
+            virtualRenderedItemIds.push(Number(previewRows[index].id));
+            virtualRenderedSignatures.push(virtualRenderSignature(
+                previewRows[index], ajaxStagedAttachState.colors));
+            scrollPerformanceState.createdViewCount += 1;
+            scrollPerformanceState.structuralInsertCount += 1;
+            scrollPerformanceState.stagedAttachCardCount += 1;
+            ajaxStagedAttachState.nextIndex = index + 1;
+            batchCards += 1;
+            elapsed = Math.max(0, Number(System.currentTimeMillis()) - startedAt);
+            if (batchCards >= AJAX_STAGED_ATTACH_MAX_CARDS_PER_BATCH ||
+                    elapsed >= AJAX_STAGED_ATTACH_BUDGET_MS) {
+                break;
+            }
+        }
+        elapsed = Math.max(0, Number(System.currentTimeMillis()) - startedAt);
+        scrollPerformanceState.stagedAttachBatchCount += 1;
+        scrollPerformanceState.stagedAttachLastBatchMs = elapsed;
+        scrollPerformanceState.stagedAttachMaxBatchMs = Math.max(
+            Number(scrollPerformanceState.stagedAttachMaxBatchMs), elapsed);
+        scrollPerformanceState.stagedAttachLastBatchCards = batchCards;
+        scrollPerformanceState.stagedAttachMaxCardsPerBatch = Math.max(
+            Number(scrollPerformanceState.stagedAttachMaxCardsPerBatch),
+            batchCards);
+        scrollPerformanceState.stagedAttachPendingCount = Math.max(0,
+            Number(ajaxStagedAttachState.targetEnd) -
+            Number(ajaxStagedAttachState.nextIndex) + 1);
+        scrollPerformanceState.viewRebuildLastMs = elapsed;
+        scrollPerformanceState.viewRebuildMaxMs = Math.max(
+            Number(scrollPerformanceState.viewRebuildMaxMs), elapsed);
+        virtualState.firstRenderedIndex =
+            Number(ajaxStagedAttachState.targetStart);
+        virtualState.lastRenderedIndex = Math.max(
+            Number(ajaxStagedAttachState.targetStart) - 1,
+            Number(ajaxStagedAttachState.nextIndex) - 1);
+        virtualState.topSpacerPx = setVirtualSpacerHeight(
+            virtualTopSpacer, virtualHeightRange(0,
+                virtualState.firstRenderedIndex));
+        virtualState.bottomSpacerPx = setVirtualSpacerHeight(
+            virtualBottomSpacer, virtualHeightRange(
+                virtualState.lastRenderedIndex + 1, previewRows.length));
+        state.resultCardCount = Number(virtualCardHost.getChildCount());
+        if (elapsed > 32) {
+            scrollPerformanceState.slowRebuildCount += 1;
+            scrollPerformanceState.slowRebuildSamples.push({
+                origin: "ajax_append_stage",
+                force: false,
+                mode: "staged",
+                elapsedMs: elapsed,
+                rangeStart: Number(ajaxStagedAttachState.targetStart),
+                rangeEnd: Number(ajaxStagedAttachState.targetEnd),
+                oldCount: Math.max(0, Number(virtualCardHost.getChildCount()) - batchCards),
+                newCount: Number(virtualCardHost.getChildCount()),
+                created: batchCards,
+                removed: 0,
+                reused: 0,
+                recycled: 0,
+                newBuilt: batchCards,
+                measureMs: 0,
+                keyedMs: 0,
+                signatureMs: 0,
+                structureMs: elapsed
+            });
+            while (scrollPerformanceState.slowRebuildSamples.length > 8) {
+                scrollPerformanceState.slowRebuildSamples.shift();
+            }
+        }
+        if (Number(ajaxStagedAttachState.nextIndex) <=
+                Number(ajaxStagedAttachState.targetEnd)) {
+            if (!postStagedAjaxAttachBatch(
+                    generation, AJAX_STAGED_ATTACH_DELAY_MS)) {
+                return recoverStagedAjaxAttach(
+                    generation, "post_failed");
+            }
+            return true;
+        }
+        return finishStagedAjaxAttach(generation);
+    }
+
+
+===== function finishStagedAjaxAttach =====
+    function postStagedAjaxAttachBatch(generation, delayMs) {
+        var runnable;
+        if (mainHandler === null) { return false; }
+        runnable = new Packages.java.lang.Runnable({
+            run: function () {
+                runStagedAjaxAttachBatch(generation);
+            }
+        });
+        if (Number(delayMs || 0) <= 0) {
+            mainHandler.post(runnable);
+        } else {
+            mainHandler.postDelayed(runnable,
+                Math.max(0, Number(delayMs || 0)));
+        }
+        return true;
+    }
+    function finishStagedAjaxAttach(generation) {
+        var rows;
+        var colors;
+        var deferredOrigin;
+        var deferredForce;
+        var totalElapsed;
+        var result;
+        if (ajaxStagedAttachState.active !== true ||
+                Number(ajaxStagedAttachState.generation) !== Number(generation) ||
+                Number(ajaxAppendGeneration) !== Number(generation) ||
+                !state.panelAttached) {
+            return false;
+        }
+        rows = ajaxStagedAttachState.appendedRows;
+        colors = ajaxStagedAttachState.colors;
+        deferredOrigin = String(ajaxStagedAttachState.deferredOrigin || "");
+        deferredForce = ajaxStagedAttachState.deferredForce === true;
+        totalElapsed = Math.max(0, Number(System.currentTimeMillis()) -
+            Number(ajaxStagedAttachState.startedAtMs));
+        ajaxStagedAttachState.active = false;
+        ajaxStagedAttachState.colors = null;
+        ajaxStagedAttachState.appendedRows = null;
+        ajaxStagedAttachState.deferredOrigin = "";
+        ajaxStagedAttachState.deferredForce = false;
+        scrollPerformanceState.stagedAttachPendingCount = 0;
+        scrollPerformanceState.stagedAttachCompletedCount += 1;
+        scrollPerformanceState.stagedAttachLastTotalMs = totalElapsed;
+        scrollPerformanceState.stagedAttachMaxTotalMs = Math.max(
+            Number(scrollPerformanceState.stagedAttachMaxTotalMs), totalElapsed);
+        virtualState.updateCount += 1;
+        virtualState.rebuildCount += 1;
+        virtualState.lastOrigin = "ajax_append_staged";
+        virtualState.lastError = null;
+        virtualState.updateDeferred = false;
+        state.resultCardCount = virtualCardHost === null ? 0 :
+            Number(virtualCardHost.getChildCount());
+        result = finishAjaxAppendRender(generation, rows, colors);
+        if (deferredOrigin.length > 0 && state.panelAttached &&
+                mainHandler !== null) {
+            scheduleVirtualUpdate(deferredOrigin, deferredForce);
+        }
+        return result;
+    }
+
+
+===== function rebuildVirtualWindow =====
+    function takeCompatibleRecycleHolder(pool, row) {
+        var key = resultCardRecycleKeyForRow(row);
+        var index;
+        if (pool === null || pool === undefined || pool.length === 0) {
+            return null;
+        }
+        for (index = pool.length - 1; index >= 0; index -= 1) {
+            scrollPerformanceState.holderRecyclePoolScanCount += 1;
+            if (resultCardRecycleKeyForHolder(pool[index]) === key) {
+                return pool.splice(index, 1)[0];
+            }
+        }
+        return null;
+    }
+
+    function rebuildVirtualWindow(origin, force, preferredIndex) {
+        var colors = palette();
+        var range;
+        var oldCount;
+        var index;
+        var params;
+        var generation;
+        var hydration;
+        var oldStart;
+        var oldEnd;
+        var overlap;
+        var removeTop;
+        var removeBottom;
+        var removeIndex;
+        var wrapper;
+        var cardRef;
+        var actionRef;
+        var holderRef;
+        var recyclePool = [];
+        var recycleEnabled = String(origin || "") === "result_scroll" ||
+            String(origin || "") === "hydration_apply";
+        var recycledCount;
+        var rebuildCreatedBefore;
+        var rebuildRemovedBefore;
+        var rebuildReusedBefore;
+        var rebuildRecycleBefore =
+            Number(scrollPerformanceState.holderRecycleReuseCount);
+        var overlapStartedAt;
+        var overlapElapsed = 0;
+        if (virtualCardHost === null || !state.panelAttached) {
+            return false;
+        }
+        if (ajaxStagedAttachState.active === true) {
+            if (preemptStagedAjaxAttachForScroll(
+                    origin, force, preferredIndex)) {
+                return false;
+            }
+            deferVirtualUpdateDuringStagedAttach(origin, force);
+            return false;
+        }
+        if (activeSwipeCard !== null) {
+            virtualState.updateDeferred = true;
+            return false;
+        }
+        range = virtualTargetRange(preferredIndex);
+        virtualState.firstVisibleIndex = range.first;
+        virtualState.lastVisibleIndex = range.last;
+        if (force !== true &&
+                String(origin || "") === "result_scroll" &&
+                range.start === Number(
+                    virtualState.firstRenderedIndex) &&
+                range.end === Number(
+                    virtualState.lastRenderedIndex)) {
+            scrollPerformanceState.sameRangeNoLayoutCount += 1;
+            virtualState.lastOrigin =
+                "result_scroll_same_range_fast";
+            virtualState.lastError = null;
+            return false;
+        }
+        hydration = hydrateDataWindowRange(
+            range.start, range.end,
+            String(origin || "virtual_rebuild") + "_hydrate");
+        if (hydration.pending === true &&
+                hydration.requiresRows === true) {
+            virtualState.lastOrigin = String(
+                origin || "virtual_rebuild") +
+                "_hydrate_pending";
+            return false;
+        }
+        dehydrateDataWindowOutside(
+            range.start, range.end,
+            String(origin || "virtual_rebuild") + "_dehydrate");
+        if (force !== true &&
+                range.start === Number(
+                    virtualState.firstRenderedIndex) &&
+                range.end === Number(
+                    virtualState.lastRenderedIndex)) {
+            virtualState.topSpacerPx = setVirtualSpacerHeight(
+                virtualTopSpacer,
+                virtualHeightRange(0, range.start));
+            virtualState.bottomSpacerPx = setVirtualSpacerHeight(
+                virtualBottomSpacer,
+                virtualHeightRange(range.end + 1,
+                    previewRows.length));
+            return false;
+        }
+        var viewRebuildStartedAt =
+            Number(System.currentTimeMillis());
+        rebuildCreatedBefore = Number(scrollPerformanceState.createdViewCount);
+        rebuildRemovedBefore = Number(scrollPerformanceState.removedViewCount);
+        rebuildReusedBefore = Number(scrollPerformanceState.sameIdReuseCount);
+        var viewRebuildElapsed;
+        scrollPerformanceState.viewRebuildCount += 1;
+        measureVirtualCards();
+        oldCount = Number(virtualCardHost.getChildCount());
+        oldStart = Number(virtualState.firstRenderedIndex);
+        oldEnd = Number(virtualState.lastRenderedIndex);
+        recycledCount = oldCount;
+        overlap = force !== true && oldCount > 0 &&
+            oldEnd >= oldStart && range.start <= oldEnd &&
+            range.end >= oldStart &&
+            virtualRenderedItemIds.length === oldCount &&
+            virtualRenderedSignatures.length === oldCount &&
+            resultCardViews.length === oldCount &&
+            resultCardHolders.length === oldCount &&
+            resultActionViews.length === oldCount;
+        if (overlap) {
+            overlapStartedAt = Number(System.currentTimeMillis());
+            recycledCount = 0;
+            removeTop = Math.max(0, range.start - oldStart);
+            for (removeIndex = 0;
+                    removeIndex < removeTop; removeIndex += 1) {
+                virtualCardHost.removeViewAt(0);
+                virtualRenderedItemIds.shift();
+                virtualRenderedSignatures.shift();
+                resultCardViews.shift();
+                holderRef = resultCardHolders.shift();
+                resultActionViews.shift();
+                if (recycleEnabled && holderRef !== null &&
+                        holderRef !== undefined) {
+                    recyclePool.push(holderRef);
+                    scrollPerformanceState.holderRecycleReleaseCount += 1;
+                }
+                recycledCount += 1;
+                scrollPerformanceState.structuralRemoveCount += 1;
+            }
+            removeBottom = Math.max(0, oldEnd - range.end);
+            for (removeIndex = 0;
+                    removeIndex < removeBottom; removeIndex += 1) {
+                virtualCardHost.removeViewAt(
+                    Number(virtualCardHost.getChildCount()) - 1);
+                virtualRenderedItemIds.pop();
+                virtualRenderedSignatures.pop();
+                resultCardViews.pop();
+                holderRef = resultCardHolders.pop();
+                resultActionViews.pop();
+                if (recycleEnabled && holderRef !== null &&
+                        holderRef !== undefined) {
+                    recyclePool.push(holderRef);
+                    scrollPerformanceState.holderRecycleReleaseCount += 1;
+                }
+                recycledCount += 1;
+                scrollPerformanceState.structuralRemoveCount += 1;
+            }
+            scrollPerformanceState.removedViewCount += recycledCount;
+            if (range.start < oldStart) {
+                for (index = oldStart - 1;
+                        index >= range.start; index -= 1) {
+                    params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                    params.bottomMargin = dp(6);
+                    holderRef = null;
+                    if (recycleEnabled && recyclePool.length > 0) {
+                        scrollPerformanceState.holderRecyclePoolPeakCount = Math.max(
+                            Number(scrollPerformanceState.holderRecyclePoolPeakCount),
+                            Number(recyclePool.length));
+                        holderRef = takeCompatibleRecycleHolder(
+                            recyclePool, previewRows[index]);
+                        if (holderRef !== null && holderRef !== undefined) {
+                            scrollPerformanceState.holderRecycleKeyHitCount += 1;
+                            if (rebindResultCardHolder(holderRef,
+                                    previewRows[index], colors)) {
+                                wrapper = holderRef.wrapper;
+                                cardRef = holderRef.card;
+                                actionRef = cardHolderActionRefs(holderRef);
+                                scrollPerformanceState.holderRecycleReuseCount += 1;
+                            } else {
+                                scrollPerformanceState.holderRecycleDiscardCount += 1;
+                                holderRef = null;
+                            }
+                        } else {
+                            scrollPerformanceState.holderRecycleKeyMissCount += 1;
+                        }
+                    }
+                    if (holderRef === null) {
+                        wrapper = makeResultCard(previewRows[index], colors);
+                        cardRef = resultCardViews.pop();
+                        holderRef = resultCardHolders.pop();
+                        actionRef = resultActionViews.pop();
+                        if (recycleEnabled) {
+                            scrollPerformanceState.holderRecycleMissCount += 1;
+                        }
+                    }
+                    virtualCardHost.addView(wrapper, 0, params);
+                    resultCardViews.unshift(cardRef);
+                    resultCardHolders.unshift(holderRef);
+                    resultActionViews.unshift(actionRef);
+                    virtualRenderedItemIds.unshift(
+                        Number(previewRows[index].id));
+                    virtualRenderedSignatures.unshift(
+                        virtualRenderSignature(previewRows[index], colors));
+                    scrollPerformanceState.createdViewCount += 1;
+                    scrollPerformanceState.structuralInsertCount += 1;
+                }
+            }
+            if (range.end > oldEnd) {
+                for (index = oldEnd + 1;
+                        index <= range.end; index += 1) {
+                    params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                    params.bottomMargin = dp(6);
+                    holderRef = null;
+                    if (recycleEnabled && recyclePool.length > 0) {
+                        scrollPerformanceState.holderRecyclePoolPeakCount = Math.max(
+                            Number(scrollPerformanceState.holderRecyclePoolPeakCount),
+                            Number(recyclePool.length));
+                        holderRef = takeCompatibleRecycleHolder(
+                            recyclePool, previewRows[index]);
+                        if (holderRef !== null && holderRef !== undefined) {
+                            scrollPerformanceState.holderRecycleKeyHitCount += 1;
+                            if (rebindResultCardHolder(holderRef,
+                                    previewRows[index], colors)) {
+                                wrapper = holderRef.wrapper;
+                                cardRef = holderRef.card;
+                                actionRef = cardHolderActionRefs(holderRef);
+                                scrollPerformanceState.holderRecycleReuseCount += 1;
+                            } else {
+                                scrollPerformanceState.holderRecycleDiscardCount += 1;
+                                holderRef = null;
+                            }
+                        } else {
+                            scrollPerformanceState.holderRecycleKeyMissCount += 1;
+                        }
+                    }
+                    if (holderRef === null) {
+                        wrapper = makeResultCard(previewRows[index], colors);
+                        cardRef = resultCardViews.pop();
+                        holderRef = resultCardHolders.pop();
+                        actionRef = resultActionViews.pop();
+                        if (recycleEnabled) {
+                            scrollPerformanceState.holderRecycleMissCount += 1;
+                        }
+                    }
+                    virtualCardHost.addView(wrapper, params);
+                    resultCardViews.push(cardRef);
+                    resultCardHolders.push(holderRef);
+                    resultActionViews.push(actionRef);
+                    virtualRenderedItemIds.push(
+                        Number(previewRows[index].id));
+                    virtualRenderedSignatures.push(
+                        virtualRenderSignature(previewRows[index], colors));
+                    scrollPerformanceState.createdViewCount += 1;
+                    scrollPerformanceState.structuralInsertCount += 1;
+                }
+            }
+            if (recycleEnabled && recyclePool.length > 0) {
+                scrollPerformanceState.holderRecycleDiscardCount +=
+                    recyclePool.length;
+                recyclePool = [];
+            }
+            state.resultCardCount = Number(
+                virtualCardHost.getChildCount());
+            overlapElapsed = Math.max(0,
+                Number(System.currentTimeMillis()) - overlapStartedAt);
+            scrollPerformanceState.overlapUpdateLastMs = overlapElapsed;
+            scrollPerformanceState.overlapUpdateMaxMs = Math.max(
+                Number(scrollPerformanceState.overlapUpdateMaxMs), overlapElapsed);
+        } else {
+  keyedReconcileVirtualWindow(range, colors);
+  recycledCount = Math.max(0, oldCount -
+      Number(virtualCardHost.getChildCount()));
+        }
+        syncRenderedResultCounters(range);
+        viewRebuildElapsed = Math.max(0,
+            Number(System.currentTimeMillis()) -
+                viewRebuildStartedAt);
+        scrollPerformanceState.viewRebuildLastMs =
+            viewRebuildElapsed;
+        scrollPerformanceState.viewRebuildMaxMs = Math.max(
+            Number(scrollPerformanceState.viewRebuildMaxMs),
+            viewRebuildElapsed);
+        if (viewRebuildElapsed > 32) {
+            scrollPerformanceState.slowRebuildCount += 1;
+            scrollPerformanceState.slowRebuildSamples.push({
+                origin: String(origin || "virtual_rebuild"),
+                force: force === true,
+                mode: overlap ? "overlap" : "keyed",
+                elapsedMs: viewRebuildElapsed,
+                rangeStart: Number(range.start),
+                rangeEnd: Number(range.end),
+                oldCount: oldCount,
+                newCount: Number(virtualCardHost.getChildCount()),
+                created: Number(scrollPerformanceState.createdViewCount) -
+                    rebuildCreatedBefore,
+                removed: Number(scrollPerformanceState.removedViewCount) -
+                    rebuildRemovedBefore,
+                reused: Number(scrollPerformanceState.sameIdReuseCount) -
+                    rebuildReusedBefore,
+                recycled: Number(scrollPerformanceState.holderRecycleReuseCount) -
+                    rebuildRecycleBefore,
+                newBuilt: Math.max(0,
+                    Number(scrollPerformanceState.createdViewCount) -
+                    rebuildCreatedBefore -
+                    (Number(scrollPerformanceState.holderRecycleReuseCount) -
+                        rebuildRecycleBefore)),
+                measureMs: Number(scrollPerformanceState.measureLastMs),
+                keyedMs: overlap ? 0 :
+                    Number(scrollPerformanceState.keyedReconcileLastMs),
+                signatureMs: overlap ? 0 :
+                    Number(scrollPerformanceState.keyedSignatureLastMs),
+                structureMs: overlap ? overlapElapsed :
+                    Number(scrollPerformanceState.keyedStructureLastMs)
+            });
+            while (scrollPerformanceState.slowRebuildSamples.length > 8) {
+                scrollPerformanceState.slowRebuildSamples.shift();
+            }
+        }
+        virtualState.firstRenderedIndex = range.start;
+        virtualState.lastRenderedIndex = range.end;
+        virtualState.topSpacerPx = setVirtualSpacerHeight(
+            virtualTopSpacer,
+            virtualHeightRange(0, range.start));
+        virtualState.bottomSpacerPx = setVirtualSpacerHeight(
+            virtualBottomSpacer,
+            virtualHeightRange(range.end + 1,
+                previewRows.length));
+        virtualState.updateCount += 1;
+        virtualState.rebuildCount += 1;
+        virtualState.recycleCount += recycledCount;
+        virtualState.updateDeferred = false;
+        virtualState.lastOrigin = String(origin || "virtual_rebuild");
+        virtualState.lastError = null;
+        virtualGeneration += 1;
+        generation = virtualGeneration;
+        if (mainHandler !== null) {
+            mainHandler.post(new Packages.java.lang.Runnable({
+                run: function () {
+                    if (!state.panelAttached ||
+                            virtualCardHost === null) {
+                        virtualState.staleUpdateCount += 1;
+                        return;
+                    }
+                    measureVirtualCards();
+                    restoreScrollAnchor();
+                    captureScrollAnchor();
+                    updateQuickResetView();
+                }
+            }));
+        }
+        return true;
+    }
+
+
+===== function virtualTargetRange =====
+    function createVirtualHierarchy() {
+        var params;
+        if (resultContainer === null) { return false; }
+        resultContainer.removeAllViews();
+        virtualTopSpacer = new View(appContext);
+        virtualCardHost = new LinearLayout(appContext);
+        virtualCardHost.setOrientation(LinearLayout.VERTICAL);
+        virtualBottomSpacer = new View(appContext);
+        paginationFooterHost = new LinearLayout(appContext);
+        paginationFooterHost.setOrientation(LinearLayout.VERTICAL);
+        resultContainer.addView(virtualTopSpacer,
+            new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0));
+        resultContainer.addView(virtualCardHost,
+            new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        resultContainer.addView(virtualBottomSpacer,
+            new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0));
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        resultContainer.addView(paginationFooterHost, params);
+        return true;
+    }
+
+    function virtualTargetRange(preferredIndex) {
+        var visible = updateVirtualVisibleCount();
+        var firstVisible;
+        var lastVisible;
+        var start;
+        var end;
+        if (previewRows.length === 0) {
+            return { start: 0, end: -1, first: 0, last: -1 };
+        }
+        firstVisible = preferredIndex === undefined ||
+                preferredIndex === null ||
+                Number(preferredIndex) < 0 ?
+            estimatedFirstVisibleIndex(currentResultScrollY()) :
+            Math.max(0, Math.min(previewRows.length - 1,
+                Number(preferredIndex)));
+        lastVisible = Math.min(previewRows.length - 1,
+            firstVisible + visible - 1);
+        start = Math.max(0,
+            firstVisible - visible * VIRTUAL_BEFORE_SCREENS);
+        end = Math.min(previewRows.length - 1,
+            lastVisible + visible * VIRTUAL_AFTER_SCREENS);
+        return {
+            start: start,
+            end: end,
+            first: firstVisible,
+            last: lastVisible
+        };
+    }
+
