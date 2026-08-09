@@ -1,0 +1,165 @@
+    function showPanel(options) {
+        var result;
+        var generation;
+        options = options || {};
+        rootMode = options.rootMode === true;
+        state.rootMode = rootMode;
+        state.primarySurface = rootMode ?
+            "filter_root" : "filter_overlay";
+        if (!ready) { throw new Error("ClipHub filter is not ready"); }
+        loadHistory();
+        advancedVisible = options.showAdvanced === true;
+        searchExpanded = options.requestKeyboard === true &&
+            !advancedVisible;
+        state.searchExpanded = searchExpanded;
+        state.advancedDrawerVisible = advancedVisible;
+        restoreListOnClose = false;
+        state.homeWindowSuspended = false;
+        generation = resetShowPerformance("panel_show");
+        if (state.panelAttached) {
+            lastShowReused = true;
+            state.lastShowReused = true;
+            state.panelCacheReuseCount += 1;
+            if (advancedVisible || searchExpanded) {
+                requireMain(runOnMainSync(function () {
+                    buildPanelContent(options.requestKeyboard === true);
+                    return true;
+                }, 2500));
+            }
+            return { ok: true, attached: true, reused: true,
+                contentReady: state.contentReady === true,
+                state: getPanelState() };
+        }
+        try {
+            result = requireMain(runOnMainSync(function () {
+                var size = panelDimensions();
+                var type = Build.VERSION.SDK_INT >= 26 ?
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY :
+                    WindowManager.LayoutParams.TYPE_SYSTEM_ALERT;
+                var colors = palette();
+                var reused = panelBuilt && panelWindowRoot !== null &&
+                    panelBuiltRootMode === rootMode;
+                if (panelBuilt && panelBuiltRootMode !== rootMode) {
+                    destroyPanelCache("root_mode_changed");
+                    reused = false;
+                }
+                if (!panelBuilt || panelWindowRoot === null) {
+                    createPanelCache(size, type, colors);
+                }
+                lastShowReused = reused;
+                state.lastShowReused = reused;
+                if (reused) { state.panelCacheReuseCount += 1; }
+                attachPanelCache(size, generation);
+                if (resultContainer === null || panelStructureDirty) {
+                    schedulePanelRefresh("panel_first_content", true,
+                        options.requestKeyboard === true);
+                } else if (panelDataDirty ||
+                        renderedDataVersion !== panelDataVersion) {
+                    schedulePanelRefresh("panel_data_refresh", false,
+                        false);
+                } else {
+                    state.contentReady = true;
+                    performance.firstBatchReadyAtNs = nowNanos();
+                    performance.fullRenderReadyAtNs =
+                        performance.firstBatchReadyAtNs;
+                    performance.showToFirstBatchMs = elapsedMs(
+                        performance.showStartedAtNs,
+                        performance.firstBatchReadyAtNs);
+                    performance.showToFullRenderMs =
+                        performance.showToFirstBatchMs;
+                }
+                return { ok: true, attached: true, reused: reused,
+                    contentReady: state.contentReady === true,
+                    state: getPanelState() };
+            }, 3000));
+            return result;
+        } catch (error) {
+            performance.lastError = String(error);
+            destroyPanelCache("attach_failed: " + String(error));
+            rootMode = false;
+            state.rootMode = false;
+            state.primarySurface = "filter_overlay";
+            throw error;
+        }
+    }
+
+    function closePanel(options) {
+        var result;
+        var hadTransientLayer;
+        options = options || {};
+        cancelStagedAjaxAttach("close_panel");
+        stopFilterImeAvoidance(false);
+        invalidateHydrationWorker("close_panel");
+        renderGeneration += 1;
+        refreshGeneration += 1;
+        refreshScheduled = false;
+        hadTransientLayer = advancedVisible || searchExpanded;
+        if (!state.panelAttached) {
+            if (options.destroyCache === true) {
+                destroyPanelCache(options.reason || "destroy");
+            }
+            rootMode = false;
+            state.rootMode = false;
+            state.primarySurface = "filter_overlay";
+            clearSelectedResult();
+            clearDeleteUndo(true);
+            return { ok: true, attached: false, alreadyClosed: true,
+                state: getPanelState() };
+        }
+        result = requireMain(runOnMainSync(function () {
+            var thread = nowThread();
+            try {
+                hideKeyboardOnMain();
+                if (panelWindowRoot !== null &&
+                        panelWindowRoot.isAttachedToWindow()) {
+                    windowManager.removeViewImmediate(panelWindowRoot);
+                }
+                state.panelCloseCount += 1;
+                state.panelRemoveThreadId = thread.id;
+                state.panelRemoveThreadName = thread.name;
+                state.lastError = null;
+                return true;
+            } finally {
+                if (panelWindowRoot !== null && ClipHub.Window &&
+                        typeof ClipHub.Window.detachWindow === "function") {
+                    try {
+                        ClipHub.Window.detachWindow(panelWindowRoot, {
+                            preservePreparedFrame:
+                                options.destroyCache !== true
+                        });
+                    }
+                    catch (ignoredDetach) {}
+                }
+                searchGeneration += 1;
+                adaptiveRenderGeneration += 1;
+                clearDeleteUndo(true);
+                clearCopyFeedback();
+                state.panelAttached = false;
+                state.inputFocused = false;
+                state.primaryGeometryManaged = false;
+                state.primaryDragViewPresent = false;
+                state.primaryResizeViewPresent = false;
+            }
+        }, 3000));
+        if (hadTransientLayer) {
+            panelStructureDirty = true;
+            state.panelStructureDirty = true;
+        }
+        advancedVisible = false;
+        searchExpanded = false;
+        state.searchExpanded = false;
+        state.advancedDrawerVisible = false;
+        rootMode = false;
+        state.rootMode = false;
+        state.primarySurface = "filter_overlay";
+        restoreListOnClose = false;
+        state.homeWindowSuspended = false;
+        clearSelectedResult();
+        lastShowReused = false;
+        state.lastShowReused = false;
+        if (options.destroyCache === true) {
+            destroyPanelCache(options.reason || "destroy");
+        }
+        return { ok: result === true, attached: false,
+            alreadyClosed: false, state: getPanelState() };
+    }
