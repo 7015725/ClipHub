@@ -15,37 +15,17 @@ def function_block(name):
     if e<0: e=min(len(src),p+30000)
     return src[p:e]
 
+names=['keyedReconcileVirtualWindow','insertVirtualEntryAt','removeVirtualEntryAt','moveVirtualEntry','startStagedAjaxAttach','finishAjaxAppendRender','rebuildVirtualWindow','resetVirtualState','closePanel']
 out=[]
-for name in [
-    'keyedReconcileVirtualWindow',
-    'insertVirtualEntryAt',
-    'removeVirtualEntryAt',
-    'moveVirtualEntry',
-    'startStagedAjaxAttach',
-    'finishAjaxAppendRender',
-    'rebuildVirtualWindow',
-    'deferVirtualUpdateDuringOverlapStagedFill',
-    'runOverlapStagedFillBatch',
-    'finishOverlapStagedFill',
-    'resetVirtualState',
-    'closePanel'
-]:
-    out.append('\n===== '+name+' =====\n'+function_block(name))
+for name in names:
+    block=function_block(name)
+    out.append('\n===== '+name+' =====\n'+block)
+    pathlib.Path('stage19_'+name+'.txt').write_text(block,encoding='utf-8')
 
-for needle in [
-    'startStagedAjaxAttach(',
-    'rebuildVirtualWindow(\n            "ajax_append"',
-    'ajaxFooterState.renderBatchCount += 1;',
-    'signatureRebuildCount',
-    'keyedReconcileVirtualWindow(range, colors)'
-]:
-    out.append('\n===== OCCURRENCES '+needle+' =====')
-    pos=0; n=0
-    while True:
-        p=src.find(needle,pos)
-        if p<0: break
-        n+=1
-        out.append('\n--- %d ---\n%s' % (n,src[max(0,p-2200):min(len(src),p+5200)]))
-        pos=p+len(needle)
-    if n==0: out.append('MISSING')
+needle='        if (startStagedAjaxAttach(\n'
+p=src.find(needle)
+if p<0: raise SystemExit('ajax staged call missing')
+context=src[max(0,p-2400):min(len(src),p+4200)]
+pathlib.Path('stage19_ajax_fallback_context.txt').write_text(context,encoding='utf-8')
+out.append('\n===== ajax fallback context =====\n'+context)
 pathlib.Path('stage19_diag.txt').write_text('\n'.join(out),encoding='utf-8')
