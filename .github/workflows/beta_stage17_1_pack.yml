@@ -1,0 +1,17 @@
+name: Beta Stage17.1 Packed Build
+on:
+  push:
+    branches: [beta-pagination-stage10-20260808]
+    paths:
+      - .github/stage17_1_pack_trigger.txt
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build packed Filter66
+        run: python stage17_1_pack_runner.py
