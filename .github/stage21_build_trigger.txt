@@ -1,1 +1,1 @@
-trigger=stage21-build-v1
+trigger=stage21-build-v2
