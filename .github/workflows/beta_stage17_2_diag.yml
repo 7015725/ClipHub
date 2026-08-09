@@ -18,6 +18,6 @@ jobs:
           python stage17_2_diag.py
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add stage17_2_diag.txt
+          git add stage17_2_*.txt
           git commit -m "记录 Stage17.2 staged retarget 诊断"
           git push
