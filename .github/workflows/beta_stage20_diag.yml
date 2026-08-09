@@ -16,8 +16,9 @@ jobs:
         run: |
           set -euo pipefail
           python stage20_diag.py
+          python stage20_target_diag.py
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add stage20_diag.txt
+          git add stage20_diag.txt stage20_target_diag.txt
           git commit -m "记录 Stage20 首次 virtual window 诊断"
           git push
