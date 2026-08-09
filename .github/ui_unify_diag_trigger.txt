@@ -1,1 +1,1 @@
-trigger=ui-unify-diag-v1
+trigger=ui-unify-diag-v2
