@@ -25,6 +25,17 @@ jobs:
           new='initialStagedFillState.startedAtMs = Number(rebuildStartedAt);'
           if s.count(old)!=1:
               raise SystemExit('Stage20 startedAt patch anchor count=%d' % s.count(old))
-          p.write_text(s.replace(old,new,1),encoding='utf-8')
+          s=s.replace(old,new,1)
+          old_reset='''    src=replace_once(src,\n        '    function resetVirtualState(clearHeights) {\\n        cancelOverlapStagedFill("reset_virtual_state");\\n',\n        '    function resetVirtualState(clearHeights) {\\n        cancelInitialStagedFill("reset_virtual_state");\\n        cancelOverlapStagedFill("reset_virtual_state");\\n',\n        'reset cancel')'''
+          new_reset='''    src=replace_once(src,\n        '    function resetVirtualState(clearHeights) {\\n',\n        '    function resetVirtualState(clearHeights) {\\n        cancelInitialStagedFill("reset_virtual_state");\\n',\n        'reset cancel')'''
+          if s.count(old_reset)!=1:
+              raise SystemExit('Stage20 reset builder patch anchor count=%d' % s.count(old_reset))
+          s=s.replace(old_reset,new_reset,1)
+          old_close='''    src=replace_once(src,\n        '    function closePanel(options) {\\n        cancelOverlapStagedFill("close_panel");\\n',\n        '    function closePanel(options) {\\n        cancelInitialStagedFill("close_panel");\\n        cancelOverlapStagedFill("close_panel");\\n',\n        'close cancel')'''
+          new_close='''    src=replace_once(src,\n        '    function closePanel(options) {\\n',\n        '    function closePanel(options) {\\n        cancelInitialStagedFill("close_panel");\\n',\n        'close cancel')'''
+          if s.count(old_close)!=1:
+              raise SystemExit('Stage20 close builder patch anchor count=%d' % s.count(old_close))
+          s=s.replace(old_close,new_close,1)
+          p.write_text(s,encoding='utf-8')
           PY
           python stage20_build.py
