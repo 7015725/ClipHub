@@ -1,0 +1,30 @@
+    function virtualTargetRange(preferredIndex) {
+        var visible = updateVirtualVisibleCount();
+        var firstVisible;
+        var lastVisible;
+        var start;
+        var end;
+        if (previewRows.length === 0) {
+            return { start: 0, end: -1, first: 0, last: -1 };
+        }
+        firstVisible = preferredIndex === undefined ||
+                preferredIndex === null ||
+                Number(preferredIndex) < 0 ?
+            estimatedFirstVisibleIndex(currentResultScrollY()) :
+            Math.max(0, Math.min(previewRows.length - 1,
+                Number(preferredIndex)));
+        lastVisible = Math.min(previewRows.length - 1,
+            firstVisible + visible - 1);
+        start = Math.max(0,
+            firstVisible - visible * VIRTUAL_BEFORE_SCREENS);
+        end = Math.min(previewRows.length - 1,
+            lastVisible + visible * VIRTUAL_AFTER_SCREENS);
+        return {
+            start: start,
+            end: end,
+            first: firstVisible,
+            last: lastVisible
+        };
+    }
+
+
