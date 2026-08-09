@@ -17,4 +17,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('stage18_build.py')
+          s=p.read_text(encoding='utf-8')
+          old="src=replace_once(src,'    function resetVirtualState() {\\n','    function resetVirtualState() {\\n        cancelOverlapStagedFill(\"reset_virtual_state\");\\n','reset cancel')"
+          new="src=replace_once(src,'    function resetVirtualState(clearHeights) {\\n','    function resetVirtualState(clearHeights) {\\n        cancelOverlapStagedFill(\"reset_virtual_state\");\\n','reset cancel')"
+          if old not in s:
+              raise SystemExit('reset anchor patch source missing')
+          p.write_text(s.replace(old,new,1),encoding='utf-8')
+          PY
           python stage18_build.py
