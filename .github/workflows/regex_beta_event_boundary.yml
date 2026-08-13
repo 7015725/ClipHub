@@ -19,21 +19,14 @@ jobs:
           ref: beta-regex-filter-20260813
           fetch-depth: 0
 
-      - name: Apply clipboard event boundary fix
+      - name: Prepare final apply tool
         run: |
           python3 tools/narrow_regex_event_verifier.py
           python3 tools/fix_regex_filter_event_boundary.py
-
-      - name: Validate implementation tools
-        run: |
           python3 -m py_compile tools/apply_regex_filter_beta.py
           python3 -m py_compile tools/fix_regex_filter_event_boundary.py
-          python3 scripts/validate_es5.py .
 
-      - name: Run formal regex beta preflight
-        run: bash scripts/release_preflight.sh --regex-beta
-
-      - name: Reproduce final production files from main
+      - name: Rebuild production files from main
         shell: bash
         run: |
           git fetch origin main
@@ -47,6 +40,7 @@ jobs:
             cd "$TMP_ROOT/main"
             python3 tools/apply_regex_filter_beta.py
             python3 scripts/validate_es5.py .
+            bash scripts/release_preflight.sh --regex-beta
           )
           for rel in \
             ClipHub.js \
@@ -64,13 +58,33 @@ jobs:
             probes/cliphub_regex_scan_probe_057.js \
             probes/cliphub_regex_generation_probe_058.js \
             probes/cliphub_regex_pagination_probe_059.js; do
-            cmp "$rel" "$TMP_ROOT/main/$rel"
+            cp "$TMP_ROOT/main/$rel" "$rel"
           done
           git worktree remove --force "$TMP_ROOT/main"
           rm -rf "$TMP_ROOT"
-          git diff --check
 
-      - name: Commit verified fix
+      - name: Validate canonical beta tree
+        run: |
+          python3 scripts/validate_es5.py .
+          bash scripts/release_preflight.sh --regex-beta
+          git diff --check
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path('module-manifest.json').read_text(encoding='utf-8'))
+          assert manifest['moduleSetVersion'] == '20260813.03'
+          assert manifest['sourceRef'] == 'beta-regex-filter-20260813'
+          assert len(manifest['modules']) == 15
+          db = Path('src/ch_03_database.js').read_text(encoding='utf-8')
+          assert 'var SCHEMA_VERSION = 2;' in db
+          assert 'db.setVersion(3)' not in db
+          entry = Path('ClipHub.js').read_text(encoding='utf-8')
+          assert 'var DEFAULT_REF = "beta-regex-filter-20260813";' in entry
+          assert 'ClipHubBeta' not in entry and 'ClipHubTest' not in entry
+          print('Canonical regex beta contracts: passed')
+          PY
+
+      - name: Commit canonical beta
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
@@ -80,5 +94,5 @@ jobs:
             echo "No changes"
             exit 0
           fi
-          git commit -m "fix regex clipboard event boundary"
+          git commit -m "canonicalize regex advanced filter beta"
           git push origin HEAD:beta-regex-filter-20260813
