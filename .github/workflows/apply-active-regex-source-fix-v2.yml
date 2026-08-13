@@ -1,0 +1,150 @@
+name: apply-active-regex-source-fix-v2
+on:
+  push:
+    branches: [beta-regex-filter-20260813]
+    paths:
+      - '.github/workflows/apply-active-regex-source-fix-v2.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: beta-regex-filter-20260813
+          fetch-depth: 0
+      - name: Patch filter and release metadata
+        run: |
+          python3 - <<'PY'
+          import base64, gzip, hashlib, json, pathlib, re
+          root = pathlib.Path('.')
+          path = root / 'src/ch_11_filter.js'
+          loader = path.read_text(encoding='utf-8')
+          m = re.search(r'\bvar\s+(PACKED_B64|encoded)\s*=\s*(.*?);', loader, re.S)
+          assert m
+          pieces = re.findall(r'"(?:\\.|[^"\\])*"', m.group(2))
+          canonical = gzip.decompress(base64.b64decode(''.join(json.loads(x) for x in pieces))).decode('utf-8')
+
+          route = re.compile(
+              r'(    function applyIfRequested\(options\) \{\n'
+              r'        options = options \|\| \{\};\n'
+              r'        if \(options\.apply === false \|\| !ready\) \{\n'
+              r'            return copyValue\(value\);\n'
+              r'        \}\n)'
+              r'(        if \(mutationRefreshPlan !== null &&)'
+          )
+          replacement = (
+              r'\1'
+              '        if (regexActive()) {\n'
+              '            cancelMutationRefresh("regex_criteria_apply");\n'
+              '            startRegexScan({\n'
+              '                origin: options.origin || "criteria",\n'
+              '                fromEvent: options.fromEvent === true\n'
+              '            });\n'
+              '            return copyValue(value);\n'
+              '        }\n'
+              r'\2'
+          )
+          canonical, n = route.subn(replacement, canonical, count=1)
+          if n != 1:
+              raise RuntimeError('applyIfRequested route anchor mismatch: %d' % n)
+          if canonical.count('MODULE_VERSION: 75') != 1:
+              raise RuntimeError('filter v75 anchor mismatch')
+          canonical = canonical.replace('MODULE_VERSION: 75', 'MODULE_VERSION: 76', 1)
+
+          raw = gzip.compress(canonical.encode('utf-8'), compresslevel=9, mtime=0)
+          enc = base64.b64encode(raw).decode('ascii')
+          chunks = [enc[i:i+120] for i in range(0, len(enc), 120)]
+          expression = '\n        ' + ' +\n        '.join(json.dumps(x) for x in chunks) + '\n    '
+          packed = re.compile(r'(\bvar\s+' + re.escape(m.group(1)) + r'\s*=\s*)(.*?)(;)', re.S)
+          mm = packed.search(loader)
+          loader = loader[:mm.start(2)] + expression + loader[mm.end(2):]
+          source_sha = hashlib.sha256(canonical.encode('utf-8')).hexdigest()
+          loader, n = re.subn(
+              r'(\bvar\s+SOURCE_SHA256\s*=\s*[\"\'])[0-9a-fA-F]{64}([\"\'])',
+              lambda x: x.group(1) + source_sha + x.group(2), loader, count=1)
+          if n != 1:
+              raise RuntimeError('filter SOURCE_SHA256 update failed')
+          path.write_text('\n'.join(line.rstrip() for line in loader.splitlines()) + '\n', encoding='utf-8')
+
+          # Keep the beta generator reproducible.
+          gen_path = root / 'tools/apply_regex_filter_beta.py'
+          gen = gen_path.read_text(encoding='utf-8')
+          gen = gen.replace('20260813.03', '20260813.04')
+          gen, n = re.subn(
+              r'(canonical = replace_once\(canonical, "MODULE_VERSION: 74",\s*\n\s*)"MODULE_VERSION: 75"',
+              r'\1"MODULE_VERSION: 76"', gen, count=1)
+          if n != 1:
+              raise RuntimeError('generator filter version anchor mismatch')
+          gen = gen.replace('"ch_11_filter.js": ("ch_11_filter", 75)',
+                            '"ch_11_filter.js": ("ch_11_filter", 76)')
+          marker = '    canonical = finalize_filter_canonical(canonical)\n'
+          if gen.count(marker) != 1:
+              raise RuntimeError('generator finalize marker mismatch')
+          snippet = '''    canonical = replace_once(
+              canonical,
+              "        if (options.apply === false || !ready) {\\n"
+              "            return copyValue(value);\\n"
+              "        }\\n"
+              "        if (mutationRefreshPlan !== null &&",
+              "        if (options.apply === false || !ready) {\\n"
+              "            return copyValue(value);\\n"
+              "        }\\n"
+              "        if (regexActive()) {\\n"
+              "            cancelMutationRefresh(\\\"regex_criteria_apply\\\");\\n"
+              "            startRegexScan({\\n"
+              "                origin: options.origin || \\\"criteria\\\",\\n"
+              "                fromEvent: options.fromEvent === true\\n"
+              "            });\\n"
+              "            return copyValue(value);\\n"
+              "        }\\n"
+              "        if (mutationRefreshPlan !== null &&",
+              "filter active regex base criteria route",
+          )
+'''
+          gen = gen.replace(marker, snippet + marker, 1)
+          gen_path.write_text(gen, encoding='utf-8')
+
+          # Release metadata.
+          manifest_path = root / 'module-manifest.json'
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          assert manifest.get('sourceRef') == 'beta-regex-filter-20260813'
+          assert len(manifest.get('modules', [])) == 15
+          manifest['moduleSetVersion'] = '20260813.04'
+          def blob_sha(text):
+              raw = text.encode('utf-8')
+              return hashlib.sha1(('blob %d\0' % len(raw)).encode('utf-8') + raw).hexdigest()
+          for item in manifest['modules']:
+              item['sha'] = blob_sha((root / item['path']).read_text(encoding='utf-8'))
+          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          pre_path = root / 'scripts/release_preflight.sh'
+          pre = pre_path.read_text(encoding='utf-8')
+          if pre.count("EXPECTED_MODULE_SET='20260813.03'") != 1:
+              raise RuntimeError('preflight module set anchor mismatch')
+          pre = pre.replace("EXPECTED_MODULE_SET='20260813.03'", "EXPECTED_MODULE_SET='20260813.04'", 1)
+          if pre.count('"ch_11_filter.js": ("ch_11_filter", 75)') != 1:
+              raise RuntimeError('preflight filter version anchor mismatch')
+          pre = pre.replace('"ch_11_filter.js": ("ch_11_filter", 75)',
+                            '"ch_11_filter.js": ("ch_11_filter", 76)', 1)
+          pre_path.write_text(pre, encoding='utf-8')
+
+          assert 'cancelMutationRefresh("regex_criteria_apply")' in canonical
+          assert 'MODULE_NAME: "ch_11_filter", MODULE_VERSION: 76' in canonical
+          assert 'var SCHEMA_VERSION = 2;' in (root / 'src/ch_03_database.js').read_text(encoding='utf-8')
+          print('Filter v76 ready; moduleSet 20260813.04')
+          PY
+      - name: Run regex beta preflight
+        run: bash scripts/release_preflight.sh --regex-beta
+      - name: Commit and clean temporary workflows
+        run: |
+          rm -f .github/workflows/apply-active-regex-source-fix.yml
+          rm -f .github/workflows/apply-active-regex-source-fix-v2.yml
+          rm -f .github/workflows/inspect-regex-ui-beta.yml
+          rm -f .github/workflows/inspect-regex-ui-beta-2.yml
+          git config user.name '7015725'
+          git config user.email '62368672+7015725@users.noreply.github.com'
+          git add src/ch_11_filter.js tools/apply_regex_filter_beta.py module-manifest.json scripts/release_preflight.sh .github/workflows
+          git commit -m 'fix active regex source refresh'
+          git push origin HEAD:beta-regex-filter-20260813
