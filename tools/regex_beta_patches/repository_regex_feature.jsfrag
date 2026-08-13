@@ -108,12 +108,22 @@
         if (options.enabledOnly === true) {
             where.push("enabled = 1");
         }
-        keyword = String(options.titleKeyword === null ||
-            options.titleKeyword === undefined ? "" : options.titleKeyword)
+        keyword = String(options.searchKeyword === null ||
+            options.searchKeyword === undefined ? "" : options.searchKeyword)
             .replace(/^\s+|\s+$/g, "");
         if (keyword.length > 0) {
-            where.push("title LIKE ? ESCAPE '\\'");
-            args.push("%" + escapeLike(keyword) + "%");
+            keyword = "%" + escapeLike(keyword) + "%";
+            where.push("(title LIKE ? ESCAPE '\\' OR note LIKE ? ESCAPE '\\')");
+            args.push(keyword);
+            args.push(keyword);
+        } else {
+            keyword = String(options.titleKeyword === null ||
+                options.titleKeyword === undefined ? "" : options.titleKeyword)
+                .replace(/^\s+|\s+$/g, "");
+            if (keyword.length > 0) {
+                where.push("title LIKE ? ESCAPE '\\'");
+                args.push("%" + escapeLike(keyword) + "%");
+            }
         }
         return ClipHub.Database.queryAll(
             "SELECT * FROM regex_rules" +
