@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
+import re
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +20,19 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
     return text.replace(old, new, 1)
 
 
+def insert_after_function_decl(text: str, name: str, body: str,
+                               label: str) -> str:
+    pattern = re.compile(
+        r"(^\s*function\s+" + re.escape(name) + r"\s*\([^)]*\)\s*\{\n)",
+        re.M,
+    )
+    matches = list(pattern.finditer(text))
+    if len(matches) != 1:
+        raise RuntimeError(f"{label}: expected one function declaration, got {len(matches)}")
+    match = matches[0]
+    return text[:match.end()] + body + text[match.end():]
+
+
 def normalize_loader(path: Path) -> None:
     text = path.read_text(encoding="utf-8")
     path.write_text("\n".join(line.rstrip() for line in text.splitlines()) + "\n",
@@ -30,10 +43,9 @@ def patch_filter() -> None:
     path = ROOT / "src" / "ch_11_filter.js"
     loader, variable, canonical = apply.unpack_loader(path)
 
-    canonical = replace_once(
+    canonical = insert_after_function_decl(
         canonical,
-        "    function onClipboardChange(payload, origin) {\n",
-        "    function onClipboardChange(payload, origin) {\n"
+        "onClipboardChange",
         "        if (regexActive()) {\n"
         "            clearRegexResultCache(\"clipboard_event:\" +\n"
         "                String(origin || \"unknown\"));\n"
@@ -163,29 +175,35 @@ def update_release_metadata() -> None:
 
 def write_rollback_probe() -> None:
     path = ROOT / "probes" / "cliphub_regex_rollback_probe_060.md"
-    path.write_text("""# ClipHub Regex Beta 回滚探针 060\n\n"
-"目标：验证 Beta 与 main 共用 `shortx.getShortXDir()/ClipHub` 时，Beta 新增正则功能不会提高 SQLite `user_version`，并可安全 `Beta -> main -> Beta`。\n\n"
-"## 前置\n\n"
-"- main 与 Beta 不可同时运行。\n"
-"- 记录测试前剪贴板条数。\n"
-"- 不删除 `shortx.getShortXDir()/ClipHub/data/cliphub.db`。\n\n"
-"## 步骤\n\n"
-"1. 启动 `main`，记录 `Database.getVersion()` 与 `Repository.countItems()`；预期数据库版本为 `2`。\n"
-"2. 停止 main。\n"
-"3. 使用 `beta-regex-filter-20260813` 入口启动 Beta。\n"
-"4. 确认 `Database.getVersion() == 2`，创建一条自定义正则规则并执行一次高级正则筛选。\n"
-"5. 停止 Beta。\n"
-"6. 再次使用 main 入口启动。\n"
-"7. 确认 main 正常启动、数据库版本仍为 `2`、原剪贴板记录仍可读取，无 `Database schema is newer than this build`。\n"
-"8. 停止 main，再次启动 Beta。\n"
-"9. 确认步骤 4 创建的自定义正则规则仍存在。\n\n"
-"## PASS 条件\n\n"
-"- 全过程运行目录始终为 `shortx.getShortXDir()/ClipHub`。\n"
-"- SQLite `user_version` 始终为 `2`。\n"
-"- main 可正常启动并读取旧数据。\n"
-"- 再切回 Beta 后 `regex_rules` 用户数据仍存在。\n"
-"- 未出现新增 `ClipHubBeta` / `ClipHubTest` 目录。\n""",
-                    encoding="utf-8")
+    path.write_text(
+        "# ClipHub Regex Beta 回滚探针 060\n\n"
+        "目标：验证 Beta 与 main 共用 `shortx.getShortXDir()/ClipHub` 时，"
+        "Beta 新增正则功能不会提高 SQLite `user_version`，并可安全 "
+        "`Beta -> main -> Beta`。\n\n"
+        "## 前置\n\n"
+        "- main 与 Beta 不可同时运行。\n"
+        "- 记录测试前剪贴板条数。\n"
+        "- 不删除 `shortx.getShortXDir()/ClipHub/data/cliphub.db`。\n\n"
+        "## 步骤\n\n"
+        "1. 启动 `main`，记录 `Database.getVersion()` 与 `Repository.countItems()`；"
+        "预期数据库版本为 `2`。\n"
+        "2. 停止 main。\n"
+        "3. 使用 `beta-regex-filter-20260813` 入口启动 Beta。\n"
+        "4. 确认 `Database.getVersion() == 2`，创建一条自定义正则规则并执行一次高级正则筛选。\n"
+        "5. 停止 Beta。\n"
+        "6. 再次使用 main 入口启动。\n"
+        "7. 确认 main 正常启动、数据库版本仍为 `2`、原剪贴板记录仍可读取，"
+        "无 `Database schema is newer than this build`。\n"
+        "8. 停止 main，再次启动 Beta。\n"
+        "9. 确认步骤 4 创建的自定义正则规则仍存在。\n\n"
+        "## PASS 条件\n\n"
+        "- 全过程运行目录始终为 `shortx.getShortXDir()/ClipHub`。\n"
+        "- SQLite `user_version` 始终为 `2`。\n"
+        "- main 可正常启动并读取旧数据。\n"
+        "- 再切回 Beta 后 `regex_rules` 用户数据仍存在。\n"
+        "- 未出现新增 `ClipHubBeta` / `ClipHubTest` 目录。\n",
+        encoding="utf-8",
+    )
 
 
 def verify_boundaries() -> None:
