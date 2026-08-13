@@ -34,43 +34,7 @@ jobs:
           manifest_path = root / "module-manifest.json"
           preflight_path = root / "scripts/release_preflight.sh"
 
-          old = '''    function bindRegexRuleDrag(handle, rowRoot, ruleId) {
-              var startY = 0;
-              var dragging = false;
-              handle.setOnTouchListener(new JavaAdapter(View.OnTouchListener, {
-                  onTouch: function (view, event) {
-                      var action = Number(event.getActionMasked());
-                      var delta;
-                      if (action === MotionEvent.ACTION_DOWN) {
-                          startY = Number(event.getRawY());
-                          dragging = true;
-                          rowRoot.setAlpha(0.92);
-                          return true;
-                      }
-                      if (action === MotionEvent.ACTION_MOVE && dragging) {
-                          delta = Math.max(-dp(64), Math.min(dp(64),
-                              Number(event.getRawY()) - startY));
-                          rowRoot.setTranslationY(delta);
-                          return true;
-                      }
-                      if ((action === MotionEvent.ACTION_UP ||
-                              action === MotionEvent.ACTION_CANCEL) && dragging) {
-                          delta = Number(event.getRawY()) - startY;
-                          dragging = false;
-                          rowRoot.setTranslationY(0);
-                          rowRoot.setAlpha(1);
-                          if (Math.abs(delta) >= dp(28)) {
-                              return moveRegexRule(Number(ruleId), delta > 0 ? 1 : -1);
-                          }
-                          return true;
-                      }
-                      return false;
-                  }
-              }));
-          }
-          '''
-
-          new = '''    function setRegexRuleDragParentIntercept(view, disallow) {
+          new_drag = '''    function setRegexRuleDragParentIntercept(view, disallow) {
               var parent = null;
               try {
                   parent = view === null || view === undefined ? null : view.getParent();
@@ -130,6 +94,19 @@ jobs:
           }
           '''
 
+          def replace_drag_block(text: str, label: str) -> str:
+              start_marker = "    function bindRegexRuleDrag(handle, rowRoot, ruleId) {"
+              end_marker = "\n    function deleteRegexRuleConfirmed(ruleId, deleteView) {"
+              start = text.find(start_marker)
+              if start < 0:
+                  raise RuntimeError(label + ": bindRegexRuleDrag start missing")
+              end = text.find(end_marker, start)
+              if end < 0:
+                  raise RuntimeError(label + ": deleteRegexRuleConfirmed boundary missing")
+              if text.find(start_marker, start + 1) >= 0:
+                  raise RuntimeError(label + ": duplicate bindRegexRuleDrag")
+              return text[:start] + new_drag.rstrip() + "\n" + text[end:]
+
           def replace_once(text: str, before: str, after: str, label: str) -> str:
               count = text.count(before)
               if count != 1:
@@ -137,7 +114,7 @@ jobs:
               return text.replace(before, after, 1)
 
           fragment = fragment_path.read_text(encoding="utf-8")
-          fragment = replace_once(fragment, old, new, "settings fragment drag binder")
+          fragment = replace_drag_block(fragment, "settings fragment")
           fragment_path.write_text(fragment, encoding="utf-8")
 
           loader = settings_path.read_text(encoding="utf-8")
@@ -147,7 +124,7 @@ jobs:
           pieces = re.findall(r'"(?:\\.|[^"\\])*"', assignment.group(2))
           encoded = "".join(json.loads(piece) for piece in pieces)
           canonical = gzip.decompress(base64.b64decode(encoded)).decode("utf-8")
-          canonical = replace_once(canonical, old, new, "settings canonical drag binder")
+          canonical = replace_drag_block(canonical, "settings canonical")
           canonical = replace_once(canonical, "MODULE_VERSION: 26", "MODULE_VERSION: 27",
                                    "settings module version")
 
@@ -174,13 +151,11 @@ jobs:
               raise RuntimeError("unexpected moduleSetVersion: " + str(manifest.get("moduleSetVersion")))
           manifest["moduleSetVersion"] = "20260813.07"
           settings_blob = git_blob_sha(loader)
-          matched = 0
-          for item in manifest.get("modules", []):
-              if item.get("name") == "ch_13_settings.js":
-                  item["sha"] = settings_blob
-                  matched += 1
-          if matched != 1:
+          entries = [item for item in manifest.get("modules", [])
+                     if item.get("name") == "ch_13_settings.js"]
+          if len(entries) != 1:
               raise RuntimeError("manifest settings entry mismatch")
+          entries[0]["sha"] = settings_blob
           manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
                                    encoding="utf-8")
 
@@ -196,6 +171,8 @@ jobs:
               "regex preflight settings version")
           preflight_path.write_text(preflight, encoding="utf-8")
 
+          assert canonical.count("function bindRegexRuleDrag(") == 1
+          assert canonical.count("function setRegexRuleDragParentIntercept(") == 1
           assert "requestDisallowInterceptTouchEvent(disallow === true)" in canonical
           assert "ACTION_CANCEL && dragging" in canonical
           assert "MODULE_VERSION: 27" in canonical
