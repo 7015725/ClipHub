@@ -187,6 +187,11 @@
                     !selected[String(Number(rule.id))]) {
                 continue;
             }
+            var risk = ClipHub.Repository.assessRegexRisk(rule.pattern);
+            if (risk.risky) {
+                throw new Error("regex_pattern_risky: " + String(rule.id) +
+                    ":" + risk.code);
+            }
             output.push({
                 id: Number(rule.id),
                 updatedAt: Number(rule.updated_at || 0),

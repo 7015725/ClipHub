@@ -36,6 +36,9 @@
         if (text.indexOf("regex_title_conflict") >= 0) { return "标题已存在"; }
         if (text.indexOf("regex_pattern_empty") >= 0) { return "正则表达式不能为空"; }
         if (text.indexOf("regex_text_too_long") >= 0) { return "输入内容超过长度限制"; }
+        if (text.indexOf("regex_pattern_risky") >= 0) {
+            return "表达式存在高风险回溯结构，请修改后再启用";
+        }
         if (text.indexOf("regex_pattern_invalid") >= 0) {
             return "表达式无效：" + text.substring(text.indexOf(":") + 1)
                 .replace(/^\s+|\s+$/g, "");
@@ -454,7 +457,17 @@
         var patternText = String(draft.pattern || "");
         var flags = Number(draft.flags || 0);
         var generation;
+        var risk = ClipHub.Repository.assessRegexRisk(patternText);
         cancelRegexTest("new_test");
+        if (risk.risky) {
+            regexTestText = inputText;
+            uiState.regexTestRunning = false;
+            uiState.lastRegexValidationError =
+                "表达式存在高风险回溯结构，请修改后再测试";
+            regexTestResultLines = [];
+            buildPage();
+            return false;
+        }
         generation = regexTestGeneration + 1;
         regexTestGeneration = generation;
         regexTestText = inputText;
