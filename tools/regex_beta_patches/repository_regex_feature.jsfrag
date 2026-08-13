@@ -228,15 +228,23 @@
 
     function duplicateRegexRule(id) {
         var source = getRegexRule(id);
-        var base;
+        var sourceTitle;
         var candidate;
-        var suffix = 1;
+        var suffixNumber = 1;
+        var suffix;
+        var maximumBase;
         if (source === null) { throw new Error("regex_rule_missing"); }
-        base = String(source.title) + " - 副本";
-        candidate = base;
-        while (getRegexRuleByNormalizedTitle(normalizeRegexTitle(candidate)) !== null) {
-            suffix += 1;
-            candidate = base + " " + String(suffix);
+        sourceTitle = String(source.title || "");
+        while (true) {
+            suffix = suffixNumber <= 1 ? " - 副本" :
+                " - 副本 " + String(suffixNumber);
+            maximumBase = Math.max(0, 64 - suffix.length);
+            candidate = sourceTitle.substring(0, maximumBase) + suffix;
+            if (getRegexRuleByNormalizedTitle(
+                    normalizeRegexTitle(candidate)) === null) {
+                break;
+            }
+            suffixNumber += 1;
         }
         return createRegexRule({
             title: candidate,
