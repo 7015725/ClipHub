@@ -27,7 +27,7 @@ case "$MODE" in
     ;;
   --regex-beta)
     EXPECTED_REF='beta-regex-filter-20260813'
-    EXPECTED_MODULE_SET='20260813.01'
+    EXPECTED_MODULE_SET='20260813.02'
     EXPECTED_ENTRY_VERSION='6'
     EXPECTED_APP_MODULE_VERSION='20'
     REQUIRE_CLEAN='0'
@@ -262,7 +262,7 @@ if mode == "--regex-beta":
     assert "feature.regex_rules.schema_version" in database_source
     assert "feature.regex_rules.defaults_initialized" in repository_source
     assert "listRegexCandidateChunk" in repository_source
-    assert "matcher(text).find" not in filter_source
+    assert ".matcher(text).matches()" not in filter_source
     assert ".matcher(text).find()" in filter_source
     assert "filterRegexRuleIds" in settings_source
     assert "filterRegexMatchMode" in settings_source
