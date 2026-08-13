@@ -1,0 +1,532 @@
+
+################ ch06_repository.js ################
+   14 requireReady
+   20 normalizeContent
+   27 sha256
+   44 intValue
+   50 positiveLimit
+   57 normalizePageSize
+   66 normalizePageNumber
+   71 normalizeSortMode
+   78 stringList
+   96 intList
+  112 placeholders
+  121 appendIn
+  130 escapeLike
+  136 copyArray
+  140 normalizeTagName
+  146 normalizeContentType
+  156 insertItem
+  206 getItem
+  213 getLatestActiveItem
+  221 getLatestActiveItemByHash
+  231 buildItemWhere
+  288 normalizedSourceSql
+  294 buildItemOrder
+  309 buildPageCursor
+  324 buildStableTailCursorWhere
+  341 buildAppendCursorWhere
+  364 itemSelectColumns
+  392 listItems
+  413 countItemsByOptions
+  425 listItemPage
+  496 listSourceOptions
+  509 updateItem
+  564 listOrderRows
+  575 reorderItem
+  653 getManualOrderState
+  667 softDeleteItem
+  673 softDeleteItemsByTag
+  684 softDeleteAllItems
+  694 restoreItem
+  698 restoreItemIfDeletedAt
+  708 countItems
+  719 purgeExpired
+  733 trimHistory
+  746 cleanupHistory
+  770 getTag
+  781 getTagByName
+  791 insertTag
+  823 ensureTag
+  840 updateTag
+  889 deleteTag
+  905 listTags
+  917 listItemTags
+  927 listItemTagMap
+  957 mergeTagMaps
+  967 listItemTagMapChunked
+  984 listItemsByIds
+ 1018 attachTag
+ 1031 detachTag
+ 1040 replaceItemTagsInternal
+ 1056 setItemTags
+ 1065 saveItemWithTags
+ 1120 reorderTags
+
+################ ch11_filter.js ################
+  685 nowNanos
+  689 elapsedMs
+  694 resetShowPerformance
+  711 copyPerformance
+  724 markPanelDataDirty
+  734 dp
+  738 pxToDp
+  742 clampNumber
+  750 resourceFontScale
+  759 availableResultWidthPx
+  781 resultCardMetrics
+  889 deleteUndoMetrics
+  915 removeCopyFeedbackView
+  928 clearCopyFeedback
+  934 scheduleCopyFeedbackTimeout
+  948 attachCopyFeedbackBanner
+  993 removeDeleteUndoView
+ 1006 clearDeleteUndo
+ 1016 scheduleDeleteUndoTimeout
+ 1031 rememberDeleteUndo
+ 1045 performDeleteUndo
+ 1067 attachDeleteUndoBanner
+ 1128 scheduleAdaptiveResultRefresh
+ 1150 updateDrawerMeasurements
+ 1191 normalizeText
+ 1196 normalizeList
+ 1212 normalizeIdList
+ 1228 copyList
+ 1238 contains
+ 1249 toggle
+ 1267 emptyValue
+ 1278 copyValue
+ 1290 isActive
+ 1299 validateSensitiveMode
+ 1307 validateSortMode
+ 1316 sortModeLabel
+ 1323 sortRows
+ 1358 toQueryOptions
+ 1380 nowThread
+ 1388 isMainThread
+ 1412 runOnMainSync
+ 1456 requireMain
+ 1464 palette
+ 1504 roundedBackground
+ 1515 circleBackground
+ 1525 makeText
+ 1538 makeIcon
+ 1549 makeChip
+ 1571 makePrimaryButton
+ 1582 makeSecondaryButton
+ 1593 formatTime
+ 1606 typeLabel
+ 1616 sourceLabel
+ 1620 loadHistory
+ 1634 saveHistory
+ 1644 rememberKeyword
+ 1666 clearHistory
+ 1676 emitChanged
+ 1701 paginationMode
+ 1706 paginationPageSize
+ 1715 copyPaginationState
+ 1750 copyAjaxFooterState
+ 1779 copyNumberPagerState
+ 1830 readPaginationSettings
+ 1852 paginationCriteriaSignature
+ 1868 resetUnifiedPagination
+ 1920 syncPaginationSettings
+ 1945 ensurePaginationCriteria
+ 1956 paginationQueryOptions
+ 1985 rowIdMap
+ 1995 uniqueAppendRows
+ 2013 readItemTagMap
+ 2022 mergeItemTagMap
+ 2034 copyLazyLoadState
+ 2072 copyPrefetchState
+ 2103 resetLazyLoadRuntime
+ 2120 clearPrefetchedPage
+ 2144 prefetchOptionsKey
+ 2160 nextPrefetchDescriptor
+ 2202 executeNextPagePrefetch
+ 2277 prefetchNextPageNow
+ 2285 scheduleNextPagePrefetch
+ 2337 consumePrefetchedPage
+ 2380 resultRemainingScrollPx
+ 2405 lazyTriggerThresholdPx
+ 2419 maybeTriggerLazyLoad
+ 2472 bindLazyScrollListener
+ 2525 loadPaginationPageInternal
+ 2654 onPaginationSettingsChanged
+ 2675 loadedResultIds
+ 2685 isDataWindowStub
+ 2690 dataWindowBlockSize
+ 2699 updateDataWindowCounts
+ 2730 copyDataWindowState
+ 2772 copyMutationState
+ 2827 resetMutationState
+ 2862 mutationAction
+ 2877 rememberMutationRefresh
+ 2917 cancelMutationRefresh
+ 2924 mutationGlobalAnchorIndex
+ 2934 refreshMutationResultsOnMain
+ 3121 resetDataWindowState
+ 3148 dataWindowStub
+ 3155 removeMissingDataWindowIds
+ 3406 resetHydrationWorkerDiagnostics
+ 3602 copyHydrationWorkerState
+ 3634 copyScrollPerformanceState
+ 3981 invalidateHydrationWorker
+ 3990 ensureHydrationWorker
+ 4012 findPreviewRowIndexByIdForHydration
+ 4022 hydrationRequestSignature
+ 4034 collectHydrationRequest
+ 4084 postHydrationResult
+ 4092 queryHydrationRequest
+ 4143 runHydrationWorkerLoop
+ 4163 submitHydrationRequest
+ 4206 clearPendingHydrationIfCurrent
+ 4213 dropHydrationResult
+ 4223 hydrationResultTouchesRendered
+ 4240 applyHydrationResult
+ 4349 drainHydrationResultsOnMain
+ 4363 shutdownHydrationWorker
+ 4392 hydrateDataWindowRange
+ 4441 dehydrateDataWindowOutside
+ 4503 dataWindowRowSnapshot
+ 4535 currentResultScrollY
+ 4544 setResultScrollY
+ 4552 virtualRowIndexById
+ 4565 virtualDefaultHeightPx
+ 4580 virtualHeightForIndex
+ 4597 virtualHeightRange
+ 4609 setVirtualSpacerHeight
+ 4629 copyVirtualState
+ 4673 clearVirtualViewReferences
+ 4686 resetVirtualState
+ 4718 virtualViewportHeightPx
+ 4731 updateVirtualVisibleCount
+ 4740 estimatedFirstVisibleIndex
+ 4753 captureScrollAnchor
+ 4830 measureVirtualCards
+ 4886 restoreScrollAnchor
+ 4939 createVirtualHierarchy
+ 4966 virtualTargetRange
+ 4996 virtualRenderSignature
+ 5017 syncRenderedResultCounters
+ 5047 removeVirtualEntryAt
+ 5059 insertVirtualEntryAt
+ 5084 moveVirtualEntry
+ 5108 buildKeyedStagedPlan
+ 5158 clearKeyedStagedState
+ 5186 cancelKeyedStagedReconcile
+ 5200 deferVirtualUpdateDuringKeyedStaged
+ 5209 postKeyedStagedBatch
+ 5219 recordKeyedStagedSlowBatch
+ 5248 finishKeyedStagedReconcile
+ 5348 runKeyedStagedBatch
+ 5455 startKeyedStagedReconcile
+ 5574 keyedReconcileVirtualWindow
+ 5702 resultCardRecycleKeyForRow
+ 5714 resultCardRecycleKeyForHolder
+ 5731 takeCompatibleRecycleHolder
+ 5746 estimateOverlapStagedNewBuildCount
+ 5767 clearOverlapStagedFillState
+ 5787 cancelOverlapStagedFill
+ 5812 deferVirtualUpdateDuringOverlapStagedFill
+ 5821 postOverlapStagedFillBatch
+ 5831 finishOverlapStagedFill
+ 5896 runOverlapStagedFillBatch
+ 6000 startOverlapStagedFill
+ 6086 clearInitialStagedFillState
+ 6102 cancelInitialStagedFill
+ 6113 deferVirtualUpdateDuringInitialStagedFill
+ 6123 postInitialStagedFillBatch
+ 6133 recoverInitialStagedFill
+ 6141 finishInitialStagedFill
+ 6192 runInitialStagedFillBatch
+ 6268 startInitialStagedFill
+ 6379 rebuildVirtualWindow
+ 6758 scheduleVirtualUpdate
+ 6824 scrollToVirtualItem
+ 6841 isLatestResultPosition
+ 6849 updateQuickResetView
+ 6869 markNewContentPending
+ 6889 resetToLatest
+ 6922 refreshPaginationUi
+ 6945 resetResultPaging
+ 6954 apply
+ 7031 measureCriteriaQuery
+ 7053 applyIfRequested
+ 7081 setValue
+ 7117 reset
+ 7133 onClipboardChange
+ 7209 registerEvent
+ 7227 unregisterEvents
+ 7239 hideKeyboardOnMain
+ 7248 requestKeyboardOnMain
+ 7279 markUiThread
+ 7285 performKeywordFromInput
+ 7299 scheduleRealtimeSearch
+ 7322 toggleSource
+ 7335 toggleTag
+ 7347 togglePinned
+ 7359 setSensitive
+ 7375 setSortMode
+ 7391 resetFromUi
+ 7413 applyFromUi
+ 7426 toggleAdvanced
+ 7439 optionKey
+ 7446 optionLabel
+ 7453 selectedList
+ 7460 clearKind
+ 7477 chipWidthDp
+ 7489 optionClick
+ 7511 adaptiveSourceGridMetrics
+ 7533 makeChipRow
+ 7651 addSection
+ 7666 optionCounts
+ 7678 displayMetrics
+ 7688 panelDimensions
+ 7718 updatePanelSize
+ 7747 makeSourceIcon
+ 7794 tagsForResult
+ 7799 tagSummary
+ 7810 tagColorText
+ 7822 selectedResultRow
+ 7843 setSelectedResult
+ 7851 clearSelectedResult
+ 7856 refreshPrimaryResults
+ 7864 showInputToast
+ 7875 inputContextPendingError
+ 7879 executeInputText
+ 7896 finishInputDispatch
+ 7916 scheduleInputAttempt
+ 7950 fullResultRowById
+ 7966 inputResultRow
+ 8014 copyResultRow
+ 8057 selectResultRow
+ 8062 toggleResultPinned
+ 8077 editResultRow
+ 8096 editSelectedResult
+ 8100 addNewResult
+ 8110 deleteResultRow
+ 8136 deleteSelectedResult
+ 8140 translateResultRow
+ 8159 openSelectedDetail
+ 8163 swipeInteractionBlocked
+ 8180 makeSwipeAction
+ 8192 makeVectorIconDrawable
+ 8292 makePinnedBadge
+ 8310 makeCardActionButton
+ 8334 currentCardHolderRow
+ 8343 buildCardActionGrid
+ 8409 setSwipeVisual
+ 8418 resetSwipeVisual
+ 8443 cancelActiveSwipe
+ 8452 performSwipeAction
+ 8477 bindSwipeGesture
+ 8599 resultPreviewText
+ 8605 cardHolderActionRefs
+ 8614 replaceCardHolderChild
+ 8630 noteCardHolderRebindReason
+ 8637 rebindResultCardHolder
+ 8721 makeResultCard
+ 8887 updateResultScrollState
+ 8897 cancelStagedAjaxAttach
+ 8917 deferVirtualUpdateDuringStagedAttach
+ 8933 postStagedAjaxAttachBatch
+ 8949 finishStagedAjaxAttach
+ 8994 recoverStagedAjaxAttach
+ 9009 runStagedAjaxAttachBatch
+ 9132 preemptStagedAjaxAttachForScroll
+ 9258 startStagedAjaxAttach
+ 9334 finishAjaxAppendRender
+ 9400 renderAjaxAppendBatch
+ 9444 startAjaxAppendRender
+ 9479 loadMoreResults
+ 9529 removePaginationFooterViews
+ 9554 calculatePageButtons
+ 9618 numberTokenLabels
+ 9629 makeNumberPagerButton
+ 9659 numberActionTarget
+ 9676 goToPage
+ 9749 performNumberAction
+ 9764 addNumberPagerChild
+ 9774 buildNumberPaginationFooter
+ 9956 buildAjaxPaginationFooter
+10041 appendLoadMoreControl
+10058 finishResultRender
+10104 renderResultBatch
+10143 refreshResultsOnMain
+10281 updateResultCountOnMain
+10313 buildHistoryRow
+10389 activeAdvancedFilterCount
+10408 headerMetrics
+10474 makeHeaderAction
+10485 renderFilterActionView
+10520 makeFilterAction
+10533 refreshAdvancedHeaderSummaryOnMain
+10550 updateSearchVisibility
+10574 setSearchExpanded
+10597 buildSearchHeader
+10839 buildResultArea
+10862 makeChoiceChipRow
+10889 addChoiceSection
+10903 createAdvancedDrawerBundle
+11031 currentAdvancedDrawerBundle
+11048 commitAdvancedDrawerBundle
+11065 disposeAdvancedDrawerBundle
+11073 viewIdentity
+11079 advancedDrawerLayoutParams
+11094 removeAdvancedDrawerOnly
+11123 rebuildAdvancedDrawerOnly
+11233 recordDrawerOpenState
+11245 recordDrawerCloseState
+11261 setAdvancedDrawerVisibleOnMain
+11296 makeToolbarAction
+11337 buildBottomToolbar
+11367 compactWindowLayout
+11371 buildPanelContent
+11508 suspendHomeWindow
+11515 finishHomeWindow
+11523 copyImeLayout
+11533 sameImeLayout
+11541 hasFocusedFilterInput
+11561 createFilterImeController
+11581 displayMetrics
+11591 thresholdPx
+11601 inputMethodHeightPx
+11613 readImeState
+11698 updateLayout
+11722 restoreLayout
+11735 applyImeLayout
+11796 poll
+11820 start
+11854 stop
+11904 stopFilterImeAvoidance
+11914 startFilterImeAvoidance
+11925 getFilterImeAvoidanceState
+11940 installFirstDrawProbe
+11975 createPanelCache
+12012 attachPanelCache
+12076 destroyPanelCache
+12136 schedulePanelRefresh
+12176 scheduleCoalescedRefresh
+12197 showPanel
+12295 closePanel
+12424 handleBack
+12450 getPanelState
+12739 resetState
+
+################ ch13_settings.js ################
+  239 dp
+  244 pxToDp
+  248 displayMetrics
+  266 statusBarHeightPx
+  281 inputMethodVisibleHeightPx
+  305 postSettingsDelayed
+  350 postSettingsViewCallback
+  396 imeVisibilityThresholdPx
+  406 readSettingsImeState
+  499 applySettingsImeLayout
+  647 resetImeAnchorSpacer
+  662 focusedInputRect
+  671 ensureImeAnchorSpace
+  711 applyFocusedInputScroll
+  754 scheduleFocusedInputVisibility
+  779 measureSettingsLayout
+  824 nextSettingsImePollDelay
+  839 pollSettingsIme
+  859 stopSettingsImeMonitoring
+  880 startSettingsImeMonitoring
+  945 bindSettingsInput
+  967 namedSettingsInput
+  981 focusSettingsInput
+ 1000 hideSettingsKeyboardOnMain
+ 1015 releaseSettingsInputFocus
+ 1043 releaseFocusedInputAfterImeHide
+ 1051 closeQuietly
+ 1057 isMainThread
+ 1081 runOnMainSync
+ 1108 copyArray
+ 1118 copyPosition
+ 1123 copyWindowGeometry
+ 1124 copyBucket
+ 1141 copyValue
+ 1159 defaultsCopy
+ 1170 intRange
+ 1179 ratio
+ 1187 normalizePosition
+ 1195 normalizeWindowGeometry
+ 1196 bucket
+ 1216 normalizePackages
+ 1236 normalizeSearchHistory
+ 1257 normalizedSecret
+ 1262 normalizePaginationPageSize
+ 1271 normalize
+ 1330 serialize
+ 1332 deserialize
+ 1339 requireReady
+ 1345 persist
+ 1353 load
+ 1368 applyClipboard
+ 1381 cleanup
+ 1396 setValue
+ 1419 setMany
+ 1465 getAll
+ 1476 getLastCleanup
+ 1486 isDark
+ 1499 palette
+ 1520 roundedBackground
+ 1531 makeText
+ 1544 makeButton
+ 1559 makeInput
+ 1580 addField
+ 1593 makeSection
+ 1602 addSection
+ 1610 updateGeneralButtons
+ 1621 translationDraftFromInputs
+ 1637 updateEngineViews
+ 1659 saveTranslationSettings
+ 1676 testTranslationSettings
+ 1718 parseColorValue
+ 1723 colorText
+ 1733 colorValueText
+ 1745 makeColorSwatch
+ 1753 bindColorPreview
+ 1766 rebuildTagPage
+ 1772 requestDeleteTag
+ 1792 bindTagDrag
+ 1831 emitTagsChanged
+ 1842 emitClipboardBatchDeleted
+ 1859 clearTagItems
+ 1881 requestClearTagItems
+ 1900 rebuildDataPage
+ 1906 clearAllItems
+ 1926 requestClearAllItems
+ 1944 createTagFromSettings
+ 1968 saveTagRow
+ 1988 deleteTagRow
+ 2003 moveTag
+ 2029 clearSearchHistory
+ 2040 makeSectionTitle
+ 2055 makeGeneralSection
+ 2096 getPaginationSettings
+ 2104 emitPaginationSettingsChanged
+ 2118 updatePaginationViews
+ 2148 savePaginationSettings
+ 2188 setPaginationDraft
+ 2211 makePaginationSection
+ 2304 makeTranslationSection
+ 2388 makeTagRow
+ 2477 makeTagsSection
+ 2536 currentForegroundUserId
+ 2544 resolveBlogActivity
+ 2563 openAuthorBlog
+ 2617 makeDataSection
+ 2752 buildPage
+ 2829 panelSize
+ 2842 openPage
+ 2948 closePage
+ 3058 sectionView
+ 3067 ensureSectionAnchorSpace
+ 3102 applySectionScroll
+ 3127 postScrollToSection
+ 3139 scrollToSection
+ 3146 getState
