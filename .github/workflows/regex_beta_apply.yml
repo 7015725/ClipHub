@@ -1,0 +1,106 @@
+name: Regex Beta Apply
+
+on:
+  push:
+    branches:
+      - beta-regex-filter-20260813
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: beta-regex-filter-20260813
+          fetch-depth: 0
+
+      - name: Prepare patch fragments
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('tools/regex_beta_patches/settings_regex_feature.jsfrag')
+          text = path.read_text(encoding='utf-8')
+          old = '    function buildPage() {\n'
+          new = '    var buildPage = function () {\n'
+          if text.count(old) != 1:
+              raise SystemExit('settings dispatcher anchor mismatch')
+          text = text.replace(old, new, 1)
+          old_end = '        return buildRootPage();\n    }\n    /* REGEX_BETA_SETTINGS_END */'
+          new_end = '        return buildRootPage();\n    };\n    /* REGEX_BETA_SETTINGS_END */'
+          if text.count(old_end) != 1:
+              raise SystemExit('settings dispatcher end anchor mismatch')
+          path.write_text(text.replace(old_end, new_end, 1), encoding='utf-8')
+          PY
+
+      - name: Apply regex beta implementation
+        run: python3 tools/apply_regex_filter_beta.py
+
+      - name: Validate ES5 and diff
+        run: |
+          python3 scripts/validate_es5.py .
+          git diff --check
+
+      - name: Verify regex beta contracts
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, re
+          from pathlib import Path
+          import sys
+          sys.path.insert(0, 'tools')
+          import apply_regex_filter_beta as apply
+
+          root = Path('.')
+          manifest = json.loads((root/'module-manifest.json').read_text(encoding='utf-8'))
+          assert manifest['sourceRef'] == 'beta-regex-filter-20260813'
+          assert manifest['moduleSetVersion'] == '20260813.01'
+          assert manifest['entryMinVersion'] == 6
+          assert len(manifest['modules']) == 15
+          assert 'var DEFAULT_REF = "beta-regex-filter-20260813";' in (root/'ClipHub.js').read_text(encoding='utf-8')
+          db = (root/'src/ch_03_database.js').read_text(encoding='utf-8')
+          assert 'var SCHEMA_VERSION = 2;' in db
+          assert 'db.setVersion(3)' not in db
+          assert 'CREATE TABLE IF NOT EXISTS regex_rules' in db
+          versions = {
+              'src/ch_06_repository.js': ('ch_06_repository', 17),
+              'src/ch_11_filter.js': ('ch_11_filter', 75),
+              'src/ch_13_settings.js': ('ch_13_settings', 25),
+          }
+          for rel, (name, version) in versions.items():
+              loader, variable, canonical = apply.unpack_loader(root/rel)
+              assert re.search(r'MODULE_NAME:\s*"'+re.escape(name)+r'"\s*,\s*MODULE_VERSION:\s*'+str(version), canonical, re.S)
+              if rel.endswith('ch_06_repository.js'):
+                  assert 'feature.regex_rules.defaults_initialized' in canonical
+                  assert 'listRegexCandidateChunk' in canonical
+              if rel.endswith('ch_11_filter.js'):
+                  assert 'regexScanGeneration' in canonical
+                  assert '.matcher(text).find()' in canonical
+                  assert 'performOpenRegexPicker' in canonical
+              if rel.endswith('ch_13_settings.js'):
+                  assert 'filterRegexRuleIds' in canonical
+                  assert 'filterRegexMatchMode' in canonical
+                  assert 'regex.test.text' in canonical
+          for item in manifest['modules']:
+              source = (root/item['path']).read_text(encoding='utf-8')
+              raw = source.encode('utf-8')
+              actual = hashlib.sha1(f'blob {len(raw)}\0'.encode('utf-8') + raw).hexdigest()
+              assert actual == item['sha'], (item['name'], actual, item['sha'])
+          print('Regex beta static contracts: passed')
+          PY
+
+      - name: Commit implementation
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No implementation changes"
+            exit 0
+          fi
+          git commit -m "implement regex advanced filter beta"
+          git push origin HEAD:beta-regex-filter-20260813
