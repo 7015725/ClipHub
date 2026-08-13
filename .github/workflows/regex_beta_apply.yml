@@ -35,6 +35,15 @@ jobs:
           if text.count(old_end) != 1:
               raise SystemExit('settings dispatcher end anchor mismatch')
           path.write_text(text.replace(old_end, new_end, 1), encoding='utf-8')
+
+          apply_path = Path('tools/apply_regex_filter_beta.py')
+          apply_text = apply_path.read_text(encoding='utf-8')
+          old_anchor = '"    function refreshPaginationUi() {"'
+          new_anchor = '"    function refreshPaginationUi(origin) {"'
+          if apply_text.count(old_anchor) != 1:
+              raise SystemExit('filter refreshPaginationUi apply anchor mismatch')
+          apply_path.write_text(apply_text.replace(old_anchor, new_anchor, 1),
+              encoding='utf-8')
           PY
 
       - name: Apply regex beta implementation
