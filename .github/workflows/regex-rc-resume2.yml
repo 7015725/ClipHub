@@ -1,0 +1,131 @@
+name: Regex RC resume 2
+
+on:
+  push:
+    branches:
+      - beta-regex-filter-20260813-rc-impl
+
+permissions:
+  contents: write
+
+concurrency:
+  group: regex-rc-implementation
+  cancel-in-progress: false
+
+jobs:
+  implement:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: beta-regex-filter-20260813-rc-impl
+      - name: Restore and correct implementation script
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          echo 'tools/.implement_regex_rc_tmp.py' >> .git/info/exclude
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64, gzip
+          workflow = Path('.github/workflows/regex-rc-impl.yml').read_text(encoding='utf-8')
+          payload = None
+          prefix = "printf '%s' '"
+          suffix = "' | base64 -d"
+          for line in workflow.splitlines():
+              if prefix in line and suffix in line:
+                  payload = line.split(prefix, 1)[1].split(suffix, 1)[0]
+                  break
+          if not payload:
+              raise SystemExit('embedded implementation payload not found')
+          script = gzip.decompress(base64.b64decode(payload)).decode('utf-8')
+          old = "        '    function buildRegexRulesPage() {\\n',\n        '    function buildRegexRulesPage() {\\n        clearPendingRegexDeleteConfirm();\\n',"
+          new = "        '    function buildRegexRulesPage(colors) {\\n',\n        '    function buildRegexRulesPage(colors) {\\n        clearPendingRegexDeleteConfirm();\\n',"
+          if script.count(old) != 1:
+              raise SystemExit('phase2 buildRegexRulesPage anchor count != 1')
+          script = script.replace(old, new)
+          Path('tools/.implement_regex_rc_tmp.py').write_text(script, encoding='utf-8')
+          PY
+          python3 -m py_compile tools/.implement_regex_rc_tmp.py
+      - name: Apply ordered commits with checkpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=b23543f816fbeb777e5ceded12557433fd6aeae5
+          messages=(
+            'fix(regex): cancel tester across page lifecycle'
+            'fix(regex): scope delete confirmation to visible rules page'
+            'feat(regex): search picker by title and note'
+            'fix(regex): bound duplicate titles to 64 characters'
+            'fix(regex): guard high-risk backtracking patterns'
+            'test(regex): add dynamic scan consistency probe 065'
+            'perf(regex): bound cache chunks and rescan invalidation'
+            'build(regex): harden packed audits and RC preflight'
+          )
+          for phase in 1 2 3 4 5 6 7 8; do
+            python3 tools/.implement_regex_rc_tmp.py "$phase"
+            if [ "$phase" = 6 ]; then
+              rm -f probes/cliphub_regex_065.js
+              cat > probes/cliphub_regex_dynamic_consistency_probe_065.md <<'EOF'
+          # ClipHub Regex Probe 065：扫描期间动态数据一致性
+
+          > **门禁级别：必须在 Android / ShortX / Rhino ES5 实机执行。静态 CI 不得将本 Probe 标记为 PASS。**
+
+          ## 前置条件
+          - 构造 1000～1500 条候选数据。
+          - 启动 Regex generation A，并等待 `running === true`、`scanned >= 128`、`complete === false`。
+          - 若无法进入上述状态，本 Probe 直接 FAIL，不得跳过 mutation 阶段。
+
+          ## 运行中 mutation 顺序
+          1. 已 MATCH → 编辑为 NONMATCH。
+          2. 已 NONMATCH → 编辑为 MATCH。
+          3. 删除已 MATCH。
+          4. 新增 MATCH。
+          5. 修改 source package，使记录离开当前 source 条件。
+          6. 修改 tag，使记录进入/离开当前 tag 条件。
+          7. 修改 pinned 状态。
+          8. 修改 sensitive 状态。
+
+          每次 mutation 后必须确认：旧 generation 不再发布；新 generation 单调递增。
+
+          ## 最终断言
+          - `matchedIds` 与数据库最新状态重新计算结果完全一致。
+          - 无重复 id、无已删除 id、无旧内容匹配残留。
+          - `pagination.totalCount === matchedIds.length`。
+          - number 模式 `pageCount` 正确。
+          - AJAX 模式 `hasMore` 正确。
+
+          ## Cache 二次验证
+          扫描完成且已有 Cache 后，再修改已有 `id <= maxItemId` 的记录并重新打开同一筛选：不得命中陈旧结果，必须失效并重启 generation，最终结果必须反映最新数据库状态。
+
+          ## PASS 记录
+          只有实机执行完全部步骤后才能记录 `Probe 065 PASS`。任何一步未执行、无法观察 generation 或无法与数据库最新状态核对，都必须记为 **NOT RUN / FAIL**，不得记 PASS。
+          EOF
+            fi
+            python3 scripts/validate_es5.py .
+            git diff --check
+            git add -A ':!.github/workflows/regex-rc-impl.yml' ':!.github/workflows/regex-rc-resume.yml' ':!.github/workflows/regex-rc-resume2.yml'
+            if git diff --cached --quiet; then
+              echo "phase $phase produced no changes" >&2
+              exit 1
+            fi
+            git commit -m "${messages[$((phase-1))]}"
+            git push origin HEAD:beta-regex-filter-20260813-rc-impl
+          done
+          python3 tools/.implement_regex_rc_tmp.py verify
+          test -z "$(git diff "$BASE" -- src/ch_03_database.js src/ch_08_window.js src/ch_09_list.js src/ch_10_editor.js src/ch_12_translation.js src/ch_15_app.js ClipHub.js tasks)"
+          changed="$(git diff --name-only "$BASE" HEAD | grep -v '^\.github/workflows/regex-rc-' || true)"
+          printf '%s\n' "$changed"
+          printf '%s\n' "$changed" | python3 -c 'import sys; allowed_prefix=("tools/regex_beta_patches/","probes/","scripts/"); allowed_exact={"src/ch_06_repository.js","src/ch_11_filter.js","src/ch_13_settings.js","module-manifest.json"}; bad=[x.strip() for x in sys.stdin if x.strip() and x.strip() not in allowed_exact and not x.strip().startswith(allowed_prefix)]; assert not bad,bad'
+          bash scripts/release_preflight.sh --regex-rc
+      - name: Remove temporary harnesses
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/regex-rc-impl.yml .github/workflows/regex-rc-resume.yml .github/workflows/regex-rc-resume2.yml
+          git add -A
+          git commit -m 'chore: remove regex RC implementation harnesses'
+          git push origin HEAD:beta-regex-filter-20260813-rc-impl
