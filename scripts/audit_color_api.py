@@ -326,7 +326,7 @@ def add_constructor_findings(relative: str, source: str,
 
 def packed_source(relative: str, source: str) -> tuple[str, str] | None:
     assignment = re.search(
-        r"\bvar\s+PACKED_B64\s*=\s*(.*?);", source, re.S
+        r"\bvar\s+(?:PACKED_B64|encoded)\s*=\s*(.*?);", source, re.S
     )
     if assignment is None:
         return None
@@ -338,7 +338,7 @@ def packed_source(relative: str, source: str) -> tuple[str, str] | None:
         raise ValueError(f"{relative}: packed source SHA is missing")
     pieces = re.findall(r'"(?:\\.|[^"\\])*"', assignment.group(1))
     if not pieces:
-        raise ValueError(f"{relative}: PACKED_B64 is empty")
+        raise ValueError(f"{relative}: packed source is empty")
     encoded = "".join(json.loads(piece) for piece in pieces)
     expanded = gzip.decompress(base64.b64decode(encoded)).decode("utf-8")
     actual = hashlib.sha256(expanded.encode("utf-8")).hexdigest()

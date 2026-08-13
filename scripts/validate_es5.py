@@ -115,7 +115,7 @@ def validate_file(path: Path) -> list[str]:
     source = path.read_text(encoding="utf-8")
     errors = validate_source(str(path), source)
     assignment = re.search(
-        r"\bvar\s+PACKED_B64\s*=\s*(.*?);", source, re.S
+        r"\bvar\s+(?:PACKED_B64|encoded)\s*=\s*(.*?);", source, re.S
     )
     if assignment is None:
         return errors
@@ -124,17 +124,33 @@ def validate_file(path: Path) -> list[str]:
         source,
     )
     try:
-        if sha_match is None:
-            raise ValueError("packed source SHA is missing")
         pieces = re.findall(r'"(?:\\.|[^"\\])*"', assignment.group(1))
+        if not pieces:
+            raise ValueError("packed source is empty")
         encoded = "".join(json.loads(piece) for piece in pieces)
         expanded = gzip.decompress(base64.b64decode(encoded)).decode("utf-8")
-        actual = hashlib.sha256(expanded.encode("utf-8")).hexdigest()
-        expected = sha_match.group(1).lower()
-        if actual != expected:
-            raise ValueError(
-                f"packed source SHA mismatch: {actual} != {expected}"
+        if sha_match is not None:
+            actual = hashlib.sha256(expanded.encode("utf-8")).hexdigest()
+            expected = sha_match.group(1).lower()
+            if actual != expected:
+                raise ValueError(
+                    f"packed source SHA mismatch: {actual} != {expected}"
+                )
+        else:
+            blob_match = re.search(
+                r"规范源码 Git blob:\s*([0-9a-fA-F]{40})", source
             )
+            if blob_match is None:
+                raise ValueError("packed source integrity marker is missing")
+            raw = expanded.encode("utf-8")
+            actual_blob = hashlib.sha1(
+                f"blob {len(raw)}\0".encode("utf-8") + raw
+            ).hexdigest()
+            expected_blob = blob_match.group(1).lower()
+            if actual_blob != expected_blob:
+                raise ValueError(
+                    f"packed source Git blob mismatch: {actual_blob} != {expected_blob}"
+                )
         errors.extend(validate_source(str(path) + "::packed", expanded))
     except Exception as error:
         errors.append(f"{path}:1: {error}")

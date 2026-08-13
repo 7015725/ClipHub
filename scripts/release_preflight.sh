@@ -27,10 +27,17 @@ case "$MODE" in
     ;;
   --regex-beta)
     EXPECTED_REF='beta-regex-filter-20260813'
-    EXPECTED_MODULE_SET='20260813.05'
+    EXPECTED_MODULE_SET='20260813.06'
     EXPECTED_ENTRY_VERSION='6'
     EXPECTED_APP_MODULE_VERSION='20'
     REQUIRE_CLEAN='0'
+    ;;
+  --regex-rc)
+    EXPECTED_REF='beta-regex-filter-20260813'
+    EXPECTED_MODULE_SET='20260813.06'
+    EXPECTED_ENTRY_VERSION='6'
+    EXPECTED_APP_MODULE_VERSION='20'
+    REQUIRE_CLEAN='1'
     ;;
   --current)
     EXPECTED_REF=''
@@ -40,7 +47,7 @@ case "$MODE" in
     REQUIRE_CLEAN='0'
     ;;
   *)
-    echo 'Usage: bash scripts/release_preflight.sh [--candidate|--main|--beta|--regex-beta|--current]' >&2
+    echo 'Usage: bash scripts/release_preflight.sh [--candidate|--main|--beta|--regex-beta|--regex-rc|--current]' >&2
     exit 2
     ;;
 esac
@@ -237,12 +244,12 @@ print("endpointSchemaVersion: 3")
 print("moduleSetVersion: " + expected_module_set)
 print("sourceRef: " + expected_ref)
 print("Theme: 4")
-if mode == "--regex-beta":
+if mode in ("--regex-beta", "--regex-rc"):
     required_versions = {
         "ch_03_database.js": ("ch_03_database", 4),
-        "ch_06_repository.js": ("ch_06_repository", 17),
-        "ch_11_filter.js": ("ch_11_filter", 77),
-        "ch_13_settings.js": ("ch_13_settings", 25),
+        "ch_06_repository.js": ("ch_06_repository", 18),
+        "ch_11_filter.js": ("ch_11_filter", 78),
+        "ch_13_settings.js": ("ch_13_settings", 26),
         "ch_15_app.js": ("ch_15_app", 20),
     }
     for filename, (module_name, module_version) in required_versions.items():
