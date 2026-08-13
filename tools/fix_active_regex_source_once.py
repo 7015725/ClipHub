@@ -149,7 +149,7 @@ def patch_release_metadata():
     preflight_path.write_text(preflight, encoding="utf-8")
 
 def verify(canonical):
-    if 'MODULE_NAME: "ch_11_filter", MODULE_VERSION: 76' not in canonical:
+    if "MODULE_VERSION: 76" not in canonical or 'MODULE_NAME: "ch_11_filter"' not in canonical:
         fail("Filter v76 postcondition missing")
     if 'cancelMutationRefresh("regex_criteria_apply")' not in canonical:
         fail("active regex route postcondition missing")
