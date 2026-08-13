@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260813.05",
+  "moduleSetVersion": "20260813.06",
   "entryMinVersion": 6,
   "sourceRef": "beta-regex-filter-20260813",
   "modules": [
@@ -32,7 +32,7 @@
     {
       "name": "ch_06_repository.js",
       "path": "src/ch_06_repository.js",
-      "sha": "d1e1d3e5c611cf1a4548e60e3862187d4c64b502"
+      "sha": "10d05cf94ef22654d54db259c94dbaee19295897"
     },
     {
       "name": "ch_07_theme.js",
@@ -57,7 +57,7 @@
     {
       "name": "ch_11_filter.js",
       "path": "src/ch_11_filter.js",
-      "sha": "ede3200cd9bfaa71e0150134c7ca034b97f2c589"
+      "sha": "51b4d16fcae87ce885f5d812b6bc84a8943070d6"
     },
     {
       "name": "ch_12_translation.js",
@@ -67,7 +67,7 @@
     {
       "name": "ch_13_settings.js",
       "path": "src/ch_13_settings.js",
-      "sha": "c34efd77bc75f1baccb85ccf7e986d8b5e438293"
+      "sha": "eb16aecf903ca6394581653e68c12f3d84224e57"
     },
     {
       "name": "ch_14_event_bus.js",
