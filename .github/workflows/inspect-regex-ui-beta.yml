@@ -1,0 +1,46 @@
+name: inspect-regex-ui-beta
+on:
+  push:
+    branches: [beta-regex-filter-20260813]
+    paths:
+      - '.github/workflows/inspect-regex-ui-beta.yml'
+  workflow_dispatch:
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unpack and print filter UI functions
+        run: |
+          python3 - <<'PY'
+          import base64,gzip,re,pathlib,json
+          p=pathlib.Path('src/ch_11_filter.js')
+          t=p.read_text()
+          m=re.search(r'\bvar\s+(PACKED_B64|encoded)\s*=\s*(.*?);',t,re.S)
+          pieces=re.findall(r'"(?:\\.|[^"\\])*"',m.group(2))
+          enc=''.join(json.loads(x) for x in pieces)
+          s=gzip.decompress(base64.b64decode(enc)).decode()
+          names=['applyFromUi','applyIfRequested','setValue','setSourcePackages','toggleSource','performSourceClick','setAdvancedDrawerVisibleOnMain','commitRegexDraft','beginRegexDraft','discardRegexDraft','startRegexScan']
+          for name in names:
+              print('\n===== '+name+' =====')
+              mm=re.search(r'(^\s*function\s+'+re.escape(name)+r'\s*\([^)]*\)\s*\{)',s,re.M)
+              if not mm:
+                  print('NOT FOUND')
+                  continue
+              start=mm.start(); depth=0; quote=None; esc=False; i=mm.end()-1
+              while i < len(s):
+                  c=s[i]
+                  if quote:
+                      if esc: esc=False
+                      elif c=='\\': esc=True
+                      elif c==quote: quote=None
+                  else:
+                      if c in "'\"": quote=c
+                      elif c=='{': depth+=1
+                      elif c=='}':
+                          depth-=1
+                          if depth==0:
+                              i+=1; break
+                  i+=1
+              print(s[start:i])
+          PY
