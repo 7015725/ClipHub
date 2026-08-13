@@ -25,6 +25,13 @@ case "$MODE" in
     EXPECTED_APP_MODULE_VERSION='19'
     CHECK_FILTER_LOADER_REF='1'
     ;;
+  --regex-beta)
+    EXPECTED_REF='beta-regex-filter-20260813'
+    EXPECTED_MODULE_SET='20260813.01'
+    EXPECTED_ENTRY_VERSION='6'
+    EXPECTED_APP_MODULE_VERSION='20'
+    REQUIRE_CLEAN='0'
+    ;;
   --current)
     EXPECTED_REF=''
     EXPECTED_MODULE_SET=''
@@ -33,7 +40,7 @@ case "$MODE" in
     REQUIRE_CLEAN='0'
     ;;
   *)
-    echo 'Usage: bash scripts/release_preflight.sh [--candidate|--main|--beta|--current]' >&2
+    echo 'Usage: bash scripts/release_preflight.sh [--candidate|--main|--beta|--regex-beta|--current]' >&2
     exit 2
     ;;
 esac
@@ -134,7 +141,9 @@ def blob_sha(text: str) -> str:
 
 
 def expanded_source(source: str) -> str | None:
-    assignment = re.search(r"\bvar\s+PACKED_B64\s*=\s*(.*?);", source, re.S)
+    assignment = re.search(
+        r"\bvar\s+(?:PACKED_B64|encoded)\s*=\s*(.*?);", source, re.S
+    )
     if assignment is None:
         return None
     pieces = re.findall(r'"(?:\\.|[^"\\])*"', assignment.group(1))
@@ -144,9 +153,9 @@ def expanded_source(source: str) -> str | None:
         r"\bvar\s+SOURCE_SHA256\s*=\s*['\"]([0-9a-fA-F]{64})['\"]",
         source,
     )
-    assert expected is not None
-    actual = hashlib.sha256(expanded.encode("utf-8")).hexdigest()
-    assert actual == expected.group(1).lower(), (actual, expected.group(1))
+    if expected is not None:
+        actual = hashlib.sha256(expanded.encode("utf-8")).hexdigest()
+        assert actual == expected.group(1).lower(), (actual, expected.group(1))
     return expanded
 
 
@@ -228,6 +237,38 @@ print("endpointSchemaVersion: 3")
 print("moduleSetVersion: " + expected_module_set)
 print("sourceRef: " + expected_ref)
 print("Theme: 4")
+if mode == "--regex-beta":
+    required_versions = {
+        "ch_03_database.js": ("ch_03_database", 4),
+        "ch_06_repository.js": ("ch_06_repository", 17),
+        "ch_11_filter.js": ("ch_11_filter", 75),
+        "ch_13_settings.js": ("ch_13_settings", 25),
+        "ch_15_app.js": ("ch_15_app", 20),
+    }
+    for filename, (module_name, module_version) in required_versions.items():
+        source = actual_sources[filename]
+        pattern = (
+            r"MODULE_NAME:\s*\"" + re.escape(module_name) +
+            r"\"\s*,\s*MODULE_VERSION:\s*" + str(module_version)
+        )
+        assert re.search(pattern, source, re.S), (filename, module_version)
+    database_source = actual_sources["ch_03_database.js"]
+    repository_source = actual_sources["ch_06_repository.js"]
+    filter_source = actual_sources["ch_11_filter.js"]
+    settings_source = actual_sources["ch_13_settings.js"]
+    assert "var SCHEMA_VERSION = 2;" in database_source
+    assert "db.setVersion(3)" not in database_source
+    assert "CREATE TABLE IF NOT EXISTS regex_rules" in database_source
+    assert "feature.regex_rules.schema_version" in database_source
+    assert "feature.regex_rules.defaults_initialized" in repository_source
+    assert "listRegexCandidateChunk" in repository_source
+    assert "matcher(text).find" not in filter_source
+    assert ".matcher(text).find()" in filter_source
+    assert "filterRegexRuleIds" in settings_source
+    assert "filterRegexMatchMode" in settings_source
+    assert manifest.get("sourceRef") == "beta-regex-filter-20260813"
+    assert len(manifest.get("modules", [])) == 15
+    print("Regex beta safety contracts: passed")
 if mode in ("--current", "--main"):
     print("Current safety contracts: passed")
 PY

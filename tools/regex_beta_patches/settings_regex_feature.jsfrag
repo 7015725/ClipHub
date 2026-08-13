@@ -783,7 +783,7 @@
         return installSettingsContent(content);
     }
 
-    function buildPage() {
+    var buildPage = function () {
         var colors;
         if (scrollRoot === null) { return false; }
         resetRegexEditorViews();
@@ -801,5 +801,5 @@
         }
         uiState.settingsPage = "root";
         return buildRootPage();
-    }
+    };
     /* REGEX_BETA_SETTINGS_END */

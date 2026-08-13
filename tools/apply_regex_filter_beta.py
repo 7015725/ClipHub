@@ -224,7 +224,7 @@ def patch_filter() -> None:
         "    var advancedVisible = false;\n" + regex_vars + "\n",
         "filter regex runtime vars",
     )
-    canonical = insert_before(canonical, "    function refreshPaginationUi() {",
+    canonical = insert_before(canonical, "    function refreshPaginationUi(origin) {",
                               fragment.rstrip(), "filter regex fragment")
     old_empty = '''    function emptyValue() {
         return {

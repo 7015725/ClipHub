@@ -254,6 +254,39 @@
         return true;
     }
 
+    function ensureRegexFeatureSchema() {
+        var db = requireOpen();
+        runInTransaction(function () {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS regex_rules (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "title TEXT NOT NULL," +
+                "title_normalized TEXT NOT NULL," +
+                "note TEXT NOT NULL DEFAULT ''," +
+                "pattern TEXT NOT NULL," +
+                "flags INTEGER NOT NULL DEFAULT 0," +
+                "enabled INTEGER NOT NULL DEFAULT 1," +
+                "manual_order INTEGER NOT NULL DEFAULT 0," +
+                "created_at INTEGER NOT NULL," +
+                "updated_at INTEGER NOT NULL" +
+                ")"
+            );
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS " +
+                "idx_regex_rules_title_normalized " +
+                "ON regex_rules(title_normalized)"
+            );
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS idx_regex_rules_enabled_order " +
+                "ON regex_rules(enabled, manual_order, id)"
+            );
+            db.execSQL(
+                "INSERT OR IGNORE INTO schema_meta(key, value) VALUES " +
+                "('feature.regex_rules.schema_version', '1')"
+            );
+        });
+        return true;
+    }
     function openDatabase() {
         var file;
         if (path === null) {
@@ -265,6 +298,7 @@
         try {
             database.setForeignKeyConstraintsEnabled(true);
             migrate();
+            ensureRegexFeatureSchema();
             return database;
         } catch (error) {
             try { database.close(); } catch (ignored) {}
@@ -282,7 +316,7 @@
 
     ClipHub.Database = {
         MODULE_NAME: "ch_03_database",
-        MODULE_VERSION: 3,
+        MODULE_VERSION: 4,
         SCHEMA_VERSION: SCHEMA_VERSION,
         init: function (context) {
             var dir = ClipHub.Base.ensureDir(
