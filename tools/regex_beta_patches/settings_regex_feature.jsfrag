@@ -103,6 +103,7 @@
             return true;
         }
         if (settingsPage === "regex_rules") {
+            clearPendingRegexDeleteConfirm();
             settingsPage = "root";
             buildPage();
             return true;
@@ -203,7 +204,13 @@
         return section;
     }
 
+    function clearPendingRegexDeleteConfirm() {
+        pendingDeleteRegexRuleId = null;
+        return true;
+    }
+
     function moveRegexRule(ruleId, delta) {
+        clearPendingRegexDeleteConfirm();
         var rules = ClipHub.Repository.listRegexRules({});
         var ids = [];
         var current = -1;
@@ -300,6 +307,7 @@
     }
 
     function toggleRegexRuleEnabledFromSettings(ruleId, enabled) {
+        clearPendingRegexDeleteConfirm();
         try {
             if (ClipHub.Repository.setRegexRuleEnabled(
                     Number(ruleId), enabled === true) > 0) {
@@ -315,6 +323,7 @@
     }
 
     function openRegexEditor(ruleId) {
+        clearPendingRegexDeleteConfirm();
         var rule = ruleId === null || ruleId === undefined ? null :
             ClipHub.Repository.getRegexRule(Number(ruleId));
         regexEditorRuleId = rule === null ? null : Number(rule.id);
@@ -604,6 +613,7 @@
     }
 
     function buildRegexRulesPage(colors) {
+        clearPendingRegexDeleteConfirm();
         var content = new LinearLayout(appContext);
         var add = makeButton("+ 新增规则", colors, true, false);
         var rules = ClipHub.Repository.listRegexRules({});
