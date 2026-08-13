@@ -593,6 +593,16 @@
         return true;
     }
 
+    function regexRulePickerLabel(rule) {
+        var title = String(rule && rule.title || "");
+        var note = String(rule && rule.note || "")
+            .replace(/[\r\n\t]+/g, " ")
+            .replace(/\s+/g, " ")
+            .replace(/^\s+|\s+$/g, "");
+        if (note.length > 28) { note = note.substring(0, 28) + "…"; }
+        return note.length > 0 ? title + " · " + note : title;
+    }
+
     function makeRegexPickerDrawerBundle(colors) {
         var bundle = {
             container: null, scrollView: null, contentView: null,
@@ -637,7 +647,7 @@
             LinearLayout.LayoutParams.MATCH_PARENT, dp(34)));
         content.setOrientation(LinearLayout.VERTICAL);
         searchInput.setSingleLine(true);
-        searchInput.setHint("搜索规则标题");
+        searchInput.setHint("搜索规则标题或备注");
         searchInput.setText(String(regexPickerSearchText || ""));
         searchInput.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         ClipHub.Theme.applyTextColor(searchInput, colors.textPrimary);
@@ -692,12 +702,12 @@
         content.addView(selectedRow, params);
         rules = ClipHub.Repository.listRegexRules({
             enabledOnly: true,
-            titleKeyword: regexPickerSearchText
+            searchKeyword: regexPickerSearchText
         });
         for (index = 0; index < rules.length; index += 1) {
             rule = rules[index];
             chip = makeChip((contains(advancedDraftRegexRuleIds,
-                    Number(rule.id)) ? "☑ " : "☐ ") + String(rule.title),
+                    Number(rule.id)) ? "☑ " : "☐ ") + regexRulePickerLabel(rule),
                 contains(advancedDraftRegexRuleIds, Number(rule.id)),
                 colors, true);
             (function (id, view) {
