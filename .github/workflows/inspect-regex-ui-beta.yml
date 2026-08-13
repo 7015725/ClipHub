@@ -10,23 +10,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Unpack and print filter UI functions
+      - name: Unpack and print filter UI paths
         run: |
           python3 - <<'PY'
           import base64,gzip,re,pathlib,json
-          p=pathlib.Path('src/ch_11_filter.js')
-          t=p.read_text()
+          t=pathlib.Path('src/ch_11_filter.js').read_text()
           m=re.search(r'\bvar\s+(PACKED_B64|encoded)\s*=\s*(.*?);',t,re.S)
-          pieces=re.findall(r'"(?:\\.|[^"\\])*"',m.group(2))
-          enc=''.join(json.loads(x) for x in pieces)
+          enc=''.join(json.loads(x) for x in re.findall(r'"(?:\\.|[^"\\])*"',m.group(2)))
           s=gzip.decompress(base64.b64decode(enc)).decode()
-          names=['applyFromUi','applyIfRequested','setValue','setSourcePackages','toggleSource','performSourceClick','setAdvancedDrawerVisibleOnMain','commitRegexDraft','beginRegexDraft','discardRegexDraft','startRegexScan']
-          for name in names:
-              print('\n===== '+name+' =====')
+          def func(name):
+              print('\n===== FUNCTION '+name+' =====')
               mm=re.search(r'(^\s*function\s+'+re.escape(name)+r'\s*\([^)]*\)\s*\{)',s,re.M)
               if not mm:
-                  print('NOT FOUND')
-                  continue
+                  print('NOT FOUND'); return
               start=mm.start(); depth=0; quote=None; esc=False; i=mm.end()-1
               while i < len(s):
                   c=s[i]
@@ -39,8 +35,13 @@ jobs:
                       elif c=='{': depth+=1
                       elif c=='}':
                           depth-=1
-                          if depth==0:
-                              i+=1; break
+                          if depth==0: i+=1; break
                   i+=1
               print(s[start:i])
+          for n in ['rebuildAdvancedDrawerOnly','openRegexPicker','closeRegexPicker','toggleRegexDraftRule','setRegexDraftMode','applyFromUi','toggleSource']:
+              func(n)
+          for needle in ['performSourceClick:', 'performApplyClick:', 'performAdvancedClick:', 'performOpenRegexPicker:', 'performToggleRegexRule:']:
+              print('\n===== EXPORT '+needle+' =====')
+              i=s.find(needle)
+              print(s[max(0,i-300):i+900] if i>=0 else 'NOT FOUND')
           PY
