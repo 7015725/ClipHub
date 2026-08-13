@@ -1,0 +1,81 @@
+name: Promote clean Regex Beta
+
+on:
+  push:
+    branches:
+      - beta-regex-filter-20260813-rc-impl
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: beta-regex-filter-20260813-rc-impl
+      - name: Build exact eight-commit Beta from approved baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=b23543f816fbeb777e5ceded12557433fd6aeae5
+          TARGET=beta-regex-filter-20260813
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git fetch origin "$TARGET"
+          test "$(git rev-parse origin/$TARGET)" = "$BASE"
+          git checkout -B regex-clean "$BASE"
+
+          git cherry-pick 089ab04
+          git cherry-pick 48a9678
+          git cherry-pick 6df02ef
+          git cherry-pick 78b6621
+          git cherry-pick e3522a0
+          git cherry-pick 52ebb81
+          git cherry-pick 225e0679b2ca0bc58a56ac54e719577e39461edc
+
+          git cherry-pick --no-commit 6491eee
+          git cherry-pick --no-commit f75317e1da6e8e6d79e31f980c5e125ac967e31a
+          git commit -m 'build(regex): harden packed audits and RC preflight'
+
+          count="$(git rev-list --count "$BASE"..HEAD)"
+          test "$count" = 8
+          test "$(git log -1 --format=%s)" = 'build(regex): harden packed audits and RC preflight'
+
+          test -z "$(git diff "$BASE" -- src/ch_03_database.js src/ch_08_window.js src/ch_09_list.js src/ch_10_editor.js src/ch_12_translation.js src/ch_15_app.js ClipHub.js tasks)"
+          changed="$(git diff --name-only "$BASE" HEAD)"
+          printf '%s\n' "$changed" | python3 -c 'import sys; allowed_prefix=("tools/regex_beta_patches/","probes/","scripts/"); allowed_exact={"src/ch_06_repository.js","src/ch_11_filter.js","src/ch_13_settings.js","module-manifest.json"}; bad=[x.strip() for x in sys.stdin if x.strip() and x.strip() not in allowed_exact and not x.strip().startswith(allowed_prefix)]; assert not bad,bad'
+
+          python3 scripts/validate_es5.py .
+          python3 scripts/audit_color_api.py --release-strict
+          git diff --check
+          bash scripts/release_preflight.sh --regex-rc
+
+          test "$(git rev-parse origin/$TARGET)" = "$BASE"
+          git push origin HEAD:"$TARGET"
+      - name: Verify promoted target
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=b23543f816fbeb777e5ceded12557433fd6aeae5
+          TARGET=beta-regex-filter-20260813
+          git fetch origin "$TARGET"
+          test "$(git rev-list --count "$BASE"..origin/$TARGET)" = 8
+          git log --oneline --reverse "$BASE"..origin/$TARGET
+          git checkout -B verify-target origin/$TARGET
+          python3 scripts/validate_es5.py .
+          python3 scripts/audit_color_api.py --release-strict
+          git diff --check
+          bash scripts/release_preflight.sh --regex-rc
+      - name: Remove promotion harness from staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout beta-regex-filter-20260813-rc-impl
+          rm -f .github/workflows/regex-clean-promote.yml
+          git add -A
+          git commit -m 'chore: remove regex beta promotion harness'
+          git push origin HEAD:beta-regex-filter-20260813-rc-impl
