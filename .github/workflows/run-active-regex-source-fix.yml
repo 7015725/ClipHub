@@ -31,3 +31,4 @@ jobs:
           git add src/ch_11_filter.js tools/apply_regex_filter_beta.py module-manifest.json scripts/release_preflight.sh tools .github/workflows
           git commit -m "fix active regex source refresh"
           git push origin HEAD:beta-regex-filter-20260813
+# rerun-2
