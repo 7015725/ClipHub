@@ -1,4 +1,9 @@
     /* REGEX_BETA_FILTER_BEGIN */
+    var MAX_REGEX_CACHE_ENTRIES = 8;
+    var MAX_REGEX_CACHE_IDS = 16000;
+    var regexResultCacheOrder = [];
+    var regexResultCacheIdCount = 0;
+
     function validateRegexMatchMode(mode) {
         mode = String(mode || "any");
         return mode === "all" ? "all" : "any";
@@ -126,7 +131,58 @@
 
     function clearRegexResultCache(reason) {
         regexResultCache = {};
+        regexResultCacheOrder = [];
+        regexResultCacheIdCount = 0;
         regexScanState.lastCacheInvalidationReason = String(reason || "clear");
+        return true;
+    }
+
+    function getRegexResultCache(signature) {
+        var key = String(signature);
+        var cached = regexResultCache[key];
+        var index;
+        if (!cached) { return null; }
+        for (index = 0; index < regexResultCacheOrder.length; index += 1) {
+            if (regexResultCacheOrder[index] === key) {
+                regexResultCacheOrder.splice(index, 1);
+                break;
+            }
+        }
+        regexResultCacheOrder.push(key);
+        return cached;
+    }
+
+    function putRegexResultCache(signature, matchedIds) {
+        var key = String(signature);
+        var ids = matchedIds instanceof Array ? matchedIds.slice(0) : [];
+        var existing = regexResultCache[key];
+        var oldest;
+        var index;
+        if (ids.length > MAX_REGEX_CACHE_IDS) { return false; }
+        if (existing && existing.matchedIds instanceof Array) {
+            regexResultCacheIdCount -= existing.matchedIds.length;
+        }
+        regexResultCache[key] = {
+            matchedIds: ids,
+            completedAt: ClipHub.Base.now()
+        };
+        regexResultCacheIdCount += ids.length;
+        for (index = regexResultCacheOrder.length - 1; index >= 0; index -= 1) {
+            if (regexResultCacheOrder[index] === key) {
+                regexResultCacheOrder.splice(index, 1);
+            }
+        }
+        regexResultCacheOrder.push(key);
+        while (regexResultCacheOrder.length > MAX_REGEX_CACHE_ENTRIES ||
+                regexResultCacheIdCount > MAX_REGEX_CACHE_IDS) {
+            oldest = regexResultCacheOrder.shift();
+            if (oldest === undefined) { break; }
+            existing = regexResultCache[oldest];
+            if (existing && existing.matchedIds instanceof Array) {
+                regexResultCacheIdCount -= existing.matchedIds.length;
+            }
+            delete regexResultCache[oldest];
+        }
         return true;
     }
 
@@ -249,6 +305,23 @@
             output.push(Number(javaList.get(index)));
         }
         return output;
+    }
+
+    function regexPendingPageResult(request) {
+        return {
+            pending: true,
+            rows: previewRows.slice(0),
+            appendedRows: [],
+            allRows: previewRows.slice(0),
+            options: request || {},
+            hasMore: false,
+            endCursor: null,
+            totalCount: Number(regexScanState.matched || 0),
+            totalPages: 0,
+            pageNumber: Number(paginationState.pageNumber || 1),
+            pagination: copyPaginationState(),
+            regexScan: copyRegexScanState()
+        };
     }
 
     function regexResultPageResult(request) {
@@ -385,10 +458,7 @@
                 numberPagerState.totalCount = paginationState.totalCount;
                 numberPagerState.totalPages = paginationState.totalPages;
             }
-            regexResultCache[String(cacheSignature)] = {
-                matchedIds: regexMatchedIds.slice(0),
-                completedAt: ClipHub.Base.now()
-            };
+            putRegexResultCache(cacheSignature, regexMatchedIds);
             refreshRegexResultUi("regex_scan_complete");
         }
         return true;
@@ -423,7 +493,7 @@
         baseCriteria = toQueryOptions({ sortMode: value.sortMode });
         snapshot = ClipHub.Repository.getRegexScanSnapshot(baseCriteria);
         signature = regexScanSignature(ruleRows, snapshot, baseCriteria);
-        cached = regexResultCache[String(signature)];
+        cached = getRegexResultCache(signature);
         cancelRegexScan("regex_new_generation", true);
         generation = regexScanGeneration;
         regexScanState.generation = generation;
@@ -496,7 +566,7 @@
                         }
                         scanned += rows.length;
                         cursor = chunk.nextCursor;
-                        done = rows.length < 128 || chunk.hasMore !== true ||
+                        done = chunk.hasMore !== true ||
                             scanned >= Number(snapshot.candidateTotal || 0);
                         (function (postedBatch, postedScanned,
                                 postedDone) {
@@ -532,28 +602,49 @@
     function onRegexRulesChanged(payload) {
         var oldIds;
         var newIds;
+        var reason;
+        var ruleId;
+        var wasSelected;
+        var selectionChanged;
+        var requiresRescan = false;
         if (!ready) { return; }
+        payload = payload || {};
+        reason = String(payload.reason || "update");
+        ruleId = payload.ruleId === null || payload.ruleId === undefined ?
+            null : Number(payload.ruleId);
         oldIds = copyList(value.regexRuleIds || []);
+        wasSelected = ruleId !== null && contains(oldIds, ruleId);
         newIds = sanitizeRegexRuleIds(oldIds);
+        selectionChanged = JSON.stringify(oldIds) !== JSON.stringify(newIds);
         advancedDraftRegexRuleIds = sanitizeRegexRuleIds(
             advancedDraftRegexRuleIds || []);
         value.regexRuleIds = newIds;
-        persistRegexCriteria();
-        clearRegexResultCache("regex_rules_changed");
+        if (selectionChanged) { persistRegexCriteria(); }
+        if (reason === "reorder" || reason === "create" ||
+                reason === "duplicate") {
+            requiresRescan = false;
+        } else if (reason === "update" || reason === "delete" ||
+                reason === "disable") {
+            requiresRescan = wasSelected;
+        } else if (reason === "enable") {
+            requiresRescan = wasSelected;
+        } else {
+            requiresRescan = wasSelected || selectionChanged;
+        }
         if (state.panelAttached && advancedVisible) {
             optionCountsDirty = true;
             rebuildAdvancedDrawerOnly();
             refreshAdvancedHeaderSummaryOnMain();
         }
-        if (oldIds.length > 0 || newIds.length > 0) {
-            cancelRegexScan("regex_rules_changed", true);
-            resetResultPaging("regex_rules_changed");
-            if (newIds.length > 0) {
-                startRegexScan({ origin: "regex_rules_changed" });
-            } else if (state.panelAttached) {
-                apply({ origin: "regex_rules_removed", regexBypass: true });
-                refreshRegexResultUi("regex_rules_removed");
-            }
+        if (!requiresRescan) { return; }
+        clearRegexResultCache("regex_rules_changed:" + reason);
+        cancelRegexScan("regex_rules_changed:" + reason, true);
+        resetResultPaging("regex_rules_changed:" + reason);
+        if (newIds.length > 0) {
+            startRegexScan({ origin: "regex_rules_changed:" + reason });
+        } else if (state.panelAttached) {
+            apply({ origin: "regex_rules_removed", regexBypass: true });
+            refreshRegexResultUi("regex_rules_removed");
         }
     }
 
