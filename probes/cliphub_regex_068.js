@@ -2,18 +2,25 @@
 (function (global) {
     var C = global.ClipHub;
     var marker = "probe-note-068-" + String(C.Base.now());
-    var id = C.Repository.createRegexRule({
-        title: "Probe068", note: marker, pattern: "probe068", flags: 0,
-        enabled: true
-    });
-    var byNote = C.Repository.listRegexRules({ searchKeyword: marker });
-    var oldTitleOnly = C.Repository.listRegexRules({ titleKeyword: marker });
-    C.Repository.deleteRegexRule(id);
-    if (byNote.length !== 1 || Number(byNote[0].id) !== Number(id)) {
-        throw new Error("searchKeyword note search failed");
+    var title = "Probe068-" + String(C.Base.now());
+    var id = null;
+    var byNote;
+    var oldTitleOnly;
+    try {
+        id = C.Repository.createRegexRule({
+            title: title, note: marker, pattern: "probe068", flags: 0,
+            enabled: true
+        });
+        byNote = C.Repository.listRegexRules({ searchKeyword: marker });
+        oldTitleOnly = C.Repository.listRegexRules({ titleKeyword: marker });
+        if (byNote.length !== 1 || Number(byNote[0].id) !== Number(id)) {
+            throw new Error("searchKeyword note search failed");
+        }
+        if (oldTitleOnly.length !== 0) {
+            throw new Error("titleKeyword legacy semantics regressed");
+        }
+        ({ probe: 68, ok: true });
+    } finally {
+        if (id !== null) { try { C.Repository.deleteRegexRule(id); } catch (ignored) {} }
     }
-    if (oldTitleOnly.length !== 0) {
-        throw new Error("titleKeyword legacy semantics regressed");
-    }
-    ({ probe: 68, ok: true });
 }((function () { return this; }())));
