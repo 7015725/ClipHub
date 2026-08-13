@@ -1,0 +1,407 @@
+    /* REGEX_BETA_FEATURE_BEGIN */
+    var REGEX_FLAG_IGNORE_CASE = 1;
+    var REGEX_FLAG_MULTILINE = 2;
+    var REGEX_FLAG_DOTALL = 4;
+    var REGEX_SCAN_CHUNK_SIZE = 128;
+
+    function normalizeRegexTitle(value) {
+        var text = String(value === null || value === undefined ? "" : value)
+            .replace(/^\s+|\s+$/g, "");
+        return String(new JavaString(text).toLowerCase(
+            Packages.java.util.Locale.ROOT));
+    }
+
+    function normalizeRegexText(value, maximum) {
+        var text = String(value === null || value === undefined ? "" : value);
+        if (maximum !== undefined && text.length > Number(maximum)) {
+            throw new Error("regex_text_too_long");
+        }
+        return text;
+    }
+
+    function normalizeRegexFlags(value) {
+        var flags = intValue(value, 0);
+        if (flags < 0 || flags > 7) {
+            throw new Error("regex_flags_invalid");
+        }
+        return flags;
+    }
+
+    function javaRegexFlags(flags) {
+        var Pattern = Packages.java.util.regex.Pattern;
+        var result = 0;
+        flags = normalizeRegexFlags(flags);
+        if ((flags & REGEX_FLAG_IGNORE_CASE) !== 0) {
+            result |= Number(Pattern.CASE_INSENSITIVE);
+            result |= Number(Pattern.UNICODE_CASE);
+        }
+        if ((flags & REGEX_FLAG_MULTILINE) !== 0) {
+            result |= Number(Pattern.MULTILINE);
+        }
+        if ((flags & REGEX_FLAG_DOTALL) !== 0) {
+            result |= Number(Pattern.DOTALL);
+        }
+        return result;
+    }
+
+    function validateRegexPattern(pattern, flags) {
+        var text = normalizeRegexText(pattern, 4096);
+        if (text.length < 1) {
+            throw new Error("regex_pattern_empty");
+        }
+        try {
+            Packages.java.util.regex.Pattern.compile(
+                text, javaRegexFlags(flags));
+        } catch (error) {
+            throw new Error("regex_pattern_invalid: " + String(error));
+        }
+        return text;
+    }
+
+    function regexRuleInput(input) {
+        var title;
+        var normalizedTitle;
+        var note;
+        var pattern;
+        var flags;
+        input = input || {};
+        title = String(input.title === null || input.title === undefined ?
+            "" : input.title).replace(/^\s+|\s+$/g, "");
+        if (title.length < 1) { throw new Error("regex_title_empty"); }
+        if (title.length > 64) { throw new Error("regex_title_too_long"); }
+        normalizedTitle = normalizeRegexTitle(title);
+        note = normalizeRegexText(input.note, 500);
+        flags = normalizeRegexFlags(input.flags);
+        pattern = validateRegexPattern(input.pattern, flags);
+        return {
+            title: title,
+            titleNormalized: normalizedTitle,
+            note: note,
+            pattern: pattern,
+            flags: flags,
+            enabled: input.enabled === false ? 0 : 1
+        };
+    }
+
+    function getRegexRule(id) {
+        requireReady();
+        return ClipHub.Database.queryOne(
+            "SELECT * FROM regex_rules WHERE id = ? LIMIT 1",
+            [intValue(id, -1)]
+        );
+    }
+
+    function getRegexRuleByNormalizedTitle(titleNormalized) {
+        requireReady();
+        return ClipHub.Database.queryOne(
+            "SELECT * FROM regex_rules WHERE title_normalized = ? LIMIT 1",
+            [String(titleNormalized || "")]
+        );
+    }
+
+    function listRegexRules(options) {
+        var where = [];
+        var args = [];
+        var keyword;
+        options = options || {};
+        requireReady();
+        if (options.enabledOnly === true) {
+            where.push("enabled = 1");
+        }
+        keyword = String(options.titleKeyword === null ||
+            options.titleKeyword === undefined ? "" : options.titleKeyword)
+            .replace(/^\s+|\s+$/g, "");
+        if (keyword.length > 0) {
+            where.push("title LIKE ? ESCAPE '\\'");
+            args.push("%" + escapeLike(keyword) + "%");
+        }
+        return ClipHub.Database.queryAll(
+            "SELECT * FROM regex_rules" +
+            (where.length > 0 ? " WHERE " + where.join(" AND ") : "") +
+            " ORDER BY manual_order ASC, id ASC",
+            args
+        );
+    }
+
+    function nextRegexManualOrder() {
+        return Number(ClipHub.Database.scalarLong(
+            "SELECT COALESCE(MAX(manual_order), 0) FROM regex_rules",
+            [], 0)) + 1000;
+    }
+
+    function createRegexRule(input) {
+        var rule = regexRuleInput(input);
+        var existing;
+        var now;
+        requireReady();
+        existing = getRegexRuleByNormalizedTitle(rule.titleNormalized);
+        if (existing !== null) { throw new Error("regex_title_conflict"); }
+        now = ClipHub.Base.now();
+        try {
+            return Number(ClipHub.Database.executeInsert(
+                "INSERT INTO regex_rules(title, title_normalized, note, " +
+                "pattern, flags, enabled, manual_order, created_at, updated_at) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [rule.title, rule.titleNormalized, rule.note, rule.pattern,
+                    rule.flags, rule.enabled,
+                    input && input.manualOrder !== undefined ?
+                        intValue(input.manualOrder, nextRegexManualOrder()) :
+                        nextRegexManualOrder(),
+                    now, now]
+            ));
+        } catch (error) {
+            existing = getRegexRuleByNormalizedTitle(rule.titleNormalized);
+            if (existing !== null) { throw new Error("regex_title_conflict"); }
+            throw error;
+        }
+    }
+
+    function updateRegexRule(id, input) {
+        var rule = regexRuleInput(input);
+        var existing;
+        var targetId = intValue(id, -1);
+        requireReady();
+        if (getRegexRule(targetId) === null) {
+            throw new Error("regex_rule_missing");
+        }
+        existing = getRegexRuleByNormalizedTitle(rule.titleNormalized);
+        if (existing !== null && Number(existing.id) !== targetId) {
+            throw new Error("regex_title_conflict");
+        }
+        try {
+            return ClipHub.Database.executeUpdateDelete(
+                "UPDATE regex_rules SET title = ?, title_normalized = ?, " +
+                "note = ?, pattern = ?, flags = ?, enabled = ?, updated_at = ? " +
+                "WHERE id = ?",
+                [rule.title, rule.titleNormalized, rule.note, rule.pattern,
+                    rule.flags, rule.enabled, ClipHub.Base.now(), targetId]
+            );
+        } catch (error) {
+            existing = getRegexRuleByNormalizedTitle(rule.titleNormalized);
+            if (existing !== null && Number(existing.id) !== targetId) {
+                throw new Error("regex_title_conflict");
+            }
+            throw error;
+        }
+    }
+
+    function deleteRegexRule(id) {
+        requireReady();
+        return ClipHub.Database.executeUpdateDelete(
+            "DELETE FROM regex_rules WHERE id = ?", [intValue(id, -1)]);
+    }
+
+    function setRegexRuleEnabled(id, enabled) {
+        requireReady();
+        return ClipHub.Database.executeUpdateDelete(
+            "UPDATE regex_rules SET enabled = ?, updated_at = ? WHERE id = ?",
+            [enabled === true ? 1 : 0, ClipHub.Base.now(), intValue(id, -1)]
+        );
+    }
+
+    function reorderRegexRules(ruleIds) {
+        var ids = intList(ruleIds);
+        var index;
+        var changed = 0;
+        requireReady();
+        ClipHub.Database.transaction(function () {
+            for (index = 0; index < ids.length; index += 1) {
+                changed += ClipHub.Database.executeUpdateDelete(
+                    "UPDATE regex_rules SET manual_order = ?, updated_at = ? " +
+                    "WHERE id = ?",
+                    [(index + 1) * 1000, ClipHub.Base.now(), ids[index]]
+                );
+            }
+        });
+        return { ok: true, updatedCount: changed, regexRuleIds: ids };
+    }
+
+    function duplicateRegexRule(id) {
+        var source = getRegexRule(id);
+        var base;
+        var candidate;
+        var suffix = 1;
+        if (source === null) { throw new Error("regex_rule_missing"); }
+        base = String(source.title) + " - 副本";
+        candidate = base;
+        while (getRegexRuleByNormalizedTitle(normalizeRegexTitle(candidate)) !== null) {
+            suffix += 1;
+            candidate = base + " " + String(suffix);
+        }
+        return createRegexRule({
+            title: candidate,
+            note: source.note,
+            pattern: source.pattern,
+            flags: Number(source.flags || 0),
+            enabled: Number(source.enabled || 0) === 1
+        });
+    }
+
+    function regexMetaValue(key) {
+        var row = ClipHub.Database.queryOne(
+            "SELECT value FROM schema_meta WHERE key = ? LIMIT 1",
+            [String(key)]
+        );
+        return row === null ? null : String(row.value);
+    }
+
+    function setRegexMetaValue(key, value) {
+        return ClipHub.Database.executeInsert(
+            "INSERT OR REPLACE INTO schema_meta(key, value) VALUES (?, ?)",
+            [String(key), String(value)]
+        );
+    }
+
+    function ensureDefaultRegexRules() {
+        var initialized;
+        var count;
+        requireReady();
+        initialized = regexMetaValue(
+            "feature.regex_rules.defaults_initialized");
+        if (initialized === "1") { return false; }
+        ClipHub.Database.transaction(function () {
+            count = Number(ClipHub.Database.scalarLong(
+                "SELECT COUNT(*) FROM regex_rules", [], 0));
+            if (count === 0) {
+                createRegexRule({
+                    title: "手机号",
+                    note: "中国大陆 11 位手机号",
+                    pattern: "(?<!\\d)1[3-9]\\d{9}(?!\\d)",
+                    flags: 0,
+                    enabled: true,
+                    manualOrder: 1000
+                });
+                createRegexRule({
+                    title: "邮箱",
+                    note: "常见电子邮箱地址",
+                    pattern: "[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+",
+                    flags: 0,
+                    enabled: true,
+                    manualOrder: 2000
+                });
+                createRegexRule({
+                    title: "URL",
+                    note: "HTTP / HTTPS 地址",
+                    pattern: "https?://[^\\s<>\"']+",
+                    flags: 0,
+                    enabled: true,
+                    manualOrder: 3000
+                });
+                createRegexRule({
+                    title: "验证码",
+                    note: "短信 / OTP 验证码",
+                    pattern: "(?:验证码|校验码|动态码|OTP)\\s*[:：]?\\s*[0-9]{4,8}(?!\\d)",
+                    flags: REGEX_FLAG_IGNORE_CASE,
+                    enabled: true,
+                    manualOrder: 4000
+                });
+            }
+            setRegexMetaValue(
+                "feature.regex_rules.defaults_initialized", "1");
+        });
+        return true;
+    }
+
+    function regexBaseCriteria(criteria) {
+        var output = {};
+        var key;
+        criteria = criteria || {};
+        for (key in criteria) {
+            if (criteria.hasOwnProperty(key) &&
+                    key !== "regexRuleIds" && key !== "regexMatchMode") {
+                output[key] = criteria[key];
+            }
+        }
+        return output;
+    }
+
+    function getRegexScanSnapshot(criteria) {
+        var base = regexBaseCriteria(criteria);
+        var built = buildItemWhere(base);
+        var maxId;
+        var args;
+        var total;
+        requireReady();
+        maxId = Number(ClipHub.Database.scalarLong(
+            "SELECT COALESCE(MAX(id), 0) FROM clipboard_items " +
+            "WHERE deleted_at IS NULL", [], 0));
+        args = copyArray(built.args);
+        args.push(maxId);
+        total = Number(ClipHub.Database.scalarLong(
+            "SELECT COUNT(*) FROM clipboard_items WHERE " + built.sql +
+            " AND clipboard_items.id <= ?", args, 0));
+        return {
+            maxItemId: maxId,
+            candidateTotal: total,
+            sortMode: normalizeSortMode(base.sortMode),
+            startedAt: ClipHub.Base.now()
+        };
+    }
+
+    function countRegexCandidates(criteria, snapshot) {
+        var base = regexBaseCriteria(criteria);
+        var built = buildItemWhere(base);
+        var args = copyArray(built.args);
+        var maxId = snapshot && snapshot.maxItemId !== undefined ?
+            Number(snapshot.maxItemId) : Number(ClipHub.Database.scalarLong(
+                "SELECT COALESCE(MAX(id),0) FROM clipboard_items", [], 0));
+        args.push(maxId);
+        requireReady();
+        return Number(ClipHub.Database.scalarLong(
+            "SELECT COUNT(*) FROM clipboard_items WHERE " + built.sql +
+            " AND clipboard_items.id <= ?", args, 0));
+    }
+
+    function listRegexCandidateChunk(options) {
+        var criteria;
+        var built;
+        var whereParts;
+        var args;
+        var sortMode;
+        var cursorSql;
+        var limit;
+        var rows;
+        options = options || {};
+        criteria = regexBaseCriteria(options.criteria || {});
+        built = buildItemWhere(criteria);
+        whereParts = [built.sql, "clipboard_items.id <= ?"];
+        args = copyArray(built.args);
+        args.push(Number(options.snapshotMaxId || 0));
+        sortMode = normalizeSortMode(criteria.sortMode);
+        if (options.cursor) {
+            cursorSql = buildAppendCursorWhere(sortMode, options.cursor, args);
+            if (cursorSql) { whereParts.push(cursorSql); }
+        }
+        limit = positiveLimit(options.limit, REGEX_SCAN_CHUNK_SIZE, 256);
+        rows = ClipHub.Database.queryAll(
+            "SELECT clipboard_items.id, clipboard_items.content, " +
+            "clipboard_items.updated_at, clipboard_items.source_label, " +
+            "clipboard_items.source_package, clipboard_items.is_pinned, " +
+            "clipboard_items.manual_order, clipboard_items.last_copied_at " +
+            "FROM clipboard_items WHERE " + whereParts.join(" AND ") +
+            " ORDER BY " + buildItemOrder(sortMode) + " LIMIT ?",
+            args.concat([limit])
+        );
+        return {
+            rows: rows,
+            nextCursor: rows.length > 0 ?
+                buildPageCursor(rows[rows.length - 1], sortMode) : null,
+            hasMore: rows.length >= limit
+        };
+    }
+
+    function itemMatchesBaseCriteria(itemId, criteria) {
+        var base = regexBaseCriteria(criteria);
+        var built = buildItemWhere(base);
+        var args = copyArray(built.args);
+        requireReady();
+        args.push(intValue(itemId, -1));
+        return ClipHub.Database.queryOne(
+            "SELECT clipboard_items.id, clipboard_items.content, " +
+            "clipboard_items.updated_at, clipboard_items.source_label, " +
+            "clipboard_items.source_package, clipboard_items.is_pinned, " +
+            "clipboard_items.manual_order, clipboard_items.last_copied_at " +
+            "FROM clipboard_items WHERE " + built.sql +
+            " AND clipboard_items.id = ? LIMIT 1", args);
+    }
+    /* REGEX_BETA_FEATURE_END */
