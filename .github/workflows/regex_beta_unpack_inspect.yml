@@ -18,7 +18,9 @@ jobs:
           ref: beta-regex-filter-20260813
           fetch-depth: 0
       - name: Unpack canonical sources
-        run: python3 tools/regex_beta_unpack_inspect.py
+        run: |
+          python3 tools/regex_beta_unpack_inspect.py
+          python3 tools/regex_beta_anchor_report.py
       - name: Commit inspection outputs
         shell: bash
         run: |
