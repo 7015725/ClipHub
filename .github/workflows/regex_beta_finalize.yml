@@ -20,7 +20,26 @@ jobs:
           fetch-depth: 0
 
       - name: Apply final boundary fixes
-        run: python3 tools/finalize_regex_filter_beta.py
+        run: |
+          python3 tools/finalize_regex_filter_beta.py
+          python3 - <<'PY'
+          from pathlib import Path
+          old = '''    assert "matcher(text).find" not in filter_source
+    assert ".matcher(text).find()" in filter_source
+'''
+          new = '''    assert ".matcher(text).matches()" not in filter_source
+    assert ".matcher(text).find()" in filter_source
+'''
+          for rel in ('scripts/release_preflight.sh',
+                      'tools/apply_regex_filter_beta.py'):
+              path = Path(rel)
+              text = path.read_text(encoding='utf-8')
+              if old in text:
+                  text = text.replace(old, new, 1)
+              elif rel == 'scripts/release_preflight.sh':
+                  raise SystemExit('preflight matcher contract anchor missing')
+              path.write_text(text, encoding='utf-8')
+          PY
 
       - name: Validate Rhino ES5
         run: python3 scripts/validate_es5.py .
