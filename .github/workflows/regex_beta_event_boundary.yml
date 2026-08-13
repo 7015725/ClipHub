@@ -21,7 +21,7 @@ jobs:
 
       - name: Apply clipboard event boundary fix
         run: |
-          sed -i "s|    assert 'String(origin || \"unknown\")' not in canonical|    assert 'clearRegexResultCache(\"clipboard_event:\" +' not in canonical|" tools/fix_regex_filter_event_boundary.py
+          python3 tools/narrow_regex_event_verifier.py
           python3 tools/fix_regex_filter_event_boundary.py
 
       - name: Validate implementation tools
