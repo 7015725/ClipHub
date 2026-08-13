@@ -49,6 +49,30 @@ jobs:
       - name: Apply regex beta implementation
         run: python3 tools/apply_regex_filter_beta.py
 
+      - name: Normalize generated loaders and manifest SHA
+        run: |
+          python3 - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          root = Path('.')
+          for rel in ('src/ch_06_repository.js', 'src/ch_11_filter.js',
+                      'src/ch_13_settings.js'):
+              path = root / rel
+              text = path.read_text(encoding='utf-8')
+              normalized = '\n'.join(line.rstrip() for line in text.splitlines()) + '\n'
+              path.write_text(normalized, encoding='utf-8')
+          manifest_path = root / 'module-manifest.json'
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          for item in manifest['modules']:
+              source = (root / item['path']).read_text(encoding='utf-8')
+              raw = source.encode('utf-8')
+              item['sha'] = hashlib.sha1(
+                  f'blob {len(raw)}\0'.encode('utf-8') + raw).hexdigest()
+          manifest_path.write_text(
+              json.dumps(manifest, ensure_ascii=False, indent=2) + '\n',
+              encoding='utf-8')
+          PY
+
       - name: Validate ES5 and diff
         run: |
           python3 scripts/validate_es5.py .
