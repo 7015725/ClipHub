@@ -1,4 +1,4 @@
-name: Regex RC release gate
+name: Regex RC verification
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  release-gate:
+  verify:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
@@ -17,67 +17,74 @@ jobs:
         with:
           fetch-depth: 0
           ref: beta-regex-filter-20260813-rc-impl
-      - name: Restore implementation script
+      - name: Verify hard boundaries and canonical synchronization
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=b23543f816fbeb777e5ceded12557433fd6aeae5
+          test -z "$(git status --porcelain)"
+          test -z "$(git diff "$BASE" -- src/ch_03_database.js src/ch_08_window.js src/ch_09_list.js src/ch_10_editor.js src/ch_12_translation.js src/ch_15_app.js ClipHub.js tasks)"
+          changed="$(git diff --name-only "$BASE" HEAD | grep -v '^\.github/workflows/regex-rc-' || true)"
+          printf '%s\n' "$changed"
+          printf '%s\n' "$changed" | python3 -c 'import sys; allowed_prefix=("tools/regex_beta_patches/","probes/","scripts/"); allowed_exact={"src/ch_06_repository.js","src/ch_11_filter.js","src/ch_13_settings.js","module-manifest.json"}; bad=[x.strip() for x in sys.stdin if x.strip() and x.strip() not in allowed_exact and not x.strip().startswith(allowed_prefix)]; assert not bad,bad'
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64, gzip, json, re
+          root = Path('.')
+          def source(path):
+              text = (root / path).read_text(encoding='utf-8')
+              match = re.search(r'\bvar\s+(?:PACKED_B64|encoded)\s*=\s*(.*?);', text, re.S)
+              if match is None:
+                  return text
+              pieces = re.findall(r'"(?:\\.|[^"\\])*"', match.group(1))
+              assert pieces, path
+              payload = ''.join(json.loads(piece) for piece in pieces)
+              return gzip.decompress(base64.b64decode(payload)).decode('utf-8')
+          manifest = json.loads((root / 'module-manifest.json').read_text(encoding='utf-8'))
+          assert manifest['moduleSetVersion'] == '20260813.06', manifest['moduleSetVersion']
+          assert manifest['entryMinVersion'] == 6, manifest['entryMinVersion']
+          assert manifest['sourceRef'] == 'beta-regex-filter-20260813', manifest['sourceRef']
+          assert len(manifest['modules']) == 15, len(manifest['modules'])
+          db = source('src/ch_03_database.js')
+          repo = source('src/ch_06_repository.js')
+          filt = source('src/ch_11_filter.js')
+          settings = source('src/ch_13_settings.js')
+          app = source('src/ch_15_app.js')
+          assert 'var SCHEMA_VERSION = 2;' in db
+          assert 'db.setVersion(3)' not in db
+          assert 'CREATE TABLE IF NOT EXISTS regex_rules' in db
+          assert re.search(r'MODULE_NAME:\s*"ch_06_repository"\s*,\s*MODULE_VERSION:\s*18', repo, re.S)
+          assert re.search(r'MODULE_NAME:\s*"ch_11_filter"\s*,\s*MODULE_VERSION:\s*78', filt, re.S)
+          assert re.search(r'MODULE_NAME:\s*"ch_13_settings"\s*,\s*MODULE_VERSION:\s*26', settings, re.S)
+          assert re.search(r'MODULE_NAME:\s*"ch_15_app"\s*,\s*MODULE_VERSION:\s*20', app, re.S)
+          assert 'options.searchKeyword' in repo and 'options.titleKeyword' in repo
+          assert 'assessRegexRisk' in repo
+          assert 'REGEX_SCAN_CHUNK_TEXT_CHAR_BUDGET' in repo
+          assert 'cancelRegexTest' in settings
+          assert 'settingsPage !== "regex_test"' in settings
+          assert 'clearPendingRegexDeleteConfirm' in settings
+          assert 'MAX_REGEX_CACHE_ENTRIES = 8' in filt
+          assert 'regexRulePickerLabel' in filt
+          for frag, canonical in (
+              ('tools/regex_beta_patches/repository_regex_feature.jsfrag', repo),
+              ('tools/regex_beta_patches/filter_regex_feature.jsfrag', filt),
+              ('tools/regex_beta_patches/settings_regex_feature.jsfrag', settings),
+          ):
+              fragment = (root / frag).read_text(encoding='utf-8').strip()
+              assert fragment in canonical, frag
+          print('Regex canonical synchronization: passed')
+          print('No-touch schema/module contracts: passed')
+          PY
+          python3 scripts/validate_es5.py .
+          git diff --check
+          bash scripts/release_preflight.sh --regex-rc
+      - name: Remove verification harness
         shell: bash
         run: |
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          echo 'tools/.implement_regex_rc_tmp.py' >> .git/info/exclude
-          git show 9cf27a5135d1f28cdf8f3e238f37388aaa1b58a1:.github/workflows/regex-rc-impl.yml > /tmp/regex-rc-source.yml
-          python3 - <<'PY'
-          from pathlib import Path
-          import base64, gzip
-          workflow = Path('/tmp/regex-rc-source.yml').read_text(encoding='utf-8')
-          prefix = "printf '%s' '"
-          suffix = "' | base64 -d"
-          payload = None
-          for line in workflow.splitlines():
-              if prefix in line and suffix in line:
-                  payload = line.split(prefix, 1)[1].split(suffix, 1)[0]
-                  break
-          if not payload:
-              raise SystemExit('embedded implementation payload not found')
-          script = gzip.decompress(base64.b64decode(payload)).decode('utf-8')
-          Path('tools/.implement_regex_rc_tmp.py').write_text(script, encoding='utf-8')
-          PY
-          python3 -m py_compile tools/.implement_regex_rc_tmp.py
-      - name: Apply phase 8 and harden encoded loader audit
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 tools/.implement_regex_rc_tmp.py 8
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path('scripts/validate_es5.py')
-          text = path.read_text(encoding='utf-8')
-          old = '''    try:\n        if sha_match is None:\n            raise ValueError("packed source SHA is missing")\n        pieces = re.findall(r'"(?:\\\\.|[^"\\\\])*"', assignment.group(1))\n        encoded = "".join(json.loads(piece) for piece in pieces)\n        expanded = gzip.decompress(base64.b64decode(encoded)).decode("utf-8")\n        actual = hashlib.sha256(expanded.encode("utf-8")).hexdigest()\n        expected = sha_match.group(1).lower()\n        if actual != expected:\n            raise ValueError(\n                f"packed source SHA mismatch: {actual} != {expected}"\n            )\n        errors.extend(validate_source(str(path) + "::packed", expanded))\n'''
-          new = '''    try:\n        pieces = re.findall(r'"(?:\\\\.|[^"\\\\])*"', assignment.group(1))\n        if not pieces:\n            raise ValueError("packed source is empty")\n        encoded = "".join(json.loads(piece) for piece in pieces)\n        expanded = gzip.decompress(base64.b64decode(encoded)).decode("utf-8")\n        if sha_match is not None:\n            actual = hashlib.sha256(expanded.encode("utf-8")).hexdigest()\n            expected = sha_match.group(1).lower()\n            if actual != expected:\n                raise ValueError(\n                    f"packed source SHA mismatch: {actual} != {expected}"\n                )\n        else:\n            blob_match = re.search(\n                r"规范源码 Git blob:\\s*([0-9a-fA-F]{40})", source\n            )\n            if blob_match is None:\n                raise ValueError("packed source integrity marker is missing")\n            raw = expanded.encode("utf-8")\n            actual_blob = hashlib.sha1(\n                f"blob {len(raw)}\\0".encode("utf-8") + raw\n            ).hexdigest()\n            expected_blob = blob_match.group(1).lower()\n            if actual_blob != expected_blob:\n                raise ValueError(\n                    f"packed source Git blob mismatch: {actual_blob} != {expected_blob}"\n                )\n        errors.extend(validate_source(str(path) + "::packed", expanded))\n'''
-          if text.count(old) != 1:
-              raise SystemExit('validate_es5 packed verification anchor count != 1')
-          path.write_text(text.replace(old, new), encoding='utf-8')
-          PY
-          python3 scripts/validate_es5.py .
-          git diff --check
-          git add -A ':!.github/workflows/regex-rc-final.yml'
-          git commit -m 'build(regex): harden packed audits and RC preflight'
-          git push origin HEAD:beta-regex-filter-20260813-rc-impl
-      - name: Verify no-touch and RC gates
-        shell: bash
-        run: |
-          set -euo pipefail
-          BASE=b23543f816fbeb777e5ceded12557433fd6aeae5
-          python3 tools/.implement_regex_rc_tmp.py verify
-          test -z "$(git diff "$BASE" -- src/ch_03_database.js src/ch_08_window.js src/ch_09_list.js src/ch_10_editor.js src/ch_12_translation.js src/ch_15_app.js ClipHub.js tasks)"
-          changed="$(git diff --name-only "$BASE" HEAD | grep -v '^\.github/workflows/regex-rc-' || true)"
-          printf '%s\n' "$changed"
-          printf '%s\n' "$changed" | python3 -c 'import sys; allowed_prefix=("tools/regex_beta_patches/","probes/","scripts/"); allowed_exact={"src/ch_06_repository.js","src/ch_11_filter.js","src/ch_13_settings.js","module-manifest.json"}; bad=[x.strip() for x in sys.stdin if x.strip() and x.strip() not in allowed_exact and not x.strip().startswith(allowed_prefix)]; assert not bad,bad'
-          bash scripts/release_preflight.sh --regex-rc
-      - name: Remove release harness
-        shell: bash
-        run: |
-          set -euo pipefail
           rm -f .github/workflows/regex-rc-final.yml
           git add -A
-          git commit -m 'chore: remove regex RC release harness'
+          git commit -m 'chore: remove regex RC verification harness'
           git push origin HEAD:beta-regex-filter-20260813-rc-impl
