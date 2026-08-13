@@ -3,6 +3,7 @@
     var REGEX_FLAG_MULTILINE = 2;
     var REGEX_FLAG_DOTALL = 4;
     var REGEX_SCAN_CHUNK_SIZE = 128;
+    var REGEX_SCAN_CHUNK_TEXT_CHAR_BUDGET = 786432;
 
     function normalizeRegexTitle(value) {
         var text = String(value === null || value === undefined ? "" : value)
@@ -429,11 +430,28 @@
             " ORDER BY " + buildItemOrder(sortMode) + " LIMIT ?",
             args.concat([limit])
         );
+        var boundedRows = [];
+        var textChars = 0;
+        var rowIndex;
+        var rowChars;
+        for (rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+            rowChars = String(rows[rowIndex].content === null ||
+                rows[rowIndex].content === undefined ? "" :
+                rows[rowIndex].content).length;
+            if (boundedRows.length > 0 &&
+                    textChars + rowChars > REGEX_SCAN_CHUNK_TEXT_CHAR_BUDGET) {
+                break;
+            }
+            boundedRows.push(rows[rowIndex]);
+            textChars += rowChars;
+            if (textChars >= REGEX_SCAN_CHUNK_TEXT_CHAR_BUDGET) { break; }
+        }
         return {
-            rows: rows,
-            nextCursor: rows.length > 0 ?
-                buildPageCursor(rows[rows.length - 1], sortMode) : null,
-            hasMore: rows.length >= limit
+            rows: boundedRows,
+            nextCursor: boundedRows.length > 0 ?
+                buildPageCursor(boundedRows[boundedRows.length - 1], sortMode) : null,
+            hasMore: boundedRows.length < rows.length || rows.length >= limit,
+            textChars: textChars
         };
     }
 
