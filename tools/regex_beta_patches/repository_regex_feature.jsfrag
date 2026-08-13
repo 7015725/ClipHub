@@ -44,10 +44,26 @@
         return result;
     }
 
-    function validateRegexPattern(pattern, flags) {
+    function assessRegexRisk(patternText) {
+        var text = String(patternText === null || patternText === undefined ?
+            "" : patternText);
+        var nestedUnbounded = /\((?:\?:)?(?:\\.|[^()\\])*(?:\+|\*)(?:\\.|[^()\\])*\)(?:\+|\*)/;
+        if (nestedUnbounded.test(text)) {
+            return { risky: true, code: "nested_unbounded_quantifier",
+                reason: "nested unbounded quantifier" };
+        }
+        return { risky: false, code: "", reason: "" };
+    }
+
+    function validateRegexPattern(pattern, flags, options) {
         var text = normalizeRegexText(pattern, 4096);
+        var risk;
         if (text.length < 1) {
             throw new Error("regex_pattern_empty");
+        }
+        risk = assessRegexRisk(text);
+        if (risk.risky && !(options && options.allowRisky === true)) {
+            throw new Error("regex_pattern_risky: " + risk.code);
         }
         try {
             Packages.java.util.regex.Pattern.compile(
@@ -72,7 +88,9 @@
         normalizedTitle = normalizeRegexTitle(title);
         note = normalizeRegexText(input.note, 500);
         flags = normalizeRegexFlags(input.flags);
-        pattern = validateRegexPattern(input.pattern, flags);
+        pattern = validateRegexPattern(input.pattern, flags, {
+            allowRisky: input.enabled === false
+        });
         return {
             title: title,
             titleNormalized: normalizedTitle,
@@ -202,10 +220,21 @@
     }
 
     function setRegexRuleEnabled(id, enabled) {
+        var targetId = intValue(id, -1);
+        var rule;
+        var risk;
         requireReady();
+        if (enabled === true) {
+            rule = getRegexRule(targetId);
+            if (rule === null) { throw new Error("regex_rule_missing"); }
+            risk = assessRegexRisk(rule.pattern);
+            if (risk.risky) {
+                throw new Error("regex_pattern_risky: " + risk.code);
+            }
+        }
         return ClipHub.Database.executeUpdateDelete(
             "UPDATE regex_rules SET enabled = ?, updated_at = ? WHERE id = ?",
-            [enabled === true ? 1 : 0, ClipHub.Base.now(), intValue(id, -1)]
+            [enabled === true ? 1 : 0, ClipHub.Base.now(), targetId]
         );
     }
 
