@@ -27,7 +27,7 @@ case "$MODE" in
     ;;
   --regex-beta)
     EXPECTED_REF='beta-regex-filter-20260813'
-    EXPECTED_MODULE_SET='20260813.03'
+    EXPECTED_MODULE_SET='20260813.04'
     EXPECTED_ENTRY_VERSION='6'
     EXPECTED_APP_MODULE_VERSION='20'
     REQUIRE_CLEAN='0'
@@ -241,7 +241,7 @@ if mode == "--regex-beta":
     required_versions = {
         "ch_03_database.js": ("ch_03_database", 4),
         "ch_06_repository.js": ("ch_06_repository", 17),
-        "ch_11_filter.js": ("ch_11_filter", 75),
+        "ch_11_filter.js": ("ch_11_filter", 76),
         "ch_13_settings.js": ("ch_13_settings", 25),
         "ch_15_app.js": ("ch_15_app", 20),
     }
