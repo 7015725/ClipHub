@@ -218,7 +218,7 @@ def verify() -> None:
     _, _, canonical = apply.unpack_loader(ROOT / "src" / "ch_11_filter.js")
     manifest = json.loads((ROOT / "module-manifest.json").read_text(encoding="utf-8"))
     assert 'clearRegexResultCache("clipboard_event");' in canonical
-    assert 'String(origin || "unknown")' not in canonical
+    assert 'clearRegexResultCache("clipboard_event:" +' not in canonical
     assert 'paginationState.hasMore = stableTotal ? end < total : false;' in canonical
     assert 'snapshotMaxId: snapshotMaxId' in canonical
     assert 'regexScanState.lastError = workerErrorText;' in canonical

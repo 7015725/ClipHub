@@ -12,7 +12,7 @@ import subprocess
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 BRANCH = "beta-regex-filter-20260813"
-MODULE_SET = "20260813.02"
+MODULE_SET = "20260813.03"
 PATCH_DIR = ROOT / "tools" / "regex_beta_patches"
 
 
@@ -86,6 +86,7 @@ def repack_loader(path: pathlib.Path, loader: str, variable: str,
         )
         if count != 1:
             fail("repository canonical blob comment update failed")
+    loader = "\n".join(line.rstrip() for line in loader.splitlines()) + "\n"
     path.write_text(loader, encoding="utf-8")
 
 
@@ -184,6 +185,106 @@ def patch_repository() -> None:
     )
     repack_loader(path, loader, variable, canonical)
 
+
+def finalize_filter_canonical(canonical: str) -> str:
+    declaration = re.compile(
+        r"(^\s*function\s+onClipboardChange\s*\([^)]*\)\s*\{\n)",
+        re.M,
+    )
+    matches = list(declaration.finditer(canonical))
+    if len(matches) != 1:
+        fail("onClipboardChange declaration mismatch: %d" % len(matches))
+    match = matches[0]
+    canonical = (
+        canonical[:match.end()] +
+        "        if (regexActive()) {\n" +
+        "            clearRegexResultCache(\"clipboard_event\");\n" +
+        "        }\n" +
+        canonical[match.end():]
+    )
+    canonical = replace_once(
+        canonical,
+        "        paginationState.hasMore = stableTotal ? end < total : true;\n"
+        "        if (paginationState.mode === \"ajax\" && !stableTotal &&\n"
+        "                previewRows.length < regexMatchedIds.length) {\n"
+        "            paginationState.hasMore = true;\n"
+        "        }\n",
+        "        paginationState.hasMore = stableTotal ? end < total : false;\n",
+        "regex scan pagination final boundary",
+    )
+    canonical = replace_once(
+        canonical,
+        "        var snapshot;\n        var baseCriteria;\n",
+        "        var snapshot;\n        var snapshotMaxId;\n        var candidateTotal;\n"
+        "        var baseCriteria;\n",
+        "regex worker primitive declarations",
+    )
+    canonical = replace_once(
+        canonical,
+        "        snapshot = ClipHub.Repository.getRegexScanSnapshot(baseCriteria);\n"
+        "        signature = regexScanSignature(ruleRows, snapshot, baseCriteria);\n",
+        "        snapshot = ClipHub.Repository.getRegexScanSnapshot(baseCriteria);\n"
+        "        snapshotMaxId = Number(snapshot.maxItemId || 0);\n"
+        "        candidateTotal = Number(snapshot.candidateTotal || 0);\n"
+        "        signature = regexScanSignature(ruleRows, snapshot, baseCriteria);\n",
+        "regex worker primitive capture",
+    )
+    canonical = replace_once(
+        canonical,
+        "        regexScanState.total = Number(snapshot.candidateTotal || 0);\n",
+        "        regexScanState.total = candidateTotal;\n",
+        "regex worker total primitive",
+    )
+    canonical = replace_once(
+        canonical,
+        "                            snapshotMaxId: Number(snapshot.maxItemId),\n",
+        "                            snapshotMaxId: snapshotMaxId,\n",
+        "regex worker max id primitive",
+    )
+    canonical = replace_once(
+        canonical,
+        "                            scanned >= Number(snapshot.candidateTotal || 0);\n",
+        "                            scanned >= candidateTotal;\n",
+        "regex worker completion primitive",
+    )
+    canonical = replace_once(
+        canonical,
+        "                                        Number(snapshot.candidateTotal || 0),\n",
+        "                                        candidateTotal,\n",
+        "regex worker publish primitive",
+    )
+    canonical = replace_once(
+        canonical,
+        "                } catch (error) {\n"
+        "                    mainHandler.post(new Packages.java.lang.Runnable({\n"
+        "                        run: function () {\n"
+        "                            if (generation !== regexScanGeneration) { return; }\n"
+        "                            regexScanState.running = false;\n"
+        "                            regexScanState.complete = false;\n"
+        "                            regexScanState.lastError = String(error);\n"
+        "                            state.lastError = String(error);\n"
+        "                            numberPagerState.loading = false;\n"
+        "                            updateResultCountOnMain();\n"
+        "                        }\n"
+        "                    }));\n"
+        "                }\n",
+        "                } catch (error) {\n"
+        "                    var workerErrorText = String(error);\n"
+        "                    mainHandler.post(new Packages.java.lang.Runnable({\n"
+        "                        run: function () {\n"
+        "                            if (generation !== regexScanGeneration) { return; }\n"
+        "                            regexScanState.running = false;\n"
+        "                            regexScanState.complete = false;\n"
+        "                            regexScanState.lastError = workerErrorText;\n"
+        "                            state.lastError = workerErrorText;\n"
+        "                            numberPagerState.loading = false;\n"
+        "                            updateResultCountOnMain();\n"
+        "                        }\n"
+        "                    }));\n"
+        "                }\n",
+        "regex worker error text primitive",
+    )
+    return canonical
 
 def patch_filter() -> None:
     path = ROOT / "src" / "ch_11_filter.js"
@@ -627,6 +728,7 @@ def patch_filter() -> None:
             advancedButtonText:''',
         "filter regex panel diagnostics",
     )
+    canonical = finalize_filter_canonical(canonical)
     repack_loader(path, loader, variable, canonical)
 
 
@@ -998,7 +1100,7 @@ def patch_entry_manifest_preflight() -> None:
     ;;
   --regex-beta)
     EXPECTED_REF='beta-regex-filter-20260813'
-    EXPECTED_MODULE_SET='20260813.02'
+    EXPECTED_MODULE_SET='20260813.03'
     EXPECTED_ENTRY_VERSION='6'
     EXPECTED_APP_MODULE_VERSION='20'
     REQUIRE_CLEAN='0'
@@ -1203,6 +1305,14 @@ def write_probes() -> None:
     for relative, source in probes.items():
         path = ROOT / relative
         path.write_text(source, encoding="utf-8")
+    rollback_path = ROOT / "probes" / "cliphub_regex_rollback_probe_060.md"
+    rollback_path.write_text(
+        "# ClipHub Regex Beta 回滚探针 060\n\n"
+        "验证 `Beta -> main -> Beta`：运行目录保持 `shortx.getShortXDir()/ClipHub`，"
+        "SQLite `user_version` 始终为 2，main 可正常启动，重新进入 Beta 后自定义"
+        " `regex_rules` 仍存在。\n",
+        encoding="utf-8",
+    )
 
 
 def cleanup_inspection_assets() -> None:
