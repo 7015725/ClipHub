@@ -1,0 +1,82 @@
+name: Regex Beta Event Boundary
+
+on:
+  push:
+    branches:
+      - beta-regex-filter-20260813
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: beta-regex-filter-20260813
+          fetch-depth: 0
+
+      - name: Apply clipboard event boundary fix
+        run: python3 tools/fix_regex_filter_event_boundary.py
+
+      - name: Validate implementation tools
+        run: |
+          python3 -m py_compile tools/apply_regex_filter_beta.py
+          python3 -m py_compile tools/fix_regex_filter_event_boundary.py
+          python3 scripts/validate_es5.py .
+
+      - name: Run formal regex beta preflight
+        run: bash scripts/release_preflight.sh --regex-beta
+
+      - name: Reproduce final production files from main
+        shell: bash
+        run: |
+          git fetch origin main
+          test "$(git rev-parse origin/main)" = "79d7051e6c858ee68747b5e2f4cea67d13daf189"
+          TMP_ROOT="$(mktemp -d)"
+          git worktree add --detach "$TMP_ROOT/main" origin/main
+          cp tools/apply_regex_filter_beta.py "$TMP_ROOT/main/tools/apply_regex_filter_beta.py"
+          rm -rf "$TMP_ROOT/main/tools/regex_beta_patches"
+          cp -R tools/regex_beta_patches "$TMP_ROOT/main/tools/regex_beta_patches"
+          (
+            cd "$TMP_ROOT/main"
+            python3 tools/apply_regex_filter_beta.py
+            python3 scripts/validate_es5.py .
+          )
+          for rel in \
+            ClipHub.js \
+            module-manifest.json \
+            src/ch_03_database.js \
+            src/ch_06_repository.js \
+            src/ch_11_filter.js \
+            src/ch_13_settings.js \
+            scripts/release_preflight.sh \
+            probes/cliphub_regex_database_probe_052.js \
+            probes/cliphub_regex_repository_probe_053.js \
+            probes/cliphub_regex_settings_probe_054.js \
+            probes/cliphub_regex_settings_ime_probe_055.js \
+            probes/cliphub_regex_filter_probe_056.js \
+            probes/cliphub_regex_scan_probe_057.js \
+            probes/cliphub_regex_generation_probe_058.js \
+            probes/cliphub_regex_pagination_probe_059.js; do
+            cmp "$rel" "$TMP_ROOT/main/$rel"
+          done
+          git worktree remove --force "$TMP_ROOT/main"
+          rm -rf "$TMP_ROOT"
+          git diff --check
+
+      - name: Commit verified fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+          git commit -m "fix regex clipboard event boundary"
+          git push origin HEAD:beta-regex-filter-20260813
