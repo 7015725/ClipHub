@@ -1,4 +1,18 @@
     /* REGEX_BETA_SETTINGS_BEGIN */
+    var regexTestFuture = null;
+    var regexTestCancelReason = "";
+
+    function cancelRegexTest(reason) {
+        regexTestGeneration += 1;
+        uiState.regexTestRunning = false;
+        regexTestCancelReason = String(reason || "cancel");
+        if (regexTestFuture !== null) {
+            try { regexTestFuture.cancel(true); } catch (ignoredRegexFuture) {}
+            regexTestFuture = null;
+        }
+        return true;
+    }
+
     function normalizeRegexRuleIdList(input) {
         var source = input instanceof Array ? input : [];
         var output = [];
@@ -56,7 +70,12 @@
     }
 
     function setSettingsPage(page) {
-        settingsPage = String(page || "root");
+        var oldPage = String(settingsPage || "root");
+        var newPage = String(page || "root");
+        if (oldPage === "regex_test" && newPage !== "regex_test") {
+            cancelRegexTest("settings_page_change");
+        }
+        settingsPage = newPage;
         releaseSettingsInputFocus("settings_page_change");
         resetImeAnchorSpacer();
         buildPage();
@@ -71,6 +90,7 @@
         }
         releaseSettingsInputFocus("managed_back");
         if (settingsPage === "regex_test") {
+            cancelRegexTest("managed_back");
             settingsPage = "regex_editor";
             buildPage();
             return true;
@@ -424,7 +444,9 @@
         var inputText = regexTestSourceText(source);
         var patternText = String(draft.pattern || "");
         var flags = Number(draft.flags || 0);
-        var generation = regexTestGeneration + 1;
+        var generation;
+        cancelRegexTest("new_test");
+        generation = regexTestGeneration + 1;
         regexTestGeneration = generation;
         regexTestText = inputText;
         uiState.regexTestRunning = true;
@@ -438,8 +460,8 @@
             buildPage();
             return false;
         }
-        ensureRegexTestExecutor().submit(new Packages.java.lang.Runnable({
-            run: function () {
+        regexTestFuture = ensureRegexTestExecutor().submit(
+            new Packages.java.lang.Runnable({ run: function () {
                 var lines = new Packages.java.util.ArrayList();
                 var matcher;
                 var pattern;
@@ -485,7 +507,8 @@
                     mainHandler.post(new Packages.java.lang.Runnable({
                         run: function () {
                             var index;
-                            if (generation !== regexTestGeneration || !ready) {
+                            if (generation !== regexTestGeneration || !ready ||
+                                    settingsPage !== "regex_test") {
                                 return;
                             }
                             regexTestResultLines = [];
@@ -498,12 +521,12 @@
                             uiState.regexTestMatchCount = Number(postedCount);
                             uiState.regexTestTruncated = postedTruncated === true;
                             uiState.lastRegexValidationError = postedError;
+                            regexTestFuture = null;
                             buildPage();
                         }
                     }));
                 }(lines, count, truncated, errorText));
-            }
-        }));
+            }}));
         buildPage();
         return true;
     }
