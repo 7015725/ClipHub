@@ -1,0 +1,33 @@
+name: run-active-regex-source-fix
+on:
+  push:
+    branches:
+      - beta-regex-filter-20260813
+    paths:
+      - .github/workflows/run-active-regex-source-fix.yml
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: beta-regex-filter-20260813
+          fetch-depth: 0
+      - run: python3 tools/fix_active_regex_source_once.py
+      - run: bash scripts/release_preflight.sh --regex-beta
+      - name: Commit fix
+        shell: bash
+        run: |
+          rm -f tools/fix_active_regex_source_once.py
+          rm -f .github/workflows/run-active-regex-source-fix.yml
+          rm -f .github/workflows/apply-active-regex-source-fix.yml
+          rm -f .github/workflows/apply-active-regex-source-fix-v2.yml
+          rm -f .github/workflows/inspect-regex-ui-beta.yml
+          rm -f .github/workflows/inspect-regex-ui-beta-2.yml
+          git config user.name 7015725
+          git config user.email 62368672+7015725@users.noreply.github.com
+          git add src/ch_11_filter.js tools/apply_regex_filter_beta.py module-manifest.json scripts/release_preflight.sh tools .github/workflows
+          git commit -m "fix active regex source refresh"
+          git push origin HEAD:beta-regex-filter-20260813
