@@ -12,7 +12,7 @@ import subprocess
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 BRANCH = "beta-regex-filter-20260813"
-MODULE_SET = "20260813.04"
+MODULE_SET = "20260813.05"
 PATCH_DIR = ROOT / "tools" / "regex_beta_patches"
 
 
@@ -615,7 +615,7 @@ def patch_filter() -> None:
         "filter close regex worker",
     )
     canonical = replace_once(canonical, "MODULE_VERSION: 74",
-                             "MODULE_VERSION: 76", "filter version")
+                             "MODULE_VERSION: 77", "filter version")
     canonical = replace_once(
         canonical,
         '''        getMutationState:
@@ -738,6 +738,7 @@ def patch_filter() -> None:
         "            return copyValue(value);\n"
         "        }\n"
         "        if (regexActive()) {\n"
+        "            ensurePaginationCriteria();\n"
         "            cancelMutationRefresh(\"regex_criteria_apply\");\n"
         "            startRegexScan({\n"
         "                origin: options.origin || \"criteria\",\n"
@@ -1120,7 +1121,7 @@ def patch_entry_manifest_preflight() -> None:
     ;;
   --regex-beta)
     EXPECTED_REF='beta-regex-filter-20260813'
-    EXPECTED_MODULE_SET='20260813.04'
+    EXPECTED_MODULE_SET='20260813.05'
     EXPECTED_ENTRY_VERSION='6'
     EXPECTED_APP_MODULE_VERSION='20'
     REQUIRE_CLEAN='0'
@@ -1167,7 +1168,7 @@ PY'''
     required_versions = {
         "ch_03_database.js": ("ch_03_database", 4),
         "ch_06_repository.js": ("ch_06_repository", 17),
-        "ch_11_filter.js": ("ch_11_filter", 76),
+        "ch_11_filter.js": ("ch_11_filter", 77),
         "ch_13_settings.js": ("ch_13_settings", 25),
         "ch_15_app.js": ("ch_15_app", 20),
     }
