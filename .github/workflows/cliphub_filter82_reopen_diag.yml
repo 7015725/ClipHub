@@ -1,0 +1,31 @@
+name: ClipHub Filter82 Reopen Diagnostic
+
+on:
+  push:
+    branches:
+      - beta-regex-settings-tabs-20260814
+    paths:
+      - .github/cliphub_filter82_reopen_diag.py
+      - .github/workflows/cliphub_filter82_reopen_diag.yml
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: beta-regex-settings-tabs-20260814
+          fetch-depth: 0
+      - name: Decode and inspect Filter82
+        shell: bash
+        run: |
+          set -euo pipefail
+          python .github/cliphub_filter82_reopen_diag.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add cliphub_filter82_reopen_diag.txt
+          git commit -m '记录 Filter82 缓存重开只读诊断'
+          git push origin HEAD:beta-regex-settings-tabs-20260814
