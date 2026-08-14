@@ -46,6 +46,13 @@ jobs:
               raise SystemExit('unexpected root anchor scope count: ' + str(count))
           text = text.replace(old, new, 1)
 
+          old = "        '                dataSectionView = null;\\n',"
+          new = "        '            dataSectionView = null;\\n',"
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit('unexpected close cleanup anchor count: ' + str(count))
+          text = text.replace(old, new, 1)
+
           path.write_text(text, encoding='utf-8')
           PY
           python3 tools/apply_settings_tabs_beta.py
