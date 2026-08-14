@@ -21,6 +21,28 @@ jobs:
         run: |
           set -euo pipefail
           cat .github/regex-review-fix-20260814/part*.b64 | base64 -d | gzip -d > tools/apply_regex_review_fix_20260814.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('tools/apply_regex_review_fix_20260814.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''    text = replace_once(text,
+                  "        regexScanState.matched = regexMatchedIds.length;\\n",
+                  "        regexScanState.matched = regexMatchedIds.length;\\n"
+                  "        regexScanState.oversizeSkipped = Number(oversizeSkipped || 0);\\n",
+                  "filter publish oversize state")
+          '''
+          new = '''    text = replace_once(text,
+                  "        regexScanState.total = Number(total);\\n"
+                  "        regexScanState.matched = regexMatchedIds.length;\\n",
+                  "        regexScanState.total = Number(total);\\n"
+                  "        regexScanState.matched = regexMatchedIds.length;\\n"
+                  "        regexScanState.oversizeSkipped = Number(oversizeSkipped || 0);\\n",
+                  "filter publish oversize state")
+          '''
+          if text.count(old) != 1:
+              raise SystemExit('temporary patcher publish anchor shape changed')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
           python3 -m py_compile tools/apply_regex_review_fix_20260814.py
 
       - name: Apply locked no-regression fix
