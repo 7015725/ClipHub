@@ -20,7 +20,7 @@
     var ENTRY_VERSION = 6;
     var OWNER = "7015725";
     var REPO = "ClipHub";
-    var DEFAULT_REF = "beta-regex-filter-20260813";
+    var DEFAULT_REF = "beta-settings-tabs-20260814";
     var MANIFEST_PATH = "module-manifest.json";
     var NAMES = [
         "ch_01_base.js", "ch_02_log.js", "ch_03_database.js",

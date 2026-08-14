@@ -94,7 +94,7 @@ def patch_settings() -> None:
     loader, variable, canonical = unpack_loader(path)
 
     for token in (
-        'MODULE_NAME: "ch_13_settings", MODULE_VERSION: 27',
+        'MODULE_VERSION: 27',
         'function buildRootPage()',
         'var buildPage = function ()',
         'function handleSettingsBack()',
@@ -331,7 +331,9 @@ def patch_settings() -> None:
     )
     canonical = replace_once(
         canonical,
+        '        addSection(settingsGeneralTabView, dataSectionView);\n'
         '        sectionAnchorSpacer = new View(appContext);\n',
+        '        addSection(settingsGeneralTabView, dataSectionView);\n'
         '        content.addView(settingsGeneralTabView, new LinearLayout.LayoutParams(\n'
         '            LinearLayout.LayoutParams.MATCH_PARENT,\n'
         '            LinearLayout.LayoutParams.WRAP_CONTENT));\n'
@@ -476,7 +478,7 @@ def patch_settings() -> None:
 
     canonical = replace_once(
         canonical,
-        '                dataSectionView = null;\n',
+        '            dataSectionView = null;\n',
         '                dataSectionView = null;\n'
         '                generalSectionView = null;\n'
         '                settingsGeneralTabView = null;\n'
@@ -540,8 +542,8 @@ def patch_settings() -> None:
 
     canonical = replace_once(
         canonical,
-        f'MODULE_NAME: "ch_13_settings", MODULE_VERSION: {SETTINGS_VERSION_OLD}',
-        f'MODULE_NAME: "ch_13_settings", MODULE_VERSION: {SETTINGS_VERSION_NEW}',
+        f'MODULE_VERSION: {SETTINGS_VERSION_OLD}',
+        f'MODULE_VERSION: {SETTINGS_VERSION_NEW}',
         "settings module version",
     )
 
@@ -554,7 +556,7 @@ def patch_settings() -> None:
         'settingsTranslationTabView.setVisibility',
         'settingsFilterTabView.setVisibility',
         'performSetSettingsTab: function (tab)',
-        f'MODULE_NAME: "ch_13_settings", MODULE_VERSION: {SETTINGS_VERSION_NEW}',
+        f'MODULE_VERSION: {SETTINGS_VERSION_NEW}',
     ):
         if required not in canonical:
             fail("patched settings contract missing: " + required)
