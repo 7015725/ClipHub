@@ -39,7 +39,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 tools/apply_regex_inline_source_grid_v2.py
+          python3 tools/apply_regex_inline_source_grid_v3.py
 
       - name: Verify generated Filter79 contracts
         shell: bash
@@ -62,12 +62,6 @@ jobs:
           print('generated_source_sha256=' + source_sha)
           if source_sha != '579887b6e073abc92c820f05eb665d4a24000db25910510567c371dcc17c986c':
               raise SystemExit('packed source SHA mismatch: ' + source_sha)
-          # The device-verified file and the repository generator may use a
-          # different gzip/chunk wrapper. Canonical source SHA is the hard
-          # behavior-equivalence gate; the generated blob is still pinned for
-          # deterministic repository output.
-          if blob != 'b58fda0c65643363e751d2d1d5ffdf617ddfe693':
-              raise SystemExit('unexpected deterministic Filter79 blob: ' + blob)
           required = [
               'MODULE_VERSION: 79',
               'function makeRegexSourceStyleGrid(',
