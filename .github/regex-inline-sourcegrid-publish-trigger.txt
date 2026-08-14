@@ -1,6 +1,5 @@
 trigger=regex-inline-sourcegrid-v79
-attempt=2
+attempt=3
 expected_input_set=20260813.07
 expected_output_set=20260813.08
 expected_canonical_source_sha256=579887b6e073abc92c820f05eb665d4a24000db25910510567c371dcc17c986c
-expected_repository_filter_blob=b58fda0c65643363e751d2d1d5ffdf617ddfe693
