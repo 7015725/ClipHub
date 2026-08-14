@@ -1,0 +1,4 @@
+trigger=regex-inline-sourcegrid-v79
+expected_input_set=20260813.07
+expected_output_set=20260813.08
+expected_filter_blob=ee07f13ad0945a877cc865184facba4ba3fa51e3
