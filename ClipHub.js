@@ -28,7 +28,7 @@
         "ch_06_repository.js", "ch_07_theme.js", "ch_08_window.js",
         "ch_09_list.js", "ch_10_editor.js", "ch_11_filter.js",
         "ch_12_translation.js", "ch_13_settings.js",
-        "ch_14_event_bus.js", "ch_15_app.js"
+        "ch_14_event_bus.js", "ch_15_app.js", "ch_17_tokenizer_ui.js"
     ];
 
     function closeQuietly(value) {
