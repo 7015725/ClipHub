@@ -16,8 +16,10 @@ ERROR_FILE = pathlib.Path('cliphub_stage_reopen_initial_staged_error.txt')
 EXPECTED_BRANCH = 'beta-regex-settings-tabs-20260814'
 EXPECTED_SET = '20260814.05'
 NEXT_SET = '20260814.06'
+EXPECTED_MODULE_VERSION = 81
+NEXT_MODULE_VERSION = 82
 EXPECTED_HEADER = '/* ClipHub advanced drawer safe packed full Filter74 ES5 loader. */'
-NEXT_HEADER = '/* ClipHub panel data refresh initial staged packed full Filter75 ES5 loader. */'
+NEXT_HEADER = '/* ClipHub panel data refresh initial staged packed full Filter82 ES5 loader. */'
 
 OLD_CONDITION = '''        if (String(performance.lastRefreshOrigin || "") !==
                 "panel_first_content" || Number(range.start) !== 0 ||
@@ -82,40 +84,39 @@ def build():
         raise RuntimeError('unexpected sourceRef: %r' % manifest.get('sourceRef'))
     if manifest.get('moduleSetVersion') != EXPECTED_SET:
         raise RuntimeError('unexpected moduleSetVersion: %r' % manifest.get('moduleSetVersion'))
-    if EXPECTED_HEADER not in loader:
-        raise RuntimeError('expected Filter74 loader header missing')
-    if loader.count(EXPECTED_HEADER) != 1:
-        raise RuntimeError('Filter74 loader header count mismatch')
+    if EXPECTED_HEADER not in loader or loader.count(EXPECTED_HEADER) != 1:
+        raise RuntimeError('expected packed loader header mismatch')
 
     source, packed_match = unpack(loader)
-    if source.count('MODULE_VERSION: 74') != 1:
-        raise RuntimeError('MODULE_VERSION 74 count mismatch')
+    version_matches = re.findall(r'MODULE_VERSION:\s*(\d+)', source)
+    if version_matches != [str(EXPECTED_MODULE_VERSION)]:
+        raise RuntimeError('unexpected MODULE_VERSION values: %r' % version_matches)
     if source.count(OLD_CONDITION) != 1:
         raise RuntimeError('initial staged origin condition count mismatch')
     if '"panel_data_refresh") || Number(range.start)' in source:
         raise RuntimeError('panel_data_refresh staged route already present')
 
-    expected = source.replace('MODULE_VERSION: 74', 'MODULE_VERSION: 75', 1)
-    expected = expected.replace(OLD_CONDITION, NEW_CONDITION, 1)
-    transformed = source.replace('MODULE_VERSION: 74', 'MODULE_VERSION: 75', 1)
+    old_version = 'MODULE_VERSION: %d' % EXPECTED_MODULE_VERSION
+    new_version = 'MODULE_VERSION: %d' % NEXT_MODULE_VERSION
+    transformed = source.replace(old_version, new_version, 1)
     transformed = transformed.replace(OLD_CONDITION, NEW_CONDITION, 1)
-    if transformed != expected:
-        raise RuntimeError('unexpected source transformation')
+
+    reverse = transformed.replace(new_version, old_version, 1)
+    reverse = reverse.replace(NEW_CONDITION, OLD_CONDITION, 1)
+    if reverse != source:
+        raise RuntimeError('source diff escaped the two approved edits')
 
     required = [
-        'MODULE_VERSION: 75',
-        'INITIAL_STAGED_SYNC_MIN_CARDS = 8',
-        'INITIAL_STAGED_SYNC_MAX_CARDS = 12',
-        'INITIAL_STAGED_MIN_REMAINING = 8',
-        'INITIAL_STAGED_BUDGET_MS = 14',
-        'INITIAL_STAGED_MAX_CARDS_PER_BATCH = 3',
-        'VIRTUAL_BEFORE_SCREENS = 3',
-        'VIRTUAL_AFTER_SCREENS = 5',
-        'VIRTUAL_UPDATE_DELAY_MS = 24',
+        new_version,
         'function startInitialStagedFill',
         'function runInitialStagedFillBatch',
         'function startKeyedStagedReconcile',
         'function preemptStagedAjaxAttachForScroll',
+        'INITIAL_STAGED_SYNC_MIN_CARDS',
+        'INITIAL_STAGED_MIN_REMAINING',
+        'VIRTUAL_BEFORE_SCREENS',
+        'VIRTUAL_AFTER_SCREENS',
+        'VIRTUAL_UPDATE_DELAY_MS',
         '"panel_first_content" &&',
         '"panel_data_refresh") || Number(range.start) !== 0'
     ]
@@ -124,9 +125,9 @@ def build():
             raise RuntimeError('required invariant missing: ' + token)
     check_es5(transformed)
 
-    pathlib.Path('/tmp/cliphub_filter75_source.js').write_text(
+    pathlib.Path('/tmp/cliphub_filter82_source.js').write_text(
         transformed, encoding='utf-8')
-    subprocess.check_call(['node', '--check', '/tmp/cliphub_filter75_source.js'])
+    subprocess.check_call(['node', '--check', '/tmp/cliphub_filter82_source.js'])
 
     source_sha = hashlib.sha256(transformed.encode('utf-8')).hexdigest()
     replacement = pack_assignment(transformed)
@@ -139,13 +140,13 @@ def build():
         count=1)
 
     if NEXT_HEADER not in loader:
-        raise RuntimeError('Filter75 loader header missing after pack')
+        raise RuntimeError('Filter82 loader header missing after pack')
     if loader.count('var SOURCE_SHA256 = "%s";' % source_sha) != 1:
         raise RuntimeError('SOURCE_SHA256 replacement failed')
 
-    pathlib.Path('/tmp/cliphub_filter75_loader.js').write_text(
+    pathlib.Path('/tmp/cliphub_filter82_loader.js').write_text(
         loader, encoding='utf-8')
-    subprocess.check_call(['node', '--check', '/tmp/cliphub_filter75_loader.js'])
+    subprocess.check_call(['node', '--check', '/tmp/cliphub_filter82_loader.js'])
     LOADER.write_text(loader, encoding='utf-8')
 
     data = loader.encode('utf-8')
@@ -179,7 +180,6 @@ def git_config():
 
 def publish(blob_sha, source_sha):
     git_config()
-
     for path in [RUNNER, WORKFLOW, ERROR_FILE]:
         try:
             path.unlink()
@@ -190,16 +190,14 @@ def publish(blob_sha, source_sha):
     subprocess.check_call(['git', 'diff', '--cached', '--check'])
     staged = subprocess.check_output(
         ['git', 'diff', '--cached', '--name-only'], text=True).splitlines()
-    unexpected = [
-        path for path in staged
-        if path not in [
-            'src/ch_11_filter.js',
-            'module-manifest.json',
-            str(RUNNER),
-            str(WORKFLOW),
-            str(ERROR_FILE)
-        ]
+    allowed = [
+        'src/ch_11_filter.js',
+        'module-manifest.json',
+        str(RUNNER),
+        str(WORKFLOW),
+        str(ERROR_FILE)
     ]
+    unexpected = [path for path in staged if path not in allowed]
     if unexpected:
         raise RuntimeError('unexpected staged paths: %r' % unexpected)
 
@@ -208,8 +206,8 @@ def publish(blob_sha, source_sha):
         '优化缓存重开 initial staged 路由'
     ])
     subprocess.check_call(['git', 'push', 'origin', 'HEAD:' + EXPECTED_BRANCH])
-    print('Filter75 blob=' + blob_sha)
-    print('Filter75 source_sha256=' + source_sha)
+    print('Filter82 blob=' + blob_sha)
+    print('Filter82 source_sha256=' + source_sha)
 
 
 def failure_diagnostic(error_text):
@@ -225,7 +223,8 @@ def failure_diagnostic(error_text):
     try:
         loader = LOADER.read_text(encoding='utf-8')
         source, unused_match = unpack(loader)
-        lines.append('module74_count=' + str(source.count('MODULE_VERSION: 74')))
+        lines.append('module_versions=' + repr(
+            re.findall(r'MODULE_VERSION:\s*(\d+)', source)))
         lines.append('old_condition_count=' + str(source.count(OLD_CONDITION)))
         lines.append('panel_data_refresh_route_count=' + str(
             source.count('"panel_data_refresh") || Number(range.start)')))
