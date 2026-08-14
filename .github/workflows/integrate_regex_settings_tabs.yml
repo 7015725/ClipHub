@@ -98,6 +98,7 @@ jobs:
           assert mods['ch_13_settings.js'] != 'a0175f5e1b3a5751996d385981e200c6644a4380'
           print('integrated manifest verified')
           PY
+          rm -f .github/workflows/settings_tabs_validate.yml
 
       - name: Commit integrated beta
         shell: bash
@@ -111,8 +112,7 @@ jobs:
                   scripts/release_preflight.sh \
                   ClipHub_Beta浮窗开关.txt \
                   ClipHub_Beta状态查询.txt \
-                  probes/cliphub_settings_tabs_probe_071.js \
-                  .github/workflows/settings_tabs_validate.yml
+                  probes/cliphub_settings_tabs_probe_071.js
           git diff --cached --stat
           git commit -m "整合 Regex 高级筛选与设置页 Tabs"
           git push origin HEAD:beta-regex-settings-tabs-20260814
