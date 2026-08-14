@@ -7,6 +7,7 @@ on:
       - .github/workflows/settings_tabs_validate.yml
       - src/ch_13_settings.js
       - probes/cliphub_settings_tabs_probe_071.js
+      - tools/apply_settings_tabs_review_fix.py
       - ClipHub.js
       - module-manifest.json
       - scripts/release_preflight.sh
