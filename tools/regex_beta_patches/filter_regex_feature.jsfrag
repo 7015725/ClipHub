@@ -699,158 +699,244 @@
         return note.length > 0 ? title + " · " + note : title;
     }
 
-    function makeRegexPickerDrawerBundle(colors) {
-        var bundle = {
-            container: null, scrollView: null, contentView: null,
-            footerView: null, resetView: null, applyView: null,
-            sourceViews: {}, tagViews: {}, pinnedViews: {},
-            sensitiveViews: {}, sortViews: {}, regexRuleViews: {}
-        };
-        var drawer = new LinearLayout(appContext);
-        var titleRow = new LinearLayout(appContext);
-        var back = makeIcon("‹", 22, colors.textSecondary, "返回高级筛选");
-        var title = makeText("正则规则", 14, colors.textPrimary, true);
-        var scroll = new ScrollView(appContext);
-        var content = new LinearLayout(appContext);
-        var searchInput = new EditText(appContext);
-        var modeRow;
-        var selectedRow = new LinearLayout(appContext);
-        var selectedText;
-        var clear;
-        var rules;
+    function styleRegexInlineChip(view, selected, colors) {
+        if (view === null || view === undefined) { return false; }
+        view.setBackground(roundedBackground(
+            selected ? colors.accentSoft : colors.surface,
+            selected ? colors.accentBorder : colors.stroke, 9));
+        ClipHub.Theme.applyTextColor(view,
+            selected ? colors.accentStrong : colors.textSecondary);
+        view.setTypeface(Packages.android.graphics.Typeface.DEFAULT,
+            selected ?
+                Packages.android.graphics.Typeface.BOLD :
+                Packages.android.graphics.Typeface.NORMAL);
+        return true;
+    }
+
+    function refreshRegexInlineSelection(bundle, colors) {
+        var selected = advancedDraftRegexRuleIds || [];
+        var key;
+        var view;
+        if (bundle === null || bundle === undefined) { return false; }
+        if (bundle.regexAllView !== null &&
+                bundle.regexAllView !== undefined) {
+            styleRegexInlineChip(bundle.regexAllView,
+                selected.length === 0, colors);
+        }
+        if (bundle.regexRuleViews) {
+            for (key in bundle.regexRuleViews) {
+                if (bundle.regexRuleViews.hasOwnProperty(key)) {
+                    view = bundle.regexRuleViews[key];
+                    styleRegexInlineChip(view,
+                        contains(selected, Number(key)), colors);
+                }
+            }
+        }
+        return true;
+    }
+
+    function makeRegexSourceStyleGrid(rules, colors, bundle) {
+        var root = new LinearLayout(appContext);
+        var row = null;
+        var items = [{ all: true, id: 0, label: "全部" }];
+        var metrics;
+        var remaining;
+        var rowsRemaining;
+        var rowTarget = 0;
+        var rowItems = 0;
+        var rowCount = 0;
         var index;
         var rule;
+        var item;
         var chip;
         var params;
-        bundle.container = drawer;
-        bundle.scrollView = scroll;
-        bundle.contentView = content;
-        bundle.footerView = new LinearLayout(appContext);
-        drawer.setOrientation(LinearLayout.VERTICAL);
-        drawer.setPadding(dp(11), dp(9), dp(11), dp(9));
-        drawer.setBackground(roundedBackground(colors.surface, colors.stroke, 17));
-        titleRow.setOrientation(LinearLayout.HORIZONTAL);
-        titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        back.setOnClickListener(new JavaAdapter(View.OnClickListener, {
-            onClick: function () { closeRegexPicker(); }
+
+        root.setOrientation(LinearLayout.VERTICAL);
+        state.horizontalFadeEnabled = false;
+        for (index = 0; index < rules.length && index < 30; index += 1) {
+            rule = rules[index];
+            items.push({
+                all: false,
+                id: Number(rule.id),
+                label: regexRulePickerLabel(rule)
+            });
+        }
+
+        metrics = adaptiveSourceGridMetrics(items.length);
+        remaining = items.length;
+        rowsRemaining = Math.max(1, Math.ceil(
+            items.length / metrics.maxColumns));
+
+        bundle.regexRuleViews = {};
+        bundle.regexAllView = null;
+
+        for (index = 0; index < items.length; index += 1) {
+            item = items[index];
+            chip = makeChip(item.label,
+                item.all ?
+                    advancedDraftRegexRuleIds.length === 0 :
+                    contains(advancedDraftRegexRuleIds, item.id),
+                colors, true);
+            chip.setContentDescription(item.all ?
+                "筛选正则规则 全部" :
+                "筛选正则规则 " + String(item.id));
+
+            if (item.all) {
+                bundle.regexAllView = chip;
+                chip.setOnClickListener(new JavaAdapter(
+                    View.OnClickListener, {
+                        onClick: function () {
+                            markUiThread();
+                            if (advancedDraftRegexRuleIds.length > 0) {
+                                advancedDraftRegexRuleIds = [];
+                                state.regexRuleClearCount += 1;
+                                state.drawerCriteriaChanged = true;
+                                refreshRegexInlineSelection(bundle, colors);
+                            }
+                        }
+                    }));
+            } else {
+                (function (id, view) {
+                    view.setOnClickListener(new JavaAdapter(
+                        View.OnClickListener, {
+                            onClick: function () {
+                                markUiThread();
+                                advancedDraftRegexRuleIds = toggle(
+                                    advancedDraftRegexRuleIds, id, true);
+                                state.regexRuleToggleCount += 1;
+                                state.drawerCriteriaChanged = true;
+                                refreshRegexInlineSelection(bundle, colors);
+                            }
+                        }));
+                    bundle.regexRuleViews[String(id)] = view;
+                }(item.id, chip));
+            }
+
+            if (row === null || rowItems >= rowTarget) {
+                rowTarget = Math.max(1, Math.ceil(
+                    remaining / rowsRemaining));
+                row = new LinearLayout(appContext);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                row.setGravity(Gravity.CENTER_VERTICAL);
+                params = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+                if (rowCount > 0) {
+                    params.topMargin = metrics.gapPx;
+                }
+                root.addView(row, params);
+                rowItems = 0;
+                rowCount += 1;
+            }
+
+            params = new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+            if (rowItems > 0) {
+                params.leftMargin = metrics.gapPx;
+            }
+            row.addView(chip, params);
+            rowItems += 1;
+            remaining -= 1;
+            if (rowItems >= rowTarget) {
+                rowsRemaining = Math.max(0, rowsRemaining - 1);
+            }
+        }
+
+        state.regexRuleWrapRowCount = rowCount;
+        return root;
+    }
+
+    function addRegexInlineSection(content, colors, bundle) {
+        var rules = ClipHub.Repository.listRegexRules({ enabledOnly: true });
+        var sectionTitle = makeText("正则规则（多选）", 10,
+            colors.textSecondary, true);
+        var modeTitle = makeText("匹配方式", 9,
+            colors.textSecondary, false);
+        var modeRow = new LinearLayout(appContext);
+        var anyChip = makeChip("任意规则 OR",
+            advancedDraftRegexMatchMode !== "all", colors, true);
+        var allChip = makeChip("全部规则 AND",
+            advancedDraftRegexMatchMode === "all", colors, true);
+        var emptyText;
+        var params;
+
+        bundle.regexRuleViews = {};
+        bundle.regexAllView = null;
+        bundle.regexModeViews = { any: anyChip, all: allChip };
+
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.topMargin = dp(3);
+        params.bottomMargin = dp(5);
+        content.addView(sectionTitle, params);
+
+        if (rules.length < 1) {
+            emptyText = makeText("暂无已启用的正则规则", 9,
+                colors.textSecondary, false);
+            params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+            params.bottomMargin = dp(7);
+            content.addView(emptyText, params);
+            state.regexRuleOptionCount = 0;
+        } else {
+            params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+            params.bottomMargin = dp(7);
+            content.addView(makeRegexSourceStyleGrid(
+                rules, colors, bundle), params);
+            state.regexRuleOptionCount = Math.min(30, rules.length);
+        }
+
+        modeRow.setOrientation(LinearLayout.HORIZONTAL);
+        modeRow.setGravity(Gravity.CENTER_VERTICAL);
+        anyChip.setOnClickListener(new JavaAdapter(View.OnClickListener, {
+            onClick: function () {
+                markUiThread();
+                if (advancedDraftRegexMatchMode !== "any") {
+                    advancedDraftRegexMatchMode = "any";
+                    state.regexModeToggleCount += 1;
+                    state.drawerCriteriaChanged = true;
+                    styleRegexInlineChip(anyChip, true, colors);
+                    styleRegexInlineChip(allChip, false, colors);
+                }
+            }
         }));
-        titleRow.addView(back, new LinearLayout.LayoutParams(dp(30), dp(30)));
+        allChip.setOnClickListener(new JavaAdapter(View.OnClickListener, {
+            onClick: function () {
+                markUiThread();
+                if (advancedDraftRegexMatchMode !== "all") {
+                    advancedDraftRegexMatchMode = "all";
+                    state.regexModeToggleCount += 1;
+                    state.drawerCriteriaChanged = true;
+                    styleRegexInlineChip(anyChip, false, colors);
+                    styleRegexInlineChip(allChip, true, colors);
+                }
+            }
+        }));
+
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.bottomMargin = dp(4);
+        content.addView(modeTitle, params);
+
+        modeRow.addView(anyChip,
+            new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         params = new LinearLayout.LayoutParams(0,
             LinearLayout.LayoutParams.WRAP_CONTENT, 1);
-        params.leftMargin = dp(4);
-        titleRow.addView(title, params);
-        drawer.addView(titleRow, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(34)));
-        content.setOrientation(LinearLayout.VERTICAL);
-        searchInput.setSingleLine(true);
-        searchInput.setHint("搜索规则标题或备注");
-        searchInput.setText(String(regexPickerSearchText || ""));
-        searchInput.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-        ClipHub.Theme.applyTextColor(searchInput, colors.textPrimary);
-        ClipHub.Theme.applyHintTextColor(searchInput, colors.textSecondary);
-        searchInput.setPadding(dp(9), dp(4), dp(9), dp(4));
-        searchInput.setBackground(roundedBackground(colors.surfaceMuted,
-            colors.stroke, 10));
-        searchInput.addTextChangedListener(new JavaAdapter(TextWatcher, {
-            beforeTextChanged: function () {},
-            onTextChanged: function (text) {
-                regexPickerSearchText = String(text);
-            },
-            afterTextChanged: function () {}
-        }));
-        searchInput.setOnEditorActionListener(new JavaAdapter(
-            TextView.OnEditorActionListener, {
-                onEditorAction: function () {
-                    rebuildAdvancedDrawerOnly();
-                    return true;
-                }
-            }));
-        params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(38));
-        params.bottomMargin = dp(8);
-        content.addView(searchInput, params);
-        modeRow = makeChoiceChipRow([
-            { key: "any", label: "任意规则 OR" },
-            { key: "all", label: "全部规则 AND" }
-        ], advancedDraftRegexMatchMode, colors, function (mode) {
-            setRegexDraftMode(mode);
-        }, null);
-        addChoiceSection(content, "匹配方式", modeRow, 8, colors);
-        selectedRow.setOrientation(LinearLayout.HORIZONTAL);
-        selectedRow.setGravity(Gravity.CENTER_VERTICAL);
-        selectedText = makeText("已选择 " +
-            String(advancedDraftRegexRuleIds.length) + " 条",
-            10, colors.textSecondary, false);
-        selectedRow.addView(selectedText, new LinearLayout.LayoutParams(
-            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-        clear = makeText("清空", 10, colors.accentStrong, true);
-        clear.setClickable(true);
-        clear.setOnClickListener(new JavaAdapter(View.OnClickListener, {
-            onClick: function () { clearRegexDraftRules(); }
-        }));
-        selectedRow.addView(clear, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT));
+        params.leftMargin = dp(5);
+        modeRow.addView(allChip, params);
         params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT);
         params.bottomMargin = dp(8);
-        content.addView(selectedRow, params);
-        rules = ClipHub.Repository.listRegexRules({
-            enabledOnly: true,
-            searchKeyword: regexPickerSearchText
-        });
-        for (index = 0; index < rules.length; index += 1) {
-            rule = rules[index];
-            chip = makeChip((contains(advancedDraftRegexRuleIds,
-                    Number(rule.id)) ? "☑ " : "☐ ") + regexRulePickerLabel(rule),
-                contains(advancedDraftRegexRuleIds, Number(rule.id)),
-                colors, true);
-            (function (id, view) {
-                view.setOnClickListener(new JavaAdapter(View.OnClickListener, {
-                    onClick: function () { toggleRegexDraftRule(id); }
-                }));
-                bundle.regexRuleViews[String(id)] = view;
-            }(Number(rule.id), chip));
-            params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-            params.bottomMargin = dp(5);
-            content.addView(chip, params);
-        }
-        state.regexRuleOptionCount = rules.length;
-        scroll.setVerticalScrollBarEnabled(false);
-        scroll.addView(content, new FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.WRAP_CONTENT));
-        drawer.addView(scroll, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
-        state.drawerFooterHeightDp = 0;
-        return bundle;
+        content.addView(modeRow, params);
+
+        return true;
     }
 
-    function makeRegexAdvancedEntry(colors) {
-        var row = new LinearLayout(appContext);
-        var label = makeText("正则规则", 10, colors.textPrimary, true);
-        var valueText = makeText(
-            advancedDraftRegexRuleIds.length > 0 ?
-                "已选 " + String(advancedDraftRegexRuleIds.length) + " 条  ›" :
-                "未选择  ›",
-            10, colors.accentStrong, false);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(9), dp(7), dp(9), dp(7));
-        row.setBackground(roundedBackground(colors.surfaceMuted,
-            colors.stroke, 10));
-        row.setClickable(true);
-        row.addView(label, new LinearLayout.LayoutParams(
-            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-        row.addView(valueText, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT));
-        row.setOnClickListener(new JavaAdapter(View.OnClickListener, {
-            onClick: function () { openRegexPicker(); }
-        }));
-        return row;
-    }
     /* REGEX_BETA_FILTER_END */

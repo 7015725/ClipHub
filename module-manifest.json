@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260813.07",
+  "moduleSetVersion": "20260813.08",
   "entryMinVersion": 6,
   "sourceRef": "beta-regex-filter-20260813",
   "modules": [
@@ -57,7 +57,7 @@
     {
       "name": "ch_11_filter.js",
       "path": "src/ch_11_filter.js",
-      "sha": "51b4d16fcae87ce885f5d812b6bc84a8943070d6"
+      "sha": "80f1761089a9728e8e3ccbae7246dc175ab9cd2e"
     },
     {
       "name": "ch_12_translation.js",
