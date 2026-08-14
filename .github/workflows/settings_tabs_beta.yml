@@ -26,12 +26,16 @@ jobs:
           set -euo pipefail
           python3 tools/apply_settings_tabs_review_fix.py
 
+          # GITHUB_TOKEN lacks workflows permission. Keep workflow/trigger cleanup
+          # for the connector after the bounded source patch is committed.
+          git restore --source=HEAD -- \
+            .github/settings-tabs-beta-trigger.txt \
+            .github/workflows/settings_tabs_beta.yml \
+            .github/workflows/settings_tabs_validate.yml
+
           python3 - <<'PY'
           import subprocess
           allowed = {
-              '.github/settings-tabs-beta-trigger.txt',
-              '.github/workflows/settings_tabs_beta.yml',
-              '.github/workflows/settings_tabs_validate.yml',
               'module-manifest.json',
               'probes/cliphub_settings_tabs_probe_071.js',
               'scripts/release_preflight.sh',
@@ -41,19 +45,12 @@ jobs:
               ['git', 'diff', '--name-only'], text=True
           ).splitlines())
           unexpected = sorted(changed - allowed)
-          missing = sorted({
-              '.github/settings-tabs-beta-trigger.txt',
-              '.github/workflows/settings_tabs_beta.yml',
-              'module-manifest.json',
-              'probes/cliphub_settings_tabs_probe_071.js',
-              'scripts/release_preflight.sh',
-              'src/ch_13_settings.js',
-          } - changed)
+          missing = sorted(allowed - changed)
           if unexpected:
               raise SystemExit('review fix escaped boundary: ' + repr(unexpected))
           if missing:
               raise SystemExit('review fix missing expected changes: ' + repr(missing))
-          print('Review-fix path boundary: passed')
+          print('Review-fix source path boundary: passed')
           PY
 
           python3 scripts/validate_es5.py .
@@ -62,13 +59,17 @@ jobs:
           bash scripts/release_preflight.sh --settings-tabs-beta
           git diff --check
 
-      - name: Commit review fix
+      - name: Commit review fix source changes
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add \
+            module-manifest.json \
+            probes/cliphub_settings_tabs_probe_071.js \
+            scripts/release_preflight.sh \
+            src/ch_13_settings.js
           git diff --cached --stat
           git commit -m "修复设置页 Tab Beta 审查问题"
           git push origin HEAD:beta-settings-tabs-20260814
