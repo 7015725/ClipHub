@@ -62,6 +62,7 @@ jobs:
           s = s.replace('beta-settings-tabs-20260814', branch)
           s = s.replace('20260814.01', '20260814.03')
           s = s.replace('20260814.02', '20260814.04')
+          s = s.replace('/* ClipHub offline self-contained packed full Settings24 ES5 loader. */', '/* ClipHub offline self-contained packed Settings27 ES5 loader. */')
           s = s.replace('    cleanup_one_shot_generator()\n', '    # integration branch has no one-shot generator\n')
           p.write_text(s, encoding='utf-8')
           print('integration patchers adapted')
