@@ -37,8 +37,8 @@ jobs:
         run: |
           set -euo pipefail
           git fetch origin beta-settings-tabs-20260814
-          git show origin/beta-settings-tabs-20260814:tools/apply_settings_tabs_beta.py > /tmp/apply_settings_tabs_beta.py
-          git show origin/beta-settings-tabs-20260814:tools/apply_settings_tabs_review_fix.py > /tmp/apply_settings_tabs_review_fix.py
+          git show origin/beta-settings-tabs-20260814:tools/apply_settings_tabs_beta.py > tools/_integration_settings_tabs_beta.py
+          git show origin/beta-settings-tabs-20260814:tools/apply_settings_tabs_review_fix.py > tools/_integration_settings_tabs_review_fix.py
           git show c5ea26c89dba5861b5e10e41e2ed568cf0ea60ac:probes/cliphub_settings_tabs_probe_071.js > probes/cliphub_settings_tabs_probe_071.js
           git show origin/beta-settings-tabs-20260814:.github/workflows/settings_tabs_validate.yml > .github/workflows/settings_tabs_validate.yml
 
@@ -50,14 +50,14 @@ jobs:
           from pathlib import Path
           branch = 'beta-regex-settings-tabs-20260814'
 
-          p = Path('/tmp/apply_settings_tabs_beta.py')
+          p = Path('tools/_integration_settings_tabs_beta.py')
           s = p.read_text(encoding='utf-8')
           s = s.replace('beta-settings-tabs-20260814', branch)
           s = s.replace('20260814.01', '20260814.03')
           s = s.replace('20260813.07', '20260813.09')
           p.write_text(s, encoding='utf-8')
 
-          p = Path('/tmp/apply_settings_tabs_review_fix.py')
+          p = Path('tools/_integration_settings_tabs_review_fix.py')
           s = p.read_text(encoding='utf-8')
           s = s.replace('beta-settings-tabs-20260814', branch)
           s = s.replace('20260814.01', '20260814.03')
@@ -71,10 +71,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 /tmp/apply_settings_tabs_beta.py
+          python3 tools/_integration_settings_tabs_beta.py
           test "$(git hash-object src/ch_11_filter.js)" = "bcbfb6692380021d211cf5c10981f1e54de4152e"
-          python3 /tmp/apply_settings_tabs_review_fix.py
+          python3 tools/_integration_settings_tabs_review_fix.py
           test "$(git hash-object src/ch_11_filter.js)" = "bcbfb6692380021d211cf5c10981f1e54de4152e"
+          rm -f tools/_integration_settings_tabs_beta.py tools/_integration_settings_tabs_review_fix.py
 
       - name: Validate integrated runtime
         shell: bash
