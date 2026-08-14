@@ -60,12 +60,16 @@ jobs:
           encoded = ''.join(json.loads(piece) for piece in pieces)
           source = gzip.decompress(base64.b64decode(encoded)).decode('utf-8')
 
-          title_only = '''    function regexRulePickerLabel(rule) {
-              return String(rule && rule.title || "");
-          }'''
-          latest_only = '''    function validateSortMode(mode) {
-              return "latest";
-          }'''
+          title_only = (
+              '    function regexRulePickerLabel(rule) {\n'
+              '        return String(rule && rule.title || "");\n'
+              '    }'
+          )
+          latest_only = (
+              '    function validateSortMode(mode) {\n'
+              '        return "latest";\n'
+              '    }'
+          )
 
           required = [
               'MODULE_VERSION: 80',
