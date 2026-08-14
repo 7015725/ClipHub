@@ -41,7 +41,7 @@ case "$MODE" in
     ;;
   --settings-tabs-beta)
     EXPECTED_REF='beta-regex-settings-tabs-20260814'
-    EXPECTED_MODULE_SET='20260814.04'
+    EXPECTED_MODULE_SET='20260814.05'
     EXPECTED_ENTRY_VERSION='6'
     EXPECTED_APP_MODULE_VERSION='20'
     REQUIRE_CLEAN='0'
@@ -252,14 +252,22 @@ print("moduleSetVersion: " + expected_module_set)
 print("sourceRef: " + expected_ref)
 print("Theme: 4")
 if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
-    required_versions = {
-        "ch_03_database.js": ("ch_03_database", 4),
-        "ch_06_repository.js": ("ch_06_repository", 18),
-        "ch_11_filter.js": ("ch_11_filter", 80),
-        "ch_13_settings.js": ("ch_13_settings",
-            29 if mode == "--settings-tabs-beta" else 27),
-        "ch_15_app.js": ("ch_15_app", 20),
-    }
+    if mode == "--settings-tabs-beta":
+        required_versions = {
+            "ch_03_database.js": ("ch_03_database", 5),
+            "ch_06_repository.js": ("ch_06_repository", 19),
+            "ch_11_filter.js": ("ch_11_filter", 81),
+            "ch_13_settings.js": ("ch_13_settings", 30),
+            "ch_15_app.js": ("ch_15_app", 20),
+        }
+    else:
+        required_versions = {
+            "ch_03_database.js": ("ch_03_database", 4),
+            "ch_06_repository.js": ("ch_06_repository", 18),
+            "ch_11_filter.js": ("ch_11_filter", 80),
+            "ch_13_settings.js": ("ch_13_settings", 27),
+            "ch_15_app.js": ("ch_15_app", 20),
+        }
     for filename, (module_name, module_version) in required_versions.items():
         source = actual_sources[filename]
         pattern = (
@@ -275,6 +283,18 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
     assert "db.setVersion(3)" not in database_source
     assert "CREATE TABLE IF NOT EXISTS regex_rules" in database_source
     assert "feature.regex_rules.schema_version" in database_source
+    if mode == "--settings-tabs-beta":
+        assert "var REGEX_FEATURE_SCHEMA_VERSION = 1;" in database_source
+        assert "REGEX_FEATURE_MIGRATIONS" in database_source
+        assert "migrateRegexFeatureSchema" in database_source
+        assert "validateRegexPolicy" in repository_source
+        assert "REGEX_SCAN_ITEM_TEXT_CHAR_BUDGET = 786432" in repository_source
+        assert "consumedCount" in repository_source
+        assert "oversizeSkippedCount" in repository_source
+        assert "REGEX_INLINE_PAGE_SIZE = 30" in filter_source
+        assert "regexRuleTotalCount" in filter_source
+        assert "regexInlineVisibleLimit" in filter_source
+        assert "REGEX_TEST_TEXT_CHAR_BUDGET = 786432" in settings_source
     assert "feature.regex_rules.defaults_initialized" in repository_source
     assert "listRegexCandidateChunk" in repository_source
     assert ".matcher(text).matches()" not in filter_source

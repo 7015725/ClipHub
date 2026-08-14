@@ -1,4 +1,0 @@
-trigger=2026-08-14T16:49:00+08:00
-attempt=4
-branch=beta-regex-settings-tabs-20260814
-baseline=cadc0d707eab0785a7eea0a5e566c59b47a00e3e

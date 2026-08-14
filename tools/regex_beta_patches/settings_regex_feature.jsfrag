@@ -1,6 +1,7 @@
     /* REGEX_BETA_SETTINGS_BEGIN */
     var regexTestFuture = null;
     var regexTestCancelReason = "";
+    var REGEX_TEST_TEXT_CHAR_BUDGET = 786432;
 
     function cancelRegexTest(reason) {
         regexTestGeneration += 1;
@@ -35,6 +36,7 @@
         if (text.indexOf("regex_title_too_long") >= 0) { return "标题最多 64 字符"; }
         if (text.indexOf("regex_title_conflict") >= 0) { return "标题已存在"; }
         if (text.indexOf("regex_pattern_empty") >= 0) { return "正则表达式不能为空"; }
+        if (text.indexOf("regex_flags_invalid") >= 0) { return "正则标志无效"; }
         if (text.indexOf("regex_text_too_long") >= 0) { return "输入内容超过长度限制"; }
         if (text.indexOf("regex_pattern_risky") >= 0) {
             return "表达式存在高风险回溯结构，请修改后再启用";
@@ -481,31 +483,40 @@ function bindRegexRuleDrag(handle, rowRoot, ruleId) {
         var patternText = String(draft.pattern || "");
         var flags = Number(draft.flags || 0);
         var generation;
-        var risk = ClipHub.Repository.assessRegexRisk(patternText);
         cancelRegexTest("new_test");
-        if (risk.risky) {
-            regexTestText = inputText;
+        regexTestText = inputText;
+        try {
+            patternText = ClipHub.Repository.validateRegexPolicy(
+                patternText, flags, { allowRisky: false });
+        } catch (policyError) {
+            uiState.regexTestRunning = false;
+            uiState.lastRegexValidationError = regexSettingErrorText(policyError);
+            regexTestResultLines = [];
+            buildPage();
+            return false;
+        }
+        if (inputText.length > REGEX_TEST_TEXT_CHAR_BUDGET) {
             uiState.regexTestRunning = false;
             uiState.lastRegexValidationError =
-                "表达式存在高风险回溯结构，请修改后再测试";
+                "测试文本过大，超过 Regex 单条安全上限";
+            regexTestResultLines = [];
+            buildPage();
+            return false;
+        }
+        if (inputText.length < 1) {
+            uiState.regexTestRunning = false;
+            uiState.lastRegexValidationError = "测试文本为空";
             regexTestResultLines = [];
             buildPage();
             return false;
         }
         generation = regexTestGeneration + 1;
         regexTestGeneration = generation;
-        regexTestText = inputText;
         uiState.regexTestRunning = true;
         uiState.regexTestMatchCount = 0;
         uiState.regexTestTruncated = false;
         uiState.lastRegexValidationError = null;
         regexTestResultLines = [];
-        if (inputText.length < 1) {
-            uiState.regexTestRunning = false;
-            uiState.lastRegexValidationError = "测试文本为空";
-            buildPage();
-            return false;
-        }
         regexTestFuture = ensureRegexTestExecutor().submit(
             new Packages.java.lang.Runnable({ run: function () {
                 var lines = new Packages.java.util.ArrayList();

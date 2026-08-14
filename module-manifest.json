@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260814.04",
+  "moduleSetVersion": "20260814.05",
   "entryMinVersion": 6,
   "sourceRef": "beta-regex-settings-tabs-20260814",
   "modules": [
@@ -17,7 +17,7 @@
     {
       "name": "ch_03_database.js",
       "path": "src/ch_03_database.js",
-      "sha": "85ed6be16be5c3de0c2056761ffa2c90b7ba3c8c"
+      "sha": "b8d8d436820639da11ea4246830b02975a070761"
     },
     {
       "name": "ch_04_clipboard.js",
@@ -32,7 +32,7 @@
     {
       "name": "ch_06_repository.js",
       "path": "src/ch_06_repository.js",
-      "sha": "10d05cf94ef22654d54db259c94dbaee19295897"
+      "sha": "499cb33a47a685b563b9cd1be66e120a95bf9cff"
     },
     {
       "name": "ch_07_theme.js",
@@ -57,7 +57,7 @@
     {
       "name": "ch_11_filter.js",
       "path": "src/ch_11_filter.js",
-      "sha": "bcbfb6692380021d211cf5c10981f1e54de4152e"
+      "sha": "b3ff927d2d680b25f8ec2bdb0012326f5197e5e6"
     },
     {
       "name": "ch_12_translation.js",
@@ -67,7 +67,7 @@
     {
       "name": "ch_13_settings.js",
       "path": "src/ch_13_settings.js",
-      "sha": "9b1fb695a89f93441a35be03b5657d2c1097d521"
+      "sha": "dba1c070381580763c255322b25493404d3b7256"
     },
     {
       "name": "ch_14_event_bus.js",

@@ -1,6 +1,8 @@
     /* REGEX_BETA_FILTER_BEGIN */
     var MAX_REGEX_CACHE_ENTRIES = 8;
     var MAX_REGEX_CACHE_IDS = 16000;
+    var REGEX_INLINE_PAGE_SIZE = 30;
+    var regexInlineVisibleLimit = REGEX_INLINE_PAGE_SIZE;
     var regexResultCacheOrder = [];
     var regexResultCacheIdCount = 0;
 
@@ -21,6 +23,7 @@
             scanned: Number(regexScanState.scanned),
             total: Number(regexScanState.total),
             matched: Number(regexScanState.matched),
+            oversizeSkipped: Number(regexScanState.oversizeSkipped || 0),
             firstBatchPublished: regexScanState.firstBatchPublished === true,
             complete: regexScanState.complete === true,
             cacheHitCount: Number(regexScanState.cacheHitCount),
@@ -93,6 +96,7 @@
             validateRegexMatchMode(value.regexMatchMode);
         regexPickerSearchText = "";
         regexPickerVisible = false;
+        regexInlineVisibleLimit = REGEX_INLINE_PAGE_SIZE;
         return true;
     }
 
@@ -102,6 +106,7 @@
             validateRegexMatchMode(value.regexMatchMode);
         regexPickerSearchText = "";
         regexPickerVisible = false;
+        regexInlineVisibleLimit = REGEX_INLINE_PAGE_SIZE;
         return true;
     }
 
@@ -202,6 +207,7 @@
             regexScanState.scanned = 0;
             regexScanState.total = 0;
             regexScanState.matched = 0;
+            regexScanState.oversizeSkipped = 0;
             regexScanState.firstBatchPublished = false;
         }
         regexScanState.lastCancelReason = String(reason || "cancel");
@@ -243,11 +249,8 @@
                     !selected[String(Number(rule.id))]) {
                 continue;
             }
-            var risk = ClipHub.Repository.assessRegexRisk(rule.pattern);
-            if (risk.risky) {
-                throw new Error("regex_pattern_risky: " + String(rule.id) +
-                    ":" + risk.code);
-            }
+            ClipHub.Repository.validateRegexPolicy(
+                rule.pattern, rule.flags, { allowRisky: false });
             output.push({
                 id: Number(rule.id),
                 updatedAt: Number(rule.updated_at || 0),
@@ -418,7 +421,7 @@
     }
 
     function publishRegexScanBatch(generation, javaIds, scanned,
-            total, complete, cacheSignature) {
+            total, oversizeSkipped, complete, cacheSignature) {
         var ids;
         var index;
         if (generation !== regexScanGeneration || !ready) { return false; }
@@ -432,6 +435,7 @@
         regexScanState.scanned = Number(scanned);
         regexScanState.total = Number(total);
         regexScanState.matched = regexMatchedIds.length;
+        regexScanState.oversizeSkipped = Number(oversizeSkipped || 0);
         if (ids.length > 0 && !regexScanState.firstBatchPublished) {
             regexScanState.firstBatchPublished = true;
         }
@@ -523,6 +527,7 @@
         regexScanState.complete = false;
         regexScanState.scanned = 0;
         regexScanState.matched = 0;
+        regexScanState.oversizeSkipped = 0;
         regexScanState.firstBatchPublished = false;
         numberPagerState.loading = paginationState.mode === "number";
         selectedJson = JSON.stringify(selected);
@@ -536,6 +541,7 @@
                 var compiled;
                 var cursor = null;
                 var scanned = 0;
+                var oversizeSkipped = 0;
                 var chunk;
                 var rows;
                 var batch;
@@ -564,21 +570,24 @@
                                     Number(rows[index].id)));
                             }
                         }
-                        scanned += rows.length;
+                        scanned += Number(chunk.consumedCount || rows.length);
+                        oversizeSkipped += Number(
+                            chunk.oversizeSkippedCount || 0);
                         cursor = chunk.nextCursor;
                         done = chunk.hasMore !== true ||
                             scanned >= Number(snapshot.candidateTotal || 0);
                         (function (postedBatch, postedScanned,
-                                postedDone) {
+                                postedOversizeSkipped, postedDone) {
                             mainHandler.post(new Packages.java.lang.Runnable({
                                 run: function () {
                                     publishRegexScanBatch(generation,
                                         postedBatch, postedScanned,
                                         Number(snapshot.candidateTotal || 0),
-                                        postedDone, signature);
+                                        postedOversizeSkipped, postedDone,
+                                        signature);
                                 }
                             }));
-                        }(batch, scanned, done));
+                        }(batch, scanned, oversizeSkipped, done));
                         if (done) { break; }
                     }
                 } catch (error) {
@@ -728,6 +737,24 @@
         return true;
     }
 
+    function orderRegexRulesForInline(rules, selectedIds) {
+        var selected = {};
+        var first = [];
+        var rest = [];
+        var index;
+        var rule;
+        selectedIds = selectedIds || [];
+        for (index = 0; index < selectedIds.length; index += 1) {
+            selected[String(Number(selectedIds[index]))] = true;
+        }
+        for (index = 0; index < rules.length; index += 1) {
+            rule = rules[index];
+            if (selected[String(Number(rule.id))]) { first.push(rule); }
+            else { rest.push(rule); }
+        }
+        return first.concat(rest);
+    }
+
     function makeRegexSourceStyleGrid(rules, colors, bundle) {
         var root = new LinearLayout(appContext);
         var row = null;
@@ -746,7 +773,7 @@
 
         root.setOrientation(LinearLayout.VERTICAL);
         state.horizontalFadeEnabled = false;
-        for (index = 0; index < rules.length && index < 30; index += 1) {
+        for (index = 0; index < rules.length; index += 1) {
             rule = rules[index];
             items.push({
                 all: false,
@@ -841,6 +868,12 @@
 
     function addRegexInlineSection(content, colors, bundle) {
         var rules = ClipHub.Repository.listRegexRules({ enabledOnly: true });
+        var orderedRules = orderRegexRulesForInline(
+            rules, advancedDraftRegexRuleIds || []);
+        var effectiveLimit = Math.max(regexInlineVisibleLimit,
+            (advancedDraftRegexRuleIds || []).length);
+        var renderedCount = Math.min(effectiveLimit, orderedRules.length);
+        var renderedRules = orderedRules.slice(0, renderedCount);
         var sectionTitle = makeText("正则规则（多选）", 10,
             colors.textSecondary, true);
         var modeTitle = makeText("匹配方式", 9,
@@ -851,11 +884,16 @@
         var allChip = makeChip("全部规则 AND",
             advancedDraftRegexMatchMode === "all", colors, true);
         var emptyText;
+        var moreView;
+        var remaining;
         var params;
 
         bundle.regexRuleViews = {};
         bundle.regexAllView = null;
         bundle.regexModeViews = { any: anyChip, all: allChip };
+        state.regexRuleTotalCount = rules.length;
+        state.regexRuleOptionCount = renderedCount;
+        state.regexInlineVisibleLimit = effectiveLimit;
 
         params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
@@ -872,15 +910,36 @@
                 LinearLayout.LayoutParams.WRAP_CONTENT);
             params.bottomMargin = dp(7);
             content.addView(emptyText, params);
-            state.regexRuleOptionCount = 0;
         } else {
             params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
             params.bottomMargin = dp(7);
             content.addView(makeRegexSourceStyleGrid(
-                rules, colors, bundle), params);
-            state.regexRuleOptionCount = Math.min(30, rules.length);
+                renderedRules, colors, bundle), params);
+            if (renderedCount < rules.length) {
+                remaining = rules.length - renderedCount;
+                moreView = makeText("显示更多（剩余 " +
+                    String(remaining) + " 条）", 9,
+                    colors.accentStrong, true);
+                moreView.setGravity(Gravity.CENTER);
+                moreView.setPadding(dp(8), dp(7), dp(8), dp(7));
+                moreView.setClickable(true);
+                moreView.setBackground(roundedBackground(
+                    colors.accentSoft, colors.accentBorder, 9));
+                moreView.setOnClickListener(new JavaAdapter(
+                    View.OnClickListener, { onClick: function () {
+                        markUiThread();
+                        regexInlineVisibleLimit += REGEX_INLINE_PAGE_SIZE;
+                        state.regexInlineVisibleLimit = regexInlineVisibleLimit;
+                        rebuildAdvancedDrawerOnly();
+                    }}));
+                params = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+                params.bottomMargin = dp(7);
+                content.addView(moreView, params);
+            }
         }
 
         modeRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -928,7 +987,6 @@
             LinearLayout.LayoutParams.WRAP_CONTENT);
         params.bottomMargin = dp(8);
         content.addView(modeRow, params);
-
         return true;
     }
 
