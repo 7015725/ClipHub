@@ -39,7 +39,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 tools/apply_regex_inline_source_grid_v4.py
+          python3 tools/apply_regex_inline_source_grid_v5.py
 
       - name: Verify generated Filter79 contracts
         shell: bash
