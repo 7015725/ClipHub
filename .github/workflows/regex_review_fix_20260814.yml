@@ -25,6 +25,7 @@ jobs:
           from pathlib import Path
           path = Path('tools/apply_regex_review_fix_20260814.py')
           text = path.read_text(encoding='utf-8')
+
           old = '''    text = replace_once(text,
                   "        regexScanState.matched = regexMatchedIds.length;\\n",
                   "        regexScanState.matched = regexMatchedIds.length;\\n"
@@ -41,7 +42,37 @@ jobs:
           '''
           if text.count(old) != 1:
               raise SystemExit('temporary patcher publish anchor shape changed')
-          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          text = text.replace(old, new, 1)
+
+          old = '''def settings_tabs_hash(source: str) -> str:
+              names = [
+                  "normalizeSettingsTab", "makeSettingsTabContainer", "styleSettingsTabButton",
+                  "isSettingsTabViewVisible", "settingsRootTabsActive", "updateSettingsTabViews",
+                  "setSettingsTab", "makeSettingsTabBar", "settingsTabForInput", "settingsTabForSection",
+                  "sectionView", "postScrollToSection", "scrollToSection", "performSetSettingsTab",
+                  "performSettingsBack",
+              ]
+              joined = "\\n\\n".join(extract_js_function(source, name) for name in names)
+              return hashlib.sha256(joined.encode("utf-8")).hexdigest()
+          '''
+          new = '''def settings_tabs_hash(source: str) -> str:
+              begin = "    /* REGEX_BETA_SETTINGS_BEGIN */"
+              end = "    /* REGEX_BETA_SETTINGS_END */"
+              start = source.find(begin)
+              finish = source.find(end, start + len(begin))
+              if start < 0 or finish < 0:
+                  fail("Settings Regex marker missing while hashing frozen region")
+              masked = source[:start] + begin + "\\n    /* REGEX_REVIEW_MASK */\\n" + source[finish:]
+              masked = re.sub(
+                  r'MODULE_NAME:\\s*"ch_13_settings"\\s*,\\s*MODULE_VERSION:\\s*\\d+',
+                  'MODULE_NAME: "ch_13_settings", MODULE_VERSION: <MASKED>',
+                  masked, count=1)
+              return hashlib.sha256(masked.encode("utf-8")).hexdigest()
+          '''
+          if text.count(old) != 1:
+              raise SystemExit('temporary patcher settings frozen-region shape changed')
+          text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
           PY
           python3 -m py_compile tools/apply_regex_review_fix_20260814.py
 
