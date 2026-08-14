@@ -20,6 +20,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('tools/apply_settings_tabs_beta.py')
+          text = path.read_text(encoding='utf-8')
+          old = 'MODULE_NAME: "ch_13_settings", MODULE_VERSION: '
+          count = text.count(old)
+          if count != 4:
+              raise SystemExit('unexpected Settings version anchor count: ' + str(count))
+          path.write_text(text.replace(old, 'MODULE_VERSION: '), encoding='utf-8')
+          PY
           python3 tools/apply_settings_tabs_beta.py
           python3 scripts/validate_es5.py .
           python3 scripts/audit_color_api.py --release-strict | tee /tmp/settings-tabs-color.txt
@@ -32,8 +42,9 @@ jobs:
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/ch_13_settings.js \
+          git config user.email "41898282+41898282@users.noreply.github.com"
+          git add tools/apply_settings_tabs_beta.py \
+                  src/ch_13_settings.js \
                   ClipHub.js \
                   module-manifest.json \
                   scripts/release_preflight.sh \
