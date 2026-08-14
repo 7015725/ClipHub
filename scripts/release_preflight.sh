@@ -41,7 +41,7 @@ case "$MODE" in
     ;;
   --settings-tabs-beta)
     EXPECTED_REF='beta-settings-tabs-20260814'
-    EXPECTED_MODULE_SET='20260814.01'
+    EXPECTED_MODULE_SET='20260814.02'
     EXPECTED_ENTRY_VERSION='6'
     EXPECTED_APP_MODULE_VERSION='20'
     REQUIRE_CLEAN='0'
@@ -257,7 +257,7 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         "ch_06_repository.js": ("ch_06_repository", 18),
         "ch_11_filter.js": ("ch_11_filter", 78),
         "ch_13_settings.js": ("ch_13_settings",
-            28 if mode == "--settings-tabs-beta" else 27),
+            29 if mode == "--settings-tabs-beta" else 27),
         "ch_15_app.js": ("ch_15_app", 20),
     }
     for filename, (module_name, module_version) in required_versions.items():
@@ -287,8 +287,15 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert 'var settingsTab = "general";' in settings_source
         assert "function setSettingsTab(tab, origin)" in settings_source
         assert "function makeSettingsTabBar(parent, colors)" in settings_source
+        assert "function settingsRootTabsActive()" in settings_source
+        assert "settingsTabBarPresent: rootTabsActive" in settings_source
+        assert "settingsGeneralTabVisible: rootTabsActive &&" in settings_source
+        assert "settingsHomeTabVisible: rootTabsActive &&" in settings_source
+        assert "settingsTranslationTabVisible: rootTabsActive &&" in settings_source
+        assert "settingsFilterTabVisible: rootTabsActive &&" in settings_source
         assert "performSetSettingsTab: function (tab)" in settings_source
-        assert "settingsTabBarPresent" in settings_source
+        assert "performSettingsBack: function ()" in settings_source
+        assert "Settings24 ES5 loader" not in settings_loader
         print("Settings tabs safety contracts: passed")
     print("Regex beta safety contracts: passed")
 if mode in ("--current", "--main"):
