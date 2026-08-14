@@ -690,15 +690,8 @@
     }
 
     function regexRulePickerLabel(rule) {
-        var title = String(rule && rule.title || "");
-        var note = String(rule && rule.note || "")
-            .replace(/[\r\n\t]+/g, " ")
-            .replace(/\s+/g, " ")
-            .replace(/^\s+|\s+$/g, "");
-        if (note.length > 28) { note = note.substring(0, 28) + "…"; }
-        return note.length > 0 ? title + " · " + note : title;
+        return String(rule && rule.title || "");
     }
-
     function styleRegexInlineChip(view, selected, colors) {
         if (view === null || view === undefined) { return false; }
         view.setBackground(roundedBackground(

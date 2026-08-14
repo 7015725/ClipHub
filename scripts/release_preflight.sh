@@ -27,14 +27,14 @@ case "$MODE" in
     ;;
   --regex-beta)
     EXPECTED_REF='beta-regex-filter-20260813'
-    EXPECTED_MODULE_SET='20260813.08'
+    EXPECTED_MODULE_SET='20260813.09'
     EXPECTED_ENTRY_VERSION='6'
     EXPECTED_APP_MODULE_VERSION='20'
     REQUIRE_CLEAN='0'
     ;;
   --regex-rc)
     EXPECTED_REF='beta-regex-filter-20260813'
-    EXPECTED_MODULE_SET='20260813.08'
+    EXPECTED_MODULE_SET='20260813.09'
     EXPECTED_ENTRY_VERSION='6'
     EXPECTED_APP_MODULE_VERSION='20'
     REQUIRE_CLEAN='1'
@@ -248,7 +248,7 @@ if mode in ("--regex-beta", "--regex-rc"):
     required_versions = {
         "ch_03_database.js": ("ch_03_database", 4),
         "ch_06_repository.js": ("ch_06_repository", 18),
-        "ch_11_filter.js": ("ch_11_filter", 79),
+        "ch_11_filter.js": ("ch_11_filter", 80),
         "ch_13_settings.js": ("ch_13_settings", 27),
         "ch_15_app.js": ("ch_15_app", 20),
     }
@@ -271,6 +271,11 @@ if mode in ("--regex-beta", "--regex-rc"):
     assert "listRegexCandidateChunk" in repository_source
     assert ".matcher(text).matches()" not in filter_source
     assert ".matcher(text).find()" in filter_source
+    assert 'addChoiceSection(content, "排序方式"' not in filter_source
+    assert "        sortRow = makeChoiceChipRow([" not in filter_source
+    assert '    function validateSortMode(mode) {\n        return "latest";\n    }' in filter_source
+    assert '    function regexRulePickerLabel(rule) {\n        return String(rule && rule.title || "");\n    }' in filter_source
+    assert 'enabledOnly: true, titleKeyword: keyword || ""' in filter_source
     assert "filterRegexRuleIds" in settings_source
     assert "filterRegexMatchMode" in settings_source
     assert manifest.get("sourceRef") == "beta-regex-filter-20260813"
