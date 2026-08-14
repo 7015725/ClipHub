@@ -52,19 +52,22 @@ def main():
     lines = []
     lines.append('module_versions=' + repr(re.findall(r'MODULE_VERSION:\s*(\d+)', source)))
     for name in [
+        'virtualTargetRange',
+        'captureScrollAnchor',
+        'restoreScrollAnchor',
+        'createVirtualHierarchy',
         'startInitialStagedFill',
         'finishInitialStagedFill',
         'rebuildVirtualWindow',
         'schedulePanelRefresh',
-        'refreshPanelData',
         'showPanel',
         'closePanel'
     ]:
         lines.append('\n===== FUNCTION %s =====\n' % name)
         lines.append(function_block(source, name))
     for needle in [
+        'preferredIndex = virtualRowIndexById(',
         'performance.lastRefreshOrigin',
-        'fullRefreshLastPerformanceOrigin',
         'panel_data_refresh',
         'rebuildVirtualWindow(\n            "full_refresh"',
         'startInitialStagedFill('
