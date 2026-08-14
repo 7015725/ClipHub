@@ -1,0 +1,44 @@
+name: Settings Tabs Beta
+
+on:
+  push:
+    branches: [beta-settings-tabs-20260814]
+    paths:
+      - .github/settings-tabs-beta-trigger.txt
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply deterministic settings tabs patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/apply_settings_tabs_beta.py
+          python3 scripts/validate_es5.py .
+          python3 scripts/audit_color_api.py --release-strict | tee /tmp/settings-tabs-color.txt
+          grep '^HIGH=0 WARN=0 ' /tmp/settings-tabs-color.txt
+          bash scripts/release_preflight.sh --settings-tabs-beta
+          git diff --check
+
+      - name: Commit generated beta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/ch_13_settings.js \
+                  ClipHub.js \
+                  module-manifest.json \
+                  scripts/release_preflight.sh \
+                  ClipHub_Beta浮窗开关.txt \
+                  ClipHub_Beta状态查询.txt
+          git diff --cached --stat
+          git commit -m "实现设置页 Tab 分类分页"
+          git push origin HEAD:beta-settings-tabs-20260814
