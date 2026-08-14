@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260813.09",
+  "moduleSetVersion": "20260814.04",
   "entryMinVersion": 6,
-  "sourceRef": "beta-regex-filter-20260813",
+  "sourceRef": "beta-regex-settings-tabs-20260814",
   "modules": [
     {
       "name": "ch_01_base.js",
@@ -67,7 +67,7 @@
     {
       "name": "ch_13_settings.js",
       "path": "src/ch_13_settings.js",
-      "sha": "a0175f5e1b3a5751996d385981e200c6644a4380"
+      "sha": "9b1fb695a89f93441a35be03b5657d2c1097d521"
     },
     {
       "name": "ch_14_event_bus.js",

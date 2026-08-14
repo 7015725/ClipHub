@@ -39,6 +39,13 @@ case "$MODE" in
     EXPECTED_APP_MODULE_VERSION='20'
     REQUIRE_CLEAN='1'
     ;;
+  --settings-tabs-beta)
+    EXPECTED_REF='beta-regex-settings-tabs-20260814'
+    EXPECTED_MODULE_SET='20260814.04'
+    EXPECTED_ENTRY_VERSION='6'
+    EXPECTED_APP_MODULE_VERSION='20'
+    REQUIRE_CLEAN='0'
+    ;;
   --current)
     EXPECTED_REF=''
     EXPECTED_MODULE_SET=''
@@ -47,7 +54,7 @@ case "$MODE" in
     REQUIRE_CLEAN='0'
     ;;
   *)
-    echo 'Usage: bash scripts/release_preflight.sh [--candidate|--main|--beta|--regex-beta|--regex-rc|--current]' >&2
+    echo 'Usage: bash scripts/release_preflight.sh [--candidate|--main|--beta|--regex-beta|--regex-rc|--settings-tabs-beta|--current]' >&2
     exit 2
     ;;
 esac
@@ -244,12 +251,13 @@ print("endpointSchemaVersion: 3")
 print("moduleSetVersion: " + expected_module_set)
 print("sourceRef: " + expected_ref)
 print("Theme: 4")
-if mode in ("--regex-beta", "--regex-rc"):
+if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
     required_versions = {
         "ch_03_database.js": ("ch_03_database", 4),
         "ch_06_repository.js": ("ch_06_repository", 18),
         "ch_11_filter.js": ("ch_11_filter", 80),
-        "ch_13_settings.js": ("ch_13_settings", 27),
+        "ch_13_settings.js": ("ch_13_settings",
+            29 if mode == "--settings-tabs-beta" else 27),
         "ch_15_app.js": ("ch_15_app", 20),
     }
     for filename, (module_name, module_version) in required_versions.items():
@@ -278,8 +286,22 @@ if mode in ("--regex-beta", "--regex-rc"):
     assert 'enabledOnly: true, titleKeyword: keyword || ""' in filter_source
     assert "filterRegexRuleIds" in settings_source
     assert "filterRegexMatchMode" in settings_source
-    assert manifest.get("sourceRef") == "beta-regex-filter-20260813"
+    assert manifest.get("sourceRef") == expected_ref
     assert len(manifest.get("modules", [])) == 15
+    if mode == "--settings-tabs-beta":
+        assert 'var settingsTab = "general";' in settings_source
+        assert "function setSettingsTab(tab, origin)" in settings_source
+        assert "function makeSettingsTabBar(parent, colors)" in settings_source
+        assert "function settingsRootTabsActive()" in settings_source
+        assert "settingsTabBarPresent: rootTabsActive" in settings_source
+        assert "settingsGeneralTabVisible: rootTabsActive &&" in settings_source
+        assert "settingsHomeTabVisible: rootTabsActive &&" in settings_source
+        assert "settingsTranslationTabVisible: rootTabsActive &&" in settings_source
+        assert "settingsFilterTabVisible: rootTabsActive &&" in settings_source
+        assert "performSetSettingsTab: function (tab)" in settings_source
+        assert "performSettingsBack: function ()" in settings_source
+        assert "Settings24 ES5 loader" not in settings_loader
+        print("Settings tabs safety contracts: passed")
     print("Regex beta safety contracts: passed")
 if mode in ("--current", "--main"):
     print("Current safety contracts: passed")

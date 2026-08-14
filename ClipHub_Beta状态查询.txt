@@ -1,6 +1,6 @@
 /*
  * ShortX 任务名称：ClipHub Beta 状态查询
- * 作用：只读取 agent/cliphub-ui-drag-handle-unify-20260809 分支运行实例状态，不改变浮窗显示状态。
+ * 作用：只读取 beta-regex-settings-tabs-20260814 分支运行实例状态，不改变浮窗显示状态。
  * 同时将最近一次成功/失败结果覆盖保存到：
  * /data/system/shortx_OYdazjKnxMzhQykL/ClipHub/cache/control_status_latest.json
  * 运行环境：Rhino ES5。
@@ -20,7 +20,7 @@
     var Intent = Packages.android.content.Intent;
 
     var TASK_VERSION = 1;
-    var EXPECTED_SOURCE_REF = "agent/cliphub-ui-drag-handle-unify-20260809";
+    var EXPECTED_SOURCE_REF = "beta-regex-settings-tabs-20260814";
     var REQUIRED_ENDPOINT_SCHEMA = 3;
     var MIN_ENTRY_VERSION = 6;
 
