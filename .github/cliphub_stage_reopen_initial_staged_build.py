@@ -5,11 +5,13 @@ import json
 import pathlib
 import re
 import subprocess
+import traceback
 
 LOADER = pathlib.Path('src/ch_11_filter.js')
 MANIFEST = pathlib.Path('module-manifest.json')
 RUNNER = pathlib.Path('.github/cliphub_stage_reopen_initial_staged_build.py')
 WORKFLOW = pathlib.Path('.github/workflows/cliphub_stage_reopen_initial_staged_build.yml')
+ERROR_FILE = pathlib.Path('cliphub_stage_reopen_initial_staged_error.txt')
 
 EXPECTED_BRANCH = 'beta-regex-settings-tabs-20260814'
 EXPECTED_SET = '20260814.05'
@@ -167,14 +169,18 @@ def build():
     return blob_sha, source_sha
 
 
-def publish(blob_sha, source_sha):
+def git_config():
     subprocess.check_call(['git', 'config', 'user.name', 'github-actions[bot]'])
     subprocess.check_call([
         'git', 'config', 'user.email',
         '41898282+github-actions[bot]@users.noreply.github.com'
     ])
 
-    for path in [RUNNER, WORKFLOW]:
+
+def publish(blob_sha, source_sha):
+    git_config()
+
+    for path in [RUNNER, WORKFLOW, ERROR_FILE]:
         try:
             path.unlink()
         except FileNotFoundError:
@@ -190,7 +196,8 @@ def publish(blob_sha, source_sha):
             'src/ch_11_filter.js',
             'module-manifest.json',
             str(RUNNER),
-            str(WORKFLOW)
+            str(WORKFLOW),
+            str(ERROR_FILE)
         ]
     ]
     if unexpected:
@@ -205,9 +212,60 @@ def publish(blob_sha, source_sha):
     print('Filter75 source_sha256=' + source_sha)
 
 
+def failure_diagnostic(error_text):
+    lines = []
+    lines.append('ClipHub reopen initial staged build failure')
+    lines.append('error=' + error_text)
+    try:
+        manifest = json.loads(MANIFEST.read_text(encoding='utf-8'))
+        lines.append('moduleSetVersion=' + str(manifest.get('moduleSetVersion')))
+        lines.append('sourceRef=' + str(manifest.get('sourceRef')))
+    except Exception as manifest_error:
+        lines.append('manifest_error=' + repr(manifest_error))
+    try:
+        loader = LOADER.read_text(encoding='utf-8')
+        source, unused_match = unpack(loader)
+        lines.append('module74_count=' + str(source.count('MODULE_VERSION: 74')))
+        lines.append('old_condition_count=' + str(source.count(OLD_CONDITION)))
+        lines.append('panel_data_refresh_route_count=' + str(
+            source.count('"panel_data_refresh") || Number(range.start)')))
+        marker = '    function startInitialStagedFill('
+        start = source.find(marker)
+        if start >= 0:
+            end = source.find('\n    function ', start + len(marker))
+            if end < 0:
+                end = min(len(source), start + 7000)
+            lines.append('--- startInitialStagedFill ---')
+            lines.append(source[start:end])
+            lines.append('--- end startInitialStagedFill ---')
+        else:
+            lines.append('startInitialStagedFill=missing')
+    except Exception as source_error:
+        lines.append('source_diagnostic_error=' + repr(source_error))
+    return '\n'.join(lines) + '\n'
+
+
+def publish_failure(exc):
+    git_config()
+    diagnostic = failure_diagnostic(repr(exc))
+    diagnostic += '\n--- traceback ---\n' + traceback.format_exc()
+    ERROR_FILE.write_text(diagnostic, encoding='utf-8')
+    subprocess.check_call(['git', 'add', str(ERROR_FILE)])
+    if run(['git', 'diff', '--cached', '--quiet']).returncode != 0:
+        subprocess.check_call([
+            'git', 'commit', '-m',
+            '记录缓存重开 staged 构建失败诊断'
+        ])
+        subprocess.check_call(['git', 'push', 'origin', 'HEAD:' + EXPECTED_BRANCH])
+
+
 def main():
-    blob_sha, source_sha = build()
-    publish(blob_sha, source_sha)
+    try:
+        blob_sha, source_sha = build()
+        publish(blob_sha, source_sha)
+    except Exception as exc:
+        publish_failure(exc)
+        raise
 
 
 if __name__ == '__main__':
