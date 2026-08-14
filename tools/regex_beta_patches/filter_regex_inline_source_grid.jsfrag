@@ -1,0 +1,239 @@
+    function styleRegexInlineChip(view, selected, colors) {
+        if (view === null || view === undefined) { return false; }
+        view.setBackground(roundedBackground(
+            selected ? colors.accentSoft : colors.surface,
+            selected ? colors.accentBorder : colors.stroke, 9));
+        ClipHub.Theme.applyTextColor(view,
+            selected ? colors.accentStrong : colors.textSecondary);
+        view.setTypeface(Packages.android.graphics.Typeface.DEFAULT,
+            selected ?
+                Packages.android.graphics.Typeface.BOLD :
+                Packages.android.graphics.Typeface.NORMAL);
+        return true;
+    }
+
+    function refreshRegexInlineSelection(bundle, colors) {
+        var selected = advancedDraftRegexRuleIds || [];
+        var key;
+        var view;
+        if (bundle === null || bundle === undefined) { return false; }
+        if (bundle.regexAllView !== null &&
+                bundle.regexAllView !== undefined) {
+            styleRegexInlineChip(bundle.regexAllView,
+                selected.length === 0, colors);
+        }
+        if (bundle.regexRuleViews) {
+            for (key in bundle.regexRuleViews) {
+                if (bundle.regexRuleViews.hasOwnProperty(key)) {
+                    view = bundle.regexRuleViews[key];
+                    styleRegexInlineChip(view,
+                        contains(selected, Number(key)), colors);
+                }
+            }
+        }
+        return true;
+    }
+
+    function makeRegexSourceStyleGrid(rules, colors, bundle) {
+        var root = new LinearLayout(appContext);
+        var row = null;
+        var items = [{ all: true, id: 0, label: "全部" }];
+        var metrics;
+        var remaining;
+        var rowsRemaining;
+        var rowTarget = 0;
+        var rowItems = 0;
+        var rowCount = 0;
+        var index;
+        var rule;
+        var item;
+        var chip;
+        var params;
+
+        root.setOrientation(LinearLayout.VERTICAL);
+        state.horizontalFadeEnabled = false;
+        for (index = 0; index < rules.length && index < 30; index += 1) {
+            rule = rules[index];
+            items.push({
+                all: false,
+                id: Number(rule.id),
+                label: regexRulePickerLabel(rule)
+            });
+        }
+
+        metrics = adaptiveSourceGridMetrics(items.length);
+        remaining = items.length;
+        rowsRemaining = Math.max(1, Math.ceil(
+            items.length / metrics.maxColumns));
+
+        bundle.regexRuleViews = {};
+        bundle.regexAllView = null;
+
+        for (index = 0; index < items.length; index += 1) {
+            item = items[index];
+            chip = makeChip(item.label,
+                item.all ?
+                    advancedDraftRegexRuleIds.length === 0 :
+                    contains(advancedDraftRegexRuleIds, item.id),
+                colors, true);
+            chip.setContentDescription(item.all ?
+                "筛选正则规则 全部" :
+                "筛选正则规则 " + String(item.id));
+
+            if (item.all) {
+                bundle.regexAllView = chip;
+                chip.setOnClickListener(new JavaAdapter(
+                    View.OnClickListener, {
+                        onClick: function () {
+                            markUiThread();
+                            if (advancedDraftRegexRuleIds.length > 0) {
+                                advancedDraftRegexRuleIds = [];
+                                state.regexRuleClearCount += 1;
+                                state.drawerCriteriaChanged = true;
+                                refreshRegexInlineSelection(bundle, colors);
+                            }
+                        }
+                    }));
+            } else {
+                (function (id, view) {
+                    view.setOnClickListener(new JavaAdapter(
+                        View.OnClickListener, {
+                            onClick: function () {
+                                markUiThread();
+                                advancedDraftRegexRuleIds = toggle(
+                                    advancedDraftRegexRuleIds, id, true);
+                                state.regexRuleToggleCount += 1;
+                                state.drawerCriteriaChanged = true;
+                                refreshRegexInlineSelection(bundle, colors);
+                            }
+                        }));
+                    bundle.regexRuleViews[String(id)] = view;
+                }(item.id, chip));
+            }
+
+            if (row === null || rowItems >= rowTarget) {
+                rowTarget = Math.max(1, Math.ceil(
+                    remaining / rowsRemaining));
+                row = new LinearLayout(appContext);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                row.setGravity(Gravity.CENTER_VERTICAL);
+                params = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+                if (rowCount > 0) {
+                    params.topMargin = metrics.gapPx;
+                }
+                root.addView(row, params);
+                rowItems = 0;
+                rowCount += 1;
+            }
+
+            params = new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+            if (rowItems > 0) {
+                params.leftMargin = metrics.gapPx;
+            }
+            row.addView(chip, params);
+            rowItems += 1;
+            remaining -= 1;
+            if (rowItems >= rowTarget) {
+                rowsRemaining = Math.max(0, rowsRemaining - 1);
+            }
+        }
+
+        state.regexRuleWrapRowCount = rowCount;
+        return root;
+    }
+
+    function addRegexInlineSection(content, colors, bundle) {
+        var rules = ClipHub.Repository.listRegexRules({ enabledOnly: true });
+        var sectionTitle = makeText("正则规则（多选）", 10,
+            colors.textSecondary, true);
+        var modeTitle = makeText("匹配方式", 9,
+            colors.textSecondary, false);
+        var modeRow = new LinearLayout(appContext);
+        var anyChip = makeChip("任意规则 OR",
+            advancedDraftRegexMatchMode !== "all", colors, true);
+        var allChip = makeChip("全部规则 AND",
+            advancedDraftRegexMatchMode === "all", colors, true);
+        var emptyText;
+        var params;
+
+        bundle.regexRuleViews = {};
+        bundle.regexAllView = null;
+        bundle.regexModeViews = { any: anyChip, all: allChip };
+
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.topMargin = dp(3);
+        params.bottomMargin = dp(5);
+        content.addView(sectionTitle, params);
+
+        if (rules.length < 1) {
+            emptyText = makeText("暂无已启用的正则规则", 9,
+                colors.textSecondary, false);
+            params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+            params.bottomMargin = dp(7);
+            content.addView(emptyText, params);
+            state.regexRuleOptionCount = 0;
+        } else {
+            params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+            params.bottomMargin = dp(7);
+            content.addView(makeRegexSourceStyleGrid(
+                rules, colors, bundle), params);
+            state.regexRuleOptionCount = Math.min(30, rules.length);
+        }
+
+        modeRow.setOrientation(LinearLayout.HORIZONTAL);
+        modeRow.setGravity(Gravity.CENTER_VERTICAL);
+        anyChip.setOnClickListener(new JavaAdapter(View.OnClickListener, {
+            onClick: function () {
+                markUiThread();
+                if (advancedDraftRegexMatchMode !== "any") {
+                    advancedDraftRegexMatchMode = "any";
+                    state.regexModeToggleCount += 1;
+                    state.drawerCriteriaChanged = true;
+                    styleRegexInlineChip(anyChip, true, colors);
+                    styleRegexInlineChip(allChip, false, colors);
+                }
+            }
+        }));
+        allChip.setOnClickListener(new JavaAdapter(View.OnClickListener, {
+            onClick: function () {
+                markUiThread();
+                if (advancedDraftRegexMatchMode !== "all") {
+                    advancedDraftRegexMatchMode = "all";
+                    state.regexModeToggleCount += 1;
+                    state.drawerCriteriaChanged = true;
+                    styleRegexInlineChip(anyChip, false, colors);
+                    styleRegexInlineChip(allChip, true, colors);
+                }
+            }
+        }));
+
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.bottomMargin = dp(4);
+        content.addView(modeTitle, params);
+
+        modeRow.addView(anyChip,
+            new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        params = new LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+        params.leftMargin = dp(5);
+        modeRow.addView(allChip, params);
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.bottomMargin = dp(8);
+        content.addView(modeRow, params);
+
+        return true;
+    }
