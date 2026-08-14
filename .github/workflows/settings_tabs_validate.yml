@@ -1,0 +1,31 @@
+name: Settings Tabs Validate
+
+on:
+  push:
+    branches: [beta-settings-tabs-20260814]
+    paths:
+      - .github/workflows/settings_tabs_validate.yml
+      - src/ch_13_settings.js
+      - probes/cliphub_settings_tabs_probe_071.js
+      - ClipHub.js
+      - module-manifest.json
+      - scripts/release_preflight.sh
+      - ClipHub_Beta浮窗开关.txt
+      - ClipHub_Beta状态查询.txt
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate ES5 color and release boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/validate_es5.py .
+          python3 scripts/audit_color_api.py --release-strict | tee /tmp/settings-tabs-color.txt
+          grep '^HIGH=0 WARN=0 ' /tmp/settings-tabs-color.txt
+          bash scripts/release_preflight.sh --settings-tabs-beta
+          git diff --check
