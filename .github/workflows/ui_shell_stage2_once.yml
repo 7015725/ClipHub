@@ -22,6 +22,19 @@ jobs:
         run: |
           set -euo pipefail
           exec > >(tee /tmp/ui-shell-stage2.txt) 2>&1
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('tools/ui_shell_stage2_20260815.py')
+          s = p.read_text(encoding='utf-8')
+          start = s.index('    back_match = re.search(\n', s.index('def patch_filter():'))
+          end = s.index('    source, n = re.subn(\n', start)
+          s = s[:start] + s[end:]
+          marker = '    source = transform_function(source, "buildTranslationPanel", patch_build)\n'
+          addition = marker + '''\n    def patch_navigation_back(func):\n        brace = func.find("{")\n        guard = (\n            "\\n        if (ClipHub.UIShell &&\\n"\n            "                typeof ClipHub.UIShell.getState === \\\"function\\\" &&\\n"\n            "                ClipHub.UIShell.getState().childAttached === true &&\\n"\n            "                typeof ClipHub.UIShell.dispatchBack === \\\"function\\\") {\\n"\n            "            return ClipHub.UIShell.dispatchBack(\\\"navigation_system_back\\\");\\n"\n            "        }"\n        )\n        return func[:brace + 1] + guard + func[brace + 1:]\n    source = transform_function(source, "dispatchBack", patch_navigation_back)\n'''
+          assert s.count(marker) == 1
+          s = s.replace(marker, addition, 1)
+          p.write_text(s, encoding='utf-8')
+          PY
           python3 tools/ui_shell_stage2_20260815.py
           node --check src/ch_11_filter.js
           node --check src/ch_12_translation.js
@@ -55,6 +68,7 @@ jobs:
               'src/ch_13_settings.js',
               'src/ch_16_ui_shell.js',
               'tools/regex_beta_patches/settings_regex_feature.jsfrag',
+              'tools/ui_shell_stage2_20260815.py',
           }
           assert changed == expected, (changed, expected)
 
