@@ -72,7 +72,8 @@ jobs:
                           end = min(len(lines), i + 85)
                           out.append('--- ' + marker + ' lines %d-%d ---' % (start + 1, end))
                           for j in range(start, end):
-                              out.append('%05d: %s' % (j + 1, lines[j].rstrip()))
+                              text = lines[j].rstrip()
+                              out.append(('%05d: %s' % (j + 1, text)) if text else ('%05d:' % (j + 1)))
                           break
               out.append('')
 
