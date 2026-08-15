@@ -37,7 +37,79 @@ jobs:
           PY
 
       - name: Apply semantic icon system
-        run: python3 .github/icon_system_patch_once.py
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('.github/icon_system_patch_once.py')
+          text = p.read_text(encoding='utf-8')
+          start = text.index('def inject_make_text_bridge(source, path):')
+          end = text.index('\n\nICON_CODE =', start)
+          replacement = '''def inject_make_text_bridge(source, path):
+              if "panel_icon_text_bridge_v1" in source:
+                  return source
+              candidates = ["makeText", "makeIcon", "makeEditorHeaderAction", "makeHeaderAction", "makeCloseButton"]
+              found = None
+              helper_name = None
+              for candidate in candidates:
+                  found = find_function(source, candidate)
+                  if found is not None:
+                      helper_name = candidate
+                      break
+              if found is None:
+                  dynamic = re.search(r"\\bfunction\\s+(make[A-Za-z0-9_$]*(?:Icon|Action|Button))\\s*\\(", source)
+                  if dynamic is not None:
+                      helper_name = dynamic.group(1)
+                      found = find_function(source, helper_name)
+              assert found is not None, path
+              match, brace, function_end = found
+              params = [item.strip() for item in match.group(1).split(",") if item.strip()]
+              block = source[brace:function_end]
+              returns = list(re.finditer(r"\\breturn\\s+([A-Za-z_$][\\w$]*)\\s*;", block))
+              assert returns, (path, helper_name)
+              last = returns[-1]
+              view_name = last.group(1)
+              insert_at = brace + last.start()
+              token_name = None
+              size_name = None
+              for param in params:
+                  low = param.lower()
+                  if token_name is None and ("text" in low or "icon" in low or "symbol" in low or "glyph" in low):
+                      token_name = param
+                  if size_name is None and ("size" in low or low.endswith("sp")):
+                      size_name = param
+              if token_name is None:
+                  low_helper = str(helper_name or "").lower()
+                  if "close" in low_helper:
+                      token_expr = "\\\"×\\\""
+                  elif "back" in low_helper:
+                      token_expr = "\\\"‹\\\""
+                  elif "help" in low_helper:
+                      token_expr = "\\\"?\\\""
+                  elif "add" in low_helper:
+                      token_expr = "\\\"+\\\""
+                  else:
+                      assert params, (path, helper_name)
+                      token_expr = params[0]
+              else:
+                  token_expr = token_name
+              size_expr = size_name if size_name is not None else "18"
+              indent_match = re.search(r"(^[ \\t]*)return\\s+" + re.escape(view_name) + r"\\s*;", source[insert_at:function_end], re.M)
+              indent = indent_match.group(1) if indent_match else "    "
+              bridge = (
+                  indent + "/* panel_icon_text_bridge_v1 */\\n" +
+                  indent + "if (ClipHub.Theme && typeof ClipHub.Theme.decoratePanelIcon === \\\"function\\\") {\\n" +
+                  indent + "    ClipHub.Theme.decoratePanelIcon(" + view_name + ", " + token_expr + ", " + view_name + ".getCurrentTextColor(), " + size_expr + ");\\n" +
+                  indent + "}\\n" + indent
+              )
+              source = source[:insert_at] + bridge + source[insert_at:]
+              assert "panel_icon_text_bridge_v1" in source
+              return source
+          '''
+          replacement = '\n'.join(line[10:] if line.startswith('          ') else line for line in replacement.splitlines())
+          p.write_text(text[:start] + replacement + text[end:], encoding='utf-8')
+          PY
+          python3 .github/icon_system_patch_once.py
+          git checkout -- .github/icon_system_patch_once.py
 
       - name: Validate ES5 and release contracts
         run: |
