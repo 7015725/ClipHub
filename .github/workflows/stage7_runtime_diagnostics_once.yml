@@ -70,7 +70,7 @@ jobs:
             scripts/test_runtime_diagnostics.js \
             src/ch_15_app.js \
             src/ch_16_ui_shell.js | sort)
-          actual=$(git diff --name-only "$BASE" | sort)
+          actual=$( { git diff --name-only "$BASE"; git ls-files --others --exclude-standard; } | sort -u )
           printf '%s\n' "$actual"
           test "$actual" = "$expected"
 
