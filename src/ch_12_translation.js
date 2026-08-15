@@ -1252,9 +1252,9 @@
             view.setTypeface(Packages.android.graphics.Typeface.DEFAULT,
                 Packages.android.graphics.Typeface.BOLD);
         }
-        /* panel_icon_text_bridge_v1 */
+        /* panel_icon_explicit_v2 */
 if (ClipHub.Theme && typeof ClipHub.Theme.decoratePanelIcon === "function") {
-    ClipHub.Theme.decoratePanelIcon(view, text, view.getCurrentTextColor(), size);
+    ClipHub.Theme.decoratePanelIcon(view, text, view.getCurrentTextColor(), size, true);
 }
 return view;
     }
@@ -2124,7 +2124,7 @@ return view;
     }
     ClipHub.Translation = {
         MODULE_NAME: "ch_12_translation",
-        MODULE_VERSION: 20,
+        MODULE_VERSION: 21,
         init: function (context) {
             translationConfig = { enabled: true, provider: "settings" };
             navigationInit(context || {});

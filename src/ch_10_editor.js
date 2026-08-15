@@ -421,7 +421,7 @@
         return drawable;
     }
 
-    function makeText(text, sizeSp, color, bold) {
+    function makeText(text, sizeSp, color, bold, semanticIcon) {
         var view = new TextView(appContext);
         view.setText(String(text));
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, Number(sizeSp));
@@ -431,9 +431,10 @@
             view.setTypeface(Packages.android.graphics.Typeface.DEFAULT,
                 Packages.android.graphics.Typeface.BOLD);
         }
-        /* panel_icon_text_bridge_v1 */
-if (ClipHub.Theme && typeof ClipHub.Theme.decoratePanelIcon === "function") {
-    ClipHub.Theme.decoratePanelIcon(view, text, view.getCurrentTextColor(), sizeSp);
+        /* panel_icon_explicit_v2 */
+if (semanticIcon === true && ClipHub.Theme &&
+        typeof ClipHub.Theme.decoratePanelIcon === "function") {
+    ClipHub.Theme.decoratePanelIcon(view, text, view.getCurrentTextColor(), sizeSp, true);
 }
 return view;
     }
@@ -542,7 +543,7 @@ return view;
     }
 
     function makeEditorHeaderAction(text, description, colors, chrome) {
-        var view = makeText(text, chrome.iconSp, colors.icon, false);
+        var view = makeText(text, chrome.iconSp, colors.icon, false, true);
         view.setGravity(Gravity.CENTER);
         view.setContentDescription(String(description || text));
         view.setBackground(roundedBackground(colors.surfaceMuted, null,
@@ -3070,7 +3071,7 @@ return view;
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 35,
+        MODULE_VERSION: 36,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;

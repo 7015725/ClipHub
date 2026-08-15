@@ -118,7 +118,7 @@ ClipHub.Theme.applyGradientStroke(drawable, dp(1), stroke);
 }
 return drawable;
 }
-function makeText(text, sizeSp, color, bold) {
+function makeText(text, sizeSp, color, bold, semanticIcon) {
 var view = new TextView(androidContext);
 view.setText(String(text));
 view.setTextSize(TypedValue.COMPLEX_UNIT_SP, Number(sizeSp));
@@ -128,14 +128,15 @@ if (bold) {
 view.setTypeface(Packages.android.graphics.Typeface.DEFAULT,
 Packages.android.graphics.Typeface.BOLD);
 }
-/* panel_icon_text_bridge_v1 */
-if (ClipHub.Theme && typeof ClipHub.Theme.decoratePanelIcon === "function") {
-    ClipHub.Theme.decoratePanelIcon(view, text, view.getCurrentTextColor(), sizeSp);
+/* panel_icon_explicit_v2 */
+if (semanticIcon === true && ClipHub.Theme &&
+        typeof ClipHub.Theme.decoratePanelIcon === "function") {
+    ClipHub.Theme.decoratePanelIcon(view, text, view.getCurrentTextColor(), sizeSp, true);
 }
 return view;
 }
 function makeIcon(text, color, sizeSp, contentDescription) {
-var view = makeText(text, sizeSp, color, false);
+var view = makeText(text, sizeSp, color, false, true);
 view.setGravity(Gravity.CENTER);
 view.setClickable(true);
 view.setFocusable(true);
@@ -1052,7 +1053,7 @@ state.lastError = null;
 }
 ClipHub.List = {
 MODULE_NAME: "ch_09_list",
-MODULE_VERSION: 24,
+MODULE_VERSION: 25,
 LONG_TEXT_THRESHOLD: LONG_TEXT_THRESHOLD,
 init: function (context) {
 androidContext = context && context.androidContext ?

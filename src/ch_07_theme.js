@@ -513,10 +513,11 @@
         return drawable;
     }
 
-    function decoratePanelIcon(viewObj, value, colorValue, sizeDp) {
+    function decoratePanelIcon(viewObj, value, colorValue, sizeDp, explicitIcon) {
         var drawable;
         var Gravity = Packages.android.view.Gravity;
-        if (viewObj === null || viewObj === undefined || !isPanelIconToken(value)) { return false; }
+        if (viewObj === null || viewObj === undefined || explicitIcon !== true ||
+                !isPanelIconToken(value)) { return false; }
         drawable = makeShortXPanelIconDrawable(viewObj.getContext(), value, colorValue, sizeDp);
         if (drawable === null) { return false; }
         try { viewObj.setText(""); } catch (ignoredText) {}
@@ -573,7 +574,7 @@
 
     ClipHub.Theme = {
         MODULE_NAME: "ch_07_theme",
-        MODULE_VERSION: 9,
+        MODULE_VERSION: 10,
         init: function () { mode = "system"; return true; },
         setMode: function (value) {
             value = String(value || "system");

@@ -41,7 +41,7 @@ case "$MODE" in
     ;;
   --settings-tabs-beta)
     EXPECTED_REF='beta-regex-settings-tabs-20260814'
-    EXPECTED_MODULE_SET='20260815.26'
+    EXPECTED_MODULE_SET='20260815.27'
     EXPECTED_ENTRY_VERSION='7'
     EXPECTED_APP_MODULE_VERSION='22'
     REQUIRE_CLEAN='0'
@@ -101,6 +101,7 @@ if [ "$MODE" = '--settings-tabs-beta' ]; then
   node scripts/test_ui_shell_navigation.js
   node scripts/test_runtime_diagnostics.js
   python3 scripts/test_primary_window_legacy_routes.py
+  python3 scripts/test_review_regressions.py
 fi
 if [ "$MODE" = '--beta' ]; then
   python3 scripts/audit_color_api.py \
@@ -240,7 +241,7 @@ assert re.search(
 assert re.search(r"var TASK_VERSION = 3;", toggle)
 assert re.search(r"var REQUIRED_ENDPOINT_SCHEMA = 3;", toggle)
 assert re.search(r"var MIN_ENTRY_VERSION = 5;", toggle)
-expected_theme_version = 9 if mode == "--settings-tabs-beta" else 4
+expected_theme_version = 10 if mode == "--settings-tabs-beta" else 4
 assert re.search(
     r"MODULE_NAME:\s*\"ch_07_theme\"\s*,\s*MODULE_VERSION:\s*" +
     str(expected_theme_version), theme, re.S)
@@ -301,15 +302,15 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
     if mode == "--settings-tabs-beta":
         required_versions = {
             "ch_03_database.js": ("ch_03_database", 5),
-            "ch_06_repository.js": ("ch_06_repository", 19),
-            "ch_09_list.js": ("ch_09_list", 24),
-            "ch_10_editor.js": ("ch_10_editor", 35),
-            "ch_11_filter.js": ("ch_11_filter", 86),
-            "ch_13_settings.js": ("ch_13_settings", 40),
+            "ch_06_repository.js": ("ch_06_repository", 20),
+            "ch_09_list.js": ("ch_09_list", 25),
+            "ch_10_editor.js": ("ch_10_editor", 36),
+            "ch_11_filter.js": ("ch_11_filter", 87),
+            "ch_13_settings.js": ("ch_13_settings", 41),
             "ch_15_app.js": ("ch_15_app", 22),
-            "ch_12_translation.js": ("ch_12_translation", 20),
+            "ch_12_translation.js": ("ch_12_translation", 21),
             "ch_16_ui_shell.js": ("ch_16_ui_shell", 6),
-            "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 5),
+            "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 6),
         }
     else:
         required_versions = {
@@ -335,7 +336,12 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
             "ch_09_list.js", "ch_10_editor.js", "ch_11_filter.js",
             "ch_12_translation.js", "ch_13_settings.js", "ch_17_tokenizer_ui.js",
         ):
-            assert "panel_icon_text_bridge_v1" in actual_sources[icon_bridge_file], icon_bridge_file
+            assert "panel_icon_explicit_v2" in actual_sources[icon_bridge_file], icon_bridge_file
+            assert "panel_icon_text_bridge_v1" not in actual_sources[icon_bridge_file], icon_bridge_file
+        assert "explicitIcon !== true" in theme
+        assert "条超大内容未参与正则扫描" in filter_source
+        repository_loader = (root / "src/ch_06_repository.js").read_text(encoding="utf-8")
+        assert "var SOURCE_SHA256" in repository_loader
 
     assert "var SCHEMA_VERSION = 2;" in database_source
     assert "db.setVersion(3)" not in database_source
