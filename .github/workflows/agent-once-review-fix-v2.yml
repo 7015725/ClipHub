@@ -1,6 +1,6 @@
 name: One-shot review fix v2
 
-# retry: tokenizer zero-icon path accepted
+# retry: normalize packed wrapper whitespace
 on:
   push:
     branches:
@@ -22,6 +22,21 @@ jobs:
           fetch-depth: 0
       - name: Apply fixes
         run: python3 .github/review_fix_v3.py
+      - name: Normalize generated wrappers
+        run: |
+          sed -i 's/[[:blank:]]\+$//' src/ch_06_repository.js src/ch_07_theme.js src/ch_09_list.js src/ch_10_editor.js src/ch_11_filter.js src/ch_12_translation.js src/ch_13_settings.js src/ch_17_tokenizer_ui.js
+          python3 - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+          root = Path('.')
+          path = root / 'module-manifest.json'
+          manifest = json.loads(path.read_text(encoding='utf-8'))
+          for item in manifest['modules']:
+              data = (root / item['path']).read_text(encoding='utf-8').encode('utf-8')
+              item['sha'] = hashlib.sha1(b'blob ' + str(len(data)).encode('ascii') + b'\0' + data).hexdigest()
+          path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          PY
       - name: Validate
         run: |
           python3 scripts/test_review_regressions.py
