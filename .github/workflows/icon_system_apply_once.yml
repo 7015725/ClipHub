@@ -31,8 +31,7 @@ jobs:
           }
           changed = set(filter(None, subprocess.check_output(
               ['git','diff','--name-only',baseline + '..HEAD'], text=True).splitlines()))
-          unexpected = changed - allowed
-          assert not unexpected, ('production baseline moved', sorted(unexpected))
+          assert not (changed - allowed), ('production baseline moved', sorted(changed - allowed))
           print('Baseline guard passed:', sorted(changed))
           PY
 
@@ -58,10 +57,16 @@ jobs:
                       helper_name = candidate
                       break
               if found is None:
-                  dynamic = re.search(r"\\bfunction\\s+(make[A-Za-z0-9_$]*(?:Icon|Action|Button))\\s*\\(", source)
-                  if dynamic is not None:
-                      helper_name = dynamic.group(1)
-                      found = find_function(source, helper_name)
+                  for candidate_match in re.finditer(r"\\bfunction\\s+([A-Za-z_$][\\w$]*)\\s*\\(", source):
+                      candidate = candidate_match.group(1)
+                      candidate_found = find_function(source, candidate)
+                      if candidate_found is None:
+                          continue
+                      candidate_block = source[candidate_found[1]:candidate_found[2]]
+                      if "TextView" in candidate_block and ".setText(" in candidate_block and re.search(r"\\breturn\\s+[A-Za-z_$][\\w$]*\\s*;", candidate_block):
+                          helper_name = candidate
+                          found = candidate_found
+                          break
               assert found is not None, path
               match, brace, function_end = found
               params = [item.strip() for item in match.group(1).split(",") if item.strip()]
@@ -79,6 +84,11 @@ jobs:
                       token_name = param
                   if size_name is None and ("size" in low or low.endswith("sp")):
                       size_name = param
+              if token_name is None:
+                  for param in params:
+                      if re.search(r"\\.setText\\(\\s*(?:String\\(\\s*)?" + re.escape(param) + r"(?:\\s*\\))?\\s*\\)", block):
+                          token_name = param
+                          break
               if token_name is None:
                   low_helper = str(helper_name or "").lower()
                   if "close" in low_helper:
@@ -127,18 +137,11 @@ jobs:
           python3 - <<'PY'
           import subprocess
           expected = {
-              'src/ch_07_theme.js',
-              'src/ch_09_list.js',
-              'src/ch_10_editor.js',
-              'src/ch_11_filter.js',
-              'src/ch_12_translation.js',
-              'src/ch_13_settings.js',
-              'src/ch_17_tokenizer_ui.js',
-              'module-manifest.json',
-              'scripts/release_preflight.sh',
+              'src/ch_07_theme.js', 'src/ch_09_list.js', 'src/ch_10_editor.js',
+              'src/ch_11_filter.js', 'src/ch_12_translation.js', 'src/ch_13_settings.js',
+              'src/ch_17_tokenizer_ui.js', 'module-manifest.json', 'scripts/release_preflight.sh',
           }
-          changed = set(filter(None, subprocess.check_output(
-              ['git','diff','--name-only'], text=True).splitlines()))
+          changed = set(filter(None, subprocess.check_output(['git','diff','--name-only'], text=True).splitlines()))
           assert changed == expected, {'expected': sorted(expected), 'actual': sorted(changed)}
           print('Production allowlist passed:', sorted(changed))
           PY
