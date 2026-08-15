@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260815.18",
+  "moduleSetVersion": "20260815.19",
   "entryMinVersion": 7,
   "sourceRef": "beta-regex-settings-tabs-20260814",
   "modules": [
@@ -62,7 +62,7 @@
     {
       "name": "ch_12_translation.js",
       "path": "src/ch_12_translation.js",
-      "sha": "77d87d41f3e33b5315828891e4e0b82c73e3756b"
+      "sha": "474f93da7dc8812f03f0946aa0b74a1119b4db45"
     },
     {
       "name": "ch_13_settings.js",

@@ -1237,7 +1237,8 @@
             stroke: "#FFE5E0EF", accentStrong: "#FF5A37E6",
             accentSoft: "#FFF0ECFF", accentBorder: "#FFBBAAF8",
             textPrimary: "#FF1F1C28", textSecondary: "#FF6F697A",
-            textTertiary: "#FF9992A3", icon: "#FF3D3748"
+            textTertiary: "#FF9992A3", icon: "#FF3D3748",
+            danger: "#FFD84A5B", dangerSoft: "#FFFFECEF"
         };
     }
 
@@ -1256,14 +1257,14 @@
 
     function translationButton(text, colors, primary, danger) {
         var view = translationText(text, 12,
-            danger ? "#FFB42323" : (primary ? "#FFFFFFFF" : colors.accentStrong),
+            danger ? colors.danger : (primary ? "#FFFFFFFF" : colors.accentStrong),
             true);
         view.setGravity(Gravity.CENTER);
         view.setSingleLine(true);
         view.setPadding(dp(8), dp(6), dp(8), dp(6));
         view.setBackground(translationRounded(
             primary ? colors.accentStrong :
-                (danger ? "#FFFFEEEE" : colors.accentSoft),
+                (danger ? colors.dangerSoft : colors.accentSoft),
             primary ? colors.accentStrong : colors.accentBorder, 13));
         view.setClickable(true);
         view.setFocusable(true);
@@ -2093,7 +2094,7 @@
     }
     ClipHub.Translation = {
         MODULE_NAME: "ch_12_translation",
-        MODULE_VERSION: 17,
+        MODULE_VERSION: 18,
         init: function (context) {
             translationConfig = { enabled: true, provider: "settings" };
             navigationInit(context || {});

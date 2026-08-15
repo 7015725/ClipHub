@@ -41,7 +41,7 @@ case "$MODE" in
     ;;
   --settings-tabs-beta)
     EXPECTED_REF='beta-regex-settings-tabs-20260814'
-    EXPECTED_MODULE_SET='20260815.18'
+    EXPECTED_MODULE_SET='20260815.19'
     EXPECTED_ENTRY_VERSION='7'
     EXPECTED_APP_MODULE_VERSION='22'
     REQUIRE_CLEAN='0'
@@ -297,7 +297,7 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
             "ch_11_filter.js": ("ch_11_filter", 85),
             "ch_13_settings.js": ("ch_13_settings", 35),
             "ch_15_app.js": ("ch_15_app", 22),
-            "ch_12_translation.js": ("ch_12_translation", 17),
+            "ch_12_translation.js": ("ch_12_translation", 18),
             "ch_16_ui_shell.js": ("ch_16_ui_shell", 6),
             "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 3),
         }
@@ -368,6 +368,8 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert "Settings24 ES5 loader" not in settings_loader
         ui_shell_source = actual_sources["ch_16_ui_shell.js"]
         translation_source = actual_sources["ch_12_translation.js"]
+        assert "danger ? colors.danger" in translation_source
+        assert "danger ? colors.dangerSoft" in translation_source
         editor_source = actual_sources["ch_10_editor.js"]
         tokenizer_source = actual_sources["ch_17_tokenizer_ui.js"]
         list_source = actual_sources["ch_09_list.js"]
