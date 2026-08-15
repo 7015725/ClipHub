@@ -57,17 +57,18 @@ jobs:
           loader,var_name,source=unpack(path)
           assert re.search(r'MODULE_NAME:\s*"ch_13_settings"\s*,\s*MODULE_VERSION:\s*33',source,re.S)
 
-          # Fix 1: close the embedded drag-handle guard before closing its IIFE.
           broken='''            content.addView(handleRow, new LinearLayout.LayoutParams(\n                LinearLayout.LayoutParams.MATCH_PARENT, dp(16)));\n        }());'''
           fixed='''            content.addView(handleRow, new LinearLayout.LayoutParams(\n                LinearLayout.LayoutParams.MATCH_PARENT, dp(16)));\n            }\n        }());'''
           assert source.count(broken)==1, source.count(broken)
           source=source.replace(broken,fixed,1)
 
-          # Fix 2: the generated legacy-header closing brace had lost its opening guard.
+          root_start=source.index('    function buildRootPage() {')
+          root_end=source.index('    /* REGEX_BETA_SETTINGS_BEGIN */',root_start)
+          root=source[root_start:root_end]
           header_anchor='        header.setOrientation(LinearLayout.HORIZONTAL);\n'
-          assert source.count(header_anchor)==1, source.count(header_anchor)
-          source=source.replace(header_anchor,
-              '        if (!embeddedInPrimary) {\n'+header_anchor,1)
+          assert root.count(header_anchor)==1, root.count(header_anchor)
+          root=root.replace(header_anchor,'        if (!embeddedInPrimary) {\n'+header_anchor,1)
+          source=source[:root_start]+root+source[root_end:]
 
           source,n=re.subn(r'(MODULE_NAME:\s*"ch_13_settings"\s*,\s*MODULE_VERSION:\s*)33',r'\g<1>34',source,count=1,flags=re.S)
           assert n==1
