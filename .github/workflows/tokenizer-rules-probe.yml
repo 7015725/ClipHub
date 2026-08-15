@@ -38,7 +38,7 @@ jobs:
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git rm .github/workflows/tokenizer-rules-probe.yml
           git rm scripts/tmp_build_tokenizer_rules_ui.py
-          git rm -r stage-assets/tokenizer-rules-probe
+          git rm -rf stage-assets/tokenizer-rules-probe
           git add src/ch_17_tokenizer_ui.js src/ch_19_tokenizer_service.js module-manifest.json scripts/manifest_contract.py scripts/release_preflight.sh
           git commit -m "feat: add isolated multi-config tokenizer rules"
           git push origin HEAD:docs/tokenizer-softcode-hardening-20260815
