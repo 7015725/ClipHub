@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Inspect focused Stage3 lifecycle anchors
+      - name: Inspect editor entry and navigation owners
         shell: bash
         run: |
           set -euo pipefail
@@ -30,8 +30,9 @@ jobs:
               parts=re.findall(r'"(?:\\.|[^"\\])*"',m.group(1))
               return gzip.decompress(base64.b64decode(''.join(json.loads(x) for x in parts))).decode('utf-8')
           cases={
-            'EDITOR':(unpack('src/ch_10_editor.js'),['function requestExit','function clearViews','function updatePanelSizeForMode','function installEditorLayoutObserver','function saveEditor','function saveCurrent']),
-            'TOKENIZER':(unpack('src/ch_17_tokenizer_ui.js'),['function mountFromEditor','function returnToEditor','function installEditorEntry','function emitAction','editorPanelRoot =','state.mounted']),
+            'LIST':(unpack('src/ch_09_list.js'),['Editor.openItem','openItem(','detailAttached','detailRoot','function openDetail','function closeDetail','ClipHub.List =']),
+            'FILTER':(unpack('src/ch_11_filter.js'),['Editor.openItem','openItem(','detailAttached','detailRoot','function openDetail','function closeDetail']),
+            'NAV':(unpack('src/ch_12_translation.js'),['ClipHub.Navigation =','function getState','detailAttached','ownerFor','dispatchBackForOwner','registerWindow']),
           }
           for name,(src,pats) in cases.items():
               lines=src.splitlines(); hits=[]
@@ -42,10 +43,10 @@ jobs:
                           print('%s @ %d: %s'%(pat,i,line.strip())); hits.append(i)
               ranges=[]
               for n in sorted(set(hits)):
-                  a=max(1,n-20); b=min(len(lines),n+110)
+                  a=max(1,n-16); b=min(len(lines),n+70)
                   if ranges and a <= ranges[-1][1]+4: ranges[-1]=(ranges[-1][0],max(ranges[-1][1],b))
                   else: ranges.append((a,b))
-              for a,b in ranges[:12]:
-                  print('\n--- %d-%d ---'%(a,b))
+              for a,b in ranges[:14]:
+                  print('\n--- %s %d-%d ---'%(name,a,b))
                   for n in range(a,b+1): print('%05d: %s'%(n,lines[n-1]))
           PY
