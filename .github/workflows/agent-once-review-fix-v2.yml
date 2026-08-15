@@ -1,6 +1,6 @@
 name: One-shot review fix v2
 
-# retry: explicit icon helper adapters
+# retry: explicit icon literal and helper adapters
 on:
   push:
     branches:
@@ -21,7 +21,7 @@ jobs:
           ref: beta-regex-settings-tabs-20260814
           fetch-depth: 0
       - name: Apply fixes
-        run: python3 .github/review_fix_v2.py
+        run: python3 .github/review_fix_v3.py
       - name: Validate
         run: |
           python3 scripts/test_review_regressions.py
@@ -31,7 +31,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm -f .github/workflows/agent-once-review-fix.yml .github/workflows/agent-once-review-fix-v2.yml .github/review_fix_v2.py
+          git rm -f .github/workflows/agent-once-review-fix.yml .github/workflows/agent-once-review-fix-v2.yml .github/review_fix_v2.py .github/review_fix_v3.py
           git add src module-manifest.json scripts/release_preflight.sh scripts/test_review_regressions.py
           git status --short
           git commit -m "收口代码审查问题并补齐回归边界 [review-fix-complete]"
