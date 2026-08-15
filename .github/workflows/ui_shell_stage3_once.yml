@@ -1,0 +1,114 @@
+name: UI Shell Stage3 Once
+
+on:
+  push:
+    branches: [beta-regex-settings-tabs-20260814]
+    paths:
+      - .github/workflows/ui_shell_stage3_once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply Stage3 migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/ui_shell_stage3_20260815.py
+
+      - name: Validate expanded runtime sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=/tmp/cliphub-stage3-expanded
+          rm -rf "$OUT"
+          mkdir -p "$OUT"
+          python3 - "$OUT" <<'PY'
+          import base64,gzip,json,re,sys
+          from pathlib import Path
+          out=Path(sys.argv[1])
+          for path in sorted(Path('src').glob('*.js')):
+              text=path.read_text(encoding='utf-8')
+              m=re.search(r'\bvar\s+(?:PACKED_B64|encoded)\s*=\s*(.*?);',text,re.S)
+              source=text
+              if m:
+                  pieces=re.findall(r'"(?:\\.|[^"\\])*"',m.group(1))
+                  source=gzip.decompress(base64.b64decode(
+                      ''.join(json.loads(x) for x in pieces))).decode('utf-8')
+              (out/path.name).write_text(source,encoding='utf-8')
+          PY
+          for f in "$OUT"/*.js; do node --check "$f" >/dev/null; done
+          echo 'All expanded runtime JavaScript syntax: passed'
+
+      - name: Validate ES5 color manifest and release contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/validate_es5.py .
+          python3 scripts/audit_color_api.py --release-strict | tee /tmp/stage3-color.txt
+          grep '^HIGH=0 WARN=0 ' /tmp/stage3-color.txt
+          bash scripts/release_preflight.sh --settings-tabs-beta
+          git diff --check
+
+      - name: Validate Stage3 regression boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=c013ef1fcc61521c1d81b128e2b4dbcecfdef4c2
+          git diff --name-only "$BASE" -- > /tmp/stage3-files.txt
+          echo '===== CHANGED FROM .13 STABLE ====='
+          cat /tmp/stage3-files.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          files=set(Path('/tmp/stage3-files.txt').read_text().splitlines())
+          transient={
+            '.github/workflows/ui_shell_stage3_probe_once.yml',
+            '.github/workflows/ui_shell_stage3_once.yml',
+            'tools/ui_shell_stage3_20260815.py',
+          }
+          persistent=files-transient
+          expected={
+            'module-manifest.json',
+            'scripts/release_preflight.sh',
+            'src/ch_10_editor.js',
+            'src/ch_16_ui_shell.js',
+            'src/ch_17_tokenizer_ui.js',
+          }
+          assert persistent == expected, {
+            'unexpected': sorted(persistent-expected),
+            'missing': sorted(expected-persistent),
+          }
+          forbidden={
+            'src/ch_03_database.js','src/ch_06_repository.js',
+            'src/ch_07_theme.js','src/ch_08_window.js','src/ch_09_list.js',
+            'src/ch_11_filter.js','src/ch_12_translation.js',
+            'src/ch_13_settings.js','src/ch_15_app.js'
+          }
+          assert not (persistent & forbidden), sorted(persistent & forbidden)
+          print('Stage3 persistent boundary: passed')
+          PY
+          git diff "$BASE" -- src/ch_08_window.js src/ch_09_list.js src/ch_11_filter.js src/ch_12_translation.js src/ch_13_settings.js | grep -q '^' && {
+            echo 'ERROR: forbidden module diff detected' >&2; exit 1;
+          } || true
+
+      - name: Commit Stage3 migration and clean probes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f .github/workflows/ui_shell_stage3_probe_once.yml
+          git rm -f .github/workflows/ui_shell_stage3_once.yml
+          git rm -f tools/ui_shell_stage3_20260815.py
+          git add module-manifest.json scripts/release_preflight.sh \
+            src/ch_10_editor.js src/ch_16_ui_shell.js src/ch_17_tokenizer_ui.js
+          git diff --cached --check
+          git commit -m "迁移编辑标签分词到首页主窗口"
+          git push origin HEAD:beta-regex-settings-tabs-20260814
