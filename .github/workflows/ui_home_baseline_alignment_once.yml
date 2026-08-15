@@ -1,0 +1,298 @@
+name: UI Home Baseline Alignment Once
+
+on:
+  push:
+    branches: [beta-regex-settings-tabs-20260814]
+    paths:
+      - .github/workflows/ui_home_baseline_alignment_once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  align:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: beta-regex-settings-tabs-20260814
+          fetch-depth: 0
+
+      - name: Guard current beta baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, subprocess
+          from pathlib import Path
+          manifest = json.loads(Path('module-manifest.json').read_text(encoding='utf-8'))
+          assert manifest['sourceRef'] == 'beta-regex-settings-tabs-20260814'
+          assert manifest['moduleSetVersion'] == '20260815.19'
+          assert manifest['entryMinVersion'] == 7
+          print('HEAD=' + subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip())
+          print('Home baseline guard: passed')
+          PY
+
+      - name: Align standalone Regex and Editor visuals to home
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, gzip, hashlib, json, re
+          from pathlib import Path
+
+          root = Path('.')
+          settings_path = root / 'src/ch_13_settings.js'
+          editor_path = root / 'src/ch_10_editor.js'
+          manifest_path = root / 'module-manifest.json'
+          preflight_path = root / 'scripts/release_preflight.sh'
+
+          def blob_sha(data):
+              return hashlib.sha1(b'blob ' + str(len(data)).encode('ascii') + b'\0' + data).hexdigest()
+
+          def unpack(path):
+              loader = path.read_text(encoding='utf-8')
+              m = re.search(r'\bvar\s+(PACKED_B64|encoded)\s*=\s*(.*?);', loader, re.S)
+              if m is None:
+                  return loader, None, None, loader
+              pieces = re.findall(r'"(?:\\.|[^"\\])*"', m.group(2))
+              source = gzip.decompress(base64.b64decode(''.join(json.loads(p) for p in pieces))).decode('utf-8')
+              expected = re.search(r'\bvar\s+SOURCE_SHA256\s*=\s*["\']([0-9a-fA-F]{64})["\']', loader)
+              assert expected is not None
+              assert hashlib.sha256(source.encode('utf-8')).hexdigest() == expected.group(1).lower()
+              return loader, m.group(1), m, source
+
+          def repack(path, loader, variable, source):
+              raw = gzip.compress(source.encode('utf-8'), compresslevel=9, mtime=0)
+              packed = base64.b64encode(raw).decode('ascii')
+              chunks = [packed[i:i+120] for i in range(0, len(packed), 120)]
+              expr = '\n        ' + ' +\n        '.join(json.dumps(c) for c in chunks) + '\n    '
+              pattern = re.compile(r'(\bvar\s+' + re.escape(variable) + r'\s*=\s*)(.*?)(;)', re.S)
+              m = pattern.search(loader)
+              assert m is not None
+              loader = loader[:m.start(2)] + expr + loader[m.end(2):]
+              sha = hashlib.sha256(source.encode('utf-8')).hexdigest()
+              loader, count = re.subn(r'(\bvar\s+SOURCE_SHA256\s*=\s*["\'])[0-9a-fA-F]{64}(["\'])',
+                  lambda x: x.group(1) + sha + x.group(2), loader, count=1)
+              assert count == 1
+              path.write_text('\n'.join(line.rstrip() for line in loader.splitlines()) + '\n', encoding='utf-8')
+
+          def function_span(text, name):
+              m = re.search(r'(^|\n)([ \t]*)function\s+' + re.escape(name) + r'\s*\(', text, re.M)
+              assert m is not None, name
+              start = m.start(2); brace = text.find('{', m.end())
+              depth=0; quote=None; esc=False; line=False; block=False; i=brace
+              while i < len(text):
+                  c=text[i]; n=text[i+1] if i+1 < len(text) else ''
+                  if line:
+                      if c=='\n': line=False
+                  elif block:
+                      if c=='*' and n=='/': block=False; i+=1
+                  elif quote is not None:
+                      if esc: esc=False
+                      elif c=='\\': esc=True
+                      elif c==quote: quote=None
+                  else:
+                      if c=='/' and n=='/': line=True; i+=1
+                      elif c=='/' and n=='*': block=True; i+=1
+                      elif c in ('"', "'"): quote=c
+                      elif c=='{': depth+=1
+                      elif c=='}':
+                          depth-=1
+                          if depth==0: return start, i+1
+                  i+=1
+              raise RuntimeError('unterminated ' + name)
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              assert count == 1, (label, count)
+              return text.replace(old, new, 1)
+
+          # ---- Settings / Regex ----
+          s_loader, s_var, _, settings = unpack(settings_path)
+          assert s_var is not None
+          assert settings.count('MODULE_VERSION: 35') == 1
+
+          # Standalone Regex subpages currently skip the root-page drag handle.
+          start, end = function_span(settings, 'makeSettingsSubpageHeader')
+          header = settings[start:end]
+          header = replace_once(header,
+              '        var header = new LinearLayout(appContext);\n',
+              '        var handleRow = new LinearLayout(appContext);\n'
+              '        var dragHandle = new View(appContext);\n'
+              '        var header = new LinearLayout(appContext);\n',
+              'subpage handle vars')
+          header = replace_once(header,
+              '        var params;\n        header.setOrientation(LinearLayout.HORIZONTAL);',
+              '        var params;\n'
+              '        /* standalone_subpage_home_drag_baseline */\n'
+              '        handleRow.setGravity(Gravity.CENTER);\n'
+              '        dragHandle.setBackground(roundedBackground(\n'
+              '            colors.accentBorder, null, 3));\n'
+              '        handleRow.addView(dragHandle, new LinearLayout.LayoutParams(\n'
+              '            dp(layout.dragHandleWidthDp || 42),\n'
+              '            dp(layout.dragHandleHeightDp || 4)));\n'
+              '        content.addView(handleRow, new LinearLayout.LayoutParams(\n'
+              '            LinearLayout.LayoutParams.MATCH_PARENT, dp(16)));\n'
+              '        header.setOrientation(LinearLayout.HORIZONTAL);',
+              'subpage handle insertion')
+          settings = settings[:start] + header + settings[end:]
+
+          wrapper_helper = '''    function makeRegexTouchWrapper(view, visualHeightDp) {
+        var hit = new FrameLayout(appContext);
+        var visualParams = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, dp(visualHeightDp));
+        visualParams.gravity = Gravity.CENTER;
+        hit.addView(view, visualParams);
+        hit.setClickable(true);
+        hit.setOnClickListener(new JavaAdapter(View.OnClickListener, {
+            onClick: function () { view.performClick(); }
+        }));
+        return hit;
+    }
+
+'''
+          anchor = '    function makeRegexRuleRow(rule, colors) {'
+          assert settings.count(anchor) == 1
+          settings = settings.replace(anchor, wrapper_helper + anchor, 1)
+
+          start, end = function_span(settings, 'makeRegexRuleRow')
+          row = settings[start:end]
+          row = replace_once(row,
+              '        titleRow.addView(toggleView, new LinearLayout.LayoutParams(dp(64), dp(40)));',
+              '        titleRow.addView(makeRegexTouchWrapper(toggleView, 32),\n'
+              '            new LinearLayout.LayoutParams(dp(64), dp(40)));',
+              'toggle visual wrapper')
+          row = replace_once(row,
+              '        actions.addView(edit, new LinearLayout.LayoutParams(0, dp(40), 1));',
+              '        actions.addView(makeRegexTouchWrapper(edit, 34),\n'
+              '            new LinearLayout.LayoutParams(0, dp(40), 1));',
+              'edit visual wrapper')
+          row = replace_once(row,
+              '        actions.addView(duplicate, params);',
+              '        actions.addView(makeRegexTouchWrapper(duplicate, 34), params);',
+              'duplicate visual wrapper')
+          row = replace_once(row,
+              '        actions.addView(deleteView, params);',
+              '        actions.addView(makeRegexTouchWrapper(deleteView, 34), params);',
+              'delete visual wrapper')
+          settings = settings[:start] + row + settings[end:]
+
+          start, end = function_span(settings, 'buildRegexTestPage')
+          test = settings[start:end]
+          test = replace_once(test,
+              '        sourceRow.addView(manual, new LinearLayout.LayoutParams(0, dp(40), 1));',
+              '        sourceRow.addView(makeRegexTouchWrapper(manual, 34),\n'
+              '            new LinearLayout.LayoutParams(0, dp(40), 1));',
+              'manual visual wrapper')
+          test = replace_once(test,
+              '        sourceRow.addView(clipboard, params);',
+              '        sourceRow.addView(makeRegexTouchWrapper(clipboard, 34), params);',
+              'clipboard visual wrapper')
+          test = replace_once(test,
+              '        sourceRow.addView(latest, params);',
+              '        sourceRow.addView(makeRegexTouchWrapper(latest, 34), params);',
+              'latest visual wrapper')
+          settings = settings[:start] + test + settings[end:]
+
+          settings = replace_once(settings, 'MODULE_VERSION: 35', 'MODULE_VERSION: 36', 'settings version')
+          assert 'standalone_subpage_home_drag_baseline' in settings
+          assert 'function makeRegexTouchWrapper(view, visualHeightDp)' in settings
+          assert 'bindRegexRuleDrag(handleHit, root, rule.id);' in settings
+          assert 'Math.abs(delta) >= dp(28)' in settings
+          assert 'Math.min(dp(64)' in settings
+          repack(settings_path, s_loader, s_var, settings)
+
+          # ---- Editor ----
+          editor = editor_path.read_text(encoding='utf-8')
+          assert editor.count('MODULE_VERSION: 32') == 1
+          start, end = function_span(editor, 'buildTextContent')
+          text_fn = editor[start:end]
+          text_fn = replace_once(text_fn,
+              '        var dragHandle = new View(appContext);\n',
+              '        var dragSlot = new FrameLayout(appContext);\n'
+              '        var dragHandle = new View(appContext);\n',
+              'editor drag slot var')
+          old_drag = '''        dragHandle.setBackground(roundedBackground(
+            colors.accentBorder, null, 3));
+        params = new LinearLayout.LayoutParams(dp(42), dp(4));
+        params.gravity = Gravity.CENTER_HORIZONTAL;
+        params.bottomMargin = dp(8);
+        panelRoot.addView(dragHandle, params);
+        if (embeddedInPrimary) { dragHandle.setVisibility(View.GONE); }
+        state.dragHandlePresent = embeddedInPrimary !== true;'''
+          new_drag = '''        dragHandle.setBackground(roundedBackground(
+            colors.accentBorder, null, 3));
+        params = new FrameLayout.LayoutParams(dp(42), dp(4));
+        params.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+        params.topMargin = dp(6);
+        dragSlot.addView(dragHandle, params);
+        panelRoot.addView(dragSlot, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(12)));
+        if (embeddedInPrimary) { dragSlot.setVisibility(View.GONE); }
+        state.dragHandlePresent = embeddedInPrimary !== true;'''
+          text_fn = replace_once(text_fn, old_drag, new_drag, 'editor drag baseline')
+          editor = editor[:start] + text_fn + editor[end:]
+          editor = replace_once(editor, 'MODULE_VERSION: 32', 'MODULE_VERSION: 33', 'editor version')
+          editor_path.write_text(editor, encoding='utf-8')
+
+          # ---- Manifest / Preflight ----
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          assert manifest['moduleSetVersion'] == '20260815.19'
+          manifest['moduleSetVersion'] = '20260815.20'
+          for item in manifest['modules']:
+              if item['name'] == 'ch_13_settings.js': item['sha'] = blob_sha(settings_path.read_bytes())
+              if item['name'] == 'ch_10_editor.js': item['sha'] = blob_sha(editor_path.read_bytes())
+          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          preflight = preflight_path.read_text(encoding='utf-8')
+          preflight = replace_once(preflight, "EXPECTED_MODULE_SET='20260815.19'", "EXPECTED_MODULE_SET='20260815.20'", 'module set')
+          preflight = replace_once(preflight,
+              '"ch_10_editor.js": ("ch_10_editor", 32),',
+              '"ch_10_editor.js": ("ch_10_editor", 33),', 'editor contract')
+          preflight = replace_once(preflight,
+              '"ch_13_settings.js": ("ch_13_settings", 35),',
+              '"ch_13_settings.js": ("ch_13_settings", 36),', 'settings contract')
+          preflight = replace_once(preflight,
+              '        assert "Math.abs(delta) >= dp(28)" in settings_source\n',
+              '        assert "Math.abs(delta) >= dp(28)" in settings_source\n'
+              '        assert "standalone_subpage_home_drag_baseline" in settings_source\n'
+              '        assert "function makeRegexTouchWrapper(view, visualHeightDp)" in settings_source\n',
+              'settings visual contracts')
+          preflight = replace_once(preflight,
+              '        editor_source = actual_sources["ch_10_editor.js"]\n',
+              '        editor_source = actual_sources["ch_10_editor.js"]\n'
+              '        assert "var dragSlot = new FrameLayout(appContext);" in editor_source\n'
+              '        assert "params.topMargin = dp(6);" in editor_source\n',
+              'editor visual contracts')
+          preflight_path.write_text(preflight, encoding='utf-8')
+          print('Home-baseline patch generated')
+          PY
+
+          python3 scripts/validate_es5.py .
+          python3 scripts/audit_color_api.py --release-strict
+          node scripts/test_ui_shell_navigation.js
+          node scripts/test_runtime_diagnostics.js
+          python3 scripts/test_primary_window_legacy_routes.py
+          bash scripts/release_preflight.sh --settings-tabs-beta
+          git diff --check
+
+          python3 - <<'PY'
+          import subprocess
+          changed = set(subprocess.check_output(['git','diff','--name-only'], text=True).splitlines())
+          expected = {'src/ch_13_settings.js','src/ch_10_editor.js','module-manifest.json','scripts/release_preflight.sh'}
+          assert changed == expected, (changed, expected)
+          print('Production allowlist: passed')
+          PY
+
+      - name: Commit and clean implementation workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f .github/workflows/ui_home_baseline_alignment_once.yml
+          git add src/ch_13_settings.js src/ch_10_editor.js module-manifest.json scripts/release_preflight.sh
+          git diff --cached --check
+          git commit -m "按首页基线收口Regex与编辑页视觉"
+          git push origin HEAD:beta-regex-settings-tabs-20260814
