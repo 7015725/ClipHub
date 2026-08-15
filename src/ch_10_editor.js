@@ -2051,15 +2051,6 @@
 
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        titleIconView = makeText(isNew ? "+" : "✎", 19,
-            colors.accentStrong, true);
-        titleIconView.setGravity(Gravity.CENTER);
-        titleIconView.setBackground(roundedBackground(
-            colors.accentSoft, colors.accentBorder, 10));
-        params = new LinearLayout.LayoutParams(dp(38), dp(38));
-        params.rightMargin = dp(9);
-        header.addView(titleIconView, params);
-
         titleStack.setOrientation(LinearLayout.VERTICAL);
         titleTextView = makeText(isNew ? "新增剪贴板" : "编辑剪贴板",
             18, colors.textPrimary, true);
@@ -2097,7 +2088,7 @@
             LinearLayout.LayoutParams.WRAP_CONTENT);
         params.bottomMargin = dp(10);
         panelRoot.addView(header, params);
-        state.headerIconPresent = true;
+        state.headerIconPresent = false;
         state.headerCloseButtonPresent = true;
 
         metaRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -2851,7 +2842,7 @@
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 24,
+        MODULE_VERSION: 25,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;

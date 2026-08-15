@@ -1674,6 +1674,15 @@
             widthDp: 390, heightDp: 650 };
     }
 
+    function translationOriginalViewportDp(text) {
+        var value = String(text || "");
+        var lineCount = value.split("\n").length;
+        var length = value.length;
+        if (lineCount <= 1 && length <= 60) { return 48; }
+        if (lineCount <= 2 && length <= 140) { return 60; }
+        return 76;
+    }
+
     function buildTranslationPanel() {
         var colors = translationPalette();
         var root = new LinearLayout(appContext);
@@ -1750,7 +1759,9 @@
             new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT));
         params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(96));
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            dp(translationOriginalViewportDp(
+                translationState.sourceText)));
         params.topMargin = dp(4);
         params.bottomMargin = dp(7);
         root.addView(originalScroll, params);
@@ -1777,14 +1788,14 @@
         translationCopyView = translationButton("复制译文", colors, true, false);
         translationReplaceView = translationButton("替换原文", colors, false, false);
         translationSaveView = translationButton("保存为新记录", colors, false, false);
-        params = new LinearLayout.LayoutParams(0, dp(40), 1);
+        params = new LinearLayout.LayoutParams(0, dp(42), 1);
         params.rightMargin = dp(6);
         actionRow1.addView(translationCopyView, params);
         actionRow1.addView(translationReplaceView, params);
         actionRow1.addView(translationSaveView,
-            new LinearLayout.LayoutParams(0, dp(40), 1));
+            new LinearLayout.LayoutParams(0, dp(42), 1));
         root.addView(actionRow1, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(40)));
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(42)));
 
         actionRow2.setOrientation(LinearLayout.HORIZONTAL);
         translationRetryView = translationButton(
@@ -2028,7 +2039,7 @@
     }
     ClipHub.Translation = {
         MODULE_NAME: "ch_12_translation",
-        MODULE_VERSION: 13,
+        MODULE_VERSION: 14,
         init: function (context) {
             translationConfig = { enabled: true, provider: "settings" };
             navigationInit(context || {});
