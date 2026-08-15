@@ -1,0 +1,42 @@
+name: UI Layout Root Diag Once
+
+on:
+  push:
+    branches: [beta-regex-settings-tabs-20260814]
+    paths:
+      - .github/workflows/ui_layout_root_diag_once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  inspect-root:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract Settings root function
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > /tmp/settings-root.txt
+          import sys
+          sys.path.insert(0, 'tools')
+          import ui_layout_framework_20260815 as base
+          loader, variable, source = base.unpack_loader(base.SETTINGS)
+          start, end = base.function_span(source, 'buildRootPage')
+          print(source[start:end])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: settings-root-current
+          path: /tmp/settings-root.txt
+          retention-days: 1
+      - name: Remove diagnostic workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f .github/workflows/ui_layout_root_diag_once.yml
+          git commit -m "清理Settings根页诊断工作流"
+          git push origin HEAD:beta-regex-settings-tabs-20260814
