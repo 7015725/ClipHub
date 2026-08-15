@@ -91,7 +91,7 @@ contracts = {
         'embeddedInPrimary',
     ],
     "src/ch_17_tokenizer_ui.js": [
-        'ClipHub.UIShell.canEmbed("tokenizer")',
+        'bindEditorRoot',
         'syncTokenizerShell("tokenizer"',
         'editorEmbeddedInPrimary',
     ],
