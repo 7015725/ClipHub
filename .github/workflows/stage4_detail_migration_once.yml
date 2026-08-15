@@ -58,7 +58,7 @@ jobs:
             src/ch_17_tokenizer_ui.js; do
             git diff --quiet "$BASE" -- "$path"
           done
-          test ! -e .github/workflows/stage4_runtime_probe_once.yml
+          test ! -e .github/workflows/ui_shell_stage4_probe_once.yml
           test ! -e tools/stage4_runtime_probe_20260815.py
           test ! -e .github/workflows/stage4_detail_migration_once.yml
           test ! -e tools/stage4_detail_migration_20260815.py
