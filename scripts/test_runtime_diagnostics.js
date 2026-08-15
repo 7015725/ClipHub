@@ -165,6 +165,25 @@
     diag = ui.getRuntimeDiagnostics();
     assertTrue(diag.health === "ok", "tokenizer diagnostics");
     assertTrue(diag.pages.tokenizer.mounted === true, "tokenizer mounted");
+    ui.syncEmbeddedPage({
+        pageId: "tokenizer_rules",
+        path: ["editor", "tokenizer", "tokenizer_rules"],
+        title: "分词规则",
+        showBack: true,
+        view: { id: "editor" }
+    });
+    diag = ui.getRuntimeDiagnostics();
+    assertTrue(diag.health === "ok", "tokenizer rules diagnostics");
+    ui.syncEmbeddedPage({
+        pageId: "tokenizer_rule_editor",
+        path: ["editor", "tokenizer", "tokenizer_rules",
+            "tokenizer_rule_editor"],
+        title: "编辑分词规则",
+        showBack: true,
+        view: { id: "editor" }
+    });
+    diag = ui.getRuntimeDiagnostics();
+    assertTrue(diag.health === "ok", "tokenizer rule editor diagnostics");
 
     runtime.editor.currentPanelHeightDp = 520;
     diag = ui.getRuntimeDiagnostics();

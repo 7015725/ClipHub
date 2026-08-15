@@ -41,7 +41,7 @@ case "$MODE" in
     ;;
   --settings-tabs-beta)
     EXPECTED_REF='docs/tokenizer-softcode-hardening-20260815'
-    EXPECTED_MODULE_SET='20260815.34'
+    EXPECTED_MODULE_SET='20260816.01'
     EXPECTED_ENTRY_VERSION='8'
     EXPECTED_APP_MODULE_VERSION='23'
     REQUIRE_CLEAN='0'
@@ -318,8 +318,8 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
             "ch_13_settings.js": ("ch_13_settings", 41),
             "ch_15_app.js": ("ch_15_app", 23),
             "ch_12_translation.js": ("ch_12_translation", 21),
-            "ch_16_ui_shell.js": ("ch_16_ui_shell", 6),
-            "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 8),
+            "ch_16_ui_shell.js": ("ch_16_ui_shell", 7),
+            "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 9),
             "ch_18_tokenizer_core.js": ("ch_18_tokenizer_core", 2),
             "ch_19_tokenizer_service.js": ("ch_19_tokenizer_service", 5),
         }
@@ -421,10 +421,10 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         tokenizer_service_source = actual_sources["ch_19_tokenizer_service.js"]
         list_source = actual_sources["ch_09_list.js"]
         assert 'MODULE_NAME: "ch_16_ui_shell"' in ui_shell_source
-        assert "MODULE_VERSION: 6" in ui_shell_source
+        assert "MODULE_VERSION: 7" in ui_shell_source
         assert 'migrationStage: "primary_window_settings_regex_translation_editor_tags_tokenizer_detail_filter_overlay_closed_runtime_diagnostics"' in ui_shell_source
         assert 'registerPage({ id: "filter"' not in ui_shell_source
-        assert 'MODULE_VERSION: 6' in ui_shell_source
+        assert 'MODULE_VERSION: 7' in ui_shell_source
         assert 'primaryWindowMode: true' in ui_shell_source
         assert 'legacyWindowBridge: true' in ui_shell_source
         assert "mountPrimaryChildPage" in filter_source
@@ -454,6 +454,8 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert 'registerPage({ id: "editor"' in ui_shell_source
         assert 'registerPage({ id: "translation"' in ui_shell_source
         assert 'registerPage({ id: "tokenizer", parentId: "editor"' in ui_shell_source
+        assert 'registerPage({ id: "tokenizer_rules", parentId: "tokenizer"' in ui_shell_source
+        assert 'registerPage({ id: "tokenizer_rule_editor", parentId: "tokenizer_rules"' in ui_shell_source
         assert 'registerPage({ id: "detail", parentId: "home"' in ui_shell_source
         assert 'legacySurface: "detail", shellReady: true' in ui_shell_source
         assert 'ClipHub.UIShell.canEmbed("detail")' in list_source
@@ -485,6 +487,23 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert "lateCallbackCount" in tokenizer_service_source
         assert "getWorkerProbeSpec" in tokenizer_service_source
         assert "tokenizer_rule_config_isolated_v1" in tokenizer_source
+        assert "tokenizer_rule_management_pages_v1" in tokenizer_source
+        assert "tokenizer_rule_preview_uses_runtime_v1" in tokenizer_source
+        assert "tokenizer_toolbar_three_actions_v1" in tokenizer_source
+        assert "function buildTokenizerRulesPage(column)" in tokenizer_source
+        assert "function buildTokenizerRuleEditorPage(column)" in tokenizer_source
+        assert "function showTokenizerMoreMenu()" in tokenizer_source
+        assert "TokenizerService.tokenizeWithRulesAsync" in tokenizer_source
+        assert "保存并参与" in tokenizer_source
+        assert "已参与" in tokenizer_source
+        regex_home = re.search(r"function buildRegexBody\(\).*?function applyModeStyles", tokenizer_source, re.S)
+        assert regex_home is not None
+        assert "regexTitleInput" not in regex_home.group(0)
+        assert "输入分词正则表达式" not in regex_home.group(0)
+        toolbar_block = re.search(r"function buildToolbar\(column\).*?function buildHint", tokenizer_source, re.S)
+        assert toolbar_block is not None
+        assert toolbar_block.group(0).count("makeToolbarCell(") == 3
+        assert "清空" not in toolbar_block.group(0)
         assert "listRuleConfigs" in tokenizer_service_source
         assert "toggleRuleSelection" in tokenizer_service_source
         assert "upsertRuleConfig" in tokenizer_service_source

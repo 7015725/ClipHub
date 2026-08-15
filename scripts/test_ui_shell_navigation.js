@@ -59,10 +59,11 @@
     equal(state.registeredPageIds, [
         "home", "detail", "editor", "tags", "settings",
         "regex_rules", "regex_editor", "regex_test",
-        "translation", "tokenizer"
+        "translation", "tokenizer", "tokenizer_rules",
+        "tokenizer_rule_editor"
     ], "registered pages");
     equal(state.pageStack, ["home"], "initial stack");
-    assertTrue(state.pageCount === 10, "page count must be 10");
+    assertTrue(state.pageCount === 12, "page count must be 12");
     assertTrue(ui.canEmbed("detail") === true, "detail embed from home");
     assertTrue(ui.canEmbed("settings") === true, "settings embed from home");
     assertTrue(ui.canEmbed("editor") === true, "editor embed from home");
@@ -113,6 +114,30 @@
     }) === true, "sync tokenizer");
     equal(ui.getState().pageStack,
         ["home", "editor", "tokenizer"], "tokenizer stack");
+    assertTrue(ui.syncEmbeddedPage({
+        pageId: "tokenizer_rules",
+        path: ["editor", "tokenizer", "tokenizer_rules"],
+        title: "分词规则",
+        showBack: true,
+        view: { id: "tokenizerRulesView" },
+        onBack: function () { return true; }
+    }) === true, "sync tokenizer rules");
+    equal(ui.getState().pageStack,
+        ["home", "editor", "tokenizer", "tokenizer_rules"],
+        "tokenizer rules stack");
+    assertTrue(ui.syncEmbeddedPage({
+        pageId: "tokenizer_rule_editor",
+        path: ["editor", "tokenizer", "tokenizer_rules",
+            "tokenizer_rule_editor"],
+        title: "编辑分词规则",
+        showBack: true,
+        view: { id: "tokenizerRuleEditorView" },
+        onBack: function () { return true; }
+    }) === true, "sync tokenizer rule editor");
+    equal(ui.getState().pageStack,
+        ["home", "editor", "tokenizer", "tokenizer_rules",
+            "tokenizer_rule_editor"],
+        "tokenizer rule editor stack");
     assertTrue(ui.unmountPage("editor", "test_editor_family_close") === true,
         "editor family unmount");
     equal(ui.getState().pageStack, ["home"], "editor family home");

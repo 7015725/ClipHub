@@ -109,6 +109,12 @@
         registerPage({ id: "tokenizer", parentId: "editor", owner: "tokenizer",
             moduleName: "TokenizerUI", cachePolicy: "rebind",
             legacySurface: "tokenizer", shellReady: true });
+        registerPage({ id: "tokenizer_rules", parentId: "tokenizer",
+            owner: "tokenizer", moduleName: "TokenizerUI", cachePolicy: "lazy",
+            legacySurface: "tokenizer", shellReady: true });
+        registerPage({ id: "tokenizer_rule_editor", parentId: "tokenizer_rules",
+            owner: "tokenizer", moduleName: "TokenizerUI", cachePolicy: "rebind",
+            legacySurface: "tokenizer", shellReady: true });
     }
 
     function stackIds() {
@@ -146,9 +152,11 @@
                 current === "regex_editor" || current === "regex_test";
         }
         if (pageId === "editor" || pageId === "tags" ||
-                pageId === "tokenizer") {
+                pageId === "tokenizer" || pageId === "tokenizer_rules" ||
+                pageId === "tokenizer_rule_editor") {
             return current === "editor" || current === "tags" ||
-                current === "tokenizer";
+                current === "tokenizer" || current === "tokenizer_rules" ||
+                current === "tokenizer_rule_editor";
         }
         return false;
     }
@@ -160,10 +168,14 @@
         if (id !== "settings" && id !== "translation" && id !== "detail" &&
                 id !== "regex_rules" && id !== "regex_editor" &&
                 id !== "regex_test" && id !== "editor" &&
-                id !== "tags" && id !== "tokenizer") { return false; }
+                id !== "tags" && id !== "tokenizer" &&
+                id !== "tokenizer_rules" &&
+                id !== "tokenizer_rule_editor") { return false; }
         if (id === "detail") { return isSameShellFamily("detail"); }
         if (id === "translation") { return isSameShellFamily("translation"); }
-        if (id === "editor" || id === "tags" || id === "tokenizer") {
+        if (id === "editor" || id === "tags" || id === "tokenizer" ||
+                id === "tokenizer_rules" ||
+                id === "tokenizer_rule_editor") {
             return isSameShellFamily(id);
         }
         return isSameShellFamily("settings");
@@ -254,7 +266,9 @@
                 !(id === "settings" && (activePageId === "regex_rules" ||
                     activePageId === "regex_editor" || activePageId === "regex_test")) &&
                 !(id === "editor" && (activePageId === "tags" ||
-                    activePageId === "tokenizer"))) {
+                    activePageId === "tokenizer" ||
+                    activePageId === "tokenizer_rules" ||
+                    activePageId === "tokenizer_rule_editor"))) {
             return false;
         }
         if (ClipHub.Filter &&
@@ -390,7 +404,8 @@
 
     function runtimeEditorFamily(pageId) {
         return pageId === "editor" || pageId === "tags" ||
-            pageId === "tokenizer";
+            pageId === "tokenizer" || pageId === "tokenizer_rules" ||
+            pageId === "tokenizer_rule_editor";
     }
 
     function runtimeSettingsFamily(pageId) {
@@ -534,7 +549,9 @@
             runtimeAddIssue(issues, "ACTIVE_TRANSLATION_NOT_ATTACHED",
                 "translation");
         }
-        if (tokenizer.mounted === true && active !== "tokenizer") {
+        if (tokenizer.mounted === true && active !== "tokenizer" &&
+                active !== "tokenizer_rules" &&
+                active !== "tokenizer_rule_editor") {
             runtimeAddIssue(issues, "TOKENIZER_STACK_MISMATCH",
                 active || "home");
         }
@@ -798,7 +815,7 @@
 
     ClipHub.UIShell = {
         MODULE_NAME: "ch_16_ui_shell",
-        MODULE_VERSION: 6,
+        MODULE_VERSION: 7,
         init: init,
         registerPage: registerPage,
         getPage: function (pageId) { return copyDescriptor(requirePage(pageId)); },
