@@ -21,7 +21,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 tools/ui_consistency_round2_20260815.py
+          python3 tools/ui_consistency_round2_runner.py
 
       - name: Validate syntax integrity and boundaries
         shell: bash
@@ -108,7 +108,7 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm -f .github/workflows/ui_consistency_round2_diag.yml ui_consistency_round2_diag.txt tools/ui_consistency_round2_20260815.py
+          git rm -f .github/workflows/ui_consistency_round2_diag.yml ui_consistency_round2_diag.txt tools/ui_consistency_round2_20260815.py tools/ui_consistency_round2_runner.py
           git add src/ch_10_editor.js src/ch_12_translation.js src/ch_17_tokenizer_ui.js module-manifest.json
           git diff --cached --check
           git diff --cached --stat
