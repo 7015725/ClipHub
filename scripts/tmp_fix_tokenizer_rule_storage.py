@@ -1,0 +1,326 @@
+#!/usr/bin/env python3
+import hashlib
+import json
+from pathlib import Path
+
+service_path = Path('src/ch_19_tokenizer_service.js')
+text = service_path.read_text(encoding='utf-8')
+
+
+def one(old, new, label):
+    global text
+    count = text.count(old)
+    if count != 1:
+        raise SystemExit('%s count=%d' % (label, count))
+    text = text.replace(old, new, 1)
+
+
+one(
+    '    var Context = Packages.android.content.Context;\n'
+    '    var System = Packages.java.lang.System;\n',
+    '    var File = Packages.java.io.File;\n'
+    '    var FileInputStream = Packages.java.io.FileInputStream;\n'
+    '    var FileOutputStream = Packages.java.io.FileOutputStream;\n'
+    '    var ByteArrayOutputStream = Packages.java.io.ByteArrayOutputStream;\n'
+    '    var JavaString = Packages.java.lang.String;\n'
+    '    var ReflectArray = Packages.java.lang.reflect.Array;\n'
+    '    var JavaByte = Packages.java.lang.Byte;\n'
+    '    var System = Packages.java.lang.System;\n',
+    'imports')
+
+one(
+    '    var mainHandler = null;\n'
+    '    var appContext = null;\n'
+    '    var preferences = null;\n'
+    '    var generation = 0;\n',
+    '    var mainHandler = null;\n'
+    '    var ruleStateFile = null;\n'
+    '    var generation = 0;\n',
+    'storage refs')
+
+one(
+    '    var PREFS_NAME = "cliphub_tokenizer_rules_v1";\n'
+    '    var KEY_CUSTOM_RULES = "custom_rules_json";\n'
+    '    var KEY_SELECTED_RULES = "selected_rule_ids_json";\n'
+    '    var KEY_SCHEMA_VERSION = "schema_version";\n',
+    '    var RULE_STORAGE_NAMESPACE = "cliphub_tokenizer_rules_v1";\n'
+    '    var RULE_FILE_NAME = "tokenizer_rules_v1.json";\n',
+    'storage constants')
+
+old_persistence = '''    function persistRuleState() {
+        var editor;
+        if (preferences === null) { return false; }
+        editor = preferences.edit();
+        editor.putInt(KEY_SCHEMA_VERSION, RULE_SCHEMA_VERSION);
+        editor.putString(KEY_CUSTOM_RULES, JSON.stringify(customRules));
+        editor.putString(KEY_SELECTED_RULES, JSON.stringify(selectedRuleIds));
+        editor.apply();
+        return true;
+    }
+
+    function loadRuleState() {
+        var storedCustom;
+        var storedSelected;
+        var hasSelected;
+        customRules = [];
+        selectedRuleIds = [];
+        if (preferences === null) { return false; }
+        storedCustom = preferences.getString(KEY_CUSTOM_RULES, "[]");
+        customRules = sanitizeCustomRules(parseJsonArray(storedCustom, []));
+        hasSelected = preferences.contains(KEY_SELECTED_RULES);
+        storedSelected = preferences.getString(KEY_SELECTED_RULES,
+            JSON.stringify(DEFAULT_SELECTED_IDS));
+        selectedRuleIds = sanitizeSelectedIds(parseJsonArray(storedSelected,
+            DEFAULT_SELECTED_IDS));
+        if (!hasSelected && selectedRuleIds.length === 0) {
+            selectedRuleIds = sanitizeSelectedIds(DEFAULT_SELECTED_IDS);
+        }
+        persistRuleState();
+        return true;
+    }
+'''
+
+new_persistence = '''    function closeQuietly(value) {
+        if (value !== null && value !== undefined) {
+            try { value.close(); } catch (ignoredClose) {}
+        }
+    }
+
+    function readUtf8File(file) {
+        var input = null;
+        var output = null;
+        var buffer = ReflectArray.newInstance(JavaByte.TYPE, 4096);
+        var count;
+        try {
+            input = new FileInputStream(file);
+            output = new ByteArrayOutputStream();
+            while ((count = Number(input.read(buffer))) > 0) {
+                output.write(buffer, 0, count);
+            }
+            return String(new JavaString(output.toByteArray(), "UTF-8"));
+        } finally {
+            closeQuietly(output);
+            closeQuietly(input);
+        }
+    }
+
+    function writeUtf8File(file, value) {
+        var output = null;
+        try {
+            output = new FileOutputStream(file, false);
+            output.write(new JavaString(String(value)).getBytes("UTF-8"));
+            output.flush();
+            try { output.getFD().sync(); } catch (ignoredSync) {}
+            return true;
+        } finally {
+            closeQuietly(output);
+        }
+    }
+
+    function parseRuleState(text) {
+        var value;
+        try {
+            value = JSON.parse(String(text || "{}"));
+            if (!value || Object.prototype.toString.call(value) !== "[object Object]") {
+                throw new Error("Rule state JSON value is not an object");
+            }
+            return value;
+        } catch (error) {
+            state.ruleConfigLoadErrorCount += 1;
+            state.lastError = String(error);
+            return {};
+        }
+    }
+
+    function persistRuleState() {
+        var parent;
+        var temporary;
+        var payload;
+        if (ruleStateFile === null) { return false; }
+        parent = ruleStateFile.getParentFile();
+        if (parent !== null && !parent.isDirectory() &&
+                !parent.mkdirs() && !parent.isDirectory()) {
+            throw new Error("Cannot create tokenizer rule directory: " +
+                String(parent.getAbsolutePath()));
+        }
+        payload = JSON.stringify({
+            schemaVersion: RULE_SCHEMA_VERSION,
+            storageNamespace: RULE_STORAGE_NAMESPACE,
+            customRules: customRules,
+            selectedRuleIds: selectedRuleIds
+        }, null, 2) + "\\n";
+        temporary = new File(parent, RULE_FILE_NAME + ".tmp");
+        writeUtf8File(temporary, payload);
+        if (ruleStateFile.exists() && !ruleStateFile.delete()) {
+            try { temporary.delete(); } catch (ignoredTempDelete) {}
+            throw new Error("Cannot replace tokenizer rule state file");
+        }
+        if (!temporary.renameTo(ruleStateFile)) {
+            try { temporary.delete(); } catch (ignoredRenameDelete) {}
+            throw new Error("Cannot commit tokenizer rule state file");
+        }
+        return true;
+    }
+
+    function loadRuleState() {
+        var stored = {};
+        var hasSelected = false;
+        customRules = [];
+        selectedRuleIds = [];
+        if (ruleStateFile === null) { return false; }
+        if (ruleStateFile.isFile()) {
+            stored = parseRuleState(readUtf8File(ruleStateFile));
+            customRules = sanitizeCustomRules(stored.customRules || []);
+            hasSelected = own(stored, "selectedRuleIds");
+            selectedRuleIds = sanitizeSelectedIds(stored.selectedRuleIds ||
+                DEFAULT_SELECTED_IDS);
+        }
+        if (!hasSelected) {
+            selectedRuleIds = sanitizeSelectedIds(DEFAULT_SELECTED_IDS);
+        }
+        persistRuleState();
+        return true;
+    }
+'''
+
+one(old_persistence, new_persistence, 'persistence block')
+
+one(
+    '            storageNamespace: PREFS_NAME,\n',
+    '            storageNamespace: RULE_STORAGE_NAMESPACE,\n',
+    'catalog namespace')
+
+old_init = '''    function init(context) {
+        appContext = context && context.androidContext ?
+            context.androidContext : global.context;
+        if (appContext === null || appContext === undefined) {
+            throw new Error("Android context unavailable for TokenizerService");
+        }
+        try { appContext = appContext.getApplicationContext() || appContext; }
+        catch (ignoredContext) {}
+        preferences = appContext.getSharedPreferences(PREFS_NAME,
+            Context.MODE_PRIVATE);
+        loadRuleState();
+        mainHandler = new Handler(Looper.getMainLooper());
+        state.ready = true;
+        state.status = "idle";
+        state.lastError = null;
+        return true;
+    }
+'''
+new_init = '''    function init(context) {
+        var dataDir;
+        if (!context || !context.runtimeDir) {
+            throw new Error("TokenizerService runtimeDir unavailable");
+        }
+        dataDir = ClipHub.Base.ensureDir(
+            ClipHub.Base.joinPath(context.runtimeDir, "data"));
+        ruleStateFile = new File(dataDir, RULE_FILE_NAME);
+        loadRuleState();
+        mainHandler = new Handler(Looper.getMainLooper());
+        state.ready = true;
+        state.status = "idle";
+        state.lastError = null;
+        return true;
+    }
+'''
+one(old_init, new_init, 'init')
+
+one(
+    '        executor = null;\n'
+    '        mainHandler = null;\n'
+    '        preferences = null;\n'
+    '        appContext = null;\n'
+    '        customRules = [];\n',
+    '        executor = null;\n'
+    '        mainHandler = null;\n'
+    '        ruleStateFile = null;\n'
+    '        customRules = [];\n',
+    'shutdown refs')
+
+one(
+    '            ruleStorageNamespace: PREFS_NAME,\n'
+    '            tokenizerRulesIsolatedFromFilter: true,\n',
+    '            ruleStorageNamespace: RULE_STORAGE_NAMESPACE,\n'
+    '            ruleStoragePath: ruleStateFile === null ? "" :\n'
+    '                String(ruleStateFile.getAbsolutePath()),\n'
+    '            tokenizerRulesIsolatedFromFilter: true,\n',
+    'state storage diagnostics')
+
+one(
+    '            strongReferences: "preferences-only",\n',
+    '            strongReferences: "file-state-only",\n',
+    'worker probe refs')
+
+one(
+    '        MODULE_VERSION: 3,\n',
+    '        MODULE_VERSION: 4,\n',
+    'service module version')
+
+one(
+    '        RULE_STORAGE_NAMESPACE: PREFS_NAME,\n',
+    '        RULE_STORAGE_NAMESPACE: RULE_STORAGE_NAMESPACE,\n',
+    'export storage namespace')
+
+if 'getSharedPreferences' in text or 'PREFS_NAME' in text or 'Context.MODE_PRIVATE' in text:
+    raise SystemExit('package SharedPreferences dependency remains')
+if 'context.runtimeDir' not in text or 'tokenizer_rules_v1.json' not in text:
+    raise SystemExit('runtime file storage contract missing')
+
+service_path.write_text(text, encoding='utf-8')
+
+
+def blob_sha(value):
+    data = value.encode('utf-8')
+    return hashlib.sha1(
+        b'blob ' + str(len(data)).encode('ascii') + b'\0' + data
+    ).hexdigest()
+
+
+manifest_path = Path('module-manifest.json')
+manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+if manifest.get('moduleSetVersion') != '20260815.32':
+    raise SystemExit('unexpected manifest version')
+manifest['moduleSetVersion'] = '20260815.33'
+for item in manifest['modules']:
+    if item.get('name') == 'ch_19_tokenizer_service.js':
+        item['sha'] = blob_sha(text)
+manifest_path.write_text(
+    json.dumps(manifest, ensure_ascii=False, indent=2) + '\n',
+    encoding='utf-8')
+
+contract_path = Path('scripts/manifest_contract.py')
+contract = contract_path.read_text(encoding='utf-8')
+if contract.count('"moduleSetVersion": "20260815.32"') != 1:
+    raise SystemExit('contract version anchor mismatch')
+contract = contract.replace(
+    '"moduleSetVersion": "20260815.32"',
+    '"moduleSetVersion": "20260815.33"', 1)
+contract_path.write_text(contract, encoding='utf-8')
+
+preflight_path = Path('scripts/release_preflight.sh')
+preflight = preflight_path.read_text(encoding='utf-8')
+if preflight.count("EXPECTED_MODULE_SET='20260815.32'") != 1:
+    raise SystemExit('preflight module version anchor mismatch')
+preflight = preflight.replace(
+    "EXPECTED_MODULE_SET='20260815.32'",
+    "EXPECTED_MODULE_SET='20260815.33'", 1)
+old_version = '"ch_19_tokenizer_service.js": ("ch_19_tokenizer_service", 3),'
+if preflight.count(old_version) != 1:
+    raise SystemExit('preflight service version anchor mismatch')
+preflight = preflight.replace(
+    old_version,
+    '"ch_19_tokenizer_service.js": ("ch_19_tokenizer_service", 4),',
+    1)
+old_storage_assert = '        assert \'PREFS_NAME = "cliphub_tokenizer_rules_v1"\' in tokenizer_service_source\n'
+if preflight.count(old_storage_assert) != 1:
+    raise SystemExit('preflight storage assert anchor mismatch')
+preflight = preflight.replace(
+    old_storage_assert,
+    '        assert \'RULE_STORAGE_NAMESPACE = "cliphub_tokenizer_rules_v1"\' in tokenizer_service_source\n'
+    '        assert \'RULE_FILE_NAME = "tokenizer_rules_v1.json"\' in tokenizer_service_source\n'
+    '        assert "context.runtimeDir" in tokenizer_service_source\n'
+    '        assert "getSharedPreferences" not in tokenizer_service_source\n'
+    '        assert "Context.MODE_PRIVATE" not in tokenizer_service_source\n',
+    1)
+preflight_path.write_text(preflight, encoding='utf-8')
