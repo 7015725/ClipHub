@@ -1,0 +1,55 @@
+name: Unify Panel Chrome Once
+
+on:
+  push:
+    branches: [beta-regex-settings-tabs-20260814]
+    paths:
+      - .github/workflows/unify_panel_chrome_once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: beta-regex-settings-tabs-20260814
+          fetch-depth: 0
+      - name: Apply unified panel chrome
+        run: python3 tools/unify_panel_chrome_tmp.py
+      - name: Validate full beta contracts
+        run: |
+          python3 scripts/validate_es5.py .
+          python3 scripts/audit_color_api.py --release-strict
+          node scripts/test_ui_shell_navigation.js
+          node scripts/test_runtime_diagnostics.js
+          python3 scripts/test_primary_window_legacy_routes.py
+          bash scripts/release_preflight.sh --settings-tabs-beta
+          git diff --check
+          python3 - <<'PY'
+          import subprocess
+          changed = set(subprocess.check_output(['git','diff','--name-only'], text=True).splitlines())
+          expected = {
+              'src/ch_07_theme.js',
+              'src/ch_09_list.js',
+              'src/ch_10_editor.js',
+              'src/ch_12_translation.js',
+              'src/ch_13_settings.js',
+              'src/ch_17_tokenizer_ui.js',
+              'module-manifest.json',
+              'scripts/release_preflight.sh',
+          }
+          assert changed == expected, (changed, expected)
+          print('Production allowlist: passed')
+          PY
+      - name: Commit validated production changes and cleanup
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f tools/unify_panel_chrome_tmp.py .github/workflows/unify_panel_chrome_once.yml
+          git add src/ch_07_theme.js src/ch_09_list.js src/ch_10_editor.js src/ch_12_translation.js src/ch_13_settings.js src/ch_17_tokenizer_ui.js module-manifest.json scripts/release_preflight.sh
+          git diff --cached --check
+          git commit -m "统一各页面Panel Chrome框架与布局参数"
+          git push origin HEAD:beta-regex-settings-tabs-20260814
