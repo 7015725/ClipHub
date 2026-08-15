@@ -2053,6 +2053,7 @@
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setClipChildren(false);
         titleStack.setOrientation(LinearLayout.VERTICAL);
+        titleStack.setTranslationY(-dp(1));
         titleTextView = makeText(isNew ? "新增剪贴板" : "编辑剪贴板",
             17, colors.textPrimary, true);
         subtitleTextView = makeText(isNew ?
@@ -2073,7 +2074,7 @@
 
         headerCloseView = makeText("×", 22, colors.icon, true);
         headerCloseView.setGravity(Gravity.CENTER);
-        headerCloseView.setTranslationY(-dp(3));
+        headerCloseView.setTranslationY(-dp(9));
         headerCloseView.setContentDescription("关闭编辑窗口");
         headerCloseView.setBackground(roundedBackground(
             colors.surfaceMuted, null, 18));
@@ -2843,7 +2844,7 @@
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 27,
+        MODULE_VERSION: 28,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
