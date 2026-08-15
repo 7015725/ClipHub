@@ -402,6 +402,8 @@
         var colorSafety = safeState(
             ClipHub.Theme, "getColorSafetyState", {});
         var uiShell = safeState(ClipHub.UIShell, "getState", {});
+        var runtimeDiagnostics = safeState(
+            ClipHub.UIShell, "getRuntimeDiagnostics", null);
         var detailAttached = detail.attachedToWindow === true ||
             detail.attached === true;
         var editorAttached = editor.attachedToWindow === true ||
@@ -456,7 +458,8 @@
                 ClipHub.Filter, "getHydrationWorkerState", null),
             scrollPerformance: safeState(
                 ClipHub.Filter, "getScrollPerformanceState", null),
-            uiShell: uiShell
+            uiShell: uiShell,
+            runtimeDiagnostics: runtimeDiagnostics
         };
     }
 
@@ -700,7 +703,7 @@
 
     ClipHub.App = {
         MODULE_NAME: "ch_15_app",
-        MODULE_VERSION: 21,
+        MODULE_VERSION: 22,
         CONTROL_ACTION_BASE: CONTROL_ACTION_BASE,
         CONTROL_ENDPOINT_SCHEMA: CONTROL_ENDPOINT_SCHEMA,
         CONTROL_COMMANDS: CONTROL_COMMANDS,

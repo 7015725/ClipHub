@@ -358,11 +358,377 @@
         return page.shellReady;
     }
 
+
+    var RUNTIME_DIAGNOSTIC_SCHEMA_VERSION = 1;
+
+    function safeRuntimeState(module, method) {
+        try {
+            if (module && typeof module[method] === "function") {
+                return module[method]() || {};
+            }
+        } catch (ignored) {}
+        return {};
+    }
+
+    function runtimeAttached(value) {
+        value = value || {};
+        return value.attached === true || value.attachedToWindow === true;
+    }
+
+    function runtimeListContains(values, target) {
+        var index;
+        values = values || [];
+        for (index = 0; index < values.length; index += 1) {
+            if (String(values[index]) === String(target)) { return true; }
+        }
+        return false;
+    }
+
+    function runtimeAddIssue(issues, code, detail) {
+        issues.push({ code: String(code), detail: String(detail || "") });
+    }
+
+    function runtimeEditorFamily(pageId) {
+        return pageId === "editor" || pageId === "tags" ||
+            pageId === "tokenizer";
+    }
+
+    function runtimeSettingsFamily(pageId) {
+        return pageId === "settings" || pageId === "regex_rules" ||
+            pageId === "regex_editor" || pageId === "regex_test";
+    }
+
+    function runtimeSizeMismatch(actual, expected) {
+        actual = Number(actual || 0);
+        expected = Number(expected || 0);
+        return actual > 0 && expected > 0 && Math.abs(actual - expected) > 2;
+    }
+
+    function getRuntimeDiagnostics() {
+        var shell = getState();
+        var host = primaryHostState();
+        var filter = safeRuntimeState(ClipHub.Filter, "getPanelState");
+        var filterIme = safeRuntimeState(ClipHub.Filter, "getImeAvoidanceState");
+        var windowState = safeRuntimeState(ClipHub.Window, "getState");
+        var removal = safeRuntimeState(ClipHub.Window, "getRemovalState");
+        var detail = safeRuntimeState(ClipHub.List, "getDetailState");
+        var editor = safeRuntimeState(ClipHub.Editor, "getState");
+        var settings = safeRuntimeState(ClipHub.Settings, "getState");
+        var translation = safeRuntimeState(ClipHub.Translation, "getState");
+        var tokenizer = safeRuntimeState(ClipHub.TokenizerUI, "getState");
+        var issues = [];
+        var legacy = [];
+        var attachedFamilies = [];
+        var active = normalizeId(shell.activePageId);
+        var current = normalizeId(shell.currentPageId);
+        var childPage = normalizeId(host.childPageId);
+        var stack = shell.pageStack || [];
+        var stackLast = stack.length > 0 ? normalizeId(stack[stack.length - 1]) : "";
+        var detailAttached = runtimeAttached(detail);
+        var editorAttached = runtimeAttached(editor);
+        var settingsAttached = runtimeAttached(settings);
+        var translationAttached = runtimeAttached(translation);
+        var filterAttached = runtimeAttached(filter);
+        var editorImeHidden;
+        var settingsImeHidden;
+
+        if (detailAttached) { attachedFamilies.push("detail"); }
+        if (editorAttached) { attachedFamilies.push("editor"); }
+        if (settingsAttached) { attachedFamilies.push("settings"); }
+        if (translationAttached) { attachedFamilies.push("translation"); }
+
+        if (detailAttached && detail.embeddedInPrimary !== true) {
+            legacy.push("detail");
+        }
+        if (editorAttached && editor.embeddedInPrimary !== true) {
+            legacy.push("editor");
+        }
+        if (settingsAttached && settings.embeddedInPrimary !== true) {
+            legacy.push("settings");
+        }
+        if (translationAttached && translation.embeddedInPrimary !== true) {
+            legacy.push("translation");
+        }
+
+        if (host.ready === true) {
+            if (filterAttached !== true || host.rootMode !== true ||
+                    filter.rootMode !== true) {
+                runtimeAddIssue(issues, "PRIMARY_HOST_STATE_MISMATCH",
+                    "primary host ready without attached root Filter");
+            }
+            if (windowState.primaryAttached !== true) {
+                runtimeAddIssue(issues, "PRIMARY_BINDING_MISSING",
+                    "Filter host is ready but Window primary binding is absent");
+            }
+            if (Number(windowState.managedWindowCount || 0) !== 1) {
+                runtimeAddIssue(issues, "MULTIPLE_MANAGED_WINDOWS",
+                    "managedWindowCount=" +
+                    String(Number(windowState.managedWindowCount || 0)));
+            }
+            if (host.homeCachePreserved !== true) {
+                runtimeAddIssue(issues, "HOME_CACHE_NOT_PRESERVED",
+                    "primary host lost cached Home root");
+            }
+        }
+
+        if (active) {
+            if (host.ready !== true) {
+                runtimeAddIssue(issues, "ACTIVE_PAGE_WITHOUT_PRIMARY_HOST",
+                    active);
+            }
+            if (host.childAttached !== true) {
+                runtimeAddIssue(issues, "SHELL_ACTIVE_WITHOUT_CHILD", active);
+            }
+            if (current !== active || stackLast !== active) {
+                runtimeAddIssue(issues, "SHELL_STACK_ACTIVE_MISMATCH",
+                    "active=" + active + ",current=" + current +
+                    ",last=" + stackLast);
+            }
+            if (childPage && childPage !== active) {
+                runtimeAddIssue(issues, "HOST_CHILD_PAGE_MISMATCH",
+                    "host=" + childPage + ",active=" + active);
+            }
+        } else {
+            if (host.childAttached === true) {
+                runtimeAddIssue(issues, "SHELL_CHILD_WITHOUT_ACTIVE",
+                    childPage || "unknown");
+            }
+            if (current && current !== "home") {
+                runtimeAddIssue(issues, "HOME_STACK_MISMATCH", current);
+            }
+        }
+
+        if (attachedFamilies.length > 1) {
+            runtimeAddIssue(issues, "PAGE_STATE_OVERLAP",
+                attachedFamilies.join(","));
+        }
+
+        if (detailAttached && detail.embeddedInPrimary === true &&
+                active !== "detail") {
+            runtimeAddIssue(issues, "STALE_DETAIL_STATE", active || "home");
+        }
+        if (editorAttached && editor.embeddedInPrimary === true &&
+                !runtimeEditorFamily(active)) {
+            runtimeAddIssue(issues, "STALE_EDITOR_STATE", active || "home");
+        }
+        if (settingsAttached && settings.embeddedInPrimary === true &&
+                !runtimeSettingsFamily(active)) {
+            runtimeAddIssue(issues, "STALE_SETTINGS_STATE", active || "home");
+        }
+        if (translationAttached && translation.embeddedInPrimary === true &&
+                active !== "translation") {
+            runtimeAddIssue(issues, "STALE_TRANSLATION_STATE",
+                active || "home");
+        }
+
+        if (active === "detail" && !detailAttached) {
+            runtimeAddIssue(issues, "ACTIVE_DETAIL_NOT_ATTACHED", "detail");
+        }
+        if (runtimeEditorFamily(active) && !editorAttached) {
+            runtimeAddIssue(issues, "ACTIVE_EDITOR_FAMILY_NOT_ATTACHED", active);
+        }
+        if (runtimeSettingsFamily(active) && !settingsAttached) {
+            runtimeAddIssue(issues, "ACTIVE_SETTINGS_FAMILY_NOT_ATTACHED", active);
+        }
+        if (active === "translation" && !translationAttached) {
+            runtimeAddIssue(issues, "ACTIVE_TRANSLATION_NOT_ATTACHED",
+                "translation");
+        }
+        if (tokenizer.mounted === true && active !== "tokenizer") {
+            runtimeAddIssue(issues, "TOKENIZER_STACK_MISMATCH",
+                active || "home");
+        }
+        if (tokenizer.mounted === true && !editorAttached) {
+            runtimeAddIssue(issues, "TOKENIZER_WITHOUT_EDITOR", "mounted");
+        }
+        if (tokenizer.embeddedInPrimary === true &&
+                editor.embeddedInPrimary !== true) {
+            runtimeAddIssue(issues, "TOKENIZER_EMBED_WITHOUT_EDITOR_EMBED",
+                "embedded");
+        }
+
+        if (host.ready === true && editorAttached &&
+                editor.embeddedInPrimary === true) {
+            if (runtimeSizeMismatch(editor.panelWidthDp, host.widthDp) ||
+                    runtimeSizeMismatch(editor.panelHeightDp, host.heightDp)) {
+                runtimeAddIssue(issues, "EDITOR_HOST_SIZE_MISMATCH",
+                    String(editor.panelWidthDp) + "x" +
+                    String(editor.panelHeightDp) + " vs " +
+                    String(host.widthDp) + "x" + String(host.heightDp));
+            }
+        }
+        if (host.ready === true && settingsAttached &&
+                settings.embeddedInPrimary === true) {
+            if (runtimeSizeMismatch(settings.panelWidthDp, host.widthDp) ||
+                    runtimeSizeMismatch(settings.panelHeightDp, host.heightDp)) {
+                runtimeAddIssue(issues, "SETTINGS_HOST_SIZE_MISMATCH",
+                    String(settings.panelWidthDp) + "x" +
+                    String(settings.panelHeightDp) + " vs " +
+                    String(host.widthDp) + "x" + String(host.heightDp));
+            }
+        }
+        if (host.ready === true && translationAttached &&
+                translation.embeddedInPrimary === true) {
+            if (runtimeSizeMismatch(translation.panelWidthDp, host.widthDp) ||
+                    runtimeSizeMismatch(translation.panelHeightDp, host.heightDp)) {
+                runtimeAddIssue(issues, "TRANSLATION_HOST_SIZE_MISMATCH",
+                    String(translation.panelWidthDp) + "x" +
+                    String(translation.panelHeightDp) + " vs " +
+                    String(host.widthDp) + "x" + String(host.heightDp));
+            }
+        }
+
+        editorImeHidden = editor.inputFocused !== true &&
+            editor.keyboardVisible !== true &&
+            Number(editor.imeInsetBottomDp || 0) <= 0;
+        if (editorAttached && editor.embeddedInPrimary === true &&
+                editorImeHidden && Number(editor.normalPanelHeightDp || 0) > 0 &&
+                Number(editor.currentPanelHeightDp || 0) > 0 &&
+                runtimeSizeMismatch(editor.currentPanelHeightDp,
+                    editor.normalPanelHeightDp)) {
+            runtimeAddIssue(issues, "EDITOR_IME_HEIGHT_NOT_RESTORED",
+                String(editor.currentPanelHeightDp) + " vs " +
+                String(editor.normalPanelHeightDp));
+        }
+        if (editorAttached && editor.embeddedInPrimary === true &&
+                editorImeHidden && Math.abs(Number(editor.currentPanelTopDp || 0)) > 2) {
+            runtimeAddIssue(issues, "EDITOR_IME_TOP_NOT_RESTORED",
+                String(editor.currentPanelTopDp));
+        }
+
+        settingsImeHidden = settings.inputFocused !== true &&
+            settings.keyboardVisible !== true &&
+            Number(settings.imeInsetBottomDp || 0) <= 0;
+        if (settingsAttached && settings.embeddedInPrimary === true &&
+                settingsImeHidden && Number(settings.normalPanelHeightDp || 0) > 0 &&
+                Number(settings.currentPanelHeightDp || 0) > 0 &&
+                runtimeSizeMismatch(settings.currentPanelHeightDp,
+                    settings.normalPanelHeightDp)) {
+            runtimeAddIssue(issues, "SETTINGS_IME_HEIGHT_NOT_RESTORED",
+                String(settings.currentPanelHeightDp) + " vs " +
+                String(settings.normalPanelHeightDp));
+        }
+        if (settingsAttached && settings.embeddedInPrimary === true &&
+                settingsImeHidden && Math.abs(Number(settings.currentPanelTopDp || 0)) > 2) {
+            runtimeAddIssue(issues, "SETTINGS_IME_TOP_NOT_RESTORED",
+                String(settings.currentPanelTopDp));
+        }
+
+        return {
+            schemaVersion: RUNTIME_DIAGNOSTIC_SCHEMA_VERSION,
+            health: issues.length > 0 ? "warn" :
+                (legacy.length > 0 ? "fallback" : "ok"),
+            issueCount: Number(issues.length),
+            issues: issues,
+            legacyFallbackActive: legacy,
+            shell: {
+                activePageId: active || null,
+                currentPageId: current || null,
+                pageStack: stack.slice(0),
+                childAttached: host.childAttached === true,
+                childPageId: childPage || null
+            },
+            primaryWindow: {
+                ready: host.ready === true,
+                attached: host.attached === true,
+                rootMode: host.rootMode === true,
+                homeCachePreserved: host.homeCachePreserved === true,
+                widthDp: Number(host.widthDp || 0),
+                heightDp: Number(host.heightDp || 0),
+                primaryAttached: windowState.primaryAttached === true,
+                managedWindowCount: Number(windowState.managedWindowCount || 0),
+                managedWindowRoles: (windowState.managedWindowRoles || []).slice(0),
+                moving: windowState.moving === true,
+                resizing: windowState.resizing === true
+            },
+            pages: {
+                detail: {
+                    attached: detailAttached,
+                    embeddedInPrimary: detail.embeddedInPrimary === true,
+                    itemId: detail.itemId === undefined ? null : detail.itemId
+                },
+                editor: {
+                    attached: editorAttached,
+                    embeddedInPrimary: editor.embeddedInPrimary === true,
+                    mode: String(editor.mode || ""),
+                    itemId: editor.itemId === undefined ? null : editor.itemId,
+                    unsavedChanges: editor.unsavedChanges === true,
+                    pendingDraftPresent: editor.pendingDraftPresent === true,
+                    exitConfirmVisible: editor.exitConfirmVisible === true
+                },
+                settings: {
+                    attached: settingsAttached,
+                    embeddedInPrimary: settings.embeddedInPrimary === true,
+                    page: String(settings.settingsPage || ""),
+                    tab: String(settings.settingsTab || ""),
+                    regexEditorOpen: settings.regexEditorOpen === true,
+                    regexTestRunning: settings.regexTestRunning === true
+                },
+                translation: {
+                    attached: translationAttached,
+                    embeddedInPrimary: translation.embeddedInPrimary === true,
+                    itemId: translation.itemId === undefined ? null :
+                        translation.itemId,
+                    running: translation.running === true
+                },
+                tokenizer: {
+                    mounted: tokenizer.mounted === true,
+                    embeddedInPrimary: tokenizer.embeddedInPrimary === true,
+                    mode: String(tokenizer.mode || ""),
+                    editorRootCaptured: tokenizer.editorRootCaptured === true
+                }
+            },
+            ime: {
+                filter: filterIme,
+                editor: {
+                    inputFocused: editor.inputFocused === true,
+                    keyboardVisible: editor.keyboardVisible === true,
+                    keyboardRequestCount: Number(editor.keyboardRequestCount || 0),
+                    softInputAdjustResize: editor.softInputAdjustResize === true,
+                    imeInsetsSupported: editor.imeInsetsSupported === true,
+                    imeInsetSource: String(editor.imeInsetSource || "none"),
+                    imeInsetBottomDp: Number(editor.imeInsetBottomDp || 0),
+                    availableAboveImeDp: Number(editor.availableAboveImeDp || 0),
+                    normalPanelHeightDp: Number(editor.normalPanelHeightDp || 0),
+                    currentPanelHeightDp: Number(editor.currentPanelHeightDp || 0),
+                    currentPanelTopDp: Number(editor.currentPanelTopDp || 0),
+                    restoreSnapshotCount: Number(editor.imeRestoreSnapshotCount || 0),
+                    restoreApplyCount: Number(editor.imeRestoreApplyCount || 0)
+                },
+                settings: {
+                    inputFocused: settings.inputFocused === true,
+                    keyboardVisible: settings.keyboardVisible === true,
+                    keyboardRequestCount: Number(settings.keyboardRequestCount || 0),
+                    softInputAdjustResize: settings.softInputAdjustResize === true,
+                    imeInsetsSupported: settings.imeInsetsSupported === true,
+                    imeInsetSource: String(settings.imeInsetSource || "none"),
+                    imeInsetBottomDp: Number(settings.imeInsetBottomDp || 0),
+                    availableAboveImeDp: Number(settings.availableAboveImeDp || 0),
+                    normalPanelHeightDp: Number(settings.normalPanelHeightDp || 0),
+                    currentPanelHeightDp: Number(settings.currentPanelHeightDp || 0),
+                    currentPanelTopDp: Number(settings.currentPanelTopDp || 0),
+                    restoreSnapshotCount: Number(settings.imeRestoreSnapshotCount || 0),
+                    restoreFallbackCount: Number(settings.imeRestoreFallbackCount || 0),
+                    staleSignalIgnoredCount:
+                        Number(settings.imeStaleSignalIgnoredCount || 0)
+                }
+            },
+            removal: {
+                pendingSafeRemoveCount: Number(removal.pendingSafeRemoveCount || 0),
+                failureCount: Number(removal.safeRemoveFailureCount || 0),
+                timeoutCount: Number(removal.safeRemoveTimeoutCount || 0),
+                lastRole: removal.lastSafeRemoveRole || null,
+                lastReason: removal.lastSafeRemoveReason || null,
+                lastError: removal.lastSafeRemoveError || null
+            }
+        };
+    }
+
     function getState() {
         var host = primaryHostState();
         return {
             initialized: initialized === true,
-            migrationStage: "primary_window_settings_regex_translation_editor_tags_tokenizer_detail_filter_overlay_closed",
+            migrationStage: "primary_window_settings_regex_translation_editor_tags_tokenizer_detail_filter_overlay_closed_runtime_diagnostics",
             primaryWindowMode: true,
             legacyWindowBridge: true,
             hostAttached: host.ready === true,
@@ -432,7 +798,7 @@
 
     ClipHub.UIShell = {
         MODULE_NAME: "ch_16_ui_shell",
-        MODULE_VERSION: 5,
+        MODULE_VERSION: 6,
         init: init,
         registerPage: registerPage,
         getPage: function (pageId) { return copyDescriptor(requirePage(pageId)); },
@@ -450,6 +816,7 @@
         dispatchBack: dispatchBack,
         dispatchClose: dispatchClose,
         getState: getState,
+        getRuntimeDiagnostics: getRuntimeDiagnostics,
         shutdown: shutdown
     };
 }((function () { return this; }())));
