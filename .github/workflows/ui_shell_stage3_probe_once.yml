@@ -14,39 +14,44 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Inspect editor entry and navigation owners
+      - name: Extract tokenizer lifecycle functions
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           import base64,gzip,json,re
           from pathlib import Path
-          def unpack(path):
-              text=Path(path).read_text(encoding='utf-8')
-              m=re.search(r'\bvar\s+(?:PACKED_B64|encoded)\s*=\s*(.*?);',text,re.S)
-              if not m: return text
-              parts=re.findall(r'"(?:\\.|[^"\\])*"',m.group(1))
-              return gzip.decompress(base64.b64decode(''.join(json.loads(x) for x in parts))).decode('utf-8')
-          cases={
-            'LIST':(unpack('src/ch_09_list.js'),['Editor.openItem','openItem(','detailAttached','detailRoot','function openDetail','function closeDetail','ClipHub.List =']),
-            'FILTER':(unpack('src/ch_11_filter.js'),['Editor.openItem','openItem(','detailAttached','detailRoot','function openDetail','function closeDetail']),
-            'NAV':(unpack('src/ch_12_translation.js'),['ClipHub.Navigation =','function getState','detailAttached','ownerFor','dispatchBackForOwner','registerWindow']),
-          }
-          for name,(src,pats) in cases.items():
-              lines=src.splitlines(); hits=[]
-              print('\n===== %s ====='%name)
-              for pat in pats:
-                  for i,line in enumerate(lines,1):
-                      if pat in line:
-                          print('%s @ %d: %s'%(pat,i,line.strip())); hits.append(i)
-              ranges=[]
-              for n in sorted(set(hits)):
-                  a=max(1,n-16); b=min(len(lines),n+70)
-                  if ranges and a <= ranges[-1][1]+4: ranges[-1]=(ranges[-1][0],max(ranges[-1][1],b))
-                  else: ranges.append((a,b))
-              for a,b in ranges[:14]:
-                  print('\n--- %s %d-%d ---'%(name,a,b))
-                  for n in range(a,b+1): print('%05d: %s'%(n,lines[n-1]))
+          text=Path('src/ch_17_tokenizer_ui.js').read_text(encoding='utf-8')
+          m=re.search(r'\bvar\s+(?:PACKED_B64|encoded)\s*=\s*(.*?);',text,re.S)
+          parts=re.findall(r'"(?:\\.|[^"\\])*"',m.group(1))
+          src=gzip.decompress(base64.b64decode(''.join(json.loads(x) for x in parts))).decode('utf-8')
+          def extract(name):
+              marker='    function '+name+'('
+              a=src.index(marker); brace=src.index('{',a); depth=0; quote=None; esc=False; line=False; block=False; i=brace
+              while i < len(src):
+                  ch=src[i]; nxt=src[i+1] if i+1<len(src) else ''
+                  if line:
+                      if ch=='\n': line=False
+                      i+=1; continue
+                  if block:
+                      if ch=='*' and nxt=='/': block=False; i+=2; continue
+                      i+=1; continue
+                  if quote:
+                      if esc: esc=False
+                      elif ch=='\\': esc=True
+                      elif ch==quote: quote=None
+                      i+=1; continue
+                  if ch in ('"',"'"): quote=ch; i+=1; continue
+                  if ch=='/' and nxt=='/': line=True; i+=2; continue
+                  if ch=='/' and nxt=='*': block=True; i+=2; continue
+                  if ch=='{': depth+=1
+                  elif ch=='}':
+                      depth-=1
+                      if depth==0:
+                          print('\n===== '+name+' =====\n'+src[a:i+1])
+                          return
+                  i+=1
+              raise RuntimeError(name)
+          for n in ['clearEditorBinding','mountFromEditor','returnToEditor','installWindowHooks','getState']:
+              extract(n)
           PY
