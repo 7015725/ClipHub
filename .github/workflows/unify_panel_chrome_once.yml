@@ -22,6 +22,7 @@ jobs:
           sed -i "s/bump_module(list_source, 'ch_09_list', 21, 22)/bump_module(list_source, 'ch_09_list', 22, 23)/" tools/unify_panel_chrome_tmp.py
           sed -i "s/'ch_09_list.js': (\"ch_09_list\", 22)/'ch_09_list.js': (\"ch_09_list\", 23)/" tools/unify_panel_chrome_tmp.py
           python3 tools/unify_panel_chrome_tmp.py
+          sed -i 's/"ch_09_list.js": ("ch_09_list", 22)/"ch_09_list.js": ("ch_09_list", 23)/g' scripts/release_preflight.sh
       - name: Validate full beta contracts
         run: |
           python3 scripts/validate_es5.py .
