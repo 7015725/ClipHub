@@ -41,7 +41,7 @@ case "$MODE" in
     ;;
   --settings-tabs-beta)
     EXPECTED_REF='beta-regex-settings-tabs-20260814'
-    EXPECTED_MODULE_SET='20260815.25'
+    EXPECTED_MODULE_SET='20260815.26'
     EXPECTED_ENTRY_VERSION='7'
     EXPECTED_APP_MODULE_VERSION='22'
     REQUIRE_CLEAN='0'
@@ -240,15 +240,19 @@ assert re.search(
 assert re.search(r"var TASK_VERSION = 3;", toggle)
 assert re.search(r"var REQUIRED_ENDPOINT_SCHEMA = 3;", toggle)
 assert re.search(r"var MIN_ENTRY_VERSION = 5;", toggle)
-expected_theme_version = 8 if mode == "--settings-tabs-beta" else 4
+expected_theme_version = 9 if mode == "--settings-tabs-beta" else 4
 assert re.search(
     r"MODULE_NAME:\s*\"ch_07_theme\"\s*,\s*MODULE_VERSION:\s*" +
     str(expected_theme_version), theme, re.S)
 assert "getColorSafetyState: getColorSafetyState" in theme
 assert "getPanelChromeMetrics: getPanelChromeMetrics" in theme
 assert "panel_chrome_home_baseline_v1" in theme
-assert "panel_icon_system_v1" in theme
-assert "panel_icon_optical_p1_v1" in theme
+assert "panel_shortx_icon_system_v1" in theme
+assert 'SHORTX_ICON_PACKAGE = "tornaco.apps.shortx"' in theme
+assert 'settings: "ic_remix_settings_3_line"' in theme
+assert 'list: "ic_remix_list_unordered"' in theme
+assert 'globe: "ic_remix_global_line"' in theme
+assert "getShortXPanelIconDrawable: makeShortXPanelIconDrawable" in theme
 assert "decoratePanelIcon: decoratePanelIcon" in theme
 assert not (root / "tasks/ClipHub_打开全局剪贴板.js").exists()
 

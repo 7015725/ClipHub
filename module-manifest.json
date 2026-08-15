@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260815.25",
+  "moduleSetVersion": "20260815.26",
   "entryMinVersion": 7,
   "sourceRef": "beta-regex-settings-tabs-20260814",
   "modules": [
@@ -37,7 +37,7 @@
     {
       "name": "ch_07_theme.js",
       "path": "src/ch_07_theme.js",
-      "sha": "b0e1ac0f82342a9f8a8a9ff85ddd9049b29d52d9"
+      "sha": "cca591aeae6a7331a127f19314480c62b3217426"
     },
     {
       "name": "ch_08_window.js",

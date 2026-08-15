@@ -359,7 +359,31 @@
     }
 
 
-    /* panel_icon_system_v1: font-independent semantic icons on a 24x24 logical grid. */
+
+    /* panel_shortx_icon_system_v1: resolve ShortX built-in Remix drawables at runtime. */
+    var SHORTX_ICON_PACKAGE = "tornaco.apps.shortx";
+    var SHORTX_ICON_RESOURCES = {
+        add: "ic_remix_add_line",
+        close: "ic_remix_close_line",
+        back: "ic_remix_arrow_left_s_line",
+        forward: "ic_remix_arrow_right_s_line",
+        check: "ic_remix_check_line",
+        settings: "ic_remix_settings_3_line",
+        search: "ic_remix_search_line",
+        list: "ic_remix_list_unordered",
+        more_vertical: "ic_remix_more_2_line",
+        edit: "ic_remix_edit_line",
+        copy: "ic_remix_file_copy_line",
+        delete: "ic_remix_delete_bin_line",
+        help: "ic_remix_question_mark",
+        pin: "ic_remix_pushpin_line",
+        globe: "ic_remix_global_line",
+        input: "ic_remix_login_box_line",
+        download: "ic_remix_download_line",
+        up: "ic_remix_arrow_up_s_line",
+        down: "ic_remix_arrow_down_s_line",
+        rules: "ic_remix_braces_line"
+    };
     var PANEL_ICON_TOKENS = {
         "+": "add",
         "＋": "add",
@@ -396,6 +420,12 @@
         "⊙": "globe",
         "⌗": "rules"
     };
+    var shortxIconRuntime = {
+        remoteContext: null,
+        resources: null,
+        resourceIds: {},
+        bitmaps: {}
+    };
 
     function panelIconName(value) {
         var key = String(value === null || value === undefined ? "" : value);
@@ -406,148 +436,78 @@
         return panelIconName(value) !== null;
     }
 
-    function makePanelIconDrawable(context, value, colorValue, sizeDp) {
-        var name = panelIconName(value);
+    function getShortXIconRuntime(context) {
+        if (shortxIconRuntime.resources !== null) { return shortxIconRuntime; }
+        try {
+            shortxIconRuntime.remoteContext = context.createPackageContext(
+                SHORTX_ICON_PACKAGE,
+                Packages.android.content.Context.CONTEXT_IGNORE_SECURITY
+            );
+            shortxIconRuntime.resources = shortxIconRuntime.remoteContext.getResources();
+        } catch (error) {
+            shortxIconRuntime.remoteContext = null;
+            shortxIconRuntime.resources = null;
+        }
+        return shortxIconRuntime;
+    }
+
+    function getShortXIconResourceId(context, resourceName) {
+        var runtime = getShortXIconRuntime(context);
+        var key = String(resourceName || "");
+        var id;
+        if (runtime.resources === null || key === "") { return 0; }
+        if (runtime.resourceIds.hasOwnProperty(key)) { return Number(runtime.resourceIds[key]) || 0; }
+        try {
+            id = Number(runtime.resources.getIdentifier(key, "drawable", SHORTX_ICON_PACKAGE)) || 0;
+        } catch (error) { id = 0; }
+        runtime.resourceIds[key] = id;
+        return id;
+    }
+
+    function makeShortXPanelIconDrawable(context, value, colorValue, sizeDp) {
+        var semantic = panelIconName(value);
+        var resourceName;
+        var runtime;
+        var resourceId;
+        var sourceDrawable;
         var Bitmap = Packages.android.graphics.Bitmap;
         var Canvas = Packages.android.graphics.Canvas;
-        var Paint = Packages.android.graphics.Paint;
-        var Path = Packages.android.graphics.Path;
-        var RectF = Packages.android.graphics.RectF;
         var BitmapDrawable = Packages.android.graphics.drawable.BitmapDrawable;
         var density = 1;
         var logicalSize = Number(sizeDp || 18);
         var px;
-        var scale;
+        var tintColor;
+        var cacheKey;
         var bitmap;
-        var canvas;
-        var stroke;
-        var fill;
-        var path;
         var drawable;
-        var i;
-        var angle;
-        var x1;
-        var y1;
-        var x2;
-        var y2;
-        function v(number) { return Number(number) * scale; }
-        function line(ax, ay, bx, by) {
-            canvas.drawLine(v(ax), v(ay), v(bx), v(by), stroke);
-        }
-        function circle(cx, cy, radius, paintObj) {
-            canvas.drawCircle(v(cx), v(cy), v(radius), paintObj || stroke);
-        }
-        function rect(left, top, right, bottom, radius, paintObj) {
-            canvas.drawRoundRect(new RectF(v(left), v(top), v(right), v(bottom)),
-                v(radius || 0), v(radius || 0), paintObj || stroke);
-        }
-        if (name === null || context === null || context === undefined) { return null; }
+        if (semantic === null || context === null || context === undefined) { return null; }
+        resourceName = SHORTX_ICON_RESOURCES[semantic];
+        if (!resourceName) { return null; }
+        runtime = getShortXIconRuntime(context);
+        if (runtime.resources === null) { return null; }
+        resourceId = getShortXIconResourceId(context, resourceName);
+        if (resourceId <= 0) { return null; }
         try { density = Number(context.getResources().getDisplayMetrics().density || 1); }
-        catch (ignoredIconDensity) { density = 1; }
+        catch (ignoredDensity) { density = 1; }
         if (!isFinite(density) || density <= 0) { density = 1; }
         if (!isFinite(logicalSize)) { logicalSize = 18; }
         logicalSize = clampNumber(logicalSize, 14, 22);
         px = Math.max(1, Math.round(logicalSize * density));
-        scale = px / 24;
-        bitmap = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888);
-        canvas = new Canvas(bitmap);
-        stroke = new Paint();
-        stroke.setAntiAlias(true);
-        stroke.setStyle(Paint.Style.STROKE);
-        stroke.setStrokeWidth(Math.max(1, v(2.05)));
-        stroke.setStrokeCap(Paint.Cap.ROUND);
-        stroke.setStrokeJoin(Paint.Join.ROUND);
-        safeSetPaintColor(stroke, colorValue);
-        fill = new Paint();
-        fill.setAntiAlias(true);
-        fill.setStyle(Paint.Style.FILL);
-        safeSetPaintColor(fill, colorValue);
-
-        if (name === "add") {
-            line(12, 5, 12, 19); line(5, 12, 19, 12);
-        } else if (name === "close") {
-            line(6.5, 6.5, 17.5, 17.5); line(17.5, 6.5, 6.5, 17.5);
-        } else if (name === "back") {
-            line(15.5, 5.5, 9, 12); line(9, 12, 15.5, 18.5);
-        } else if (name === "forward") {
-            line(8.5, 5.5, 15, 12); line(15, 12, 8.5, 18.5);
-        } else if (name === "check") {
-            line(5.5, 12.5, 10, 17); line(10, 17, 18.5, 7.5);
-        } else if (name === "search") {
-            circle(10.5, 10.5, 5.5); line(14.7, 14.7, 19, 19);
-        } else if (name === "settings") {
-            /* panel_icon_optical_p1_v1: toothed outline instead of sun-like spokes. */
-            path = new Path();
-            for (i = 0; i < 24; i += 1) {
-                angle = (-Math.PI / 2) + (Math.PI * 2 * i / 24);
-                x1 = 12 + Math.cos(angle) * ((i % 3 === 1) ? 8.4 : 6.9);
-                y1 = 12 + Math.sin(angle) * ((i % 3 === 1) ? 8.4 : 6.9);
-                if (i === 0) { path.moveTo(v(x1), v(y1)); }
-                else { path.lineTo(v(x1), v(y1)); }
-            }
-            path.close();
-            canvas.drawPath(path, stroke);
-            circle(12, 12, 2.8);
-        } else if (name === "list") {
-            /* panel_icon_optical_p1_v1: lighter bullets and clearer bullet-to-line gap. */
-            for (i = 0; i < 3; i += 1) {
-                circle(5.2, 7 + i * 5, 0.65, fill);
-                line(9.5, 7 + i * 5, 18.5, 7 + i * 5);
-            }
-        } else if (name === "more_vertical") {
-            circle(12, 6.5, 1.3, fill); circle(12, 12, 1.3, fill); circle(12, 17.5, 1.3, fill);
-        } else if (name === "edit") {
-            path = new Path();
-            path.moveTo(v(6.5), v(17.5));
-            path.lineTo(v(8), v(13.5));
-            path.lineTo(v(15.5), v(6));
-            path.lineTo(v(18), v(8.5));
-            path.lineTo(v(10.5), v(16));
-            path.close();
-            canvas.drawPath(path, stroke);
-            line(6.5, 17.5, 10.5, 16);
-        } else if (name === "copy") {
-            rect(8, 8, 18.5, 18.5, 1.8); rect(5.5, 5.5, 16, 16, 1.8);
-        } else if (name === "delete") {
-            rect(7.5, 8.5, 16.5, 19, 1.2);
-            line(6, 6.5, 18, 6.5); line(9.5, 5, 14.5, 5);
-            line(10.5, 10.5, 10.5, 16.8); line(13.5, 10.5, 13.5, 16.8);
-        } else if (name === "help") {
-            path = new Path();
-            path.moveTo(v(8), v(8.3));
-            path.cubicTo(v(8.5), v(4.8), v(15.8), v(4.8), v(16), v(9));
-            path.cubicTo(v(16.1), v(12.2), v(12), v(12.4), v(12), v(15));
-            canvas.drawPath(path, stroke);
-            circle(12, 19, 1.0, fill);
-        } else if (name === "pin") {
-            line(8, 6, 16, 6); line(9.2, 6, 10, 11.5); line(14.8, 6, 14, 11.5);
-            line(7, 11.5, 17, 11.5); line(12, 11.5, 12, 19);
-        } else if (name === "globe") {
-            /* panel_icon_optical_p1_v1: sparse longitude curves for small-size clarity. */
-            circle(12, 12, 7.6);
-            path = new Path();
-            path.moveTo(v(12), v(4.4));
-            path.cubicTo(v(8.8), v(7.1), v(8.8), v(16.9), v(12), v(19.6));
-            canvas.drawPath(path, stroke);
-            path = new Path();
-            path.moveTo(v(12), v(4.4));
-            path.cubicTo(v(15.2), v(7.1), v(15.2), v(16.9), v(12), v(19.6));
-            canvas.drawPath(path, stroke);
-            line(4.8, 12, 19.2, 12);
-        } else if (name === "input") {
-            line(5, 12, 15.5, 12); line(12.5, 9, 15.5, 12); line(15.5, 12, 12.5, 15);
-            line(18.5, 6, 18.5, 18);
-        } else if (name === "download") {
-            line(12, 5, 12, 15); line(8.5, 11.5, 12, 15); line(12, 15, 15.5, 11.5);
-            line(6, 19, 18, 19);
-        } else if (name === "up") {
-            line(6, 15.5, 12, 9.5); line(12, 9.5, 18, 15.5);
-        } else if (name === "down") {
-            line(6, 8.5, 12, 14.5); line(12, 14.5, 18, 8.5);
-        } else if (name === "rules") {
-            line(8, 5, 6.5, 19); line(16.5, 5, 15, 19); line(4.5, 9.5, 19, 9.5); line(4, 14.5, 18.5, 14.5);
+        tintColor = colorInt(colorValue, 0);
+        cacheKey = resourceName + "|" + String(tintColor) + "|" + String(px);
+        bitmap = runtime.bitmaps[cacheKey];
+        if (bitmap === undefined || bitmap === null) {
+            try {
+                sourceDrawable = runtime.resources.getDrawable(resourceId, null);
+                if (sourceDrawable === null || sourceDrawable === undefined) { return null; }
+                sourceDrawable = sourceDrawable.mutate();
+                safeSetTintColor(sourceDrawable, tintColor);
+                bitmap = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888);
+                sourceDrawable.setBounds(0, 0, px, px);
+                sourceDrawable.draw(new Canvas(bitmap));
+                runtime.bitmaps[cacheKey] = bitmap;
+            } catch (error) { return null; }
         }
-
         drawable = new BitmapDrawable(context.getResources(), bitmap);
         drawable.setBounds(0, 0, px, px);
         return drawable;
@@ -555,17 +515,33 @@
 
     function decoratePanelIcon(viewObj, value, colorValue, sizeDp) {
         var drawable;
+        var Gravity = Packages.android.view.Gravity;
         if (viewObj === null || viewObj === undefined || !isPanelIconToken(value)) { return false; }
+        drawable = makeShortXPanelIconDrawable(viewObj.getContext(), value, colorValue, sizeDp);
+        if (drawable === null) { return false; }
+        try { viewObj.setText(""); } catch (ignoredText) {}
+        try { viewObj.setCompoundDrawables(null, null, null, null); } catch (ignoredCompound) {}
         try {
-            drawable = makePanelIconDrawable(viewObj.getContext(), value, colorValue, sizeDp);
-            if (drawable === null) { return false; }
-            viewObj.setText("");
-            viewObj.setCompoundDrawablePadding(0);
-            viewObj.setCompoundDrawables(drawable, null, null, null);
+            viewObj.setForeground(drawable);
+            viewObj.setForegroundGravity(Gravity.CENTER);
+            try { viewObj.setGravity(Gravity.CENTER); } catch (ignoredGravity) {}
             return true;
-        } catch (error) {
-            return false;
-        }
+        } catch (ignoredForeground) {}
+        try {
+            viewObj.setCompoundDrawables(drawable, null, null, null);
+            viewObj.setGravity(Gravity.CENTER);
+            return true;
+        } catch (ignoredFallback) {}
+        return false;
+    }
+
+    function resetShortXPanelIconRuntime() {
+        shortxIconRuntime = {
+            remoteContext: null,
+            resources: null,
+            resourceIds: {},
+            bitmaps: {}
+        };
     }
 
     function configuredMode() {
@@ -597,7 +573,7 @@
 
     ClipHub.Theme = {
         MODULE_NAME: "ch_07_theme",
-        MODULE_VERSION: 8,
+        MODULE_VERSION: 9,
         init: function () { mode = "system"; return true; },
         setMode: function (value) {
             value = String(value || "system");
@@ -625,12 +601,13 @@
         getLayoutMetrics: getLayoutMetrics,
         getPanelChromeMetrics: getPanelChromeMetrics,
         isPanelIconToken: isPanelIconToken,
-        makePanelIconDrawable: makePanelIconDrawable,
+        makePanelIconDrawable: makeShortXPanelIconDrawable,
+        getShortXPanelIconDrawable: makeShortXPanelIconDrawable,
         decoratePanelIcon: decoratePanelIcon,
         token: function (name, context) {
             var value = palette(context)[String(name)];
             return value === undefined ? null : value;
         },
-        shutdown: function () { mode = "system"; return true; }
+        shutdown: function () { mode = "system"; resetShortXPanelIconRuntime(); return true; }
     };
 }((function () { return this; }())));
