@@ -89,7 +89,7 @@ jobs:
       - name: Validate no beta implementation residue remains
         run: |
           set -euo pipefail
-          residue=$(git diff --name-only origin/main...HEAD | grep -E '^(\.github/.*trigger\.txt|\.github/workflows/regex_.*\.yml|probes/cliphub_(regex|comprehensive_performance_probe_07[67])|tools/apply_regex_|tools/regex_beta_patches/)' || true)
+          residue=$(find . -type f | sed 's#^./##' | grep -E '^(\.github/.*trigger\.txt|\.github/workflows/regex_.*\.yml|probes/cliphub_(regex|comprehensive_performance_probe_07[67])|tools/apply_regex_|tools/regex_beta_patches/)' || true)
           if [ -n "$residue" ]; then
             echo "$residue"
             exit 1
