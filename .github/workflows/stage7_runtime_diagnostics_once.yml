@@ -40,18 +40,9 @@ jobs:
           text = path.read_text(encoding='utf-8')
           text = text.replace('assert "MODULE_VERSION: 5" in ui_shell_source',
                               'assert "MODULE_VERSION: 6" in ui_shell_source')
+          text = text.replace("assert 'MODULE_VERSION: 5' in ui_shell_source",
+                              "assert 'MODULE_VERSION: 6' in ui_shell_source")
           path.write_text(text, encoding='utf-8')
-          PY
-      - name: Print preflight assertion context
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          text = Path('scripts/release_preflight.sh').read_text(encoding='utf-8')
-          start = text.index('from __future__ import annotations')
-          end = text.index('\nPY\n\ngit diff --check', start)
-          lines = text[start:end].splitlines()
-          for number in range(220, min(237, len(lines) + 1)):
-              print('%03d: %s' % (number, lines[number - 1]))
           PY
       - name: Remove one-time Stage7 tooling
         run: |
