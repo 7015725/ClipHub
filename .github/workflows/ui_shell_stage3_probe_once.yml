@@ -1,0 +1,66 @@
+name: UI Shell Stage3 Probe Once
+
+on:
+  push:
+    branches: [beta-regex-settings-tabs-20260814]
+    paths:
+      - .github/workflows/ui_shell_stage3_probe_once.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Inspect editor tokenizer and primary shell anchors
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64,gzip,json,re
+          from pathlib import Path
+
+          def unpack(path):
+              text=Path(path).read_text(encoding='utf-8')
+              m=re.search(r'\bvar\s+(?:PACKED_B64|encoded)\s*=\s*(.*?);',text,re.S)
+              if not m: return text
+              parts=re.findall(r'"(?:\\.|[^"\\])*"',m.group(1))
+              return gzip.decompress(base64.b64decode(''.join(json.loads(x) for x in parts))).decode('utf-8')
+
+          sources={
+            'EDITOR': unpack('src/ch_10_editor.js'),
+            'TOKENIZER': unpack('src/ch_17_tokenizer_ui.js'),
+            'FILTER': unpack('src/ch_11_filter.js'),
+            'TRANSLATION': unpack('src/ch_12_translation.js'),
+          }
+          patterns={
+            'EDITOR':['MODULE_VERSION','function buildTextContent','function buildTagContent','function open','function close','createManagedFrame','windowManager.addView','ClipHub.Editor ='],
+            'TOKENIZER':['MODULE_VERSION','function build','function open','function close','createManagedFrame','windowManager.addView','ClipHub.TokenizerUI ='],
+            'FILTER':['function mountPrimaryChildPage','function unmountPrimaryChildPage','function getPrimaryHostState','function makePrimary','primaryChild'],
+            'TRANSLATION':['function dispatchBack','UIShell.dispatchBack','Navigation ='],
+          }
+          for name,src in sources.items():
+              lines=src.splitlines()
+              print('\n===== %s MATCHES =====' % name)
+              seen=[]
+              for pat in patterns[name]:
+                  for i,line in enumerate(lines,1):
+                      if pat in line:
+                          print('%s @ %d: %s' % (pat,i,line.strip()))
+                          seen.append(i)
+              # print focused windows around every unique match, capped and merged
+              starts=[]
+              for n in sorted(set(seen)):
+                  a=max(1,n-14); b=min(len(lines),n+70)
+                  if starts and a <= starts[-1][1]+5:
+                      starts[-1]=(starts[-1][0],max(starts[-1][1],b))
+                  else:
+                      starts.append((a,b))
+              for a,b in starts[:14]:
+                  print('\n--- %s %d-%d ---' % (name,a,b))
+                  for n in range(a,b+1): print('%05d: %s' % (n,lines[n-1]))
+          PY
