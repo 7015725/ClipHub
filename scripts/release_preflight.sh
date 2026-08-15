@@ -14,9 +14,9 @@ case "$MODE" in
   --candidate) EXPECTED_REF='agent/initialize-project-skeleton' ;;
   --main)
     EXPECTED_REF='main'
-    EXPECTED_MODULE_SET='20260809.05'
-    EXPECTED_ENTRY_VERSION='6'
-    EXPECTED_APP_MODULE_VERSION='20'
+    EXPECTED_MODULE_SET='20260815.17'
+    EXPECTED_ENTRY_VERSION='7'
+    EXPECTED_APP_MODULE_VERSION='22'
     ;;
   --beta)
     EXPECTED_REF='beta-pagination-stage10-20260808'
@@ -97,7 +97,7 @@ for expanded_js in "$PACKED_SYNTAX_DIR"/*.js; do
   node --check "$expanded_js" >/dev/null
 done
 echo 'Expanded JS syntax verification: passed'
-if [ "$MODE" = '--settings-tabs-beta' ]; then
+if [ "$MODE" = '--settings-tabs-beta' ] || [ "$MODE" = '--main' ]; then
   node scripts/test_ui_shell_navigation.js
   node scripts/test_runtime_diagnostics.js
   python3 scripts/test_primary_window_legacy_routes.py
@@ -179,7 +179,7 @@ assert manifest.get("schemaVersion") == 1, manifest.get("schemaVersion")
 assert manifest.get("moduleSetVersion") == expected_module_set, manifest.get("moduleSetVersion")
 assert manifest.get("entryMinVersion") == expected_entry_version, manifest.get("entryMinVersion")
 assert manifest.get("sourceRef") == expected_ref, manifest.get("sourceRef")
-expected_module_count = 17 if mode == "--settings-tabs-beta" else 15
+expected_module_count = 17 if mode in ("--settings-tabs-beta", "--main") else 15
 assert len(manifest.get("modules", [])) == expected_module_count, len(manifest.get("modules", []))
 
 
@@ -240,14 +240,14 @@ assert re.search(
 assert re.search(r"var TASK_VERSION = 3;", toggle)
 assert re.search(r"var REQUIRED_ENDPOINT_SCHEMA = 3;", toggle)
 assert re.search(r"var MIN_ENTRY_VERSION = 5;", toggle)
-expected_theme_version = 5 if mode == "--settings-tabs-beta" else 4
+expected_theme_version = 5 if mode in ("--settings-tabs-beta", "--main") else 4
 assert re.search(
     r"MODULE_NAME:\s*\"ch_07_theme\"\s*,\s*MODULE_VERSION:\s*" +
     str(expected_theme_version), theme, re.S)
 assert "getColorSafetyState: getColorSafetyState" in theme
 assert not (root / "tasks/ClipHub_打开全局剪贴板.js").exists()
 
-if mode in ("--current", "--main"):
+if mode == "--current":
     required_versions = {
         "ch_08_window.js": ("ch_08_window", 19),
         "ch_09_list.js": ("ch_09_list", 21),
@@ -288,8 +288,8 @@ print("endpointSchemaVersion: 3")
 print("moduleSetVersion: " + expected_module_set)
 print("sourceRef: " + expected_ref)
 print("Theme: " + str(expected_theme_version))
-if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
-    if mode == "--settings-tabs-beta":
+if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta", "--main"):
+    if mode in ("--settings-tabs-beta", "--main"):
         required_versions = {
             "ch_03_database.js": ("ch_03_database", 5),
             "ch_06_repository.js": ("ch_06_repository", 19),
@@ -324,7 +324,7 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
     assert "db.setVersion(3)" not in database_source
     assert "CREATE TABLE IF NOT EXISTS regex_rules" in database_source
     assert "feature.regex_rules.schema_version" in database_source
-    if mode == "--settings-tabs-beta":
+    if mode in ("--settings-tabs-beta", "--main"):
         assert "var REGEX_FEATURE_SCHEMA_VERSION = 1;" in database_source
         assert "REGEX_FEATURE_MIGRATIONS" in database_source
         assert "migrateRegexFeatureSchema" in database_source
@@ -348,8 +348,8 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
     assert "filterRegexRuleIds" in settings_source
     assert "filterRegexMatchMode" in settings_source
     assert manifest.get("sourceRef") == expected_ref
-    assert len(manifest.get("modules", [])) == (17 if mode == "--settings-tabs-beta" else 15)
-    if mode == "--settings-tabs-beta":
+    assert len(manifest.get("modules", [])) == (17 if mode in ("--settings-tabs-beta", "--main") else 15)
+    if mode in ("--settings-tabs-beta", "--main"):
         assert 'var settingsTab = "general";' in settings_source
         assert "function setSettingsTab(tab, origin)" in settings_source
         assert "function makeSettingsTabBar(parent, colors)" in settings_source
@@ -439,7 +439,7 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         print("UI shell stage7 contracts: passed")
         print("Settings tabs safety contracts: passed")
     print("Regex beta safety contracts: passed")
-if mode in ("--current", "--main"):
+if mode == "--current":
     print("Current safety contracts: passed")
 PY
 
