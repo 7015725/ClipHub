@@ -476,19 +476,23 @@
         } else if (name === "search") {
             circle(10.5, 10.5, 5.5); line(14.7, 14.7, 19, 19);
         } else if (name === "settings") {
-            circle(12, 12, 3.2);
-            for (i = 0; i < 8; i += 1) {
-                angle = Math.PI * i / 4;
-                x1 = 12 + Math.cos(angle) * 6.0;
-                y1 = 12 + Math.sin(angle) * 6.0;
-                x2 = 12 + Math.cos(angle) * 8.2;
-                y2 = 12 + Math.sin(angle) * 8.2;
-                line(x1, y1, x2, y2);
+            /* panel_icon_optical_p1_v1: toothed outline instead of sun-like spokes. */
+            path = new Path();
+            for (i = 0; i < 24; i += 1) {
+                angle = (-Math.PI / 2) + (Math.PI * 2 * i / 24);
+                x1 = 12 + Math.cos(angle) * ((i % 3 === 1) ? 8.4 : 6.9);
+                y1 = 12 + Math.sin(angle) * ((i % 3 === 1) ? 8.4 : 6.9);
+                if (i === 0) { path.moveTo(v(x1), v(y1)); }
+                else { path.lineTo(v(x1), v(y1)); }
             }
+            path.close();
+            canvas.drawPath(path, stroke);
+            circle(12, 12, 2.8);
         } else if (name === "list") {
+            /* panel_icon_optical_p1_v1: lighter bullets and clearer bullet-to-line gap. */
             for (i = 0; i < 3; i += 1) {
-                circle(5.5, 7 + i * 5, 0.9, fill);
-                line(9, 7 + i * 5, 19, 7 + i * 5);
+                circle(5.2, 7 + i * 5, 0.65, fill);
+                line(9.5, 7 + i * 5, 18.5, 7 + i * 5);
             }
         } else if (name === "more_vertical") {
             circle(12, 6.5, 1.3, fill); circle(12, 12, 1.3, fill); circle(12, 17.5, 1.3, fill);
@@ -519,9 +523,17 @@
             line(8, 6, 16, 6); line(9.2, 6, 10, 11.5); line(14.8, 6, 14, 11.5);
             line(7, 11.5, 17, 11.5); line(12, 11.5, 12, 19);
         } else if (name === "globe") {
-            circle(12, 12, 8);
-            canvas.drawOval(new RectF(v(8.5), v(4), v(15.5), v(20)), stroke);
-            line(4.5, 12, 19.5, 12);
+            /* panel_icon_optical_p1_v1: sparse longitude curves for small-size clarity. */
+            circle(12, 12, 7.6);
+            path = new Path();
+            path.moveTo(v(12), v(4.4));
+            path.cubicTo(v(8.8), v(7.1), v(8.8), v(16.9), v(12), v(19.6));
+            canvas.drawPath(path, stroke);
+            path = new Path();
+            path.moveTo(v(12), v(4.4));
+            path.cubicTo(v(15.2), v(7.1), v(15.2), v(16.9), v(12), v(19.6));
+            canvas.drawPath(path, stroke);
+            line(4.8, 12, 19.2, 12);
         } else if (name === "input") {
             line(5, 12, 15.5, 12); line(12.5, 9, 15.5, 12); line(15.5, 12, 12.5, 15);
             line(18.5, 6, 18.5, 18);
@@ -585,7 +597,7 @@
 
     ClipHub.Theme = {
         MODULE_NAME: "ch_07_theme",
-        MODULE_VERSION: 7,
+        MODULE_VERSION: 8,
         init: function () { mode = "system"; return true; },
         setMode: function (value) {
             value = String(value || "system");
