@@ -86,10 +86,10 @@
             legacySurface: "detail", shellReady: false });
         registerPage({ id: "editor", parentId: "home", owner: "editor",
             moduleName: "Editor", cachePolicy: "rebind",
-            legacySurface: "editor", shellReady: false });
+            legacySurface: "editor", shellReady: true });
         registerPage({ id: "tags", parentId: "editor", owner: "tags",
             moduleName: "Editor", cachePolicy: "lazy",
-            legacySurface: "tags", shellReady: false });
+            legacySurface: "tags", shellReady: true });
         registerPage({ id: "filter", parentId: "home", owner: "filter",
             moduleName: "Filter", cachePolicy: "lazy",
             legacySurface: "filter", shellReady: false });
@@ -109,9 +109,9 @@
             owner: "translation", moduleName: "Translation",
             cachePolicy: "rebind", legacySurface: "translation",
             shellReady: true });
-        registerPage({ id: "tokenizer", parentId: "home", owner: "tokenizer",
+        registerPage({ id: "tokenizer", parentId: "editor", owner: "tokenizer",
             moduleName: "TokenizerUI", cachePolicy: "rebind",
-            legacySurface: "tokenizer", shellReady: false });
+            legacySurface: "tokenizer", shellReady: true });
     }
 
     function stackIds() {
@@ -147,6 +147,11 @@
             return current === "settings" || current === "regex_rules" ||
                 current === "regex_editor" || current === "regex_test";
         }
+        if (pageId === "editor" || pageId === "tags" ||
+                pageId === "tokenizer") {
+            return current === "editor" || current === "tags" ||
+                current === "tokenizer";
+        }
         return false;
     }
 
@@ -156,8 +161,13 @@
         if (!initialized || host.ready !== true) { return false; }
         if (id !== "settings" && id !== "translation" &&
                 id !== "regex_rules" && id !== "regex_editor" &&
-                id !== "regex_test") { return false; }
-        return isSameShellFamily(id === "translation" ? "translation" : "settings");
+                id !== "regex_test" && id !== "editor" &&
+                id !== "tags" && id !== "tokenizer") { return false; }
+        if (id === "translation") { return isSameShellFamily("translation"); }
+        if (id === "editor" || id === "tags" || id === "tokenizer") {
+            return isSameShellFamily(id);
+        }
+        return isSameShellFamily("settings");
     }
 
     function setStackPath(path, reason) {
@@ -243,7 +253,9 @@
         if (activePageId === null) { return true; }
         if (id && id !== activePageId &&
                 !(id === "settings" && (activePageId === "regex_rules" ||
-                    activePageId === "regex_editor" || activePageId === "regex_test"))) {
+                    activePageId === "regex_editor" || activePageId === "regex_test")) &&
+                !(id === "editor" && (activePageId === "tags" ||
+                    activePageId === "tokenizer"))) {
             return false;
         }
         if (ClipHub.Filter &&
@@ -351,7 +363,7 @@
         var host = primaryHostState();
         return {
             initialized: initialized === true,
-            migrationStage: "primary_overlay_settings_regex_translation",
+            migrationStage: "primary_overlay_settings_regex_translation_editor_tags_tokenizer",
             primaryWindowMode: true,
             legacyWindowBridge: true,
             hostAttached: host.ready === true,
@@ -421,7 +433,7 @@
 
     ClipHub.UIShell = {
         MODULE_NAME: "ch_16_ui_shell",
-        MODULE_VERSION: 2,
+        MODULE_VERSION: 3,
         init: init,
         registerPage: registerPage,
         getPage: function (pageId) { return copyDescriptor(requirePage(pageId)); },
