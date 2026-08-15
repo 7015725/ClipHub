@@ -39,12 +39,14 @@ jobs:
       - name: Apply semantic icon system
         run: |
           python3 - <<'PY'
+          import textwrap
           from pathlib import Path
           p = Path('.github/icon_system_patch_once.py')
           text = p.read_text(encoding='utf-8')
           start = text.index('def inject_make_text_bridge(source, path):')
           end = text.index('\n\nICON_CODE =', start)
-          replacement = '''def inject_make_text_bridge(source, path):
+          replacement = textwrap.dedent('''
+          def inject_make_text_bridge(source, path):
               if "panel_icon_text_bridge_v1" in source:
                   return source
               candidates = ["makeText", "makeIcon", "makeEditorHeaderAction", "makeHeaderAction", "makeCloseButton"]
@@ -104,8 +106,7 @@ jobs:
               source = source[:insert_at] + bridge + source[insert_at:]
               assert "panel_icon_text_bridge_v1" in source
               return source
-          '''
-          replacement = '\n'.join(line[10:] if line.startswith('          ') else line for line in replacement.splitlines())
+          ''').lstrip()
           p.write_text(text[:start] + replacement + text[end:], encoding='utf-8')
           PY
           python3 .github/icon_system_patch_once.py
