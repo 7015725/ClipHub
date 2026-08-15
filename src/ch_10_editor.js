@@ -2020,7 +2020,6 @@
         var isNew = state.mode === "new";
         var sourceText = isNew ? "ClipHub 手动" :
             String(row && row.source_label ? row.source_label : "未知来源");
-        var dragRow = new LinearLayout(appContext);
         var dragHandle = new View(appContext);
         var header = new LinearLayout(appContext);
         var titleStack = new LinearLayout(appContext);
@@ -2038,22 +2037,17 @@
         state.contentMinLines = 10;
         state.contentLength = String(initialText || "").length;
 
-        dragRow.setGravity(Gravity.CENTER);
         dragHandle.setBackground(roundedBackground(
             colors.accentBorder, null, 3));
-        dragRow.addView(dragHandle,
-            new LinearLayout.LayoutParams(dp(42), dp(4)));
-        params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(16));
-        params.bottomMargin = dp(4);
-        panelRoot.addView(dragRow, params);
+        params = new LinearLayout.LayoutParams(dp(42), dp(4));
+        params.gravity = Gravity.CENTER_HORIZONTAL;
+        params.bottomMargin = dp(8);
+        panelRoot.addView(dragHandle, params);
         state.dragHandlePresent = true;
 
         header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setClipChildren(false);
+        header.setGravity(Gravity.TOP);
         titleStack.setOrientation(LinearLayout.VERTICAL);
-        titleStack.setTranslationY(-dp(1));
         titleTextView = makeText(isNew ? "新增剪贴板" : "编辑剪贴板",
             17, colors.textPrimary, true);
         subtitleTextView = makeText(isNew ?
@@ -2069,12 +2063,13 @@
             LinearLayout.LayoutParams.WRAP_CONTENT);
         params.topMargin = dp(2);
         titleStack.addView(subtitleTextView, params);
-        header.addView(titleStack, new LinearLayout.LayoutParams(
-            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        params = new LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+        params.topMargin = dp(8);
+        header.addView(titleStack, params);
 
         headerCloseView = makeText("×", 22, colors.icon, true);
         headerCloseView.setGravity(Gravity.CENTER);
-        headerCloseView.setTranslationY(-dp(9));
         headerCloseView.setContentDescription("关闭编辑窗口");
         headerCloseView.setBackground(roundedBackground(
             colors.surfaceMuted, null, 18));
@@ -2084,10 +2079,11 @@
             View.OnClickListener, {
                 onClick: function () { requestExit("cancel_button"); }
             }));
-        header.addView(headerCloseView,
-            new LinearLayout.LayoutParams(dp(36), dp(36)));
+        params = new LinearLayout.LayoutParams(dp(36), dp(36));
+        params.gravity = Gravity.TOP;
+        header.addView(headerCloseView, params);
         params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(36));
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(44));
         params.bottomMargin = dp(6);
         panelRoot.addView(header, params);
         state.headerIconPresent = false;
@@ -2844,7 +2840,7 @@
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 28,
+        MODULE_VERSION: 29,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
