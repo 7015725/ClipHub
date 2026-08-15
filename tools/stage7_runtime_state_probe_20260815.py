@@ -24,23 +24,24 @@ def unpack(path):
     return gzip.decompress(base64.b64decode(
         ''.join(json.loads(x) for x in pieces))).decode('utf-8')
 
-def function_context(src, marker, radius=5000):
-    pos = src.find(marker)
-    if pos < 0:
-        return '<missing>'
-    return src[pos:min(len(src), pos + radius)]
-
 for path in TARGETS:
     src = unpack(path)
     print('\n===== %s =====' % path)
-    for marker in [
-        'function getState()',
-        'function getDetailState()',
-        'function getPanelState()',
-        'function getPrimaryHostState()',
-        'function getTranslationState()',
-        'function getRemovalState()',
-    ]:
-        if marker in src:
-            print('\n--- %s ---' % marker)
-            print(function_context(src, marker))
+    version = re.search(r'MODULE_NAME:\s*"([^"]+)"\s*,\s*MODULE_VERSION:\s*(\d+)', src, re.S)
+    if version:
+        print('module=%s version=%s' % (version.group(1), version.group(2)))
+    seen = set()
+    for line in src.splitlines():
+        stripped = line.strip()
+        lower = stripped.lower()
+        if any(word in lower for word in [
+            'embeddedinprimary', 'attachedtowindow', 'managedwindowcount',
+            'managedwindowroles', 'pendingsaferemove',
+            'panelwidthdp', 'panelheightdp', 'normalpanelheightdp',
+            'currentpanelheightdp', 'currentpaneltopdp', 'softinput',
+            'ime', 'inputfocused', 'keyboardrequestcount', 'rootmode',
+            'childattached', 'childpageid', 'homecachepreserved',
+        ]):
+            if ':' in stripped and stripped not in seen:
+                seen.add(stripped)
+                print(stripped)
