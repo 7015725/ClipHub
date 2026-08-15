@@ -14,23 +14,45 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Settings embed anchors
+      - name: Lifecycle anchors
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           import base64,gzip,json,re
           from pathlib import Path
-          s=Path('src/ch_13_settings.js').read_text(encoding='utf-8')
-          m=re.search(r'\bvar\s+(?:PACKED_B64|encoded)\s*=\s*(.*?);',s,re.S)
-          if m:
-              p=re.findall(r'"(?:\\.|[^"\\])*"',m.group(1))
-              s=gzip.decompress(base64.b64decode(''.join(json.loads(x) for x in p))).decode('utf-8')
-          for needle in ['buildPage =','function buildPage','addSettingsDragHandle','makeRegexRulesPage','makeRegexEditorPage','makeRegexTestPage','settingsPage = "regex_rules"']:
-              print('\n### '+needle+' count='+str(s.count(needle))+' ###')
-              pos=0
-              for i in range(min(5,s.count(needle))):
-                  idx=s.find(needle,pos)
-                  print(s[max(0,idx-1200):idx+4200])
-                  pos=idx+len(needle)
+          def expand(path):
+              s=Path(path).read_text(encoding='utf-8')
+              m=re.search(r'\bvar\s+(?:PACKED_B64|encoded)\s*=\s*(.*?);',s,re.S)
+              if m:
+                  p=re.findall(r'"(?:\\.|[^"\\])*"',m.group(1))
+                  s=gzip.decompress(base64.b64decode(''.join(json.loads(x) for x in p))).decode('utf-8')
+              return s
+          def get_func(s,name):
+              m=re.search(r'\bfunction\s+'+re.escape(name)+r'\s*\(',s)
+              if not m: return ''
+              b=s.find('{',m.end()); d=0; q=None; e=False; i=b
+              while i<len(s):
+                  c=s[i]
+                  if q:
+                      if e:e=False
+                      elif c=='\\':e=True
+                      elif c==q:q=None
+                  else:
+                      if c in ('"',"'"):q=c
+                      elif c=='{':d+=1
+                      elif c=='}':
+                          d-=1
+                          if d==0:return s[m.start():i+1]
+                  i+=1
+              return ''
+          for label,path,names in [
+              ('SETTINGS','src/ch_13_settings.js',['openPage','closePage','startSettingsImeMonitor','stopSettingsImeMonitor','getState']),
+              ('TRANSLATION','src/ch_12_translation.js',['openTranslationForItem','closeTranslationPanel','getTranslationState'])
+          ]:
+              s=expand(path)
+              print('\n========== '+label+' ==========')
+              for name in names:
+                  print('\n### '+name+' ###')
+                  print(get_func(s,name))
           PY
