@@ -40,7 +40,7 @@ case "$MODE" in
     REQUIRE_CLEAN='1'
     ;;
   --settings-tabs-beta)
-    EXPECTED_REF='beta-regex-settings-tabs-20260814'
+    EXPECTED_REF='docs/tokenizer-softcode-hardening-20260815'
     EXPECTED_MODULE_SET='20260815.29'
     EXPECTED_ENTRY_VERSION='8'
     EXPECTED_APP_MODULE_VERSION='23'

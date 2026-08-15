@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "moduleSetVersion": "20260815.29",
   "entryMinVersion": 8,
-  "sourceRef": "beta-regex-settings-tabs-20260814",
+  "sourceRef": "docs/tokenizer-softcode-hardening-20260815",
   "modules": [
     {
       "name": "ch_01_base.js",
