@@ -6,6 +6,7 @@ on:
       - beta-regex-settings-tabs-20260814
     paths:
       - tools/stage4_detail_migration_20260815.py
+      - tools/stage4_detail_migration_retry.trigger
 
 permissions:
   contents: write
@@ -27,7 +28,12 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Apply Stage4 Detail migration
-        run: python3 tools/stage4_detail_migration_20260815.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/stage4_detail_migration_20260815.py
+          rm -f .github/workflows/ui_shell_stage4_probe_once.yml
+          rm -f tools/stage4_detail_migration_retry.trigger
 
       - name: Validate Rhino ES5 and release contracts
         run: bash scripts/release_preflight.sh --settings-tabs-beta
@@ -62,6 +68,7 @@ jobs:
           test ! -e tools/stage4_runtime_probe_20260815.py
           test ! -e .github/workflows/stage4_detail_migration_once.yml
           test ! -e tools/stage4_detail_migration_20260815.py
+          test ! -e tools/stage4_detail_migration_retry.trigger
           grep -q 'MODULE_VERSION: 22' src/ch_09_list.js
           grep -q 'MODULE_VERSION: 4' src/ch_16_ui_shell.js
           grep -q 'ClipHub.UIShell.canEmbed("detail")' src/ch_09_list.js
