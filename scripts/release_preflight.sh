@@ -41,7 +41,7 @@ case "$MODE" in
     ;;
   --settings-tabs-beta)
     EXPECTED_REF='docs/tokenizer-softcode-hardening-20260815'
-    EXPECTED_MODULE_SET='20260815.31'
+    EXPECTED_MODULE_SET='20260815.32'
     EXPECTED_ENTRY_VERSION='8'
     EXPECTED_APP_MODULE_VERSION='23'
     REQUIRE_CLEAN='0'
@@ -321,7 +321,7 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
             "ch_16_ui_shell.js": ("ch_16_ui_shell", 6),
             "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 8),
             "ch_18_tokenizer_core.js": ("ch_18_tokenizer_core", 1),
-            "ch_19_tokenizer_service.js": ("ch_19_tokenizer_service", 2),
+            "ch_19_tokenizer_service.js": ("ch_19_tokenizer_service", 3),
         }
     else:
         required_versions = {
@@ -491,6 +491,8 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert "deleteRuleConfig" in tokenizer_service_source
         assert 'PREFS_NAME = "cliphub_tokenizer_rules_v1"' in tokenizer_service_source
         assert "tokenizerRulesIsolatedFromFilter: true" in tokenizer_service_source
+        assert "selectedRuleIdsJson" in tokenizer_service_source
+        assert "settings.regexMode" in tokenizer_service_source
         assert "regex_rules" not in tokenizer_service_source
         assert "ClipHub.Repository" not in tokenizer_service_source
         assert 'syncTokenizerShell("tokenizer"' in tokenizer_source

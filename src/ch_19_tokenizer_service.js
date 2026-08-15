@@ -392,9 +392,11 @@
         return out;
     }
 
-    function configuredRules(regexText) {
+    function configuredRules(regexText, regexMode) {
         var rules = selectedRulesForTokenize();
         var temporary = trimText(regexText || "");
+        var temporaryMode = String(regexMode || "match") === "split" ?
+            "split" : "match";
         if (temporary) {
             rules.push({
                 id: "tokenizer.temporary",
@@ -403,10 +405,10 @@
                 flags: 0,
                 enabled: true,
                 priority: 2000,
-                mode: "match",
-                keepDelimiter: false,
+                mode: temporaryMode,
+                keepDelimiter: temporaryMode === "split",
                 groupMode: "whole",
-                type: "word",
+                type: temporaryMode === "split" ? "symbol" : "word",
                 source: "tokenizer-temporary"
             });
         }
@@ -425,7 +427,8 @@
             if (settings.configuredRulesJson) {
                 settings.rules = parseJsonArray(settings.configuredRulesJson, []);
             } else {
-                settings.rules = configuredRules(settings.regexText || "");
+                settings.rules = configuredRules(settings.regexText || "",
+                    settings.regexMode || "match");
             }
         } else {
             settings.includeBuiltins = true;
@@ -439,7 +442,10 @@
         if (String(settings.mode || "normal") === "regex" &&
                 settings.__explicitRules !== true) {
             settings.configuredRulesJson = JSON.stringify(
-                configuredRules(settings.regexText || ""));
+                configuredRules(settings.regexText || "",
+                    settings.regexMode || "match"));
+            settings.selectedRuleIdsJson = JSON.stringify(
+                getSelectedRuleIds());
         }
         return settings;
     }
@@ -458,7 +464,9 @@
                 String(options.requestId) : "";
             result.status = result.ok === true ? "ready" : "failed";
             result.selectedRuleIds = String(settings.mode || "normal") === "regex" ?
-                getSelectedRuleIds() : [];
+                (settings.selectedRuleIdsJson ?
+                    parseJsonArray(settings.selectedRuleIdsJson, []) :
+                    getSelectedRuleIds()) : [];
             state.status = result.status;
             state.completedCount += 1;
             state.lastError = result.ok === true ? null :
@@ -638,7 +646,7 @@
 
     ClipHub.TokenizerService = {
         MODULE_NAME: "ch_19_tokenizer_service",
-        MODULE_VERSION: 2,
+        MODULE_VERSION: 3,
         ENGINE_VERSION: 2,
         RULE_SCHEMA_VERSION: RULE_SCHEMA_VERSION,
         RULE_STORAGE_NAMESPACE: PREFS_NAME,
