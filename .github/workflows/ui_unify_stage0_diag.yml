@@ -1,4 +1,4 @@
-name: UI Unify Stage0 Diagnostic
+name: UI Unify Implementation
 
 on:
   push:
@@ -10,22 +10,32 @@ permissions:
   contents: write
 
 jobs:
-  diagnose:
+  implement:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Verify locked baseline and inspect packed tokenizer
+      - name: Apply bounded UI consistency patch
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import base64, gzip, hashlib, json, pathlib, re
+          import base64
+          import gzip
+          import hashlib
+          import json
+          import pathlib
+          import re
 
           root = pathlib.Path('.')
-          manifest = json.loads((root / 'module-manifest.json').read_text(encoding='utf-8'))
+          manifest_path = root / 'module-manifest.json'
+          editor_path = root / 'src/ch_10_editor.js'
+          translation_path = root / 'src/ch_12_translation.js'
+          tokenizer_path = root / 'src/ch_17_tokenizer_ui.js'
+
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
           if manifest.get('moduleSetVersion') != '20260815.01':
               raise SystemExit('unexpected moduleSetVersion: ' + str(manifest.get('moduleSetVersion')))
           if manifest.get('sourceRef') != 'beta-regex-settings-tabs-20260814':
@@ -36,78 +46,417 @@ jobs:
               'src/ch_12_translation.js': '4a5e6af14f94f90046f2652590e4a45a24803a17',
               'src/ch_17_tokenizer_ui.js': '9f8b5b9bb18b03dadeb2302dedbc5566d11cac07',
           }
+
           def blob_sha(data):
               return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit('%s: expected one anchor, got %d' % (label, count))
+              return text.replace(old, new, 1)
+
+          def replace_function_block(text, start_name, next_name, replacement):
+              start_marker = '    function ' + start_name + '('
+              end_marker = '    function ' + next_name + '('
+              start = text.find(start_marker)
+              if start < 0:
+                  raise SystemExit('missing function start: ' + start_name)
+              end = text.find(end_marker, start + len(start_marker))
+              if end < 0:
+                  raise SystemExit('missing function boundary: ' + next_name)
+              return text[:start] + replacement.rstrip() + '\n\n' + text[end:]
+
           for path, want in expected.items():
               got = blob_sha((root / path).read_bytes())
               if got != want:
                   raise SystemExit('%s baseline drift: %s' % (path, got))
 
-          loader_path = root / 'src/ch_17_tokenizer_ui.js'
-          loader = loader_path.read_text(encoding='utf-8')
+          # Stage 1: Editor. Remove only the decorative title icon.
+          editor = editor_path.read_text(encoding='utf-8')
+          icon_start = '        titleIconView = makeText(isNew ? "+" : "✎", 19,'
+          title_stack = '        titleStack.setOrientation(LinearLayout.VERTICAL);'
+          start = editor.find(icon_start)
+          end = editor.find(title_stack, start)
+          if start < 0 or end < 0 or end <= start:
+              raise SystemExit('editor title icon block boundary missing')
+          icon_block = editor[start:end]
+          required_icon_markers = [
+              'titleIconView.setGravity(Gravity.CENTER);',
+              'titleIconView.setBackground(roundedBackground(',
+              'header.addView(titleIconView, params);'
+          ]
+          for marker in required_icon_markers:
+              if marker not in icon_block:
+                  raise SystemExit('editor title icon contract missing: ' + marker)
+          editor = editor[:start] + editor[end:]
+          editor = replace_once(editor,
+              '        state.headerIconPresent = true;\n',
+              '        state.headerIconPresent = false;\n',
+              'editor header icon state')
+          editor = replace_once(editor,
+              '        MODULE_VERSION: 24,\n',
+              '        MODULE_VERSION: 25,\n',
+              'editor module version')
+          editor_path.write_text(editor, encoding='utf-8')
+
+          # Stage 2: Translation. Bound short original text and unify primary action height.
+          translation = translation_path.read_text(encoding='utf-8')
+          helper = '''    function translationOriginalViewportDp(text) {
+              var value = String(text || "");
+              var lineCount = value.split("\\n").length;
+              var length = value.length;
+              if (lineCount <= 1 && length <= 60) { return 48; }
+              if (lineCount <= 2 && length <= 140) { return 60; }
+              return 76;
+          }
+
+'''
+          translation = replace_once(translation,
+              '    function buildTranslationPanel() {\n',
+              helper + '    function buildTranslationPanel() {\n',
+              'translation viewport helper')
+          translation = replace_once(translation,
+              '        params = new LinearLayout.LayoutParams(\n'
+              '            LinearLayout.LayoutParams.MATCH_PARENT, dp(96));\n'
+              '        params.topMargin = dp(4);\n'
+              '        params.bottomMargin = dp(7);\n'
+              '        root.addView(originalScroll, params);\n',
+              '        params = new LinearLayout.LayoutParams(\n'
+              '            LinearLayout.LayoutParams.MATCH_PARENT,\n'
+              '            dp(translationOriginalViewportDp(\n'
+              '                translationState.sourceText)));\n'
+              '        params.topMargin = dp(4);\n'
+              '        params.bottomMargin = dp(7);\n'
+              '        root.addView(originalScroll, params);\n',
+              'translation original viewport')
+          translation = replace_once(translation,
+              '        params = new LinearLayout.LayoutParams(0, dp(40), 1);\n'
+              '        params.rightMargin = dp(6);\n'
+              '        actionRow1.addView(translationCopyView, params);\n'
+              '        actionRow1.addView(translationReplaceView, params);\n'
+              '        actionRow1.addView(translationSaveView,\n'
+              '            new LinearLayout.LayoutParams(0, dp(40), 1));\n'
+              '        root.addView(actionRow1, new LinearLayout.LayoutParams(\n'
+              '            LinearLayout.LayoutParams.MATCH_PARENT, dp(40)));\n',
+              '        params = new LinearLayout.LayoutParams(0, dp(42), 1);\n'
+              '        params.rightMargin = dp(6);\n'
+              '        actionRow1.addView(translationCopyView, params);\n'
+              '        actionRow1.addView(translationReplaceView, params);\n'
+              '        actionRow1.addView(translationSaveView,\n'
+              '            new LinearLayout.LayoutParams(0, dp(42), 1));\n'
+              '        root.addView(actionRow1, new LinearLayout.LayoutParams(\n'
+              '            LinearLayout.LayoutParams.MATCH_PARENT, dp(42)));\n',
+              'translation primary action height')
+          translation = replace_once(translation,
+              '        MODULE_NAME: "ch_12_translation",\n'
+              '        MODULE_VERSION: 13,\n',
+              '        MODULE_NAME: "ch_12_translation",\n'
+              '        MODULE_VERSION: 14,\n',
+              'translation module version')
+          translation_path.write_text(translation, encoding='utf-8')
+
+          # Stage 3/4: Unpack TokenizerUI, verify integrity, modify only View construction.
+          loader = tokenizer_path.read_text(encoding='utf-8')
           sha_match = re.search(r'var\s+SOURCE_SHA256\s*=\s*"([0-9a-f]+)";', loader)
           assign = re.search(r'var\s+PACKED_B64\s*=\s*(.*?);\s*\n\s*function\s+hexSha256', loader, re.S)
           if sha_match is None or assign is None:
               raise SystemExit('tokenizer packed loader contract missing')
           pieces = re.findall(r'"(?:\\.|[^"\\])*"', assign.group(1))
           encoded = ''.join(json.loads(piece) for piece in pieces)
-          source = gzip.decompress(base64.b64decode(encoded)).decode('utf-8')
-          source_sha = hashlib.sha256(source.encode('utf-8')).hexdigest()
-          if source_sha != sha_match.group(1):
-              raise SystemExit('tokenizer source integrity mismatch: ' + source_sha)
-          if source_sha != '3eb6f44f925e4c923a324f79225e419b7b0fea98280c768ee8820e5daa60b06e':
-              raise SystemExit('unexpected tokenizer source baseline: ' + source_sha)
+          tokenizer_source = gzip.decompress(base64.b64decode(encoded)).decode('utf-8')
+          tokenizer_source_sha = hashlib.sha256(tokenizer_source.encode('utf-8')).hexdigest()
+          if tokenizer_source_sha != sha_match.group(1):
+              raise SystemExit('tokenizer packed integrity mismatch: ' + tokenizer_source_sha)
+          if tokenizer_source_sha != '3eb6f44f925e4c923a324f79225e419b7b0fea98280c768ee8820e5daa60b06e':
+              raise SystemExit('unexpected tokenizer source baseline: ' + tokenizer_source_sha)
 
-          lines = source.splitlines()
-          out = []
-          out.append('BASELINE moduleSetVersion=20260815.01')
-          out.append('TOKENIZER source_sha256=' + source_sha)
-          out.append('TOKENIZER line_count=' + str(len(lines)))
-          out.append('')
-          out.append('===== TOKENIZER FUNCTION LIST =====')
-          for no, line in enumerate(lines, 1):
-              if re.match(r'^\s*function\s+[A-Za-z_$][A-Za-z0-9_$]*\s*\(', line):
-                  out.append('%05d: %s' % (no, line.strip()))
+          new_stats = '''    function buildStatsRow(parent) {
+              var colors = palette();
+              var row = new LinearLayout(appContext);
+              var params;
+              row.setOrientation(LinearLayout.HORIZONTAL);
+              row.setGravity(Gravity.CENTER_VERTICAL);
+              statsLeftView = makeText("共 0 个词语", 10,
+                  colors.textSecondary, false);
+              statsRightView = makeText("单词 0 / 符号 0", 10,
+                  colors.textTertiary, false);
+              row.addView(statsLeftView,
+                  new LinearLayout.LayoutParams(0,
+                      LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+              row.addView(statsRightView,
+                  new LinearLayout.LayoutParams(
+                      LinearLayout.LayoutParams.WRAP_CONTENT,
+                      LinearLayout.LayoutParams.WRAP_CONTENT));
+              params = new LinearLayout.LayoutParams(
+                  LinearLayout.LayoutParams.MATCH_PARENT, dp(30));
+              parent.addView(row, params);
+              updateStatsViews();
+              return row;
+          }'''
+          tokenizer_source = replace_function_block(
+              tokenizer_source, 'buildStatsRow', 'buildTokenScroll', new_stats)
 
-          out.append('')
-          out.append('===== TOKENIZER TARGETED SOURCE =====')
-          for start, end in [(1, 180), (640, 1015), (1220, 1375)]:
-              out.append('--- lines %d-%d ---' % (start, end))
-              for idx in range(start - 1, min(end, len(lines))):
-                  out.append('%05d: %s' % (idx + 1, lines[idx]))
+          new_toolbar_cell = '''    function makeToolbarCell(icon, label, action, danger) {
+              var colors = palette();
+              var cell = new LinearLayout(appContext);
+              var iconView = makeText(icon, 14.5,
+                  danger ? colors.danger : colors.icon, false);
+              var labelView = makeText(label, 9.5,
+                  danger ? colors.danger : colors.textPrimary, false);
+              cell.setOrientation(LinearLayout.VERTICAL);
+              cell.setGravity(Gravity.CENTER);
+              cell.setPadding(dp(2), dp(2), dp(2), dp(2));
+              cell.setClickable(true);
+              cell.setFocusable(true);
+              cell.setContentDescription(String(label));
+              applyBackground(cell,
+                  danger ? colors.dangerSoft : colors.surfaceMuted,
+                  danger ? colors.danger : colors.stroke, 10);
+              iconView.setGravity(Gravity.CENTER);
+              labelView.setGravity(Gravity.CENTER);
+              cell.addView(iconView,
+                  new LinearLayout.LayoutParams(
+                      LinearLayout.LayoutParams.MATCH_PARENT, dp(20)));
+              cell.addView(labelView,
+                  new LinearLayout.LayoutParams(
+                      LinearLayout.LayoutParams.MATCH_PARENT, dp(17)));
+              cell.setOnClickListener(new JavaAdapter(View.OnClickListener, {
+                  onClick: function () { emitAction(action, {}); }
+              }));
+              return cell;
+          }'''
+          tokenizer_source = replace_function_block(
+              tokenizer_source, 'makeToolbarCell', 'buildHeader', new_toolbar_cell)
 
-          editor = (root / 'src/ch_10_editor.js').read_text(encoding='utf-8')
-          translation = (root / 'src/ch_12_translation.js').read_text(encoding='utf-8')
-          out.append('')
-          out.append('===== EDITOR ANCHOR COUNTS =====')
-          for anchor in [
-              'titleIconView = makeText(isNew ? "+" : "✎", 19,',
-              'header.addView(titleIconView, params);',
-              'titleTextView = makeText(isNew ? "新增剪贴板" : "编辑剪贴板",'
-          ]:
-              out.append('%r => %d' % (anchor, editor.count(anchor)))
-          out.append('')
-          out.append('===== TRANSLATION ANCHOR COUNTS =====')
-          for anchor in [
-              'root.addView(originalScroll, params);',
-              'dp(96)',
-              'translationCopyView = translationButton("复制译文", colors, true, false);',
-              'params = new LinearLayout.LayoutParams(0, dp(40), 1);'
-          ]:
-              out.append('%r => %d' % (anchor, translation.count(anchor)))
+          new_header = '''    function buildDragHandle(column) {
+              var colors = palette();
+              var row = new LinearLayout(appContext);
+              var handle = new View(appContext);
+              row.setGravity(Gravity.CENTER);
+              applyBackground(handle, colors.accentBorder, null, 3);
+              row.addView(handle,
+                  new LinearLayout.LayoutParams(dp(42), dp(4)));
+              column.addView(row,
+                  new LinearLayout.LayoutParams(
+                      LinearLayout.LayoutParams.MATCH_PARENT, dp(16)));
+          }
 
-          clean = [line.rstrip() for line in out]
-          (root / 'ui_unify_stage0_diag.txt').write_text('\n'.join(clean) + '\n', encoding='utf-8')
-          print('diagnostic_ready')
+          function buildHeader(column) {
+              var colors = palette();
+              var header = new LinearLayout(appContext);
+              var back = makeClickText("‹", 22, colors, "返回编辑页");
+              var title = makeText("分词", 18, colors.textPrimary, true);
+              var right = new LinearLayout(appContext);
+              var rule = makeClickText("▣", 15, colors, "规则");
+              var help = makeClickText("?", 15, colors, "帮助");
+              var params;
+              header.setOrientation(LinearLayout.HORIZONTAL);
+              header.setGravity(Gravity.CENTER_VERTICAL);
+              back.setGravity(Gravity.CENTER);
+              applyBackground(back, colors.surfaceMuted, null, 18);
+              title.setGravity(Gravity.CENTER_VERTICAL);
+              rule.setGravity(Gravity.CENTER);
+              safeTextColor(rule, colors.accentStrong);
+              applyBackground(rule, colors.accentSoft,
+                  colors.accentBorder, 18);
+              help.setGravity(Gravity.CENTER);
+              applyBackground(help, colors.surfaceMuted, null, 18);
+              back.setOnClickListener(new JavaAdapter(View.OnClickListener, {
+                  onClick: function () { returnToEditor("header_back"); }
+              }));
+              rule.setOnClickListener(new JavaAdapter(View.OnClickListener, {
+                  onClick: function () { emitAction("rule", {}); }
+              }));
+              help.setOnClickListener(new JavaAdapter(View.OnClickListener, {
+                  onClick: function () { emitAction("help", {}); }
+              }));
+              header.addView(back,
+                  new LinearLayout.LayoutParams(dp(38), dp(38)));
+              params = new LinearLayout.LayoutParams(
+                  0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+              params.leftMargin = dp(8);
+              params.rightMargin = dp(8);
+              header.addView(title, params);
+              right.setOrientation(LinearLayout.HORIZONTAL);
+              right.setGravity(Gravity.CENTER_VERTICAL);
+              right.addView(rule,
+                  new LinearLayout.LayoutParams(dp(38), dp(38)));
+              params = new LinearLayout.LayoutParams(dp(38), dp(38));
+              params.leftMargin = dp(4);
+              right.addView(help, params);
+              header.addView(right,
+                  new LinearLayout.LayoutParams(
+                      LinearLayout.LayoutParams.WRAP_CONTENT, dp(38)));
+              params = new LinearLayout.LayoutParams(
+                  LinearLayout.LayoutParams.MATCH_PARENT, dp(42));
+              params.bottomMargin = dp(5);
+              column.addView(header, params);
+          }'''
+          tokenizer_source = replace_function_block(
+              tokenizer_source, 'buildHeader', 'buildSegment', new_header)
+
+          new_toolbar = '''    function buildToolbar(column) {
+              var colors = palette();
+              var toolbar = new LinearLayout(appContext);
+              var params;
+              toolbar.setOrientation(LinearLayout.HORIZONTAL);
+              toolbar.setGravity(Gravity.CENTER_VERTICAL);
+              toolbar.setPadding(0, dp(3), 0, dp(3));
+              ClipHub.Theme.applyBackgroundColor(toolbar, colors.surface);
+              params = new LinearLayout.LayoutParams(0, dp(42), 1);
+              params.rightMargin = dp(4);
+              toolbar.addView(makeToolbarCell("▣", "复制", "copy", false), params);
+              params = new LinearLayout.LayoutParams(0, dp(42), 1);
+              params.rightMargin = dp(4);
+              toolbar.addView(makeToolbarCell("↵", "输入", "input", false), params);
+              params = new LinearLayout.LayoutParams(0, dp(42), 1);
+              params.rightMargin = dp(4);
+              toolbar.addView(makeToolbarCell("✎", "编辑", "edit", false), params);
+              params = new LinearLayout.LayoutParams(0, dp(42), 1);
+              params.rightMargin = dp(4);
+              toolbar.addView(makeToolbarCell("⇩", "导出", "export", false), params);
+              toolbar.addView(makeToolbarCell("⌫", "清空", "clear", true),
+                  new LinearLayout.LayoutParams(0, dp(42), 1));
+              column.addView(toolbar,
+                  new LinearLayout.LayoutParams(
+                      LinearLayout.LayoutParams.MATCH_PARENT, dp(48)));
+          }'''
+          tokenizer_source = replace_function_block(
+              tokenizer_source, 'buildToolbar', 'buildHint', new_toolbar)
+
+          tokenizer_source = replace_once(tokenizer_source,
+              '        pageColumn.setPadding(dp(8), dp(2), dp(8), dp(3));\n',
+              '        pageColumn.setPadding(0, 0, 0, dp(3));\n',
+              'tokenizer page padding')
+          tokenizer_source = replace_once(tokenizer_source,
+              '        buildHeader(pageColumn);\n',
+              '        buildDragHandle(pageColumn);\n'
+              '        buildHeader(pageColumn);\n',
+              'tokenizer visual drag handle')
+          tokenizer_source = replace_once(tokenizer_source,
+              '        bodyContainer.setPadding(dp(4), dp(3), dp(4), 0);\n',
+              '        bodyContainer.setPadding(0, dp(3), 0, 0);\n',
+              'tokenizer body padding')
+
+          version_pattern = re.compile(
+              r'(MODULE_NAME:\s*"ch_17_tokenizer_ui",\s*\n\s*MODULE_VERSION:\s*)(\d+)')
+          version_match = version_pattern.search(tokenizer_source)
+          if version_match is None:
+              raise SystemExit('tokenizer module version contract missing')
+          tokenizer_source = (tokenizer_source[:version_match.start(2)] +
+              str(int(version_match.group(2)) + 1) +
+              tokenizer_source[version_match.end(2):])
+
+          # Verify business handlers and mode contracts remain present.
+          required_tokenizer_contracts = [
+              'returnToEditor("header_back")',
+              'emitAction("rule", {})',
+              'emitAction("help", {})',
+              'emitAction(action, {})',
+              'switchMode(mode)',
+              'makeTokenTouchListener(index)',
+              'performToolbarClick(action)',
+              'performPopupActionClick(action)',
+              '"普通分词"',
+              '"正则规则"'
+          ]
+          for marker in required_tokenizer_contracts:
+              if marker not in tokenizer_source:
+                  raise SystemExit('tokenizer behavior contract missing: ' + marker)
+          if 'new LinearLayout.LayoutParams(0, dp(52), 1)' in tokenizer_source:
+              raise SystemExit('legacy tokenizer toolbar height remains')
+
+          new_source_sha = hashlib.sha256(
+              tokenizer_source.encode('utf-8')).hexdigest()
+          compressed = gzip.compress(
+              tokenizer_source.encode('utf-8'), compresslevel=9, mtime=0)
+          packed_b64 = base64.b64encode(compressed).decode('ascii')
+          chunks = [packed_b64[i:i + 120] for i in range(0, len(packed_b64), 120)]
+          assignment_lines = []
+          for index, chunk in enumerate(chunks):
+              suffix = ' +' if index < len(chunks) - 1 else ''
+              assignment_lines.append('        ' + json.dumps(chunk) + suffix)
+          new_assignment = 'var PACKED_B64 =\n' + '\n'.join(assignment_lines)
+          loader = re.sub(
+              r'var\s+SOURCE_SHA256\s*=\s*"[0-9a-f]+";',
+              'var SOURCE_SHA256 = "' + new_source_sha + '";',
+              loader, count=1)
+          loader = re.sub(
+              r'var\s+PACKED_B64\s*=\s*.*?;(?=\s*\n\s*function\s+hexSha256)',
+              new_assignment + ';', loader, count=1, flags=re.S)
+          tokenizer_path.write_text(loader, encoding='utf-8')
+          pathlib.Path('/tmp/tokenizer_ui_source.js').write_text(
+              tokenizer_source, encoding='utf-8')
+
+          # Stage 5: manifest update only for modified modules.
+          manifest['moduleSetVersion'] = '20260815.02'
+          new_blobs = {}
+          for path in [editor_path, translation_path, tokenizer_path]:
+              rel = str(path).replace('\\', '/')
+              new_blobs[rel] = blob_sha(path.read_bytes())
+          for entry in manifest.get('modules', []):
+              path = str(entry.get('path', ''))
+              if path in new_blobs:
+                  entry['sha'] = new_blobs[path]
+          for path, sha in new_blobs.items():
+              matches = [x for x in manifest.get('modules', []) if x.get('path') == path]
+              if len(matches) != 1 or matches[0].get('sha') != sha:
+                  raise SystemExit('manifest update failed for ' + path)
+          manifest_path.write_text(
+              json.dumps(manifest, ensure_ascii=False, indent=2) + '\n',
+              encoding='utf-8')
+
+          # Re-open packed output and verify loader/source integrity after repack.
+          loader_verify = tokenizer_path.read_text(encoding='utf-8')
+          sha_verify = re.search(r'var\s+SOURCE_SHA256\s*=\s*"([0-9a-f]+)";', loader_verify)
+          assign_verify = re.search(r'var\s+PACKED_B64\s*=\s*(.*?);\s*\n\s*function\s+hexSha256', loader_verify, re.S)
+          pieces_verify = re.findall(r'"(?:\\.|[^"\\])*"', assign_verify.group(1))
+          encoded_verify = ''.join(json.loads(piece) for piece in pieces_verify)
+          source_verify = gzip.decompress(base64.b64decode(encoded_verify)).decode('utf-8')
+          if hashlib.sha256(source_verify.encode('utf-8')).hexdigest() != sha_verify.group(1):
+              raise SystemExit('repacked tokenizer integrity mismatch')
+          if source_verify != tokenizer_source:
+              raise SystemExit('repacked tokenizer source changed')
+
+          print('editor_blob=' + new_blobs['src/ch_10_editor.js'])
+          print('translation_blob=' + new_blobs['src/ch_12_translation.js'])
+          print('tokenizer_blob=' + new_blobs['src/ch_17_tokenizer_ui.js'])
+          print('tokenizer_source_sha256=' + new_source_sha)
+          print('moduleSetVersion=20260815.02')
           PY
 
-      - name: Commit diagnostic only
+      - name: Static and release-boundary checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check src/ch_10_editor.js
+          node --check src/ch_12_translation.js
+          node --check src/ch_17_tokenizer_ui.js
+          node --check /tmp/tokenizer_ui_source.js
+          python3 scripts/validate_es5.py .
+          python3 scripts/audit_color_api.py --release-strict | tee /tmp/ui-unify-color.txt
+          grep '^HIGH=0 WARN=0 ' /tmp/ui-unify-color.txt
+          bash scripts/release_preflight.sh --regex-beta
+          git diff --check
+          grep -Fq 'MODULE_VERSION: 25' src/ch_10_editor.js
+          grep -Fq 'MODULE_VERSION: 14' src/ch_12_translation.js
+          grep -Fq 'translationOriginalViewportDp' src/ch_12_translation.js
+          grep -Fq 'buildDragHandle(pageColumn);' /tmp/tokenizer_ui_source.js
+          grep -Fq 'returnToEditor("header_back")' /tmp/tokenizer_ui_source.js
+          grep -Fq 'emitAction("rule", {})' /tmp/tokenizer_ui_source.js
+          grep -Fq 'emitAction("help", {})' /tmp/tokenizer_ui_source.js
+          grep -Fq '"moduleSetVersion": "20260815.02"' module-manifest.json
+
+      - name: Commit verified bounded patch and clean diagnostics
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add ui_unify_stage0_diag.txt
+          git rm -f .github/workflows/ui_unify_stage0_diag.yml ui_unify_stage0_diag.txt
+          git add src/ch_10_editor.js src/ch_12_translation.js src/ch_17_tokenizer_ui.js module-manifest.json
           git diff --cached --check
-          git commit -m "扩展 UI 一致性分词源码诊断"
+          git diff --cached --stat
+          git commit -m "统一编辑翻译分词页面视觉并保持行为边界"
           git push origin HEAD:beta-regex-settings-tabs-20260814
