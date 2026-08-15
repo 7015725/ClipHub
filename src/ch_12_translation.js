@@ -1248,16 +1248,16 @@
     }
 
     function translationButton(text, colors, primary, danger) {
-        var view = translationText(text, 10,
+        var view = translationText(text, 12,
             danger ? "#FFB42323" : (primary ? "#FFFFFFFF" : colors.accentStrong),
-            primary || danger);
+            true);
         view.setGravity(Gravity.CENTER);
         view.setSingleLine(true);
         view.setPadding(dp(8), dp(6), dp(8), dp(6));
         view.setBackground(translationRounded(
             primary ? colors.accentStrong :
                 (danger ? "#FFFFEEEE" : colors.accentSoft),
-            primary ? colors.accentStrong : colors.accentBorder, 11));
+            primary ? colors.accentStrong : colors.accentBorder, 13));
         view.setClickable(true);
         view.setFocusable(true);
         return view;
@@ -1689,10 +1689,10 @@
         var handleRow = new LinearLayout(appContext);
         var handle = new View(appContext);
         var header = new LinearLayout(appContext);
-        var title = translationText("翻译结果", 18, colors.textPrimary, true);
-        var originalLabel = translationText("原文", 11,
+        var title = translationText("翻译结果", 17, colors.textPrimary, true);
+        var originalLabel = translationText("原文", 12,
             colors.textSecondary, true);
-        var resultLabel = translationText("译文", 11,
+        var resultLabel = translationText("译文", 12,
             colors.textSecondary, true);
         var originalScroll = new ScrollView(appContext);
         var resultScroll = new ScrollView(appContext);
@@ -1726,10 +1726,10 @@
                 closeTranslationPanel("button");
             }}));
         header.addView(translationHeaderCloseView,
-            new LinearLayout.LayoutParams(dp(38), dp(38)));
+            new LinearLayout.LayoutParams(dp(36), dp(36)));
         params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(42));
-        params.bottomMargin = dp(5);
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(36));
+        params.bottomMargin = dp(6);
         root.addView(header, params);
 
         translationProviderView = translationText("准备翻译", 10,
@@ -1802,13 +1802,13 @@
             "重新翻译", colors, false, false);
         translationFooterCloseView = translationButton(
             "关闭", colors, false, false);
-        params = new LinearLayout.LayoutParams(0, dp(38), 1);
+        params = new LinearLayout.LayoutParams(0, dp(42), 1);
         params.rightMargin = dp(6);
         actionRow2.addView(translationRetryView, params);
         actionRow2.addView(translationFooterCloseView,
-            new LinearLayout.LayoutParams(0, dp(38), 1));
+            new LinearLayout.LayoutParams(0, dp(42), 1));
         params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(38));
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(42));
         params.topMargin = dp(6);
         root.addView(actionRow2, params);
 
@@ -2039,7 +2039,7 @@
     }
     ClipHub.Translation = {
         MODULE_NAME: "ch_12_translation",
-        MODULE_VERSION: 14,
+        MODULE_VERSION: 15,
         init: function (context) {
             translationConfig = { enabled: true, provider: "settings" };
             navigationInit(context || {});

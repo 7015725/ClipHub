@@ -2053,7 +2053,7 @@
         header.setGravity(Gravity.CENTER_VERTICAL);
         titleStack.setOrientation(LinearLayout.VERTICAL);
         titleTextView = makeText(isNew ? "新增剪贴板" : "编辑剪贴板",
-            18, colors.textPrimary, true);
+            17, colors.textPrimary, true);
         subtitleTextView = makeText(isNew ?
             "手动添加一条本地剪贴板记录" :
             "修改正文并管理当前记录的自定义标签",
@@ -2082,11 +2082,10 @@
                 onClick: function () { requestExit("cancel_button"); }
             }));
         header.addView(headerCloseView,
-            new LinearLayout.LayoutParams(dp(38), dp(38)));
+            new LinearLayout.LayoutParams(dp(36), dp(36)));
         params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dp(10);
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(36));
+        params.bottomMargin = dp(6);
         panelRoot.addView(header, params);
         state.headerIconPresent = false;
         state.headerCloseButtonPresent = true;
@@ -2190,7 +2189,7 @@
                 onClick: function () { saveFromInput(); }
             }));
         params = new LinearLayout.LayoutParams(0, dp(42), 1);
-        params.rightMargin = dp(8);
+        params.rightMargin = dp(6);
         footer.addView(cancelView, params);
         footer.addView(saveView,
             new LinearLayout.LayoutParams(0, dp(42), 1));
@@ -2842,7 +2841,7 @@
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 25,
+        MODULE_VERSION: 26,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
