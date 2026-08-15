@@ -1,0 +1,24 @@
+name: Stage5 Filter Surface Probe Once
+
+on:
+  push:
+    branches:
+      - beta-regex-settings-tabs-20260814
+    paths:
+      - tools/stage5_filter_surface_probe_20260815.py
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@v4
+        with:
+          ref: beta-regex-settings-tabs-20260814
+          fetch-depth: 0
+      - name: Probe packed Filter84 surface boundaries
+        run: python3 tools/stage5_filter_surface_probe_20260815.py
