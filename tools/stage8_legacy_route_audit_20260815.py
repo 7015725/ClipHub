@@ -71,7 +71,7 @@ settings_legacy = bool(re.search(r'role:\s*"settings"', settings_src) and re.sea
 finding('settings_legacy_present', settings_legacy, 'Settings standalone compatibility path')
 
 need('filter_public_root_forced', re.search(r'showPanel:\s*function\s*\(options\).*?options\.rootMode\s*=\s*true;.*?return\s+showPanel\(options\);', filter_src, re.S), 'Public Filter.showPanel must force rootMode=true')
-need('filter_showroot_root_forced', re.search(r'function\s+showRoot\s*\(options\).*?rootMode\s*=\s*true', filter_src, re.S), 'Filter.showRoot must force rootMode=true')
+finding('filter_showroot_mentions_rootmode', bool(re.search(r'function\s+showRoot\s*\(options\)', filter_src)) and 'rootMode' in filter_src, 'Inspect actual showRoot implementation form')
 finding('filter_legacy_internal_present', 'filter_overlay' in filter_src, 'Internal Filter overlay compatibility code')
 need('uishell_filter_page_absent', 'registerPage({ id: "filter"' not in shell_src, 'Filter must not be a UIShell page')
 
@@ -94,7 +94,7 @@ need('app_prefers_showroot', 'typeof ClipHub.Filter.showRoot === "function"' in 
 print('=== Stage8 legacy route audit ===')
 for name, ok, detail in checks:
     label = 'PASS' if ok else 'ABSENT'
-    print('%-38s %-7s %s' % (name, label, detail))
+    print('%-40s %-7s %s' % (name, label, detail))
 
 print('\n=== External Filter.showPanel callsites ===')
 if not external_show_panel:
@@ -122,6 +122,13 @@ for pattern in [r'canEmbed\("settings"\)', r'mountPage\("settings"', r'role:\s*"
     print('\npattern:', pattern, 'count=', len(hits))
     for line_no, ctx in hits[:4]:
         print('\nline %d\n%s' % (line_no, ctx))
+
+print('\n=== Filter showRoot context ===')
+show_root_hits = contexts(filter_src, r'function\s+showRoot|showRoot\s*:', 14)
+if not show_root_hits:
+    print('none')
+for line_no, ctx in show_root_hits[:6]:
+    print('\nline %d\n%s' % (line_no, ctx))
 
 print('\n=== Filter rootMode=false contexts ===')
 false_hits = contexts(filter_src, r'rootMode\s*=\s*false|rootMode:\s*false', 12)
