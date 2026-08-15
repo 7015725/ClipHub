@@ -37,7 +37,7 @@ jobs:
           python3 - <<'PY'
           import subprocess
           changed = set(subprocess.check_output(['git','diff','--name-only'], text=True).splitlines())
-          expected = {
+          production = {
               'src/ch_07_theme.js',
               'src/ch_09_list.js',
               'src/ch_10_editor.js',
@@ -47,8 +47,10 @@ jobs:
               'module-manifest.json',
               'scripts/release_preflight.sh',
           }
-          assert changed == expected, (changed, expected)
-          print('Production allowlist: passed')
+          temporary = {'tools/unify_panel_chrome_tmp.py'}
+          assert changed - temporary == production, (changed, production, temporary)
+          assert changed & temporary == temporary, (changed, temporary)
+          print('Production allowlist: passed; temporary implementation file isolated')
           PY
       - name: Commit validated production changes and cleanup
         run: |
