@@ -7,7 +7,7 @@ on:
       - .github/workflows/icon_audit_once.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   audit:
@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: beta-regex-settings-tabs-20260814
-      - name: Audit icon glyph call sites
+      - name: Build precise icon source report
         run: |
           python3 - <<'PY'
           import base64, gzip, hashlib, re
@@ -30,29 +30,37 @@ jobs:
               raw = gzip.decompress(base64.b64decode(m.group(2))).decode('utf-8')
               sm = re.search(r'var\s+SOURCE_SHA256\s*=\s*"([0-9a-f]{64})";', text)
               if sm:
-                  actual = hashlib.sha256(raw.encode('utf-8')).hexdigest()
-                  assert actual == sm.group(1), (path, actual, sm.group(1))
+                  assert hashlib.sha256(raw.encode('utf-8')).hexdigest() == sm.group(1)
               return raw
 
-          glyphs = ['×','‹','›','✓','✔','✕','✖','＋','+','−','▣','?','⚙','🔍','⌕','⋮','…','☰','✎','✏','🗑','📋','⧉','←','→','▲','▼','●','○']
           paths = [
-              'src/ch_09_list.js',
-              'src/ch_10_editor.js',
-              'src/ch_11_filter.js',
-              'src/ch_12_translation.js',
-              'src/ch_13_settings.js',
-              'src/ch_17_tokenizer_ui.js',
+              'src/ch_09_list.js', 'src/ch_10_editor.js', 'src/ch_11_filter.js',
+              'src/ch_12_translation.js', 'src/ch_13_settings.js', 'src/ch_17_tokenizer_ui.js'
           ]
+          glyphs = ['×','‹','›','✓','✔','✕','✖','＋','+','−','▣','?','⚙','🔍','⌕','⋮','…','☰','✎','✏','🗑','📋','⧉','←','→','▲','▼','●','○','⌗','↵','⇩','◇']
+          report = []
           for path in paths:
               src = unpack(path)
-              print('\n===== ' + path + ' =====')
               lines = src.splitlines()
-              for i, line in enumerate(lines, 1):
-                  if any(g in line for g in glyphs) and not line.lstrip().startswith('//'):
-                      print('%5d: %s' % (i, line[:260]))
-              print('--- icon-related helpers ---')
-              for i, line in enumerate(lines, 1):
+              hits = set()
+              for i, line in enumerate(lines):
                   low = line.lower()
-                  if ('function ' in line and ('icon' in low or 'header' in low or 'action' in low)) or 'makeClickText' in line:
-                      print('%5d: %s' % (i, line[:260]))
+                  if any(g in line for g in glyphs): hits.add(i)
+                  if ('function ' in line and any(k in low for k in ['icon','header','action'])): hits.add(i)
+                  if any(k in line for k in ['makeIcon(', 'makeHeaderAction(', 'makeEditorHeaderAction(', 'setCompoundDrawables', 'setText("×"', 'setText("‹"']): hits.add(i)
+              ranges = []
+              for i in sorted(hits):
+                  a=max(0,i-4); b=min(len(lines),i+7)
+                  if ranges and a <= ranges[-1][1]+1: ranges[-1]=(ranges[-1][0],max(ranges[-1][1],b))
+                  else: ranges.append((a,b))
+              report.append('\n===== %s =====\n' % path)
+              for a,b in ranges:
+                  for j in range(a,b): report.append('%5d | %s\n' % (j+1, lines[j]))
+                  report.append('-----\n')
+          Path('.github/icon_probe_report.txt').write_text(''.join(report), encoding='utf-8')
           PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/icon_probe_report.txt
+          git commit -m '临时记录Icon源码上下文'
+          git push
