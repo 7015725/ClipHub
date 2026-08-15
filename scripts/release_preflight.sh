@@ -41,7 +41,7 @@ case "$MODE" in
     ;;
   --settings-tabs-beta)
     EXPECTED_REF='beta-regex-settings-tabs-20260814'
-    EXPECTED_MODULE_SET='20260815.15'
+    EXPECTED_MODULE_SET='20260815.16'
     EXPECTED_ENTRY_VERSION='6'
     EXPECTED_APP_MODULE_VERSION='21'
     REQUIRE_CLEAN='0'
@@ -289,11 +289,11 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
             "ch_03_database.js": ("ch_03_database", 5),
             "ch_06_repository.js": ("ch_06_repository", 19),
             "ch_10_editor.js": ("ch_10_editor", 32),
-            "ch_11_filter.js": ("ch_11_filter", 84),
+            "ch_11_filter.js": ("ch_11_filter", 85),
             "ch_13_settings.js": ("ch_13_settings", 34),
             "ch_15_app.js": ("ch_15_app", 21),
             "ch_12_translation.js": ("ch_12_translation", 17),
-            "ch_16_ui_shell.js": ("ch_16_ui_shell", 4),
+            "ch_16_ui_shell.js": ("ch_16_ui_shell", 5),
             "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 3),
         }
     else:
@@ -363,13 +363,26 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         tokenizer_source = actual_sources["ch_17_tokenizer_ui.js"]
         list_source = actual_sources["ch_09_list.js"]
         assert 'MODULE_NAME: "ch_16_ui_shell"' in ui_shell_source
-        assert "MODULE_VERSION: 4" in ui_shell_source
-        assert 'migrationStage: "primary_overlay_settings_regex_translation_editor_tags_tokenizer_detail"' in ui_shell_source
+        assert "MODULE_VERSION: 5" in ui_shell_source
+        assert 'migrationStage: "primary_window_settings_regex_translation_editor_tags_tokenizer_detail_filter_overlay_closed"' in ui_shell_source
         assert 'primaryWindowMode: true' in ui_shell_source
         assert 'legacyWindowBridge: true' in ui_shell_source
         assert "mountPrimaryChildPage" in filter_source
         assert "unmountPrimaryChildPage" in filter_source
         assert "getPrimaryHostState" in filter_source
+        assert "        showPanel: showPanel," not in filter_source
+        assert re.search(
+            r"showPanel:\s*function\s*\(options\)\s*\{\s*"
+            r"options\s*=\s*options\s*\|\|\s*\{\};\s*"
+            r"options\.rootMode\s*=\s*true;\s*"
+            r"return\s+showPanel\(options\);\s*\}",
+            filter_source,
+            re.S,
+        )
+        assert "function createAdvancedDrawerBundle(colors, counts)" in filter_source
+        assert "resultBodyFrame.addView(nextBundle.container" in filter_source
+        assert 'state.lastBackLayer = "advanced_drawer"' in filter_source
+        assert 'registerPage({ id: "filter"' not in ui_shell_source
         assert "embeddedInPrimary" in settings_source
         assert "syncSettingsShellPage" in settings_source
         assert "openEmbeddedSettingsPage" in settings_source
@@ -401,7 +414,7 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert '"ch_16_ui_shell.js"' in entry
         assert '"Translation", "UIShell"' in app
         assert 'uiShell: uiShell' in app
-        print("UI shell stage3 contracts: passed")
+        print("UI shell stage5 contracts: passed")
         print("Settings tabs safety contracts: passed")
     print("Regex beta safety contracts: passed")
 if mode in ("--current", "--main"):

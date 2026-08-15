@@ -90,9 +90,6 @@
         registerPage({ id: "tags", parentId: "editor", owner: "tags",
             moduleName: "Editor", cachePolicy: "lazy",
             legacySurface: "tags", shellReady: true });
-        registerPage({ id: "filter", parentId: "home", owner: "filter",
-            moduleName: "Filter", cachePolicy: "lazy",
-            legacySurface: "filter", shellReady: false });
         registerPage({ id: "settings", parentId: "home", owner: "settings",
             moduleName: "Settings", cachePolicy: "lazy",
             legacySurface: "settings", shellReady: true });
@@ -365,7 +362,7 @@
         var host = primaryHostState();
         return {
             initialized: initialized === true,
-            migrationStage: "primary_overlay_settings_regex_translation_editor_tags_tokenizer_detail",
+            migrationStage: "primary_window_settings_regex_translation_editor_tags_tokenizer_detail_filter_overlay_closed",
             primaryWindowMode: true,
             legacyWindowBridge: true,
             hostAttached: host.ready === true,
@@ -435,7 +432,7 @@
 
     ClipHub.UIShell = {
         MODULE_NAME: "ch_16_ui_shell",
-        MODULE_VERSION: 4,
+        MODULE_VERSION: 5,
         init: init,
         registerPage: registerPage,
         getPage: function (pageId) { return copyDescriptor(requirePage(pageId)); },
