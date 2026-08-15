@@ -38,6 +38,9 @@
     var panelWindowRoot = null;
     var panelManagedFrame = null;
     var panelParams = null;
+    var panelPageRoot = null;
+    var panelOverlayHost = null;
+    var embeddedInPrimary = false;
     var contentInput = null;
     var tagNameInput = null;
     var saveView = null;
@@ -1255,6 +1258,9 @@
         panelWindowRoot = null;
         panelManagedFrame = null;
         panelParams = null;
+        panelPageRoot = null;
+        panelOverlayHost = null;
+        embeddedInPrimary = false;
         contentInput = null;
         tagNameInput = null;
         saveView = null;
@@ -1388,6 +1394,84 @@
         return true;
     }
 
+
+    function primaryShellAvailable() {
+        try {
+            return ClipHub.UIShell &&
+                typeof ClipHub.UIShell.canEmbed === "function" &&
+                ClipHub.UIShell.canEmbed("editor") === true;
+        } catch (ignored) {}
+        return false;
+    }
+
+    function primaryEditorTitle() {
+        return state.mode === "new" ? "新增剪贴板" : "编辑剪贴板";
+    }
+
+    function mountPrimaryEditorPage() {
+        if (!embeddedInPrimary || panelPageRoot === null ||
+                !ClipHub.UIShell ||
+                typeof ClipHub.UIShell.mountPage !== "function") {
+            return false;
+        }
+        ClipHub.UIShell.mountPage("editor", panelPageRoot, {
+            title: primaryEditorTitle(),
+            showBack: true,
+            onBack: function () { return requestExit("shell_back"); },
+            onClose: function () { return requestExit("shell_close"); }
+        });
+        return true;
+    }
+
+    function syncPrimaryEditorPage(pageId, title, onBack) {
+        var id = String(pageId || "editor");
+        var path = id === "editor" ? ["editor"] : ["editor", id];
+        if (!embeddedInPrimary || panelPageRoot === null ||
+                !ClipHub.UIShell ||
+                typeof ClipHub.UIShell.syncEmbeddedPage !== "function") {
+            return false;
+        }
+        return ClipHub.UIShell.syncEmbeddedPage({
+            pageId: id,
+            path: path,
+            title: String(title || primaryEditorTitle()),
+            showBack: true,
+            view: panelPageRoot,
+            onBack: typeof onBack === "function" ? onBack : function () {
+                return requestExit("shell_back");
+            },
+            onClose: function () { return requestExit("shell_close"); }
+        }) === true;
+    }
+
+    function bindTokenizerToEditor() {
+        if (!ClipHub.TokenizerUI ||
+                typeof ClipHub.TokenizerUI.bindEditorRoot !== "function" ||
+                panelRoot === null) {
+            return false;
+        }
+        try {
+            return ClipHub.TokenizerUI.bindEditorRoot(
+                panelRoot,
+                panelPageRoot !== null ? panelPageRoot : panelWindowRoot,
+                embeddedInPrimary === true) === true;
+        } catch (error) {
+            state.lastError = String(error);
+            return false;
+        }
+    }
+
+    function unbindTokenizerFromEditor(discard) {
+        if (!ClipHub.TokenizerUI ||
+                typeof ClipHub.TokenizerUI.unbindEditorRoot !== "function") {
+            return false;
+        }
+        try {
+            return ClipHub.TokenizerUI.unbindEditorRoot(discard === true) === true;
+        } catch (ignored) {}
+        return false;
+    }
+
     function showExitConfirmOnMain(reason) {
         var colors;
         var overlay;
@@ -1400,9 +1484,7 @@
         var cardParams;
         var actionParams;
         if (exitConfirmOverlay !== null) { return true; }
-        if (!panelManagedFrame || !panelManagedFrame.panelView) {
-            return false;
-        }
+        if (panelOverlayHost === null) { return false; }
         colors = editorPalette();
         overlay = new FrameLayout(appContext);
         ClipHub.Theme.applyBackgroundColor(overlay, "#76000000");
@@ -1475,7 +1557,7 @@
         cardParams.leftMargin = dp(22);
         cardParams.rightMargin = dp(22);
         overlay.addView(card, cardParams);
-        panelManagedFrame.panelView.addView(overlay,
+        panelOverlayHost.addView(overlay,
             new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
@@ -1625,6 +1707,37 @@
             state.itemId = null;
             return { ok: true, attached: false, alreadyClosed: true,
                 state: getState() };
+        }
+        if (embeddedInPrimary) {
+            removalOk = requireMain(runOnMainSync(function () {
+                var thread = nowThread();
+                hideKeyboardOnMain();
+                unbindTokenizerFromEditor(true);
+                try {
+                    if (ClipHub.UIShell &&
+                            typeof ClipHub.UIShell.unmountPage === "function") {
+                        ClipHub.UIShell.unmountPage("editor", reasonText);
+                    }
+                } catch (errorUnmount) {
+                    state.lastError = String(errorUnmount);
+                    return false;
+                }
+                state.closeCount += 1;
+                if (reasonText === "cancel") { state.cancelCount += 1; }
+                state.removeThreadId = thread.id;
+                state.removeThreadName = thread.name;
+                state.lastError = null;
+                state.open = false;
+                state.attached = false;
+                state.inputFocused = false;
+                state.itemId = null;
+                editorClosing = false;
+                editorRemovalPending = false;
+                clearViews();
+                return true;
+            }, 3000));
+            return { ok: removalOk === true, attached: false,
+                alreadyClosed: false, embedded: true, state: getState() };
         }
         removalOk = requireMain(runOnMainSync(function () {
             var thread = nowThread();
@@ -1811,7 +1924,9 @@
 
     function updatePanelSizeForMode() {
         var size;
-        if (panelRoot === null || panelParams === null) { return false; }
+        if (panelRoot === null) { return false; }
+        if (embeddedInPrimary) { return true; }
+        if (panelParams === null) { return false; }
         if (panelWindowRoot !== null && ClipHub.Window &&
                 typeof ClipHub.Window.refreshWindow === "function") {
             return ClipHub.Window.refreshWindow(panelWindowRoot,
@@ -1946,6 +2061,11 @@
         hideKeyboardOnMain();
         buildTagContent(false);
         updatePanelSizeForMode();
+        if (embeddedInPrimary) {
+            syncPrimaryEditorPage("tags", "选择标签", function () {
+                return requestExit("shell_tag_back");
+            });
+        }
         return true;
     }
 
@@ -1967,6 +2087,12 @@
         });
         updatePanelSizeForMode();
         tagReturnMode = null;
+        bindTokenizerToEditor();
+        if (embeddedInPrimary) {
+            syncPrimaryEditorPage("editor", primaryEditorTitle(), function () {
+                return requestExit("shell_back");
+            });
+        }
         return true;
     }
 
@@ -2020,7 +2146,6 @@
         var isNew = state.mode === "new";
         var sourceText = isNew ? "ClipHub 手动" :
             String(row && row.source_label ? row.source_label : "未知来源");
-        var dragRow = new LinearLayout(appContext);
         var dragHandle = new View(appContext);
         var header = new LinearLayout(appContext);
         var titleStack = new LinearLayout(appContext);
@@ -2038,31 +2163,20 @@
         state.contentMinLines = 10;
         state.contentLength = String(initialText || "").length;
 
-        dragRow.setGravity(Gravity.CENTER);
         dragHandle.setBackground(roundedBackground(
             colors.accentBorder, null, 3));
-        dragRow.addView(dragHandle,
-            new LinearLayout.LayoutParams(dp(42), dp(4)));
-        params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(16));
-        params.bottomMargin = dp(4);
-        panelRoot.addView(dragRow, params);
-        state.dragHandlePresent = true;
+        params = new LinearLayout.LayoutParams(dp(42), dp(4));
+        params.gravity = Gravity.CENTER_HORIZONTAL;
+        params.bottomMargin = dp(8);
+        panelRoot.addView(dragHandle, params);
+        if (embeddedInPrimary) { dragHandle.setVisibility(View.GONE); }
+        state.dragHandlePresent = embeddedInPrimary !== true;
 
         header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        titleIconView = makeText(isNew ? "+" : "✎", 19,
-            colors.accentStrong, true);
-        titleIconView.setGravity(Gravity.CENTER);
-        titleIconView.setBackground(roundedBackground(
-            colors.accentSoft, colors.accentBorder, 10));
-        params = new LinearLayout.LayoutParams(dp(38), dp(38));
-        params.rightMargin = dp(9);
-        header.addView(titleIconView, params);
-
+        header.setGravity(Gravity.TOP);
         titleStack.setOrientation(LinearLayout.VERTICAL);
         titleTextView = makeText(isNew ? "新增剪贴板" : "编辑剪贴板",
-            18, colors.textPrimary, true);
+            17, colors.textPrimary, true);
         subtitleTextView = makeText(isNew ?
             "手动添加一条本地剪贴板记录" :
             "修改正文并管理当前记录的自定义标签",
@@ -2076,10 +2190,12 @@
             LinearLayout.LayoutParams.WRAP_CONTENT);
         params.topMargin = dp(2);
         titleStack.addView(subtitleTextView, params);
-        header.addView(titleStack, new LinearLayout.LayoutParams(
-            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        params = new LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+        params.topMargin = dp(8);
+        header.addView(titleStack, params);
 
-        headerCloseView = makeText("×", 22, colors.icon, true);
+        headerCloseView = makeText("×", 17, colors.icon, false);
         headerCloseView.setGravity(Gravity.CENTER);
         headerCloseView.setContentDescription("关闭编辑窗口");
         headerCloseView.setBackground(roundedBackground(
@@ -2090,15 +2206,16 @@
             View.OnClickListener, {
                 onClick: function () { requestExit("cancel_button"); }
             }));
-        header.addView(headerCloseView,
-            new LinearLayout.LayoutParams(dp(38), dp(38)));
+        params = new LinearLayout.LayoutParams(dp(36), dp(36));
+        params.gravity = Gravity.TOP;
+        header.addView(headerCloseView, params);
         params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dp(10);
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(44));
+        params.bottomMargin = dp(6);
         panelRoot.addView(header, params);
-        state.headerIconPresent = true;
-        state.headerCloseButtonPresent = true;
+        if (embeddedInPrimary) { header.setVisibility(View.GONE); }
+        state.headerIconPresent = false;
+        state.headerCloseButtonPresent = embeddedInPrimary !== true;
 
         metaRow.setOrientation(LinearLayout.HORIZONTAL);
         metaRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -2199,7 +2316,7 @@
                 onClick: function () { saveFromInput(); }
             }));
         params = new LinearLayout.LayoutParams(0, dp(42), 1);
-        params.rightMargin = dp(8);
+        params.rightMargin = dp(6);
         footer.addView(cancelView, params);
         footer.addView(saveView,
             new LinearLayout.LayoutParams(0, dp(42), 1));
@@ -2260,6 +2377,7 @@
             LinearLayout.LayoutParams.MATCH_PARENT, dp(16));
         params.bottomMargin = dp(4);
         panelRoot.addView(dragRow, params);
+        if (embeddedInPrimary) { dragRow.setVisibility(View.GONE); }
 
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
@@ -2295,6 +2413,7 @@
             LinearLayout.LayoutParams.WRAP_CONTENT);
         params.bottomMargin = dp(10);
         panelRoot.addView(header, params);
+        if (embeddedInPrimary) { header.setVisibility(View.GONE); }
 
         inputRow.setOrientation(LinearLayout.HORIZONTAL);
         inputRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -2451,11 +2570,15 @@
             initialText = String(row.content);
         }
         if (state.attached) {
-            closePanel("replace");
-            pendingOpenRequest = { mode: mode, itemId: itemId,
-                options: options };
-            return { ok: true, attached: false, pending: true,
-                state: getState() };
+            if (embeddedInPrimary) {
+                closePanel("replace");
+            } else {
+                closePanel("replace");
+                pendingOpenRequest = { mode: mode, itemId: itemId,
+                    options: options };
+                return { ok: true, attached: false, pending: true,
+                    state: getState() };
+            }
         }
         state.mode = mode === "edit" ? "edit" :
             (mode === "tags" ? "tags" : "new");
@@ -2488,9 +2611,14 @@
             var thread = nowThread();
             var dark = isDarkMode();
             var colors = editorPalette();
+            var usePrimary = primaryShellAvailable();
+            var host = null;
             panelRoot = new LinearLayout(appContext);
             panelRoot.setOrientation(LinearLayout.VERTICAL);
-            if (state.mode === "tags") {
+            if (usePrimary) {
+                panelRoot.setPadding(0, 0, 0, 0);
+                panelRoot.setBackground(null);
+            } else if (state.mode === "tags") {
                 panelRoot.setPadding(dp(14), dp(12), dp(14), dp(12));
                 panelRoot.setBackground(roundedBackground(
                     dark ? "#FF181A1F" : "#FFFFFFFF",
@@ -2504,10 +2632,70 @@
                 panelRoot.setElevation(0);
                 panelRoot.setClipToOutline(true);
             }
+            if (usePrimary) {
+                embeddedInPrimary = true;
+                panelPageRoot = new FrameLayout(appContext);
+                panelOverlayHost = panelPageRoot;
+                panelPageRoot.addView(panelRoot,
+                    new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT));
+                state.open = true;
+                state.attached = true;
+                state.openCount += 1;
+                state.windowType = null;
+                state.windowFlags = null;
+                state.panelGravity = "shared";
+                state.panelBottomMarginDp = 0;
+                state.softInputMode = Number(
+                    WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+                state.softInputAdjustResize = true;
+                state.dimAmount = 0;
+                state.modalWindow = false;
+                state.opaqueBackground = false;
+                state.addThreadId = thread.id;
+                state.addThreadName = thread.name;
+                state.lastError = null;
+                try {
+                    host = ClipHub.Filter &&
+                        typeof ClipHub.Filter.getPrimaryHostState === "function" ?
+                        ClipHub.Filter.getPrimaryHostState() : null;
+                } catch (ignoredHost) { host = null; }
+                state.panelWidthDp = Number(host && host.widthDp || 0);
+                state.panelHeightDp = Number(host && host.heightDp || 0);
+                state.panelWidthPx = state.panelWidthDp > 0 ?
+                    dp(state.panelWidthDp) : null;
+                state.panelHeightPx = state.panelHeightDp > 0 ?
+                    dp(state.panelHeightDp) : null;
+                state.normalPanelHeightDp = Number(state.panelHeightDp || 0);
+                state.currentPanelHeightDp = Number(state.panelHeightDp || 0);
+                state.currentPanelTopDp = 0;
+                if (!mountPrimaryEditorPage()) {
+                    state.open = false;
+                    state.attached = false;
+                    clearViews();
+                    throw new Error("ClipHub primary editor mount failed");
+                }
+                if (state.mode === "tags") {
+                    state.editorStyle = "legacy_tags_v1";
+                    buildTagContent(requestKeyboard);
+                    syncPrimaryEditorPage("tags", "选择标签", function () {
+                        return requestExit("shell_tag_back");
+                    });
+                } else {
+                    buildTextContent(initialText, row, {
+                        requestKeyboard: requestKeyboard
+                    });
+                }
+                bindTokenizerToEditor();
+                return { ok: true, attached: true, embedded: true,
+                    mode: state.mode, itemId: state.itemId, state: getState() };
+            }
             panelManagedFrame = ClipHub.Window.createManagedFrame(panelRoot, {
                 accentColor: colors.accentStrong
             });
             panelWindowRoot = panelManagedFrame.rootView;
+            panelOverlayHost = panelManagedFrame.panelView;
             panelParams = new WindowManager.LayoutParams(
                 size.width, size.height, type,
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
@@ -2618,6 +2806,7 @@
             ready: ready,
             open: state.open,
             attached: state.attached,
+            embeddedInPrimary: embeddedInPrimary === true,
             closing: editorClosing === true,
             removalPending: editorRemovalPending === true,
             attachedToWindow: attachedToWindow,
@@ -2851,7 +3040,7 @@
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 24,
+        MODULE_VERSION: 32,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;

@@ -326,7 +326,7 @@ def add_constructor_findings(relative: str, source: str,
 
 def packed_source(relative: str, source: str) -> tuple[str, str] | None:
     assignment = re.search(
-        r"\bvar\s+PACKED_B64\s*=\s*(.*?);", source, re.S
+        r"\bvar\s+(?:PACKED_B64|encoded)\s*=\s*(.*?);", source, re.S
     )
     if assignment is None:
         return None
@@ -334,19 +334,34 @@ def packed_source(relative: str, source: str) -> tuple[str, str] | None:
         r"\bvar\s+SOURCE_SHA256\s*=\s*['\"]([0-9a-fA-F]{64})['\"]",
         source,
     )
-    if sha_match is None:
-        raise ValueError(f"{relative}: packed source SHA is missing")
     pieces = re.findall(r'"(?:\\.|[^"\\])*"', assignment.group(1))
     if not pieces:
-        raise ValueError(f"{relative}: PACKED_B64 is empty")
+        raise ValueError(f"{relative}: packed source is empty")
     encoded = "".join(json.loads(piece) for piece in pieces)
     expanded = gzip.decompress(base64.b64decode(encoded)).decode("utf-8")
-    actual = hashlib.sha256(expanded.encode("utf-8")).hexdigest()
-    expected = sha_match.group(1).lower()
-    if actual != expected:
-        raise ValueError(
-            f"{relative}: packed source SHA mismatch: {actual} != {expected}"
+    if sha_match is not None:
+        actual = hashlib.sha256(expanded.encode("utf-8")).hexdigest()
+        expected = sha_match.group(1).lower()
+        if actual != expected:
+            raise ValueError(
+                f"{relative}: packed source SHA mismatch: {actual} != {expected}"
+            )
+    else:
+        blob_match = re.search(
+            r"规范源码 Git blob:\s*([0-9a-fA-F]{40})", source
         )
+        if blob_match is None:
+            raise ValueError(f"{relative}: packed source integrity marker is missing")
+        raw = expanded.encode("utf-8")
+        actual_blob = hashlib.sha1(
+            f"blob {len(raw)}\0".encode("utf-8") + raw
+        ).hexdigest()
+        expected_blob = blob_match.group(1).lower()
+        if actual_blob != expected_blob:
+            raise ValueError(
+                f"{relative}: packed source Git blob mismatch: "
+                f"{actual_blob} != {expected_blob}"
+            )
     return relative + "::packed", expanded
 
 

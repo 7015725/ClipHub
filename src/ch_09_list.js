@@ -41,6 +41,7 @@ var detailClosing = false;
 var detailRemovalPending = false;
 var detailRemovalGeneration = 0;
 var pendingDetailOpen = null;
+var detailEmbeddedInPrimary = false;
 var state = {
 refreshCount: 0,
 eventRefreshCount: 0,
@@ -468,12 +469,47 @@ state: getDetailState()
 }
 if (detailRoot === null && !detailRemovalPending) {
 detailRow = null;
+detailEmbeddedInPrimary = false;
 return {
 ok: true,
 attached: false,
 alreadyClosed: true,
 state: getDetailState()
 };
+}
+if (detailEmbeddedInPrimary) {
+return ClipHub.Window.runOnMain(function () {
+var thread = Thread.currentThread();
+try {
+if (ClipHub.UIShell &&
+typeof ClipHub.UIShell.unmountPage === "function") {
+ClipHub.UIShell.unmountPage("detail", reasonText);
+}
+} catch (errorUnmount) {
+state.lastError = String(errorUnmount);
+return { ok: false, attached: true, embedded: true,
+state: getDetailState() };
+}
+state.detailCloseCount += 1;
+state.detailRemoveThreadName = String(thread.getName());
+state.lastDetailAction = reasonText;
+detailEmbeddedInPrimary = false;
+detailClosing = false;
+detailRemovalPending = false;
+detailRoot = null;
+detailWindowRoot = null;
+detailManagedFrame = null;
+detailParams = null;
+detailRow = null;
+detailCopyView = null;
+detailEditView = null;
+detailCloseView = null;
+detailWidthPx = 0;
+detailHeightPx = 0;
+state.lastError = null;
+return { ok: true, attached: false, alreadyClosed: false,
+embedded: true, state: getDetailState() };
+}, 3000);
 }
 return ClipHub.Window.runOnMain(function () {
 var thread = Thread.currentThread();
@@ -495,6 +531,7 @@ ClipHub.Window.detachWindow(capturedRoot);
 state.detailCloseCount += 1;
 state.detailRemoveThreadName = String(thread.getName());
 state.lastDetailAction = reasonText;
+detailEmbeddedInPrimary = false;
 detailRoot = null;
 detailWindowRoot = null;
 detailManagedFrame = null;
@@ -582,7 +619,7 @@ state.lastError = String(error);
 return false;
 }
 }
-function buildDetailView(row) {
+function buildDetailView(row, embedded) {
 var palette = colors();
 var root = new LinearLayout(androidContext);
 var handle = new View(androidContext);
@@ -597,12 +634,18 @@ var body = makeText(String(row.content), 13,
 palette.textPrimary, false);
 var footer = new LinearLayout(androidContext);
 var params;
+var embeddedMode = embedded === true;
 root.setOrientation(LinearLayout.VERTICAL);
+if (embeddedMode) {
+root.setPadding(0, 0, 0, 0);
+root.setBackground(null);
+} else {
 root.setPadding(dp(14), dp(8), dp(14), dp(12));
 root.setBackground(roundedBackground(palette.surface,
 palette.stroke, 24));
+}
 if (Build.VERSION.SDK_INT >= 21) {
-root.setElevation(dp(18));
+root.setElevation(embeddedMode ? 0 : dp(18));
 }
 handle.setBackground(roundedBackground(
 palette.strokeStrong, null, 3));
@@ -610,6 +653,7 @@ params = new LinearLayout.LayoutParams(dp(42), dp(4));
 params.gravity = Gravity.CENTER_HORIZONTAL;
 params.bottomMargin = dp(8);
 root.addView(handle, params);
+if (embeddedMode) { handle.setVisibility(View.GONE); }
 header.setOrientation(LinearLayout.HORIZONTAL);
 header.setGravity(Gravity.CENTER_VERTICAL);
 header.addView(title, new LinearLayout.LayoutParams(
@@ -631,6 +675,10 @@ LinearLayout.LayoutParams.MATCH_PARENT,
 LinearLayout.LayoutParams.WRAP_CONTENT);
 params.bottomMargin = dp(4);
 root.addView(header, params);
+if (embeddedMode) {
+header.setVisibility(View.GONE);
+detailCloseView = null;
+}
 meta.setSingleLine(true);
 meta.setEllipsize(TextUtils.TruncateAt.END);
 params = new LinearLayout.LayoutParams(
@@ -693,22 +741,83 @@ pendingDetailOpen = { row: row, force: force };
 return { ok: true, attached: false, pending: true };
 }
 if (detailRoot !== null) {
+if (detailEmbeddedInPrimary) {
+closeDetail("replace");
+} else {
 closeDetail("replace");
 pendingDetailOpen = { row: row, force: force };
 return { ok: true, attached: false, pending: true };
 }
+}
 return ClipHub.Window.runOnMain(function () {
-var size = detailDimensions();
-var type = Build.VERSION.SDK_INT >= 26 ?
+var size;
+var type;
+var flags;
+var thread = Thread.currentThread();
+var primaryAvailable = false;
+var primaryMounted = false;
+try {
+primaryAvailable = ClipHub.UIShell &&
+typeof ClipHub.UIShell.canEmbed === "function" &&
+ClipHub.UIShell.canEmbed("detail") === true;
+} catch (ignoredPrimaryAvailability) {
+primaryAvailable = false;
+}
+if (primaryAvailable) {
+detailRow = row;
+detailRoot = buildDetailView(row, true);
+try {
+primaryMounted = ClipHub.UIShell.mountPage("detail", detailRoot, {
+title: "内容详情",
+showBack: true,
+onBack: function () {
+return closeDetail("shell_back").ok === true;
+},
+onClose: function () {
+return closeDetail("shell_close").ok === true;
+}
+}) !== false;
+} catch (primaryError) {
+state.lastError = String(primaryError);
+primaryMounted = false;
+try {
+if (ClipHub.UIShell &&
+typeof ClipHub.UIShell.unmountPage === "function") {
+ClipHub.UIShell.unmountPage("detail", "detail_mount_failed");
+}
+} catch (ignoredPrimaryCleanup) {}
+}
+if (primaryMounted) {
+detailEmbeddedInPrimary = true;
+detailWindowRoot = null;
+detailManagedFrame = null;
+detailParams = null;
+detailWidthPx = 0;
+detailHeightPx = 0;
+state.detailOpenCount += 1;
+state.lastDetailItemId = Number(row.id);
+state.detailAddThreadName = String(thread.getName());
+state.lastDetailAction = "open";
+state.lastError = null;
+return true;
+}
+detailRoot = null;
+detailRow = null;
+detailCopyView = null;
+detailEditView = null;
+detailCloseView = null;
+}
+size = detailDimensions();
+type = Build.VERSION.SDK_INT >= 26 ?
 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY :
 WindowManager.LayoutParams.TYPE_SYSTEM_ALERT;
-var flags =
+flags =
 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
 WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED |
 WindowManager.LayoutParams.FLAG_DIM_BEHIND;
-var thread = Thread.currentThread();
+detailEmbeddedInPrimary = false;
 detailRow = row;
-detailRoot = buildDetailView(row);
+detailRoot = buildDetailView(row, false);
 detailManagedFrame = ClipHub.Window.createManagedFrame(detailRoot, {
 accentColor: colors().accentStrong
 });
@@ -763,6 +872,7 @@ detailRoot.isAttachedToWindow();
 return {
 attached: detailRoot !== null,
 attachedToWindow: attached,
+embeddedInPrimary: detailEmbeddedInPrimary === true,
 closing: detailClosing === true,
 removalPending: detailRemovalPending === true,
 itemId: detailRow === null ? null : Number(detailRow.id),
@@ -922,7 +1032,7 @@ state.lastError = null;
 }
 ClipHub.List = {
 MODULE_NAME: "ch_09_list",
-MODULE_VERSION: 21,
+MODULE_VERSION: 22,
 LONG_TEXT_THRESHOLD: LONG_TEXT_THRESHOLD,
 init: function (context) {
 androidContext = context && context.androidContext ?
