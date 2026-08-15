@@ -1,6 +1,6 @@
 name: One-shot review fix v2
 
-# retry: explicit icon literal and helper adapters
+# retry: explicit icon literal parser fixed
 on:
   push:
     branches:
