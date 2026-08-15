@@ -56,10 +56,19 @@ jobs:
           path='src/ch_13_settings.js'
           loader,var_name,source=unpack(path)
           assert re.search(r'MODULE_NAME:\s*"ch_13_settings"\s*,\s*MODULE_VERSION:\s*33',source,re.S)
+
+          # Fix 1: close the embedded drag-handle guard before closing its IIFE.
           broken='''            content.addView(handleRow, new LinearLayout.LayoutParams(\n                LinearLayout.LayoutParams.MATCH_PARENT, dp(16)));\n        }());'''
           fixed='''            content.addView(handleRow, new LinearLayout.LayoutParams(\n                LinearLayout.LayoutParams.MATCH_PARENT, dp(16)));\n            }\n        }());'''
           assert source.count(broken)==1, source.count(broken)
           source=source.replace(broken,fixed,1)
+
+          # Fix 2: the generated legacy-header closing brace had lost its opening guard.
+          header_anchor='        header.setOrientation(LinearLayout.HORIZONTAL);\n'
+          assert source.count(header_anchor)==1, source.count(header_anchor)
+          source=source.replace(header_anchor,
+              '        if (!embeddedInPrimary) {\n'+header_anchor,1)
+
           source,n=re.subn(r'(MODULE_NAME:\s*"ch_13_settings"\s*,\s*MODULE_VERSION:\s*)33',r'\g<1>34',source,count=1,flags=re.S)
           assert n==1
           new_loader=repack(path,loader,var_name,source)
@@ -87,7 +96,7 @@ jobs:
           syntax='''python3 scripts/validate_es5.py .\n\n# Packed modules must be syntax-checked after expansion; checking only the loader\n# wrapper cannot detect syntax errors inside gzip/base64 payloads.\nPACKED_SYNTAX_DIR="$AUDIT_DIR/expanded-js"\nmkdir -p "$PACKED_SYNTAX_DIR"\npython3 - "$PACKED_SYNTAX_DIR" <<'PYJS'\nimport base64\nimport gzip\nimport json\nimport re\nimport sys\nfrom pathlib import Path\n\nout = Path(sys.argv[1])\nfor path in sorted(Path('src').glob('*.js')):\n    text = path.read_text(encoding='utf-8')\n    match = re.search(r'\\bvar\\s+(?:PACKED_B64|encoded)\\s*=\\s*(.*?);', text, re.S)\n    source = text\n    if match is not None:\n        pieces = re.findall(r'"(?:\\\\.|[^"\\\\])*"', match.group(1))\n        source = gzip.decompress(base64.b64decode(\n            ''.join(json.loads(piece) for piece in pieces))).decode('utf-8')\n    (out / path.name).write_text(source, encoding='utf-8')\nPYJS\nfor expanded_js in "$PACKED_SYNTAX_DIR"/*.js; do\n  node --check "$expanded_js" >/dev/null\ndone\necho 'Expanded JS syntax verification: passed'\n'''
           s=s.replace(marker,syntax,1)
           p.write_text(s,encoding='utf-8')
-          print('Repaired Settings33 syntax -> Settings34')
+          print('Repaired both Settings33 syntax defects -> Settings34')
           print('moduleSetVersion -> 20260815.13')
           PY
 
