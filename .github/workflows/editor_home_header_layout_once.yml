@@ -1,0 +1,180 @@
+name: Editor Home Header Layout Once
+
+on:
+  push:
+    branches: [beta-regex-settings-tabs-20260814]
+    paths:
+      - .github/workflows/editor_home_header_layout_once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  align-editor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply home-style editor header layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, pathlib, re
+
+          root = pathlib.Path('.')
+          editor_path = root / 'src/ch_10_editor.js'
+          manifest_path = root / 'module-manifest.json'
+
+          def blob_sha(data):
+              return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          if manifest.get('moduleSetVersion') != '20260815.05':
+              raise SystemExit('unexpected moduleSetVersion=' + str(manifest.get('moduleSetVersion')))
+          if manifest.get('sourceRef') != 'beta-regex-settings-tabs-20260814':
+              raise SystemExit('unexpected sourceRef')
+          by_path = {item['path']: item for item in manifest['modules']}
+          if by_path['src/ch_10_editor.js']['sha'] != blob_sha(editor_path.read_bytes()):
+              raise SystemExit('editor manifest baseline mismatch')
+
+          text = editor_path.read_text(encoding='utf-8')
+          start = text.find('    function buildTextContent(')
+          end = text.find('    function buildTagContent(', start)
+          if start < 0 or end < 0:
+              raise SystemExit('buildTextContent region missing')
+          region = text[start:end]
+
+          old = '''        var dragRow = new LinearLayout(appContext);
+        var dragHandle = new View(appContext);'''
+          new = '''        var dragHandle = new View(appContext);'''
+          if region.count(old) != 1:
+              raise SystemExit('drag declaration anchor count=' + str(region.count(old)))
+          region = region.replace(old, new, 1)
+
+          old = '''        dragRow.setGravity(Gravity.CENTER);
+        dragHandle.setBackground(roundedBackground(
+            colors.accentBorder, null, 3));
+        dragRow.addView(dragHandle,
+            new LinearLayout.LayoutParams(dp(42), dp(4)));
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(16));
+        params.bottomMargin = dp(4);
+        panelRoot.addView(dragRow, params);'''
+          new = '''        dragHandle.setBackground(roundedBackground(
+            colors.accentBorder, null, 3));
+        params = new LinearLayout.LayoutParams(dp(42), dp(4));
+        params.gravity = Gravity.CENTER_HORIZONTAL;
+        params.bottomMargin = dp(8);
+        panelRoot.addView(dragHandle, params);'''
+          if region.count(old) != 1:
+              raise SystemExit('drag layout anchor count=' + str(region.count(old)))
+          region = region.replace(old, new, 1)
+
+          old = '''        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setClipChildren(false);
+        titleStack.setOrientation(LinearLayout.VERTICAL);
+        titleStack.setTranslationY(-dp(1));'''
+          new = '''        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.TOP);
+        titleStack.setOrientation(LinearLayout.VERTICAL);'''
+          if region.count(old) != 1:
+              raise SystemExit('header setup anchor count=' + str(region.count(old)))
+          region = region.replace(old, new, 1)
+
+          old = '''        header.addView(titleStack, new LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));'''
+          new = '''        params = new LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+        params.topMargin = dp(8);
+        header.addView(titleStack, params);'''
+          if region.count(old) != 1:
+              raise SystemExit('title stack layout anchor count=' + str(region.count(old)))
+          region = region.replace(old, new, 1)
+
+          old = '''        headerCloseView = makeText("×", 22, colors.icon, true);
+        headerCloseView.setGravity(Gravity.CENTER);
+        headerCloseView.setTranslationY(-dp(9));'''
+          new = '''        headerCloseView = makeText("×", 22, colors.icon, true);
+        headerCloseView.setGravity(Gravity.CENTER);'''
+          if region.count(old) != 1:
+              raise SystemExit('close translation anchor count=' + str(region.count(old)))
+          region = region.replace(old, new, 1)
+
+          old = '''        header.addView(headerCloseView,
+            new LinearLayout.LayoutParams(dp(36), dp(36)));
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(36));'''
+          new = '''        params = new LinearLayout.LayoutParams(dp(36), dp(36));
+        params.gravity = Gravity.TOP;
+        header.addView(headerCloseView, params);
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(44));'''
+          if region.count(old) != 1:
+              raise SystemExit('close/header size anchor count=' + str(region.count(old)))
+          region = region.replace(old, new, 1)
+
+          text = text[:start] + region + text[end:]
+          m = re.search(r'MODULE_NAME:\s*"ch_10_editor",\s*\n\s*MODULE_VERSION:\s*(\d+),', text)
+          if not m or int(m.group(1)) != 28:
+              raise SystemExit('unexpected editor module version')
+          text = text[:m.start(1)] + '29' + text[m.end(1):]
+          editor_path.write_text(text, encoding='utf-8')
+
+          manifest['moduleSetVersion'] = '20260815.06'
+          by_path = {item['path']: item for item in manifest['modules']}
+          by_path['src/ch_10_editor.js']['sha'] = blob_sha(editor_path.read_bytes())
+          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          print('moduleSetVersion=20260815.06')
+          print('editor_sha=' + by_path['src/ch_10_editor.js']['sha'])
+          PY
+
+      - name: Validate editor-only boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check src/ch_10_editor.js
+          python3 scripts/validate_es5.py .
+          python3 scripts/audit_color_api.py --release-strict | tee /tmp/editor-home-color.txt
+          grep '^HIGH=0 WARN=0 ' /tmp/editor-home-color.txt
+          git diff --check
+          python3 - <<'PY'
+          import hashlib, json, pathlib, subprocess
+          root = pathlib.Path('.')
+          manifest = json.loads((root/'module-manifest.json').read_text(encoding='utf-8'))
+          assert manifest['moduleSetVersion'] == '20260815.06'
+          assert manifest['sourceRef'] == 'beta-regex-settings-tabs-20260814'
+          assert len(manifest['modules']) == 16
+          def blob_sha(data):
+              return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+          for item in manifest['modules']:
+              p = root / item['path']
+              assert p.is_file(), p
+              assert blob_sha(p.read_bytes()) == item['sha'], item['path']
+          changed = set(subprocess.check_output(['git','diff','--name-only'], text=True).splitlines())
+          assert changed == {'module-manifest.json','src/ch_10_editor.js'}, changed
+          PY
+          grep -Fq 'MODULE_VERSION: 29' src/ch_10_editor.js
+          grep -Fq 'params.gravity = Gravity.CENTER_HORIZONTAL;' src/ch_10_editor.js
+          grep -Fq 'params.bottomMargin = dp(8);' src/ch_10_editor.js
+          grep -Fq 'header.setGravity(Gravity.TOP);' src/ch_10_editor.js
+          grep -Fq 'params.topMargin = dp(8);' src/ch_10_editor.js
+          grep -Fq 'LinearLayout.LayoutParams.MATCH_PARENT, dp(44)' src/ch_10_editor.js
+          ! grep -Fq 'headerCloseView.setTranslationY(' src/ch_10_editor.js
+          grep -Fq 'requestExit("cancel_button")' src/ch_10_editor.js
+          test -z "$(git diff -- src/ch_03_database.js src/ch_06_repository.js src/ch_07_theme.js src/ch_08_window.js src/ch_11_filter.js src/ch_12_translation.js src/ch_13_settings.js src/ch_15_app.js src/ch_17_tokenizer_ui.js)"
+
+      - name: Commit editor layout correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f .github/workflows/editor_home_header_layout_once.yml
+          git add module-manifest.json src/ch_10_editor.js
+          git diff --cached --check
+          git commit -m "按首页布局方式修正编辑页顶部"
+          git push origin HEAD:beta-regex-settings-tabs-20260814
