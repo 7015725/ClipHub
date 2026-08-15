@@ -1,4 +1,4 @@
-name: Header Alignment Implementation
+name: Settings Module Version Diagnostic
 
 on:
   push:
@@ -7,94 +7,27 @@ on:
       - .github/workflows/settings_header_diag.yml
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  implement:
+  diagnose:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Apply bounded header alignment patch
+      - name: Inspect packed settings module declaration
         shell: bash
         run: |
           set -euo pipefail
-          python3 tools/header_alignment_runner.py
-
-      - name: Validate syntax integrity and boundaries
-        shell: bash
-        run: |
-          set -euo pipefail
-          node --check src/ch_10_editor.js
-          node --check src/ch_12_translation.js
-          node --check src/ch_13_settings.js
-          node --check /tmp/settings_header_source.js
-          python3 scripts/validate_es5.py .
-          python3 scripts/audit_color_api.py --release-strict | tee /tmp/header-color.txt
-          grep '^HIGH=0 WARN=0 ' /tmp/header-color.txt
-          git diff --check
-
           python3 - <<'PY'
-          import base64, gzip, hashlib, json, pathlib, re, subprocess
-          root = pathlib.Path('.')
-          manifest = json.loads((root / 'module-manifest.json').read_text(encoding='utf-8'))
-          assert manifest.get('schemaVersion') == 1
-          assert manifest.get('moduleSetVersion') == '20260815.04'
-          assert manifest.get('entryMinVersion') == 6
-          assert manifest.get('sourceRef') == 'beta-regex-settings-tabs-20260814'
-          assert len(manifest.get('modules', [])) == 16
-
-          def blob_sha(data):
-              return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
-
-          for item in manifest['modules']:
-              path = root / item['path']
-              assert path.is_file(), path
-              assert blob_sha(path.read_bytes()) == item['sha'], item['name']
-
-          loader = (root / 'src/ch_13_settings.js').read_text(encoding='utf-8')
+          import base64, gzip, hashlib, json, pathlib, re
+          loader = pathlib.Path('src/ch_13_settings.js').read_text(encoding='utf-8')
           expected = re.search(r'var\s+SOURCE_SHA256\s*=\s*"([0-9a-f]+)";', loader)
           assignment = re.search(r'var\s+PACKED_B64\s*=\s*(.*?);\s*\n\s*function\s+bytesToHex', loader, re.S)
           assert expected and assignment
           pieces = re.findall(r'"(?:\\.|[^"\\])*"', assignment.group(1))
-          encoded = ''.join(json.loads(piece) for piece in pieces)
-          source = gzip.decompress(base64.b64decode(encoded)).decode('utf-8')
+          source = gzip.decompress(base64.b64decode(''.join(json.loads(p) for p in pieces))).decode('utf-8')
           assert hashlib.sha256(source.encode('utf-8')).hexdigest() == expected.group(1)
-
-          changed = set(subprocess.check_output(['git', 'diff', '--name-only'], text=True).splitlines())
-          assert changed == {
-              'module-manifest.json',
-              'src/ch_10_editor.js',
-              'src/ch_12_translation.js',
-              'src/ch_13_settings.js',
-          }, changed
-          print('manifest_integrity_and_change_boundary=passed')
+          for i, line in enumerate(source.splitlines(), 1):
+              if 'MODULE_NAME' in line or 'MODULE_VERSION' in line:
+                  print('%05d: %s' % (i, line))
           PY
-
-          test -z "$(git diff -- src/ch_03_database.js src/ch_06_repository.js src/ch_07_theme.js src/ch_08_window.js src/ch_11_filter.js src/ch_15_app.js src/ch_17_tokenizer_ui.js)"
-          grep -Fq 'MODULE_VERSION: 27' src/ch_10_editor.js
-          grep -Fq 'headerCloseView.setTranslationY(-dp(3));' src/ch_10_editor.js
-          grep -Fq 'requestExit("cancel_button")' src/ch_10_editor.js
-          grep -Fq 'MODULE_VERSION: 16' src/ch_12_translation.js
-          grep -Fq 'params.topMargin = -dp(4);' src/ch_12_translation.js
-          grep -Fq 'closeTranslationPanel("button")' src/ch_12_translation.js
-          grep -Fq 'MODULE_VERSION: 28' /tmp/settings_header_source.js
-          grep -Fq 'var title = makeText("ClipHub 设置", 17' /tmp/settings_header_source.js
-          grep -Fq 'new LinearLayout.LayoutParams(dp(36), dp(36))' /tmp/settings_header_source.js
-          grep -Fq 'params.topMargin = -dp(2);' /tmp/settings_header_source.js
-          grep -Fq 'closePage("button")' /tmp/settings_header_source.js
-
-      - name: Commit verified header alignment
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm -f .github/workflows/settings_header_diag.yml tools/header_alignment_20260815.py tools/header_alignment_runner.py
-          git add module-manifest.json src/ch_10_editor.js src/ch_12_translation.js src/ch_13_settings.js
-          git diff --cached --check
-          git diff --cached --stat
-          git commit -m "统一顶部标题与右侧按钮垂直基线"
-          git push origin HEAD:beta-regex-settings-tabs-20260814
