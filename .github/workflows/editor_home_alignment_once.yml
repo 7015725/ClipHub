@@ -1,0 +1,122 @@
+name: Editor Home Alignment One Shot
+
+on:
+  push:
+    branches: [beta-regex-settings-tabs-20260814]
+    paths:
+      - .github/workflows/editor_home_alignment_once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  align-editor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Align editor header to home baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, pathlib, re
+
+          root = pathlib.Path('.')
+          editor_path = root / 'src/ch_10_editor.js'
+          manifest_path = root / 'module-manifest.json'
+
+          def blob_sha(data):
+              return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          if manifest.get('moduleSetVersion') != '20260815.04':
+              raise SystemExit('unexpected moduleSetVersion=' + str(manifest.get('moduleSetVersion')))
+          if manifest.get('sourceRef') != 'beta-regex-settings-tabs-20260814':
+              raise SystemExit('unexpected sourceRef')
+
+          by_path = {item['path']: item for item in manifest['modules']}
+          current = editor_path.read_bytes()
+          if by_path['src/ch_10_editor.js']['sha'] != blob_sha(current):
+              raise SystemExit('editor manifest baseline mismatch')
+
+          text = current.decode('utf-8')
+          start = text.find('    function buildTextContent(')
+          end = text.find('    function buildTagContent(', start)
+          if start < 0 or end < 0:
+              raise SystemExit('editor buildTextContent region missing')
+          region = text[start:end]
+
+          old = '        titleStack.setOrientation(LinearLayout.VERTICAL);\n        titleTextView = makeText(isNew ? "新增剪贴板" : "编辑剪贴板",'
+          new = '        titleStack.setOrientation(LinearLayout.VERTICAL);\n        titleStack.setTranslationY(-dp(1));\n        titleTextView = makeText(isNew ? "新增剪贴板" : "编辑剪贴板",'
+          if region.count(old) != 1:
+              raise SystemExit('title stack anchor count=' + str(region.count(old)))
+          region = region.replace(old, new, 1)
+
+          old = '        headerCloseView.setTranslationY(-dp(3));'
+          new = '        headerCloseView.setTranslationY(-dp(9));'
+          if region.count(old) != 1:
+              raise SystemExit('close alignment anchor count=' + str(region.count(old)))
+          region = region.replace(old, new, 1)
+          text = text[:start] + region + text[end:]
+
+          m = re.search(r'MODULE_NAME:\s*"ch_10_editor",\s*\n\s*MODULE_VERSION:\s*(\d+),', text)
+          if not m or int(m.group(1)) != 27:
+              raise SystemExit('unexpected editor module version')
+          text = text[:m.start(1)] + '28' + text[m.end(1):]
+          editor_path.write_text(text, encoding='utf-8')
+
+          manifest['moduleSetVersion'] = '20260815.05'
+          by_path = {item['path']: item for item in manifest['modules']}
+          by_path['src/ch_10_editor.js']['sha'] = blob_sha(editor_path.read_bytes())
+          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          print('moduleSetVersion=20260815.05')
+          print('editor_sha=' + by_path['src/ch_10_editor.js']['sha'])
+          PY
+
+      - name: Validate editor-only boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check src/ch_10_editor.js
+          python3 scripts/validate_es5.py .
+          python3 scripts/audit_color_api.py --release-strict | tee /tmp/editor-color.txt
+          grep '^HIGH=0 WARN=0 ' /tmp/editor-color.txt
+          git diff --check
+
+          python3 - <<'PY'
+          import hashlib, json, pathlib, subprocess
+          root = pathlib.Path('.')
+          manifest = json.loads((root / 'module-manifest.json').read_text(encoding='utf-8'))
+          assert manifest['moduleSetVersion'] == '20260815.05'
+          assert manifest['sourceRef'] == 'beta-regex-settings-tabs-20260814'
+          assert len(manifest['modules']) == 16
+          def blob_sha(data):
+              return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+          for item in manifest['modules']:
+              p = root / item['path']
+              assert p.is_file(), p
+              assert blob_sha(p.read_bytes()) == item['sha'], item['path']
+          changed = set(subprocess.check_output(['git','diff','--name-only'], text=True).splitlines())
+          assert changed == {'module-manifest.json','src/ch_10_editor.js'}, changed
+          PY
+
+          grep -Fq 'MODULE_VERSION: 28' src/ch_10_editor.js
+          grep -Fq 'titleStack.setTranslationY(-dp(1));' src/ch_10_editor.js
+          grep -Fq 'headerCloseView.setTranslationY(-dp(9));' src/ch_10_editor.js
+          grep -Fq 'requestExit("cancel_button")' src/ch_10_editor.js
+          test -z "$(git diff -- src/ch_03_database.js src/ch_06_repository.js src/ch_07_theme.js src/ch_08_window.js src/ch_11_filter.js src/ch_12_translation.js src/ch_13_settings.js src/ch_15_app.js src/ch_17_tokenizer_ui.js)"
+
+      - name: Commit editor alignment
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f .github/workflows/editor_home_alignment_once.yml
+          git add module-manifest.json src/ch_10_editor.js
+          git diff --cached --check
+          git commit -m "按首页基线校正编辑页顶部"
+          git push origin HEAD:beta-regex-settings-tabs-20260814
