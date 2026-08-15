@@ -1,0 +1,50 @@
+name: Settings Header Diagnostic
+
+on:
+  push:
+    branches: [beta-regex-settings-tabs-20260814]
+    paths:
+      - .github/workflows/settings_header_diag.yml
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unpack settings header snippets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, gzip, hashlib, json, pathlib, re
+          p = pathlib.Path('src/ch_13_settings.js')
+          loader = p.read_text(encoding='utf-8')
+          expected = re.search(r'var\s+SOURCE_SHA256\s*=\s*"([0-9a-f]+)";', loader)
+          assignment = re.search(r'var\s+PACKED_B64\s*=\s*(.*?);\s*\n\s*function\s+bytesToHex', loader, re.S)
+          assert expected and assignment
+          pieces = re.findall(r'"(?:\\.|[^"\\])*"', assignment.group(1))
+          encoded = ''.join(json.loads(piece) for piece in pieces)
+          source = gzip.decompress(base64.b64decode(encoded)).decode('utf-8')
+          actual = hashlib.sha256(source.encode('utf-8')).hexdigest()
+          assert actual == expected.group(1), (actual, expected.group(1))
+          print('SOURCE_SHA256=' + actual)
+          lines = source.splitlines()
+          markers = ['ClipHub 设置', 'function buildSettings', 'function buildMain', 'function makeSettings', '关闭设置', 'settingsClose', 'dragHandle']
+          seen = set()
+          for marker in markers:
+              for i, line in enumerate(lines):
+                  if marker in line:
+                      start = max(0, i - 20)
+                      end = min(len(lines), i + 70)
+                      key = (start, end)
+                      if key in seen:
+                          continue
+                      seen.add(key)
+                      print('\n===== %s @ %d =====' % (marker, i + 1))
+                      for j in range(start, end):
+                          print('%05d: %s' % (j + 1, lines[j]))
+                      break
+          PY
