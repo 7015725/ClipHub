@@ -1,0 +1,80 @@
+name: Icon System Apply Once
+
+on:
+  push:
+    branches: [beta-regex-settings-tabs-20260814]
+    paths:
+      - .github/workflows/icon_system_apply_once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: beta-regex-settings-tabs-20260814
+          fetch-depth: 0
+
+      - name: Guard production baseline
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          baseline = '06dbeac91b0d27fdcefa73e4f1f37f5d403520dd'
+          allowed = {
+              '.github/workflows/icon_audit_once.yml',
+              '.github/icon_probe_report.txt',
+              '.github/icon_system_patch_once.py',
+              '.github/workflows/icon_system_apply_once.yml',
+          }
+          changed = set(filter(None, subprocess.check_output(
+              ['git','diff','--name-only',baseline + '..HEAD'], text=True).splitlines()))
+          unexpected = changed - allowed
+          assert not unexpected, ('production baseline moved', sorted(unexpected))
+          print('Baseline guard passed:', sorted(changed))
+          PY
+
+      - name: Apply semantic icon system
+        run: python3 .github/icon_system_patch_once.py
+
+      - name: Validate ES5 and release contracts
+        run: |
+          python3 scripts/validate_es5.py .
+          python3 scripts/audit_color_api.py --release-strict
+          node scripts/test_ui_shell_navigation.js
+          node scripts/test_runtime_diagnostics.js
+          python3 scripts/test_primary_window_legacy_routes.py
+          bash scripts/release_preflight.sh --settings-tabs-beta
+          git diff --check
+
+      - name: Verify exact production boundary
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          expected = {
+              'src/ch_07_theme.js',
+              'src/ch_09_list.js',
+              'src/ch_10_editor.js',
+              'src/ch_11_filter.js',
+              'src/ch_12_translation.js',
+              'src/ch_13_settings.js',
+              'src/ch_17_tokenizer_ui.js',
+              'module-manifest.json',
+              'scripts/release_preflight.sh',
+          }
+          changed = set(filter(None, subprocess.check_output(
+              ['git','diff','--name-only'], text=True).splitlines()))
+          assert changed == expected, {'expected': sorted(expected), 'actual': sorted(changed)}
+          print('Production allowlist passed:', sorted(changed))
+          PY
+
+      - name: Commit production and clean temporary files
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src/ch_07_theme.js src/ch_09_list.js src/ch_10_editor.js src/ch_11_filter.js src/ch_12_translation.js src/ch_13_settings.js src/ch_17_tokenizer_ui.js module-manifest.json scripts/release_preflight.sh
+          git rm -f .github/workflows/icon_audit_once.yml .github/icon_probe_report.txt .github/icon_system_patch_once.py .github/workflows/icon_system_apply_once.yml
+          git commit -m '统一全局语义Icon绘制体系'
+          git push
