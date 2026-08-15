@@ -21,8 +21,27 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Align patcher with Stage6 contracts
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('tools/stage7_runtime_diagnostics_20260815.py')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace('UI shell stage5 contracts: passed',
+                              'UI shell stage6 contracts: passed')
+          path.write_text(text, encoding='utf-8')
+          PY
       - name: Apply Stage7 runtime diagnostics
-        run: python3 tools/stage7_runtime_diagnostics_20260815.py
+        run: |
+          python3 tools/stage7_runtime_diagnostics_20260815.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/release_preflight.sh')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace('assert "MODULE_VERSION: 5" in ui_shell_source',
+                              'assert "MODULE_VERSION: 6" in ui_shell_source')
+          path.write_text(text, encoding='utf-8')
+          PY
       - name: Remove one-time Stage7 tooling
         run: |
           rm -f .github/workflows/stage7_runtime_state_probe_once.yml
