@@ -1,0 +1,58 @@
+name: Icon Audit Once
+
+on:
+  push:
+    branches: [beta-regex-settings-tabs-20260814]
+    paths:
+      - .github/workflows/icon_audit_once.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: beta-regex-settings-tabs-20260814
+      - name: Audit icon glyph call sites
+        run: |
+          python3 - <<'PY'
+          import base64, gzip, hashlib, re
+          from pathlib import Path
+
+          def unpack(path):
+              text = Path(path).read_text(encoding='utf-8')
+              m = re.search(r'var\s+(PACKED_[A-Z0-9_]+)\s*=\s*"([A-Za-z0-9+/=]+)";', text)
+              if not m:
+                  return text
+              raw = gzip.decompress(base64.b64decode(m.group(2))).decode('utf-8')
+              sm = re.search(r'var\s+SOURCE_SHA256\s*=\s*"([0-9a-f]{64})";', text)
+              if sm:
+                  actual = hashlib.sha256(raw.encode('utf-8')).hexdigest()
+                  assert actual == sm.group(1), (path, actual, sm.group(1))
+              return raw
+
+          glyphs = ['×','‹','›','✓','✔','✕','✖','＋','+','−','▣','?','⚙','🔍','⌕','⋮','…','☰','✎','✏','🗑','📋','⧉','←','→','▲','▼','●','○']
+          paths = [
+              'src/ch_09_list.js',
+              'src/ch_10_editor.js',
+              'src/ch_11_filter.js',
+              'src/ch_12_translation.js',
+              'src/ch_13_settings.js',
+              'src/ch_17_tokenizer_ui.js',
+          ]
+          for path in paths:
+              src = unpack(path)
+              print('\n===== ' + path + ' =====')
+              lines = src.splitlines()
+              for i, line in enumerate(lines, 1):
+                  if any(g in line for g in glyphs) and not line.lstrip().startswith('//'):
+                      print('%5d: %s' % (i, line[:260]))
+              print('--- icon-related helpers ---')
+              for i, line in enumerate(lines, 1):
+                  low = line.lower()
+                  if ('function ' in line and ('icon' in low or 'header' in low or 'action' in low)) or 'makeClickText' in line:
+                      print('%5d: %s' % (i, line[:260]))
+          PY
