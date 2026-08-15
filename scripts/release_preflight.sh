@@ -41,7 +41,7 @@ case "$MODE" in
     ;;
   --settings-tabs-beta)
     EXPECTED_REF='beta-regex-settings-tabs-20260814'
-    EXPECTED_MODULE_SET='20260815.19'
+    EXPECTED_MODULE_SET='20260815.20'
     EXPECTED_ENTRY_VERSION='7'
     EXPECTED_APP_MODULE_VERSION='22'
     REQUIRE_CLEAN='0'
@@ -293,9 +293,9 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         required_versions = {
             "ch_03_database.js": ("ch_03_database", 5),
             "ch_06_repository.js": ("ch_06_repository", 19),
-            "ch_10_editor.js": ("ch_10_editor", 32),
+            "ch_10_editor.js": ("ch_10_editor", 33),
             "ch_11_filter.js": ("ch_11_filter", 85),
-            "ch_13_settings.js": ("ch_13_settings", 35),
+            "ch_13_settings.js": ("ch_13_settings", 36),
             "ch_15_app.js": ("ch_15_app", 22),
             "ch_12_translation.js": ("ch_12_translation", 18),
             "ch_16_ui_shell.js": ("ch_16_ui_shell", 6),
@@ -340,6 +340,8 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert "bindRegexRuleDrag(handleHit, root, rule.id);" in settings_source
         assert "colors.stroke, layout.cardRadiusDp" in settings_source
         assert "Math.abs(delta) >= dp(28)" in settings_source
+        assert "standalone_subpage_home_drag_baseline" in settings_source
+        assert "function makeRegexTouchWrapper(view, visualHeightDp)" in settings_source
     assert "feature.regex_rules.defaults_initialized" in repository_source
     assert "listRegexCandidateChunk" in repository_source
     assert ".matcher(text).matches()" not in filter_source
@@ -371,6 +373,8 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert "danger ? colors.danger" in translation_source
         assert "danger ? colors.dangerSoft" in translation_source
         editor_source = actual_sources["ch_10_editor.js"]
+        assert "var dragSlot = new FrameLayout(appContext);" in editor_source
+        assert "dragSlot.addView(dragHandle, params);" in editor_source
         tokenizer_source = actual_sources["ch_17_tokenizer_ui.js"]
         list_source = actual_sources["ch_09_list.js"]
         assert 'MODULE_NAME: "ch_16_ui_shell"' in ui_shell_source

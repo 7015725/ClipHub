@@ -2146,6 +2146,7 @@
         var isNew = state.mode === "new";
         var sourceText = isNew ? "ClipHub 手动" :
             String(row && row.source_label ? row.source_label : "未知来源");
+        var dragSlot = new FrameLayout(appContext);
         var dragHandle = new View(appContext);
         var header = new LinearLayout(appContext);
         var titleStack = new LinearLayout(appContext);
@@ -2165,11 +2166,13 @@
 
         dragHandle.setBackground(roundedBackground(
             colors.accentBorder, null, 3));
-        params = new LinearLayout.LayoutParams(dp(42), dp(4));
-        params.gravity = Gravity.CENTER_HORIZONTAL;
-        params.bottomMargin = dp(8);
-        panelRoot.addView(dragHandle, params);
-        if (embeddedInPrimary) { dragHandle.setVisibility(View.GONE); }
+        params = new FrameLayout.LayoutParams(dp(42), dp(4));
+        params.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+        params.topMargin = dp(6);
+        dragSlot.addView(dragHandle, params);
+        panelRoot.addView(dragSlot, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(12)));
+        if (embeddedInPrimary) { dragSlot.setVisibility(View.GONE); }
         state.dragHandlePresent = embeddedInPrimary !== true;
 
         header.setOrientation(LinearLayout.HORIZONTAL);
@@ -3040,7 +3043,7 @@
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 32,
+        MODULE_VERSION: 33,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
