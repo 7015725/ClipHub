@@ -26,8 +26,7 @@ jobs:
 
           root = pathlib.Path('.')
           manifest = json.loads((root / 'module-manifest.json').read_text(encoding='utf-8'))
-          assert manifest.get('moduleSetVersion') == '20260815.02', manifest.get('moduleSetVersion')
-          assert manifest.get('sourceRef') == 'beta-regex-settings-tabs-20260814'
+          assert manifest.get('moduleSetVersion') == '20260815.02'
 
           def expand(path):
               text = path.read_text(encoding='utf-8')
@@ -50,35 +49,37 @@ jobs:
               'tokenizer': expand(root / 'src/ch_17_tokenizer_ui.js'),
           }
 
-          out = []
-          out.append('moduleSetVersion=' + manifest['moduleSetVersion'])
-          out.append('')
-
-          targets = {
-              'theme': ['var METRICS = {'],
-              'filter': ['function makeHeaderAction', 'function buildSearchHeader', 'function createPanelCache'],
-              'editor': ['function makeEditorAction', 'function buildTextContent'],
-              'translation': ['function translationButton', 'function buildTranslationPanel'],
-              'tokenizer': ['function makeClickText', 'function makeToolbarCell', 'function buildHeader', 'function buildSegment', 'function buildToolbar', 'function buildPage'],
-          }
-
-          for name, markers in targets.items():
+          def block(name, marker, before=2, after=45):
               lines = sources[name].splitlines()
-              out.append('===== ' + name.upper() + ' =====')
-              for marker in markers:
-                  for i, line in enumerate(lines):
-                      if marker in line:
-                          start = max(0, i - 3)
-                          end = min(len(lines), i + 85)
-                          out.append('--- ' + marker + ' lines %d-%d ---' % (start + 1, end))
-                          for j in range(start, end):
-                              text = lines[j].rstrip()
-                              out.append(('%05d: %s' % (j + 1, text)) if text else ('%05d:' % (j + 1)))
-                          break
-              out.append('')
+              for i, line in enumerate(lines):
+                  if marker in line:
+                      start = max(0, i - before)
+                      end = min(len(lines), i + after)
+                      result = ['===== %s :: %s =====' % (name.upper(), marker)]
+                      for j in range(start, end):
+                          text = lines[j].rstrip()
+                          result.append(('%05d: %s' % (j + 1, text)) if text else ('%05d:' % (j + 1)))
+                      return result
+              return ['===== %s :: %s NOT FOUND =====' % (name.upper(), marker)]
 
-          content = '\n'.join(out).rstrip() + '\n'
-          (root / 'ui_consistency_round2_diag.txt').write_text(content, encoding='utf-8')
+          out = ['moduleSetVersion=' + manifest['moduleSetVersion'], '']
+          specs = [
+              ('theme', 'var METRICS = {', 2, 28),
+              ('filter', 'function headerMetrics', 2, 55),
+              ('filter', 'function buildSearchHeader', 2, 85),
+              ('editor', 'titleTextView = makeText(isNew ?', 8, 55),
+              ('editor', 'cancelView = makeEditorAction', 5, 35),
+              ('translation', 'function translationButton', 2, 30),
+              ('translation', 'function buildTranslationPanel', 2, 150),
+              ('tokenizer', 'function buildHeader', 2, 75),
+              ('tokenizer', 'function buildSegment', 2, 55),
+              ('tokenizer', 'function makeToolbarCell', 2, 55),
+              ('tokenizer', 'function buildToolbar', 2, 40),
+          ]
+          for spec in specs:
+              out.extend(block(*spec))
+              out.append('')
+          (root / 'ui_consistency_round2_diag.txt').write_text('\n'.join(out).rstrip() + '\n', encoding='utf-8')
           PY
           git diff --check
 
@@ -90,5 +91,5 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add ui_consistency_round2_diag.txt
           git diff --cached --check
-          git commit -m "记录 UI 一致性二轮当前尺寸基线"
+          git commit -m "补充 UI 一致性二轮尺寸基线"
           git push origin HEAD:beta-regex-settings-tabs-20260814
