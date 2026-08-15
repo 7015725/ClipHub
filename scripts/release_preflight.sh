@@ -100,6 +100,7 @@ echo 'Expanded JS syntax verification: passed'
 if [ "$MODE" = '--settings-tabs-beta' ]; then
   node scripts/test_ui_shell_navigation.js
   node scripts/test_runtime_diagnostics.js
+  python3 scripts/test_primary_window_legacy_routes.py
 fi
 if [ "$MODE" = '--beta' ]; then
   python3 scripts/audit_color_api.py \
