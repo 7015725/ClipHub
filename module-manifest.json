@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260815.22",
+  "moduleSetVersion": "20260815.23",
   "entryMinVersion": 7,
   "sourceRef": "beta-regex-settings-tabs-20260814",
   "modules": [
@@ -37,7 +37,7 @@
     {
       "name": "ch_07_theme.js",
       "path": "src/ch_07_theme.js",
-      "sha": "24d762f69ef4fba2039ebf70fae2214bfa5df08f"
+      "sha": "a38b7f752db81657e78842b2677a6a9740afb06a"
     },
     {
       "name": "ch_08_window.js",
@@ -47,12 +47,12 @@
     {
       "name": "ch_09_list.js",
       "path": "src/ch_09_list.js",
-      "sha": "14e634e703a5322ca2806fbba67763fe86b911d5"
+      "sha": "3fcf19188d35e925bd38894a216049865bd3004a"
     },
     {
       "name": "ch_10_editor.js",
       "path": "src/ch_10_editor.js",
-      "sha": "90d147e64650b1c52bb90025e8c248ff5248d547"
+      "sha": "256db28b470156b40b6643ba8b692d01e2d441b0"
     },
     {
       "name": "ch_11_filter.js",
@@ -62,12 +62,12 @@
     {
       "name": "ch_12_translation.js",
       "path": "src/ch_12_translation.js",
-      "sha": "474f93da7dc8812f03f0946aa0b74a1119b4db45"
+      "sha": "7a4b44fc7759e67bc0481ebdb7fe8e61561fbe35"
     },
     {
       "name": "ch_13_settings.js",
       "path": "src/ch_13_settings.js",
-      "sha": "360906ca77c438987d45372706124f7ac9166972"
+      "sha": "732c3bc2b4a33fe19a1d56b265f2df8dc06fa1cb"
     },
     {
       "name": "ch_14_event_bus.js",
@@ -87,7 +87,7 @@
     {
       "name": "ch_17_tokenizer_ui.js",
       "path": "src/ch_17_tokenizer_ui.js",
-      "sha": "478197408a8ecec4eb092d6ecbdb53a2d7063986"
+      "sha": "bdad9d88afb72b16a8e99ce0db71268b1ea68671"
     }
   ]
 }

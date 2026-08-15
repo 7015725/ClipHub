@@ -341,6 +341,23 @@
         };
     }
 
+    function getPanelChromeMetrics(widthDp, fontScale, touchSlopDp) {
+        var adaptive = getLayoutMetrics(widthDp, fontScale, touchSlopDp);
+        var metrics = copy(METRICS);
+        var key;
+        for (key in adaptive) {
+            if (adaptive.hasOwnProperty(key)) { metrics[key] = adaptive[key]; }
+        }
+        /* panel_chrome_home_baseline_v1 */
+        metrics.dragHandleSlotDp = 12;
+        metrics.dragHandleTopDp = 6;
+        metrics.dragHandleBottomDp = 2;
+        metrics.headerHeightDp = adaptive.actionSizeDp;
+        metrics.headerTopOffsetDp = 0;
+        metrics.headerBottomGapDp = adaptive.gapDp;
+        return metrics;
+    }
+
     function configuredMode() {
         var value = mode;
         try {
@@ -370,7 +387,7 @@
 
     ClipHub.Theme = {
         MODULE_NAME: "ch_07_theme",
-        MODULE_VERSION: 5,
+        MODULE_VERSION: 6,
         init: function () { mode = "system"; return true; },
         setMode: function (value) {
             value = String(value || "system");
@@ -396,6 +413,7 @@
         getPalette: palette,
         getMetrics: function () { return copy(METRICS); },
         getLayoutMetrics: getLayoutMetrics,
+        getPanelChromeMetrics: getPanelChromeMetrics,
         token: function (name, context) {
             var value = palette(context)[String(name)];
             return value === undefined ? null : value;

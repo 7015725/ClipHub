@@ -140,7 +140,16 @@ view.setContentDescription(String(contentDescription));
 }
 return view;
 }
-function makePill(text, palette, selected) {
+function detailChromeMetrics() {
+var widthDp = Number(detailWidthPx || 0) > 0 ? Number(detailWidthPx) / density : 390;
+var fontScale = 1;
+try {
+fontScale = Number(androidContext.getResources().getConfiguration().fontScale || 1);
+} catch (ignoredDetailFontScale) { fontScale = 1; }
+return ClipHub.Theme.getPanelChromeMetrics(widthDp, fontScale, 1);
+}
+
+    function makePill(text, palette, selected) {
 var view = makeText(text, 9,
 selected ? palette.accentStrong : palette.textSecondary,
 selected);
@@ -621,10 +630,12 @@ return false;
 }
 function buildDetailView(row, embedded) {
 var palette = colors();
+var chrome = detailChromeMetrics();
 var root = new LinearLayout(androidContext);
+var handleSlot = new FrameLayout(androidContext);
 var handle = new View(androidContext);
 var header = new LinearLayout(androidContext);
-var title = makeText("内容详情", 17,
+var title = makeText("内容详情", chrome.titleSp,
 palette.textPrimary, true);
 var meta = makeText(sourceText(row) + "  ·  " +
 formatTime(row.last_copied_at), 10,
@@ -640,25 +651,30 @@ if (embeddedMode) {
 root.setPadding(0, 0, 0, 0);
 root.setBackground(null);
 } else {
-root.setPadding(dp(14), dp(8), dp(14), dp(12));
+root.setPadding(dp(chrome.screenPaddingDp), dp(chrome.pagePaddingTopDp),
+dp(chrome.screenPaddingDp), dp(chrome.pagePaddingBottomDp));
 root.setBackground(roundedBackground(palette.surface,
-palette.stroke, 24));
+palette.stroke, chrome.pageRadiusDp));
 }
 if (Build.VERSION.SDK_INT >= 21) {
 root.setElevation(embeddedMode ? 0 : dp(18));
 }
+/* detail_chrome_unified_v1 */
 handle.setBackground(roundedBackground(
 palette.strokeStrong, null, 3));
-params = new LinearLayout.LayoutParams(dp(42), dp(4));
-params.gravity = Gravity.CENTER_HORIZONTAL;
-params.bottomMargin = dp(8);
-root.addView(handle, params);
-if (embeddedMode) { handle.setVisibility(View.GONE); }
+params = new FrameLayout.LayoutParams(dp(chrome.dragHandleWidthDp),
+dp(chrome.dragHandleHeightDp));
+params.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+params.topMargin = dp(chrome.dragHandleTopDp);
+handleSlot.addView(handle, params);
+root.addView(handleSlot, new LinearLayout.LayoutParams(
+LinearLayout.LayoutParams.MATCH_PARENT, dp(chrome.dragHandleSlotDp)));
+if (embeddedMode) { handleSlot.setVisibility(View.GONE); }
 header.setOrientation(LinearLayout.HORIZONTAL);
 header.setGravity(Gravity.CENTER_VERTICAL);
 header.addView(title, new LinearLayout.LayoutParams(
 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-detailCloseView = makeIcon("×", palette.icon, 23,
+detailCloseView = makeIcon("×", palette.icon, chrome.iconSp,
 "关闭内容详情");
 detailCloseView.setBackground(circleBackground(
 palette.surfaceMuted, null));
@@ -669,11 +685,11 @@ closeDetail("button");
 }
 }));
 header.addView(detailCloseView,
-new LinearLayout.LayoutParams(dp(38), dp(38)));
+new LinearLayout.LayoutParams(dp(chrome.actionSizeDp), dp(chrome.actionSizeDp)));
 params = new LinearLayout.LayoutParams(
 LinearLayout.LayoutParams.MATCH_PARENT,
-LinearLayout.LayoutParams.WRAP_CONTENT);
-params.bottomMargin = dp(4);
+dp(chrome.headerHeightDp));
+params.bottomMargin = dp(chrome.headerBottomGapDp);
 root.addView(header, params);
 if (embeddedMode) {
 header.setVisibility(View.GONE);
@@ -691,7 +707,7 @@ body.setGravity(Gravity.TOP | Gravity.START);
 body.setLineSpacing(0, 1.13);
 body.setPadding(dp(12), dp(11), dp(12), dp(11));
 body.setBackground(roundedBackground(palette.surfaceMuted,
-palette.stroke, 14));
+palette.stroke, chrome.cardRadiusDp));
 scroll.setFillViewport(true);
 scroll.setVerticalScrollBarEnabled(false);
 scroll.addView(body, new FrameLayout.LayoutParams(
@@ -1032,7 +1048,7 @@ state.lastError = null;
 }
 ClipHub.List = {
 MODULE_NAME: "ch_09_list",
-MODULE_VERSION: 22,
+MODULE_VERSION: 23,
 LONG_TEXT_THRESHOLD: LONG_TEXT_THRESHOLD,
 init: function (context) {
 androidContext = context && context.androidContext ?

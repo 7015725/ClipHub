@@ -41,7 +41,7 @@ case "$MODE" in
     ;;
   --settings-tabs-beta)
     EXPECTED_REF='beta-regex-settings-tabs-20260814'
-    EXPECTED_MODULE_SET='20260815.22'
+    EXPECTED_MODULE_SET='20260815.23'
     EXPECTED_ENTRY_VERSION='7'
     EXPECTED_APP_MODULE_VERSION='22'
     REQUIRE_CLEAN='0'
@@ -240,11 +240,13 @@ assert re.search(
 assert re.search(r"var TASK_VERSION = 3;", toggle)
 assert re.search(r"var REQUIRED_ENDPOINT_SCHEMA = 3;", toggle)
 assert re.search(r"var MIN_ENTRY_VERSION = 5;", toggle)
-expected_theme_version = 5 if mode == "--settings-tabs-beta" else 4
+expected_theme_version = 6 if mode == "--settings-tabs-beta" else 4
 assert re.search(
     r"MODULE_NAME:\s*\"ch_07_theme\"\s*,\s*MODULE_VERSION:\s*" +
     str(expected_theme_version), theme, re.S)
 assert "getColorSafetyState: getColorSafetyState" in theme
+assert "getPanelChromeMetrics: getPanelChromeMetrics" in theme
+assert "panel_chrome_home_baseline_v1" in theme
 assert not (root / "tasks/ClipHub_打开全局剪贴板.js").exists()
 
 if mode in ("--current", "--main"):
@@ -293,13 +295,14 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         required_versions = {
             "ch_03_database.js": ("ch_03_database", 5),
             "ch_06_repository.js": ("ch_06_repository", 19),
-            "ch_10_editor.js": ("ch_10_editor", 33),
+            "ch_09_list.js": ("ch_09_list", 23),
+            "ch_10_editor.js": ("ch_10_editor", 34),
             "ch_11_filter.js": ("ch_11_filter", 85),
-            "ch_13_settings.js": ("ch_13_settings", 38),
+            "ch_13_settings.js": ("ch_13_settings", 39),
             "ch_15_app.js": ("ch_15_app", 22),
-            "ch_12_translation.js": ("ch_12_translation", 18),
+            "ch_12_translation.js": ("ch_12_translation", 19),
             "ch_16_ui_shell.js": ("ch_16_ui_shell", 6),
-            "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 3),
+            "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 4),
         }
     else:
         required_versions = {
@@ -342,6 +345,8 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert "Math.abs(delta) >= dp(28)" in settings_source
         assert "standalone_subpage_home_drag_baseline" in settings_source
         assert "settings_root_home_header_baseline_v1" in settings_source
+        assert "settings_chrome_unified_v1" in settings_source
+        assert "settings_subpage_chrome_unified_v1" in settings_source
         assert "function makeRegexTouchWrapper(view, visualHeightDp)" in settings_source
         assert "regex_rule_card_home_density_v1" in settings_source
     assert "feature.regex_rules.defaults_initialized" in repository_source
@@ -374,9 +379,11 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         translation_source = actual_sources["ch_12_translation.js"]
         assert "danger ? colors.danger" in translation_source
         assert "danger ? colors.dangerSoft" in translation_source
+        assert "translation_chrome_unified_v1" in translation_source
         editor_source = actual_sources["ch_10_editor.js"]
-        assert "var dragSlot = new FrameLayout(appContext);" in editor_source
-        assert "dragSlot.addView(dragHandle, params);" in editor_source
+        assert "function addEditorStandaloneDragSlot(parent, colors, chrome)" in editor_source
+        assert "addEditorStandaloneDragSlot" in editor_source
+        assert "editor_chrome_unified_v1" in editor_source
         tokenizer_source = actual_sources["ch_17_tokenizer_ui.js"]
         list_source = actual_sources["ch_09_list.js"]
         assert 'MODULE_NAME: "ch_16_ui_shell"' in ui_shell_source
@@ -418,6 +425,7 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert 'ClipHub.UIShell.canEmbed("detail")' in list_source
         assert 'ClipHub.UIShell.mountPage("detail"' in list_source
         assert "detailEmbeddedInPrimary" in list_source
+        assert "detail_chrome_unified_v1" in list_source
         assert "buildDetailView(row, true)" in list_source
         assert "buildDetailView(row, false)" in list_source
         assert "detailWindowManager.addView(detailWindowRoot, detailParams)" in list_source
@@ -429,6 +437,8 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert "panelOverlayHost" in editor_source
         assert "bindEditorRoot" in tokenizer_source
         assert "editorEmbeddedInPrimary" in tokenizer_source
+        assert "tokenizer_chrome_unified_v1" in tokenizer_source
+        assert "editorPanelRoot.setPadding(0, 0, 0, 0);" in tokenizer_source
         assert 'syncTokenizerShell("tokenizer"' in tokenizer_source
         assert '"ch_16_ui_shell.js"' in entry
         assert '"Translation", "UIShell"' in app

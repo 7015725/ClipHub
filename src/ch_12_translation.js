@@ -1255,6 +1255,25 @@
         return view;
     }
 
+    function translationChromeMetrics() {
+        var widthDp = 390;
+        var fontScale = 1;
+        var filterState = null;
+        try {
+            if (ClipHub.Filter && typeof ClipHub.Filter.getState === "function") {
+                filterState = ClipHub.Filter.getState();
+                if (filterState && Number(filterState.panelWidthDp || 0) > 0) {
+                    widthDp = Number(filterState.panelWidthDp);
+                }
+            }
+        } catch (ignoredTranslationFilterMetrics) {}
+        try {
+            fontScale = Number(appContext.getResources()
+                .getConfiguration().fontScale || 1);
+        } catch (ignoredTranslationFontScale) { fontScale = 1; }
+        return ClipHub.Theme.getPanelChromeMetrics(widthDp, fontScale, 1);
+    }
+
     function translationButton(text, colors, primary, danger) {
         var view = translationText(text, 12,
             danger ? colors.danger : (primary ? "#FFFFFFFF" : colors.accentStrong),
@@ -1693,11 +1712,12 @@
 
     function buildTranslationPanel() {
         var colors = translationPalette();
+        var chrome = translationChromeMetrics();
         var root = new LinearLayout(appContext);
-        var handleRow = new LinearLayout(appContext);
+        var handleSlot = new FrameLayout(appContext);
         var handle = new View(appContext);
         var header = new LinearLayout(appContext);
-        var title = translationText("翻译结果", 17, colors.textPrimary, true);
+        var title = translationText("翻译结果", chrome.titleSp, colors.textPrimary, true);
         var originalLabel = translationText("原文", 12,
             colors.textSecondary, true);
         var resultLabel = translationText("译文", 12,
@@ -1714,24 +1734,29 @@
             root.setPadding(0, 0, 0, 0);
             translationHeaderCloseView = null;
         } else {
-            root.setPadding(dp(12), dp(8), dp(12), dp(10));
+            /* translation_chrome_unified_v1 */
+            root.setPadding(dp(chrome.screenPaddingDp), dp(chrome.pagePaddingTopDp),
+                dp(chrome.screenPaddingDp), dp(chrome.pagePaddingBottomDp));
             root.setBackground(translationRounded(colors.surface,
-                colors.stroke, 24));
-            handleRow.setGravity(Gravity.CENTER);
+                colors.stroke, chrome.pageRadiusDp));
+            var handleParams = new FrameLayout.LayoutParams(
+                dp(chrome.dragHandleWidthDp), dp(chrome.dragHandleHeightDp));
+            handleParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+            handleParams.topMargin = dp(chrome.dragHandleTopDp);
             handle.setBackground(translationRounded(colors.accentBorder, null, 3));
-            handleRow.addView(handle, new LinearLayout.LayoutParams(dp(42), dp(4)));
-            root.addView(handleRow, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(16)));
+            handleSlot.addView(handle, handleParams);
+            root.addView(handleSlot, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(chrome.dragHandleSlotDp)));
 
             header.setOrientation(LinearLayout.HORIZONTAL);
             header.setGravity(Gravity.CENTER_VERTICAL);
             header.addView(title, new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
             translationHeaderCloseView = translationText(
-                "×", 22, colors.icon, true);
+                "×", chrome.iconSp, colors.icon, false);
             translationHeaderCloseView.setGravity(Gravity.CENTER);
             translationHeaderCloseView.setBackground(translationRounded(
-                colors.surfaceMuted, null, 18));
+                colors.surfaceMuted, null, chrome.actionSizeDp / 2));
             translationHeaderCloseView.setClickable(true);
             translationHeaderCloseView.setFocusable(true);
             translationHeaderCloseView.setOnClickListener(new JavaAdapter(
@@ -1739,11 +1764,12 @@
                     closeTranslationPanel("button");
                 }}));
             header.addView(translationHeaderCloseView,
-                new LinearLayout.LayoutParams(dp(36), dp(36)));
+                new LinearLayout.LayoutParams(dp(chrome.actionSizeDp),
+                    dp(chrome.actionSizeDp)));
             params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(36));
-            params.topMargin = -dp(4);
-            params.bottomMargin = dp(6);
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(chrome.headerHeightDp));
+            params.topMargin = 0;
+            params.bottomMargin = dp(chrome.headerBottomGapDp);
             root.addView(header, params);
         }
 
@@ -2094,7 +2120,7 @@
     }
     ClipHub.Translation = {
         MODULE_NAME: "ch_12_translation",
-        MODULE_VERSION: 18,
+        MODULE_VERSION: 19,
         init: function (context) {
             translationConfig = { enabled: true, provider: "settings" };
             navigationInit(context || {});

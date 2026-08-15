@@ -499,6 +499,55 @@
         };
     }
 
+    function editorChromeMetrics() {
+        var widthDp = Number(state.panelWidthDp || 0);
+        var fontScale = 1;
+        var filterState = null;
+        if (!isFinite(widthDp) || widthDp <= 0) {
+            try {
+                if (ClipHub.Filter && typeof ClipHub.Filter.getState === "function") {
+                    filterState = ClipHub.Filter.getState();
+                    widthDp = Number(filterState && filterState.panelWidthDp || 0);
+                }
+            } catch (ignoredEditorFilterMetrics) { widthDp = 0; }
+        }
+        if (!isFinite(widthDp) || widthDp <= 0) { widthDp = 390; }
+        try {
+            fontScale = Number(appContext.getResources()
+                .getConfiguration().fontScale || 1);
+        } catch (ignoredEditorFontScale) { fontScale = 1; }
+        return ClipHub.Theme.getPanelChromeMetrics(widthDp, fontScale, 1);
+    }
+
+    function addEditorStandaloneDragSlot(parent, colors, chrome) {
+        var slot;
+        var handle;
+        var params;
+        if (embeddedInPrimary) { return null; }
+        slot = new FrameLayout(appContext);
+        handle = new View(appContext);
+        handle.setBackground(roundedBackground(colors.accentBorder, null, 3));
+        params = new FrameLayout.LayoutParams(
+            dp(chrome.dragHandleWidthDp), dp(chrome.dragHandleHeightDp));
+        params.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+        params.topMargin = dp(chrome.dragHandleTopDp);
+        slot.addView(handle, params);
+        parent.addView(slot, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(chrome.dragHandleSlotDp)));
+        return slot;
+    }
+
+    function makeEditorHeaderAction(text, description, colors, chrome) {
+        var view = makeText(text, chrome.iconSp, colors.icon, false);
+        view.setGravity(Gravity.CENTER);
+        view.setContentDescription(String(description || text));
+        view.setBackground(roundedBackground(colors.surfaceMuted, null,
+            chrome.actionSizeDp / 2));
+        view.setClickable(true);
+        view.setFocusable(true);
+        return view;
+    }
+
     function makeEditorPill(text, colors, accent) {
         var view = makeText(text, 10,
             accent ? colors.accentStrong : colors.textSecondary,
@@ -2146,8 +2195,7 @@
         var isNew = state.mode === "new";
         var sourceText = isNew ? "ClipHub 手动" :
             String(row && row.source_label ? row.source_label : "未知来源");
-        var dragSlot = new FrameLayout(appContext);
-        var dragHandle = new View(appContext);
+        var chrome = editorChromeMetrics();
         var header = new LinearLayout(appContext);
         var titleStack = new LinearLayout(appContext);
         var metaRow = new LinearLayout(appContext);
@@ -2164,22 +2212,15 @@
         state.contentMinLines = 10;
         state.contentLength = String(initialText || "").length;
 
-        dragHandle.setBackground(roundedBackground(
-            colors.accentBorder, null, 3));
-        params = new FrameLayout.LayoutParams(dp(42), dp(4));
-        params.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
-        params.topMargin = dp(6);
-        dragSlot.addView(dragHandle, params);
-        panelRoot.addView(dragSlot, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(12)));
-        if (embeddedInPrimary) { dragSlot.setVisibility(View.GONE); }
+        /* editor_chrome_unified_v1 */
+        addEditorStandaloneDragSlot(panelRoot, colors, chrome);
         state.dragHandlePresent = embeddedInPrimary !== true;
 
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.TOP);
         titleStack.setOrientation(LinearLayout.VERTICAL);
         titleTextView = makeText(isNew ? "新增剪贴板" : "编辑剪贴板",
-            17, colors.textPrimary, true);
+            chrome.titleSp, colors.textPrimary, true);
         subtitleTextView = makeText(isNew ?
             "手动添加一条本地剪贴板记录" :
             "修改正文并管理当前记录的自定义标签",
@@ -2198,23 +2239,19 @@
         params.topMargin = dp(8);
         header.addView(titleStack, params);
 
-        headerCloseView = makeText("×", 17, colors.icon, false);
-        headerCloseView.setGravity(Gravity.CENTER);
-        headerCloseView.setContentDescription("关闭编辑窗口");
-        headerCloseView.setBackground(roundedBackground(
-            colors.surfaceMuted, null, 18));
-        headerCloseView.setClickable(true);
-        headerCloseView.setFocusable(true);
+        headerCloseView = makeEditorHeaderAction("×",
+            "关闭编辑窗口", colors, chrome);
         headerCloseView.setOnClickListener(new JavaAdapter(
             View.OnClickListener, {
                 onClick: function () { requestExit("cancel_button"); }
             }));
-        params = new LinearLayout.LayoutParams(dp(36), dp(36));
+        params = new LinearLayout.LayoutParams(
+            dp(chrome.actionSizeDp), dp(chrome.actionSizeDp));
         params.gravity = Gravity.TOP;
         header.addView(headerCloseView, params);
         params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(44));
-        params.bottomMargin = dp(6);
+        params.bottomMargin = dp(chrome.headerBottomGapDp);
         panelRoot.addView(header, params);
         if (embeddedInPrimary) { header.setVisibility(View.GONE); }
         state.headerIconPresent = false;
@@ -2341,8 +2378,7 @@
 
     function buildTagContent(requestFocus) {
         var colors = editorPalette();
-        var dragRow = new LinearLayout(appContext);
-        var dragHandle = new View(appContext);
+        var chrome = editorChromeMetrics();
         var header = new LinearLayout(appContext);
         var titleStack = new LinearLayout(appContext);
         var title;
@@ -2371,21 +2407,12 @@
         state.tagColorPreviewCount = 0;
         state.tagFooterActionCount = 2;
 
-        dragRow.setGravity(Gravity.CENTER);
-        dragHandle.setBackground(roundedBackground(
-            colors.accentBorder, null, 3));
-        dragRow.addView(dragHandle,
-            new LinearLayout.LayoutParams(dp(42), dp(4)));
-        params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(16));
-        params.bottomMargin = dp(4);
-        panelRoot.addView(dragRow, params);
-        if (embeddedInPrimary) { dragRow.setVisibility(View.GONE); }
+        addEditorStandaloneDragSlot(panelRoot, colors, chrome);
 
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
         titleStack.setOrientation(LinearLayout.VERTICAL);
-        title = makeText("选择标签", 18, colors.textPrimary, true);
+        title = makeText("选择标签", chrome.titleSp, colors.textPrimary, true);
         subtitle = makeText("已选择 " + String(editorDraftTagIds.length) +
             " 个 · 取消不会保存更改", 10, colors.textSecondary, false);
         titleStack.addView(title, new LinearLayout.LayoutParams(
@@ -2398,23 +2425,19 @@
         titleStack.addView(subtitle, params);
         header.addView(titleStack, new LinearLayout.LayoutParams(
             0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-        headerCloseView = makeText("×", 22, colors.icon, true);
-        headerCloseView.setGravity(Gravity.CENTER);
-        headerCloseView.setBackground(roundedBackground(
-            colors.surfaceMuted, null, 18));
-        headerCloseView.setClickable(true);
-        headerCloseView.setFocusable(true);
-        headerCloseView.setContentDescription("取消标签选择");
+        headerCloseView = makeEditorHeaderAction("×",
+            "取消标签选择", colors, chrome);
         headerCloseView.setOnClickListener(new JavaAdapter(
             View.OnClickListener, {
                 onClick: function () { requestExit("tag_cancel"); }
             }));
         header.addView(headerCloseView,
-            new LinearLayout.LayoutParams(dp(38), dp(38)));
+            new LinearLayout.LayoutParams(dp(chrome.actionSizeDp),
+                dp(chrome.actionSizeDp)));
         params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dp(10);
+        params.bottomMargin = dp(chrome.headerBottomGapDp);
         panelRoot.addView(header, params);
         if (embeddedInPrimary) { header.setVisibility(View.GONE); }
 
@@ -3043,7 +3066,7 @@
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 33,
+        MODULE_VERSION: 34,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
