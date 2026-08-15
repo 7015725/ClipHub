@@ -77,7 +77,8 @@ jobs:
                           break
               out.append('')
 
-          (root / 'ui_consistency_round2_diag.txt').write_text('\n'.join(out) + '\n', encoding='utf-8')
+          content = '\n'.join(out).rstrip() + '\n'
+          (root / 'ui_consistency_round2_diag.txt').write_text(content, encoding='utf-8')
           PY
           git diff --check
 
