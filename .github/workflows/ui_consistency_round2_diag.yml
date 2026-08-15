@@ -1,0 +1,92 @@
+name: UI Consistency Round2 Diagnostic
+
+on:
+  push:
+    branches: [beta-regex-settings-tabs-20260814]
+    paths:
+      - .github/workflows/ui_consistency_round2_diag.yml
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Inspect current UI metrics
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, gzip, hashlib, json, pathlib, re
+
+          root = pathlib.Path('.')
+          manifest = json.loads((root / 'module-manifest.json').read_text(encoding='utf-8'))
+          assert manifest.get('moduleSetVersion') == '20260815.02', manifest.get('moduleSetVersion')
+          assert manifest.get('sourceRef') == 'beta-regex-settings-tabs-20260814'
+
+          def expand(path):
+              text = path.read_text(encoding='utf-8')
+              assignment = re.search(r'var\s+(?:PACKED_B64|encoded)\s*=\s*(.*?);\s*\n\s*function\s+', text, re.S)
+              if assignment is None:
+                  return text
+              pieces = re.findall(r'"(?:\\.|[^"\\])*"', assignment.group(1))
+              encoded = ''.join(json.loads(piece) for piece in pieces)
+              source = gzip.decompress(base64.b64decode(encoded)).decode('utf-8')
+              expected = re.search(r'var\s+SOURCE_SHA256\s*=\s*["\']([0-9a-f]+)["\']', text)
+              if expected:
+                  assert hashlib.sha256(source.encode('utf-8')).hexdigest() == expected.group(1)
+              return source
+
+          sources = {
+              'theme': expand(root / 'src/ch_07_theme.js'),
+              'filter': expand(root / 'src/ch_11_filter.js'),
+              'editor': expand(root / 'src/ch_10_editor.js'),
+              'translation': expand(root / 'src/ch_12_translation.js'),
+              'tokenizer': expand(root / 'src/ch_17_tokenizer_ui.js'),
+          }
+
+          out = []
+          out.append('moduleSetVersion=' + manifest['moduleSetVersion'])
+          out.append('')
+
+          targets = {
+              'theme': ['var METRICS = {'],
+              'filter': ['function makeHeaderAction', 'function buildSearchHeader', 'function createPanelCache'],
+              'editor': ['function makeEditorAction', 'function buildTextContent'],
+              'translation': ['function translationButton', 'function buildTranslationPanel'],
+              'tokenizer': ['function makeClickText', 'function makeToolbarCell', 'function buildHeader', 'function buildSegment', 'function buildToolbar', 'function buildPage'],
+          }
+
+          for name, markers in targets.items():
+              lines = sources[name].splitlines()
+              out.append('===== ' + name.upper() + ' =====')
+              for marker in markers:
+                  for i, line in enumerate(lines):
+                      if marker in line:
+                          start = max(0, i - 3)
+                          end = min(len(lines), i + 85)
+                          out.append('--- ' + marker + ' lines %d-%d ---' % (start + 1, end))
+                          for j in range(start, end):
+                              out.append('%05d: %s' % (j + 1, lines[j].rstrip()))
+                          break
+              out.append('')
+
+          (root / 'ui_consistency_round2_diag.txt').write_text('\n'.join(out) + '\n', encoding='utf-8')
+          PY
+          git diff --check
+
+      - name: Commit diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ui_consistency_round2_diag.txt
+          git diff --cached --check
+          git commit -m "记录 UI 一致性二轮当前尺寸基线"
+          git push origin HEAD:beta-regex-settings-tabs-20260814
