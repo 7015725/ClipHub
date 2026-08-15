@@ -41,7 +41,7 @@ case "$MODE" in
     ;;
   --settings-tabs-beta)
     EXPECTED_REF='beta-regex-settings-tabs-20260814'
-    EXPECTED_MODULE_SET='20260815.21'
+    EXPECTED_MODULE_SET='20260815.22'
     EXPECTED_ENTRY_VERSION='7'
     EXPECTED_APP_MODULE_VERSION='22'
     REQUIRE_CLEAN='0'
@@ -295,7 +295,7 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
             "ch_06_repository.js": ("ch_06_repository", 19),
             "ch_10_editor.js": ("ch_10_editor", 33),
             "ch_11_filter.js": ("ch_11_filter", 85),
-            "ch_13_settings.js": ("ch_13_settings", 37),
+            "ch_13_settings.js": ("ch_13_settings", 38),
             "ch_15_app.js": ("ch_15_app", 22),
             "ch_12_translation.js": ("ch_12_translation", 18),
             "ch_16_ui_shell.js": ("ch_16_ui_shell", 6),
@@ -341,6 +341,7 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert "colors.stroke, layout.cardRadiusDp" in settings_source
         assert "Math.abs(delta) >= dp(28)" in settings_source
         assert "standalone_subpage_home_drag_baseline" in settings_source
+        assert "settings_root_home_header_baseline_v1" in settings_source
         assert "function makeRegexTouchWrapper(view, visualHeightDp)" in settings_source
         assert "regex_rule_card_home_density_v1" in settings_source
     assert "feature.regex_rules.defaults_initialized" in repository_source
