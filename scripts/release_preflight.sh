@@ -41,7 +41,7 @@ case "$MODE" in
     ;;
   --settings-tabs-beta)
     EXPECTED_REF='beta-regex-settings-tabs-20260814'
-    EXPECTED_MODULE_SET='20260815.12'
+    EXPECTED_MODULE_SET='20260815.13'
     EXPECTED_ENTRY_VERSION='6'
     EXPECTED_APP_MODULE_VERSION='21'
     REQUIRE_CLEAN='0'
@@ -69,6 +69,34 @@ if [ "$REQUIRE_CLEAN" = '1' ] && [ -n "$(git status --short)" ]; then
 fi
 
 python3 scripts/validate_es5.py .
+
+# Packed modules must be syntax-checked after expansion; checking only the loader
+# wrapper cannot detect syntax errors inside gzip/base64 payloads.
+PACKED_SYNTAX_DIR="$AUDIT_DIR/expanded-js"
+mkdir -p "$PACKED_SYNTAX_DIR"
+python3 - "$PACKED_SYNTAX_DIR" <<'PYJS'
+import base64
+import gzip
+import json
+import re
+import sys
+from pathlib import Path
+
+out = Path(sys.argv[1])
+for path in sorted(Path('src').glob('*.js')):
+    text = path.read_text(encoding='utf-8')
+    match = re.search(r'\bvar\s+(?:PACKED_B64|encoded)\s*=\s*(.*?);', text, re.S)
+    source = text
+    if match is not None:
+        pieces = re.findall(r'"(?:\\.|[^"\\])*"', match.group(1))
+        source = gzip.decompress(base64.b64decode(
+            ''.join(json.loads(piece) for piece in pieces))).decode('utf-8')
+    (out / path.name).write_text(source, encoding='utf-8')
+PYJS
+for expanded_js in "$PACKED_SYNTAX_DIR"/*.js; do
+  node --check "$expanded_js" >/dev/null
+done
+echo 'Expanded JS syntax verification: passed'
 if [ "$MODE" = '--beta' ]; then
   python3 scripts/audit_color_api.py \
     --json "$AUDIT_DIR/color-findings.json" \
@@ -261,7 +289,7 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
             "ch_03_database.js": ("ch_03_database", 5),
             "ch_06_repository.js": ("ch_06_repository", 19),
             "ch_11_filter.js": ("ch_11_filter", 84),
-            "ch_13_settings.js": ("ch_13_settings", 33),
+            "ch_13_settings.js": ("ch_13_settings", 34),
             "ch_15_app.js": ("ch_15_app", 21),
             "ch_12_translation.js": ("ch_12_translation", 17),
             "ch_16_ui_shell.js": ("ch_16_ui_shell", 2),
