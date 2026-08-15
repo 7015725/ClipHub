@@ -40,7 +40,6 @@ jobs:
           import hashlib
           import json
           import pathlib
-          import re
           import subprocess
 
           root = pathlib.Path('.')
@@ -77,7 +76,11 @@ jobs:
           assert 'uiShell: uiShell' in app
           assert '"ch_16_ui_shell.js"' in entry
 
-          changed = set(subprocess.check_output(['git', 'diff', '--name-only'], text=True).splitlines())
+          changed = set(subprocess.check_output(
+              ['git', 'diff', '--name-only'], text=True).splitlines())
+          changed.update(subprocess.check_output(
+              ['git', 'ls-files', '--others', '--exclude-standard'],
+              text=True).splitlines())
           expected = {
               'ClipHub.js',
               'module-manifest.json',
