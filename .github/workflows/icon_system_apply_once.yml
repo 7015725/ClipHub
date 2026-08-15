@@ -117,7 +117,12 @@ jobs:
               assert "panel_icon_text_bridge_v1" in source
               return source
           ''').lstrip()
-          p.write_text(text[:start] + replacement + text[end:], encoding='utf-8')
+          text = text[:start] + replacement + text[end:]
+          old_save = '    write(path, wrapper)\n\n\ndef bump_module'
+          new_save = '    wrapper = "\\n".join(line.rstrip() for line in wrapper.splitlines()) + "\\n"\n    write(path, wrapper)\n\n\ndef bump_module'
+          assert old_save in text
+          text = text.replace(old_save, new_save, 1)
+          p.write_text(text, encoding='utf-8')
           PY
           python3 .github/icon_system_patch_once.py
           git checkout -- .github/icon_system_patch_once.py
