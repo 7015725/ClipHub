@@ -1,0 +1,101 @@
+name: UI Shell Stage2 Once
+
+on:
+  push:
+    branches: [beta-regex-settings-tabs-20260814]
+    paths:
+      - .github/workflows/ui_shell_stage2_once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build primary-shell child pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          exec > >(tee /tmp/ui-shell-stage2.txt) 2>&1
+          python3 tools/ui_shell_stage2_20260815.py
+          node --check src/ch_11_filter.js
+          node --check src/ch_12_translation.js
+          node --check src/ch_13_settings.js
+          node --check src/ch_16_ui_shell.js
+          python3 scripts/validate_es5.py .
+          python3 scripts/audit_color_api.py --release-strict | tee /tmp/ui-shell-stage2-color.txt
+          grep '^HIGH=0 WARN=0 ' /tmp/ui-shell-stage2-color.txt
+          bash scripts/release_preflight.sh --settings-tabs-beta
+          git diff --check
+
+      - name: Validate migration boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+
+          manifest = json.loads(Path('module-manifest.json').read_text(encoding='utf-8'))
+          assert manifest['moduleSetVersion'] == '20260815.12'
+          assert len(manifest['modules']) == 17
+
+          changed = set(subprocess.check_output(['git','diff','--name-only'], text=True).splitlines())
+          expected = {
+              'module-manifest.json',
+              'scripts/release_preflight.sh',
+              'src/ch_11_filter.js',
+              'src/ch_12_translation.js',
+              'src/ch_13_settings.js',
+              'src/ch_16_ui_shell.js',
+              'tools/regex_beta_patches/settings_regex_feature.jsfrag',
+          }
+          assert changed == expected, (changed, expected)
+
+          forbidden = {
+              'ClipHub.js',
+              'src/ch_03_database.js',
+              'src/ch_06_repository.js',
+              'src/ch_07_theme.js',
+              'src/ch_08_window.js',
+              'src/ch_09_list.js',
+              'src/ch_10_editor.js',
+              'src/ch_15_app.js',
+              'src/ch_17_tokenizer_ui.js',
+          }
+          assert not (changed & forbidden), changed & forbidden
+          print('Stage2 boundary validation passed')
+          print('Untouched: DB Repository Theme Window List Editor App Tokenizer Entry')
+          PY
+
+      - name: Upload validation log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-shell-stage2-log
+          path: /tmp/ui-shell-stage2.txt
+          retention-days: 1
+          if-no-files-found: ignore
+
+      - name: Commit stage2 migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f .github/workflows/ui_shell_stage2_probe_once.yml
+          git rm -f .github/workflows/ui_shell_stage2_once.yml
+          git rm -f tools/ui_shell_stage2_20260815.py
+          git add module-manifest.json scripts/release_preflight.sh \
+              src/ch_11_filter.js src/ch_12_translation.js \
+              src/ch_13_settings.js src/ch_16_ui_shell.js \
+              tools/regex_beta_patches/settings_regex_feature.jsfrag
+          git diff --cached --check
+          git commit -m "迁移设置正则翻译到首页主窗口"
+          git push origin HEAD:beta-regex-settings-tabs-20260814
