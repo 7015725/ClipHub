@@ -139,14 +139,14 @@
     {
       "name": "ch_18_tokenizer_core.js",
       "path": "src/ch_18_tokenizer_core.js",
-      "sha": "a3866aa80284cd8149e6674cc0a3ae38ef5796d2",
+      "sha": "67cf3cf91231f33b0a195cb7497d9c5f3b0e12aa",
       "export": "TokenizerCore",
       "runtimeRole": "passive"
     },
     {
       "name": "ch_19_tokenizer_service.js",
       "path": "src/ch_19_tokenizer_service.js",
-      "sha": "fd27f803cef56666bc3af8570f5b544ea6dc4780",
+      "sha": "474d32c6740f104343d33a055f1fe103cfbfc2be",
       "export": "TokenizerService",
       "runtimeRole": "managed",
       "lifecycleIndex": 14
