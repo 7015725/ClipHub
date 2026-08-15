@@ -1,0 +1,49 @@
+name: Tokenizer Rules Probe
+
+on:
+  push:
+    branches:
+      - docs/tokenizer-softcode-hardening-20260815
+    paths:
+      - .github/workflows/tokenizer-rules-probe.yml
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: docs/tokenizer-softcode-hardening-20260815
+          fetch-depth: 1
+      - name: Unpack tokenizer UI source
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64, gzip, hashlib, json, re
+          from pathlib import Path
+          src = Path('src/ch_17_tokenizer_ui.js').read_text(encoding='utf-8')
+          m = re.search(r'\bvar\s+(?:PACKED_B64|encoded)\s*=\s*(.*?);', src, re.S)
+          if not m:
+              raise SystemExit('packed source assignment not found')
+          pieces = re.findall(r'"(?:\\.|[^"\\])*"', m.group(1))
+          packed = ''.join(json.loads(p) for p in pieces)
+          expanded = gzip.decompress(base64.b64decode(packed)).decode('utf-8')
+          expected = re.search(r'\bvar\s+SOURCE_SHA256\s*=\s*"([0-9a-f]{64})"', src)
+          actual = hashlib.sha256(expanded.encode('utf-8')).hexdigest()
+          if expected and expected.group(1) != actual:
+              raise SystemExit('source sha mismatch')
+          out = Path('stage-assets/tokenizer-rules-probe')
+          out.mkdir(parents=True, exist_ok=True)
+          (out / 'ch_17_tokenizer_ui.expanded.js').write_text(expanded, encoding='utf-8')
+          PY
+      - name: Commit probe source
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add stage-assets/tokenizer-rules-probe/ch_17_tokenizer_ui.expanded.js
+          git commit -m "probe: expose tokenizer UI source for rules integration"
+          git push origin HEAD:docs/tokenizer-softcode-hardening-20260815
