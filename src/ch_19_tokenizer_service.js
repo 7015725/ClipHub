@@ -1,6 +1,12 @@
 (function (global) {
     var ClipHub = global.ClipHub || (global.ClipHub = {});
-    var Context = Packages.android.content.Context;
+    var File = Packages.java.io.File;
+    var FileInputStream = Packages.java.io.FileInputStream;
+    var FileOutputStream = Packages.java.io.FileOutputStream;
+    var ByteArrayOutputStream = Packages.java.io.ByteArrayOutputStream;
+    var JavaString = Packages.java.lang.String;
+    var ReflectArray = Packages.java.lang.reflect.Array;
+    var JavaByte = Packages.java.lang.Byte;
     var System = Packages.java.lang.System;
     var Executors = Packages.java.util.concurrent.Executors;
     var Handler = Packages.android.os.Handler;
@@ -9,15 +15,12 @@
     var RhinoContext = null;
     var executor = null;
     var mainHandler = null;
-    var appContext = null;
-    var preferences = null;
+    var ruleStateFile = null;
     var generation = 0;
     var customIdCounter = 0;
 
-    var PREFS_NAME = "cliphub_tokenizer_rules_v1";
-    var KEY_CUSTOM_RULES = "custom_rules_json";
-    var KEY_SELECTED_RULES = "selected_rule_ids_json";
-    var KEY_SCHEMA_VERSION = "schema_version";
+    var RULE_STORAGE_NAMESPACE = "cliphub_tokenizer_rules_v1";
+    var RULE_FILE_NAME = "tokenizer_rules_v1.json";
     var RULE_SCHEMA_VERSION = 1;
     var MAX_CUSTOM_RULES = 64;
     var MAX_SELECTED_RULES = 64;
@@ -234,32 +237,102 @@
         return out;
     }
 
+    function closeQuietly(value) {
+        if (value !== null && value !== undefined) {
+            try { value.close(); } catch (ignoredClose) {}
+        }
+    }
+
+    function readUtf8File(file) {
+        var input = null;
+        var output = null;
+        var buffer = ReflectArray.newInstance(JavaByte.TYPE, 4096);
+        var count;
+        try {
+            input = new FileInputStream(file);
+            output = new ByteArrayOutputStream();
+            while ((count = Number(input.read(buffer))) > 0) {
+                output.write(buffer, 0, count);
+            }
+            return String(new JavaString(output.toByteArray(), "UTF-8"));
+        } finally {
+            closeQuietly(output);
+            closeQuietly(input);
+        }
+    }
+
+    function writeUtf8File(file, value) {
+        var output = null;
+        try {
+            output = new FileOutputStream(file, false);
+            output.write(new JavaString(String(value)).getBytes("UTF-8"));
+            output.flush();
+            try { output.getFD().sync(); } catch (ignoredSync) {}
+            return true;
+        } finally {
+            closeQuietly(output);
+        }
+    }
+
+    function parseRuleState(text) {
+        var value;
+        try {
+            value = JSON.parse(String(text || "{}"));
+            if (!value || Object.prototype.toString.call(value) !== "[object Object]") {
+                throw new Error("Rule state JSON value is not an object");
+            }
+            return value;
+        } catch (error) {
+            state.ruleConfigLoadErrorCount += 1;
+            state.lastError = String(error);
+            return {};
+        }
+    }
+
     function persistRuleState() {
-        var editor;
-        if (preferences === null) { return false; }
-        editor = preferences.edit();
-        editor.putInt(KEY_SCHEMA_VERSION, RULE_SCHEMA_VERSION);
-        editor.putString(KEY_CUSTOM_RULES, JSON.stringify(customRules));
-        editor.putString(KEY_SELECTED_RULES, JSON.stringify(selectedRuleIds));
-        editor.apply();
+        var parent;
+        var temporary;
+        var payload;
+        if (ruleStateFile === null) { return false; }
+        parent = ruleStateFile.getParentFile();
+        if (parent !== null && !parent.isDirectory() &&
+                !parent.mkdirs() && !parent.isDirectory()) {
+            throw new Error("Cannot create tokenizer rule directory: " +
+                String(parent.getAbsolutePath()));
+        }
+        payload = JSON.stringify({
+            schemaVersion: RULE_SCHEMA_VERSION,
+            storageNamespace: RULE_STORAGE_NAMESPACE,
+            customRules: customRules,
+            selectedRuleIds: selectedRuleIds
+        }, null, 2) + "\n";
+        temporary = new File(parent, RULE_FILE_NAME + ".tmp");
+        writeUtf8File(temporary, payload);
+        if (ruleStateFile.exists() && !ruleStateFile.delete()) {
+            try { temporary.delete(); } catch (ignoredTempDelete) {}
+            throw new Error("Cannot replace tokenizer rule state file");
+        }
+        if (!temporary.renameTo(ruleStateFile)) {
+            try { temporary.delete(); } catch (ignoredRenameDelete) {}
+            throw new Error("Cannot commit tokenizer rule state file");
+        }
         return true;
     }
 
     function loadRuleState() {
-        var storedCustom;
-        var storedSelected;
-        var hasSelected;
+        var stored = {};
+        var hasSelected = false;
         customRules = [];
         selectedRuleIds = [];
-        if (preferences === null) { return false; }
-        storedCustom = preferences.getString(KEY_CUSTOM_RULES, "[]");
-        customRules = sanitizeCustomRules(parseJsonArray(storedCustom, []));
-        hasSelected = preferences.contains(KEY_SELECTED_RULES);
-        storedSelected = preferences.getString(KEY_SELECTED_RULES,
-            JSON.stringify(DEFAULT_SELECTED_IDS));
-        selectedRuleIds = sanitizeSelectedIds(parseJsonArray(storedSelected,
-            DEFAULT_SELECTED_IDS));
-        if (!hasSelected && selectedRuleIds.length === 0) {
+        if (ruleStateFile === null) { return false; }
+        if (ruleStateFile.isFile()) {
+            stored = parseRuleState(readUtf8File(ruleStateFile));
+            customRules = sanitizeCustomRules(stored.customRules || []);
+            hasSelected = own(stored, "selectedRuleIds");
+            selectedRuleIds = sanitizeSelectedIds(stored.selectedRuleIds ||
+                DEFAULT_SELECTED_IDS);
+        }
+        if (!hasSelected) {
             selectedRuleIds = sanitizeSelectedIds(DEFAULT_SELECTED_IDS);
         }
         persistRuleState();
@@ -288,7 +361,7 @@
         }
         return {
             schemaVersion: RULE_SCHEMA_VERSION,
-            storageNamespace: PREFS_NAME,
+            storageNamespace: RULE_STORAGE_NAMESPACE,
             selectedRuleIds: copyArray(selectedRuleIds),
             rules: out,
             presetCount: builtinPresetRules().length,
@@ -572,15 +645,13 @@
     }
 
     function init(context) {
-        appContext = context && context.androidContext ?
-            context.androidContext : global.context;
-        if (appContext === null || appContext === undefined) {
-            throw new Error("Android context unavailable for TokenizerService");
+        var dataDir;
+        if (!context || !context.runtimeDir) {
+            throw new Error("TokenizerService runtimeDir unavailable");
         }
-        try { appContext = appContext.getApplicationContext() || appContext; }
-        catch (ignoredContext) {}
-        preferences = appContext.getSharedPreferences(PREFS_NAME,
-            Context.MODE_PRIVATE);
+        dataDir = ClipHub.Base.ensureDir(
+            ClipHub.Base.joinPath(context.runtimeDir, "data"));
+        ruleStateFile = new File(dataDir, RULE_FILE_NAME);
         loadRuleState();
         mainHandler = new Handler(Looper.getMainLooper());
         state.ready = true;
@@ -596,8 +667,7 @@
         }
         executor = null;
         mainHandler = null;
-        preferences = null;
-        appContext = null;
+        ruleStateFile = null;
         customRules = [];
         selectedRuleIds = [];
         state.ready = false;
@@ -616,7 +686,9 @@
             generation: Number(generation),
             engine: String(state.engine),
             ruleSchemaVersion: RULE_SCHEMA_VERSION,
-            ruleStorageNamespace: PREFS_NAME,
+            ruleStorageNamespace: RULE_STORAGE_NAMESPACE,
+            ruleStoragePath: ruleStateFile === null ? "" :
+                String(ruleStateFile.getAbsolutePath()),
             tokenizerRulesIsolatedFromFilter: true,
             presetRuleCount: builtinPresetRules().length,
             customRuleCount: customRules.length,
@@ -637,7 +709,7 @@
             callbackThread: "main-handler",
             callbackPayload: "plain-object",
             shutdownGuard: "generation-token",
-            strongReferences: "preferences-only",
+            strongReferences: "file-state-only",
             configuredRuleTransport: "json-string",
             tokenizerRulesIsolatedFromFilter: true,
             engine: state.engine
@@ -646,10 +718,10 @@
 
     ClipHub.TokenizerService = {
         MODULE_NAME: "ch_19_tokenizer_service",
-        MODULE_VERSION: 3,
+        MODULE_VERSION: 4,
         ENGINE_VERSION: 2,
         RULE_SCHEMA_VERSION: RULE_SCHEMA_VERSION,
-        RULE_STORAGE_NAMESPACE: PREFS_NAME,
+        RULE_STORAGE_NAMESPACE: RULE_STORAGE_NAMESPACE,
         init: init,
         shutdown: shutdown,
         tokenizeSync: tokenizeSync,
