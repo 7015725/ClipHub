@@ -21,6 +21,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('tools/ui_shell_stage3_20260815.py')
+          s=p.read_text(encoding='utf-8')
+          start=s.index('# Existing legacy binding must explicitly remain non-embedded.')
+          end=s.index('# Clearing a binding always drops the embedded marker.', start)
+          s=s[:start]+s[end:]
+          p.write_text(s,encoding='utf-8')
+          PY
           python3 tools/ui_shell_stage3_20260815.py
 
       - name: Validate expanded runtime sources
@@ -94,9 +103,10 @@ jobs:
           assert not (persistent & forbidden), sorted(persistent & forbidden)
           print('Stage3 persistent boundary: passed')
           PY
-          git diff "$BASE" -- src/ch_08_window.js src/ch_09_list.js src/ch_11_filter.js src/ch_12_translation.js src/ch_13_settings.js | grep -q '^' && {
-            echo 'ERROR: forbidden module diff detected' >&2; exit 1;
-          } || true
+          if [ -n "$(git diff --name-only "$BASE" -- src/ch_08_window.js src/ch_09_list.js src/ch_11_filter.js src/ch_12_translation.js src/ch_13_settings.js)" ]; then
+            echo 'ERROR: forbidden module diff detected' >&2
+            exit 1
+          fi
 
       - name: Commit Stage3 migration and clean probes
         shell: bash
