@@ -69,23 +69,11 @@ jobs:
               if re.match(r'^\s*function\s+[A-Za-z_$][A-Za-z0-9_$]*\s*\(', line):
                   out.append('%05d: %s' % (no, line.strip()))
 
-          markers = ['分词', '普通分词', '正则规则', '复制', '输入', '编辑', '导出', '清空', '‹', '帮助', 'createManagedFrame', 'dragView', 'resizeView']
-          ranges = []
-          for marker in markers:
-              for idx, line in enumerate(lines):
-                  if marker in line:
-                      ranges.append((max(0, idx - 8), min(len(lines), idx + 9), marker))
-          merged = []
-          for start, end, marker in sorted(ranges):
-              if merged and start <= merged[-1][1]:
-                  merged[-1] = (merged[-1][0], max(merged[-1][1], end), merged[-1][2] + ',' + marker)
-              else:
-                  merged.append((start, end, marker))
           out.append('')
-          out.append('===== TOKENIZER MARKER CONTEXT =====')
-          for start, end, markers_text in merged:
-              out.append('--- lines %d-%d markers=%s ---' % (start + 1, end, markers_text))
-              for idx in range(start, end):
+          out.append('===== TOKENIZER TARGETED SOURCE =====')
+          for start, end in [(1, 180), (640, 1015), (1220, 1375)]:
+              out.append('--- lines %d-%d ---' % (start, end))
+              for idx in range(start - 1, min(end, len(lines))):
                   out.append('%05d: %s' % (idx + 1, lines[idx]))
 
           editor = (root / 'src/ch_10_editor.js').read_text(encoding='utf-8')
@@ -121,5 +109,5 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add ui_unify_stage0_diag.txt
           git diff --cached --check
-          git commit -m "诊断 UI 一致性修改锚点"
+          git commit -m "扩展 UI 一致性分词源码诊断"
           git push origin HEAD:beta-regex-settings-tabs-20260814
