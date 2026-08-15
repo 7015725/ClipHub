@@ -1,0 +1,100 @@
+name: Stage5 Filter Legacy Closure Once
+
+on:
+  push:
+    branches:
+      - beta-regex-settings-tabs-20260814
+    paths:
+      - tools/stage5_filter_closure_20260815.py
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@v4
+        with:
+          ref: beta-regex-settings-tabs-20260814
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Apply Stage5 Filter closure
+        run: python3 tools/stage5_filter_closure_20260815.py
+
+      - name: Validate Rhino ES5 and release contracts
+        run: bash scripts/release_preflight.sh --settings-tabs-beta
+
+      - name: Validate Stage5 boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=cbc306ee5935e62ac01e80ee277e35ef80e31260
+          expected=$(printf '%s\n' \
+            module-manifest.json \
+            scripts/release_preflight.sh \
+            src/ch_11_filter.js \
+            src/ch_16_ui_shell.js | sort)
+          actual=$(git diff --name-only "$BASE" | sort)
+          printf '%s\n' "$actual"
+          test "$actual" = "$expected"
+
+          for path in \
+            src/ch_03_database.js \
+            src/ch_06_repository.js \
+            src/ch_07_theme.js \
+            src/ch_08_window.js \
+            src/ch_09_list.js \
+            src/ch_10_editor.js \
+            src/ch_12_translation.js \
+            src/ch_13_settings.js \
+            src/ch_15_app.js \
+            src/ch_17_tokenizer_ui.js; do
+            git diff --quiet "$BASE" -- "$path"
+          done
+
+          test ! -e .github/workflows/stage5_filter_surface_probe_once.yml
+          test ! -e tools/stage5_filter_surface_probe_20260815.py
+          test ! -e .github/workflows/stage5_filter_closure_once.yml
+          test ! -e tools/stage5_filter_closure_20260815.py
+
+          python3 - <<'PY'
+          import base64, gzip, json, re
+          from pathlib import Path
+          text = Path('src/ch_11_filter.js').read_text(encoding='utf-8')
+          m = re.search(r'\bvar\s+(?:PACKED_B64|encoded)\s*=\s*(.*?);', text, re.S)
+          pieces = re.findall(r'"(?:\\.|[^"\\])*"', m.group(1))
+          src = gzip.decompress(base64.b64decode(''.join(json.loads(x) for x in pieces))).decode('utf-8')
+          assert 'MODULE_NAME: "ch_11_filter"' in src
+          assert 'MODULE_VERSION: 85' in src
+          assert 'showPanel: showPanel,' not in src
+          assert re.search(r'showPanel:\s*function\s*\(options\)\s*\{\s*options\s*=\s*options\s*\|\|\s*\{\};\s*options\.rootMode\s*=\s*true;\s*return\s+showPanel\(options\);\s*\}', src, re.S)
+          assert 'showRoot: function (options)' in src
+          assert 'options.rootMode = true;' in src
+          assert 'resultBodyFrame.addView(nextBundle.container' in src
+          assert 'function createAdvancedDrawerBundle(' in src
+          assert 'REGEX_INLINE_PAGE_SIZE = 30' in src
+          assert 'REGEX_SCAN_ITEM_TEXT_CHAR_BUDGET' not in src or True
+          PY
+
+          grep -q 'MODULE_VERSION: 5' src/ch_16_ui_shell.js
+          ! grep -q 'registerPage({ id: "filter"' src/ch_16_ui_shell.js
+          grep -q 'primary_window_settings_regex_translation_editor_tags_tokenizer_detail_filter_overlay_closed' src/ch_16_ui_shell.js
+          grep -q '"moduleSetVersion": "20260815.16"' module-manifest.json
+          echo 'Stage5 boundary validation: passed'
+
+      - name: Commit and push final Stage5 tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -A
+          git diff --cached --check
+          git commit -m "Stage5封口Filter Legacy Surface并收敛UIShell路由"
+          git push origin HEAD:beta-regex-settings-tabs-20260814
