@@ -1729,6 +1729,7 @@
             new LinearLayout.LayoutParams(dp(36), dp(36)));
         params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(36));
+        params.topMargin = -dp(4);
         params.bottomMargin = dp(6);
         root.addView(header, params);
 
@@ -2039,7 +2040,7 @@
     }
     ClipHub.Translation = {
         MODULE_NAME: "ch_12_translation",
-        MODULE_VERSION: 15,
+        MODULE_VERSION: 16,
         init: function (context) {
             translationConfig = { enabled: true, provider: "settings" };
             navigationInit(context || {});
