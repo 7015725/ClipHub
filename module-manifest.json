@@ -132,7 +132,7 @@
     {
       "name": "ch_17_tokenizer_ui.js",
       "path": "src/ch_17_tokenizer_ui.js",
-      "sha": "6c3c82b00b298d117e9766e7ff9af487606f1944",
+      "sha": "653a2f4505ef88ac8d71de9de341f5ecc4fbd045",
       "export": "TokenizerUI",
       "runtimeRole": "passive"
     },

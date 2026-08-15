@@ -154,7 +154,7 @@
         var value;
         var hex;
         for (index = 0; index < digest.length; index += 1) {
-            value = Number(bytes[index]);
+            value = Number(digest[index]);
             if (value < 0) { value += 256; }
             hex = value.toString(16);
             out.push(hex.length === 1 ? "0" + hex : hex);

@@ -416,6 +416,7 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert "addEditorStandaloneDragSlot" in editor_source
         assert "editor_chrome_unified_v1" in editor_source
         tokenizer_source = actual_sources["ch_17_tokenizer_ui.js"]
+        tokenizer_loader_source = (root / "src/ch_17_tokenizer_ui.js").read_text(encoding="utf-8")
         tokenizer_core_source = actual_sources["ch_18_tokenizer_core.js"]
         tokenizer_service_source = actual_sources["ch_19_tokenizer_service.js"]
         list_source = actual_sources["ch_09_list.js"]
@@ -471,6 +472,8 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert "bindEditorRoot" in tokenizer_source
         assert "editorEmbeddedInPrimary" in tokenizer_source
         assert "tokenizer_chrome_unified_v1" in tokenizer_source
+        assert "value = Number(digest[index]);" in tokenizer_loader_source
+        assert "value = Number(bytes[index]);" not in tokenizer_loader_source
         assert "requestTokenizerRun" in tokenizer_source
         assert "TokenizerService.tokenizeAsync" in tokenizer_source
         assert "TokenizerService.cancel" in tokenizer_source
