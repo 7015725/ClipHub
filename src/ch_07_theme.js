@@ -110,7 +110,16 @@
         dragHandleBottomDp: 7,
         headerHeightDp: 44,
         searchHeightDp: 44,
-        minTouchDp: 40
+        minTouchDp: 40,
+        pageRadiusDp: 24,
+        pagePaddingTopDp: 8,
+        pagePaddingBottomDp: 10,
+        sectionPaddingHorizontalDp: 11,
+        sectionPaddingVerticalDp: 10,
+        headerTopOffsetDp: -2,
+        headerBottomGapDp: 8,
+        tabMinHeightDp: 38,
+        tabBottomGapDp: 8
     };
 
 
@@ -270,6 +279,68 @@
         return out;
     }
 
+    function clampNumber(value, minValue, maxValue) {
+        return Math.max(minValue, Math.min(maxValue, value));
+    }
+
+    function getLayoutMetrics(widthDp, fontScale, touchSlopDp) {
+        var width = Number(widthDp || 0);
+        var scale = Number(fontScale || 1);
+        var touch = Number(touchSlopDp || 1);
+        var baseDp;
+        var actionSizeDp;
+        var controlHeightDp;
+        var gapDp;
+        var titleSp;
+        var iconSp;
+        var statusSp;
+        var searchSp;
+        var radiusDp;
+        var inputPaddingDp;
+        var badgeSizeDp;
+        var badgeSp;
+        if (!isFinite(width) || width <= 0) { width = 390; }
+        if (!isFinite(scale) || scale <= 0) { scale = 1; }
+        if (!isFinite(touch) || touch <= 0) { touch = 1; }
+        baseDp = Math.max(touch, width * 0.018);
+        actionSizeDp = clampNumber(width * 0.092,
+            baseDp * 4.4, width * 0.12);
+        controlHeightDp = clampNumber(actionSizeDp * 1.02,
+            baseDp * 4.6, width * 0.125);
+        gapDp = clampNumber(width * 0.014,
+            baseDp * 0.65, actionSizeDp * 0.24);
+        titleSp = clampNumber(width / (scale * 23),
+            actionSizeDp / (scale * 2.45),
+            actionSizeDp / (scale * 1.85));
+        iconSp = clampNumber(actionSizeDp / (scale * 2.05),
+            titleSp * 0.86, titleSp * 1.18);
+        statusSp = clampNumber(titleSp * 0.60,
+            iconSp * 0.58, titleSp * 0.72);
+        searchSp = clampNumber(titleSp * 0.70,
+            statusSp, titleSp * 0.82);
+        radiusDp = Math.max(baseDp * 1.3, controlHeightDp * 0.44);
+        inputPaddingDp = Math.max(baseDp * 0.65, gapDp);
+        badgeSizeDp = Math.max(baseDp * 2.0, actionSizeDp * 0.38);
+        badgeSp = Math.max(statusSp * 0.64,
+            badgeSizeDp / (scale * 3.4));
+        return {
+            widthDp: width,
+            fontScale: scale,
+            baseDp: baseDp,
+            actionSizeDp: actionSizeDp,
+            controlHeightDp: controlHeightDp,
+            gapDp: gapDp,
+            titleSp: titleSp,
+            iconSp: iconSp,
+            statusSp: statusSp,
+            searchSp: searchSp,
+            radiusDp: radiusDp,
+            inputPaddingDp: inputPaddingDp,
+            badgeSizeDp: badgeSizeDp,
+            badgeSp: badgeSp
+        };
+    }
+
     function configuredMode() {
         var value = mode;
         try {
@@ -299,7 +370,7 @@
 
     ClipHub.Theme = {
         MODULE_NAME: "ch_07_theme",
-        MODULE_VERSION: 4,
+        MODULE_VERSION: 5,
         init: function () { mode = "system"; return true; },
         setMode: function (value) {
             value = String(value || "system");
@@ -324,6 +395,7 @@
         isDark: isDark,
         getPalette: palette,
         getMetrics: function () { return copy(METRICS); },
+        getLayoutMetrics: getLayoutMetrics,
         token: function (name, context) {
             var value = palette(context)[String(name)];
             return value === undefined ? null : value;

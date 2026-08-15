@@ -118,33 +118,43 @@
 
     function makeSettingsSubpageHeader(content, titleText, colors) {
         var header = new LinearLayout(appContext);
-        var back = makeText("‹", 24, colors.icon, true);
-        var title = makeText(titleText, 17, colors.textPrimary, true);
-        var close = makeText("×", 22, colors.icon, true);
+        var metrics = settingsLayoutMetrics();
+        var layout = ClipHub.Theme.getMetrics();
+        var back = makeText("‹", Math.max(22, metrics.iconSp * 1.25),
+            colors.icon, true);
+        var title = makeText(titleText, metrics.titleSp,
+            colors.textPrimary, true);
+        var close = makeText("×", metrics.iconSp, colors.icon, false);
         var params;
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
         back.setGravity(Gravity.CENTER);
         back.setClickable(true);
-        back.setBackground(roundedBackground(colors.surfaceMuted, null, 18));
+        back.setBackground(roundedBackground(colors.surfaceMuted, null,
+            metrics.actionSizeDp / 2));
         back.setOnClickListener(new JavaAdapter(View.OnClickListener, {
             onClick: function () { handleSettingsBack(); }
         }));
-        header.addView(back, new LinearLayout.LayoutParams(dp(38), dp(38)));
+        header.addView(back, new LinearLayout.LayoutParams(
+            dp(metrics.actionSizeDp), dp(metrics.actionSizeDp)));
         params = new LinearLayout.LayoutParams(
             0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
-        params.leftMargin = dp(8);
+        params.leftMargin = dp(metrics.gapDp);
         header.addView(title, params);
         close.setGravity(Gravity.CENTER);
         close.setClickable(true);
-        close.setBackground(roundedBackground(colors.surfaceMuted, null, 18));
+        close.setBackground(roundedBackground(colors.surfaceMuted, null,
+            metrics.actionSizeDp / 2));
         close.setOnClickListener(new JavaAdapter(View.OnClickListener, {
             onClick: function () { closePage("button"); }
         }));
-        header.addView(close, new LinearLayout.LayoutParams(dp(38), dp(38)));
+        header.addView(close, new LinearLayout.LayoutParams(
+            dp(metrics.actionSizeDp), dp(metrics.actionSizeDp)));
         params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(42));
-        params.bottomMargin = dp(8);
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            dp(metrics.actionSizeDp));
+        params.topMargin = dp(layout.headerTopOffsetDp);
+        params.bottomMargin = dp(layout.headerBottomGapDp);
         content.addView(header, params);
         return header;
     }

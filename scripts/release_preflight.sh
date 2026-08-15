@@ -41,7 +41,7 @@ case "$MODE" in
     ;;
   --settings-tabs-beta)
     EXPECTED_REF='beta-regex-settings-tabs-20260814'
-    EXPECTED_MODULE_SET='20260814.05'
+    EXPECTED_MODULE_SET='20260815.09'
     EXPECTED_ENTRY_VERSION='6'
     EXPECTED_APP_MODULE_VERSION='20'
     REQUIRE_CLEAN='0'
@@ -146,7 +146,8 @@ assert manifest.get("schemaVersion") == 1, manifest.get("schemaVersion")
 assert manifest.get("moduleSetVersion") == expected_module_set, manifest.get("moduleSetVersion")
 assert manifest.get("entryMinVersion") == expected_entry_version, manifest.get("entryMinVersion")
 assert manifest.get("sourceRef") == expected_ref, manifest.get("sourceRef")
-assert len(manifest.get("modules", [])) == 15, len(manifest.get("modules", []))
+expected_module_count = 16 if mode == "--settings-tabs-beta" else 15
+assert len(manifest.get("modules", [])) == expected_module_count, len(manifest.get("modules", []))
 
 
 def blob_sha(text: str) -> str:
@@ -206,7 +207,10 @@ assert re.search(
 assert re.search(r"var TASK_VERSION = 3;", toggle)
 assert re.search(r"var REQUIRED_ENDPOINT_SCHEMA = 3;", toggle)
 assert re.search(r"var MIN_ENTRY_VERSION = 5;", toggle)
-assert re.search(r"MODULE_NAME:\s*\"ch_07_theme\"\s*,\s*MODULE_VERSION:\s*4", theme, re.S)
+expected_theme_version = 5 if mode == "--settings-tabs-beta" else 4
+assert re.search(
+    r"MODULE_NAME:\s*\"ch_07_theme\"\s*,\s*MODULE_VERSION:\s*" +
+    str(expected_theme_version), theme, re.S)
 assert "getColorSafetyState: getColorSafetyState" in theme
 assert not (root / "tasks/ClipHub_打开全局剪贴板.js").exists()
 
@@ -250,14 +254,14 @@ print("entryVersion: " + str(expected_entry_version))
 print("endpointSchemaVersion: 3")
 print("moduleSetVersion: " + expected_module_set)
 print("sourceRef: " + expected_ref)
-print("Theme: 4")
+print("Theme: " + str(expected_theme_version))
 if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
     if mode == "--settings-tabs-beta":
         required_versions = {
             "ch_03_database.js": ("ch_03_database", 5),
             "ch_06_repository.js": ("ch_06_repository", 19),
-            "ch_11_filter.js": ("ch_11_filter", 81),
-            "ch_13_settings.js": ("ch_13_settings", 30),
+            "ch_11_filter.js": ("ch_11_filter", 83),
+            "ch_13_settings.js": ("ch_13_settings", 32),
             "ch_15_app.js": ("ch_15_app", 20),
         }
     else:
@@ -307,7 +311,7 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
     assert "filterRegexRuleIds" in settings_source
     assert "filterRegexMatchMode" in settings_source
     assert manifest.get("sourceRef") == expected_ref
-    assert len(manifest.get("modules", [])) == 15
+    assert len(manifest.get("modules", [])) == (16 if mode == "--settings-tabs-beta" else 15)
     if mode == "--settings-tabs-beta":
         assert 'var settingsTab = "general";' in settings_source
         assert "function setSettingsTab(tab, origin)" in settings_source

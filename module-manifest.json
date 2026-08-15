@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260815.08",
+  "moduleSetVersion": "20260815.09",
   "entryMinVersion": 6,
   "sourceRef": "beta-regex-settings-tabs-20260814",
   "modules": [
@@ -37,7 +37,7 @@
     {
       "name": "ch_07_theme.js",
       "path": "src/ch_07_theme.js",
-      "sha": "2d26ee75a5216a8ba58d15010f439596c98d0b30"
+      "sha": "24d762f69ef4fba2039ebf70fae2214bfa5df08f"
     },
     {
       "name": "ch_08_window.js",
@@ -57,7 +57,7 @@
     {
       "name": "ch_11_filter.js",
       "path": "src/ch_11_filter.js",
-      "sha": "88ea94c458504c2a5632d3ed295f2c55fb16ba6b"
+      "sha": "8ababbbeed80270b332559d442b69ea9484d99e0"
     },
     {
       "name": "ch_12_translation.js",
@@ -67,7 +67,7 @@
     {
       "name": "ch_13_settings.js",
       "path": "src/ch_13_settings.js",
-      "sha": "d4f406eb34307cc3826580489dae1d8e2dde24f2"
+      "sha": "4a4b18ff8eeae3f12071f1ed49d76426e77ae05f"
     },
     {
       "name": "ch_14_event_bus.js",
