@@ -34,6 +34,11 @@ jobs:
               p=out/Path(path).name
               p.write_text(expanded,encoding='utf-8')
               print(path,'->',p,'chars=',len(expanded))
+              if path.endswith('ch_13_settings.js'):
+                  lines=expanded.splitlines()
+                  print('===== SETTINGS 3115-3165 =====')
+                  for n in range(3115, min(3166,len(lines)+1)):
+                      print('%04d: %s' % (n, lines[n-1]))
           PY
           for f in /tmp/expanded/*.js; do
             echo "===== $f ====="
