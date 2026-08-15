@@ -23,7 +23,7 @@ jobs:
           set -euo pipefail
           python3 tools/ui_unify_20260815.py
 
-      - name: Validate static contracts
+      - name: Validate bounded contracts
         shell: bash
         run: |
           set -euo pipefail
@@ -34,15 +34,69 @@ jobs:
           python3 scripts/validate_es5.py .
           python3 scripts/audit_color_api.py --release-strict | tee /tmp/ui-unify-color.txt
           grep '^HIGH=0 WARN=0 ' /tmp/ui-unify-color.txt
-          bash scripts/release_preflight.sh --regex-beta
           git diff --check
+
+          python3 - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          import json
+          import pathlib
+          import re
+          import subprocess
+
+          root = pathlib.Path('.')
+          manifest = json.loads((root / 'module-manifest.json').read_text(encoding='utf-8'))
+          assert manifest.get('schemaVersion') == 1
+          assert manifest.get('moduleSetVersion') == '20260815.02'
+          assert manifest.get('entryMinVersion') == 6
+          assert manifest.get('sourceRef') == 'beta-regex-settings-tabs-20260814'
+          assert len(manifest.get('modules', [])) == 16
+
+          def blob_sha(data):
+              return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+
+          for item in manifest['modules']:
+              path = root / item['path']
+              assert path.is_file(), path
+              assert blob_sha(path.read_bytes()) == item['sha'], item['name']
+
+          loader = (root / 'src/ch_17_tokenizer_ui.js').read_text(encoding='utf-8')
+          expected = re.search(r'var\s+SOURCE_SHA256\s*=\s*"([0-9a-f]+)";', loader)
+          assignment = re.search(r'var\s+PACKED_B64\s*=\s*(.*?);\s*\n\s*function\s+hexSha256', loader, re.S)
+          assert expected is not None and assignment is not None
+          pieces = re.findall(r'"(?:\\.|[^"\\])*"', assignment.group(1))
+          encoded = ''.join(json.loads(piece) for piece in pieces)
+          source = gzip.decompress(base64.b64decode(encoded)).decode('utf-8')
+          assert hashlib.sha256(source.encode('utf-8')).hexdigest() == expected.group(1)
+
+          changed = subprocess.check_output(
+              ['git', 'diff', '--name-only'], text=True
+          ).splitlines()
+          expected_changed = {
+              'module-manifest.json',
+              'src/ch_10_editor.js',
+              'src/ch_12_translation.js',
+              'src/ch_17_tokenizer_ui.js',
+          }
+          assert set(changed) == expected_changed, changed
+          print('manifest_integrity_and_change_boundary=passed')
+          PY
+
+          test -z "$(git diff -- src/ch_07_theme.js src/ch_11_filter.js src/ch_13_settings.js)"
           grep -Fq 'MODULE_VERSION: 25' src/ch_10_editor.js
+          grep -Fq 'state.headerIconPresent = false;' src/ch_10_editor.js
+          ! grep -Fq 'titleIconView = makeText(isNew ? "+" : "✎", 19,' src/ch_10_editor.js
           grep -Fq 'MODULE_VERSION: 14' src/ch_12_translation.js
           grep -Fq 'translationOriginalViewportDp' src/ch_12_translation.js
           grep -Fq 'buildDragHandle(pageColumn);' /tmp/tokenizer_ui_source.js
           grep -Fq 'returnToEditor("header_back")' /tmp/tokenizer_ui_source.js
           grep -Fq 'emitAction("rule", {})' /tmp/tokenizer_ui_source.js
           grep -Fq 'emitAction("help", {})' /tmp/tokenizer_ui_source.js
+          grep -Fq 'emitAction(action, {})' /tmp/tokenizer_ui_source.js
+          grep -Fq 'makeTokenTouchListener(index)' /tmp/tokenizer_ui_source.js
+          grep -Fq 'performToolbarClick(action)' /tmp/tokenizer_ui_source.js
+          grep -Fq 'performPopupActionClick(action)' /tmp/tokenizer_ui_source.js
           grep -Fq '"moduleSetVersion": "20260815.02"' module-manifest.json
 
       - name: Commit verified patch
