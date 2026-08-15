@@ -141,12 +141,23 @@ def call_end(source, open_paren):
     raise SystemExit('unbalanced call')
 
 
-def mark_make_icon_calls(source):
+def is_icon_helper(name):
+    return (
+        re.match(r'makeIcon[A-Za-z0-9_]*$', name) is not None or
+        name in ('makeEditorHeaderAction', 'makeHeaderAction', 'makeCloseButton',
+                 'makeBackButton', 'makeIconButton', 'makeActionIcon') or
+        re.search(r'(Icon|HeaderAction|CloseButton|BackButton)$', name) is not None
+    )
+
+
+def mark_icon_helper_calls(source):
     edits = []
+    helpers = []
     for name, m, brace, end in functions(source):
-        if not re.match(r'makeIcon[A-Za-z0-9_]*$', name):
+        if not is_icon_helper(name):
             continue
         body = source[brace + 1:end]
+        local = 0
         for call in re.finditer(r'\bmakeText\s*\(', body):
             absolute_open = brace + 1 + body.find('(', call.start())
             close = call_end(source, absolute_open)
@@ -154,9 +165,12 @@ def mark_make_icon_calls(source):
             if re.search(r',\s*true\s*$', inside):
                 continue
             edits.append(close)
+            local += 1
+        if local:
+            helpers.append((name, local))
     for pos in sorted(edits, reverse=True):
         source = source[:pos] + ', true' + source[pos:]
-    return source, len(edits)
+    return source, len(edits), helpers
 
 
 BRIDGE = re.compile(
@@ -182,13 +196,12 @@ def patch_bridge(source, filename):
             '    ClipHub.Theme.decoratePanelIcon(' + args + ', true);\n'
             '}'
         )
-        return source[:m.start()] + replacement + source[m.end():], name, 1
+        return source[:m.start()] + replacement + source[m.end():], name, 1, [(name, 1)]
 
     params = [x.strip() for x in header.group(2).split(',') if x.strip()]
     params.append('semanticIcon')
     new_header = 'function makeText(' + ', '.join(params) + ') {'
     source = source[:header.start()] + new_header + source[brace + 1:]
-    # Re-find the bridge after the header length change.
     m = BRIDGE.search(source)
     args = m.group(1).strip()
     replacement = (
@@ -199,23 +212,22 @@ def patch_bridge(source, filename):
         '}'
     )
     source = source[:m.start()] + replacement + source[m.end():]
-    source, count = mark_make_icon_calls(source)
+    source, count, helpers = mark_icon_helper_calls(source)
     if count < 1:
-        raise SystemExit('no makeIcon -> makeText call patched: ' + filename)
-    return source, name, count
+        raise SystemExit('no explicit icon helper -> makeText call patched: ' + filename)
+    return source, name, count, helpers
 
 
 report = []
 for filename in BRIDGE_FILES:
     path = SRC / filename
     wrapper, source, was_packed = load(path)
-    source, owner, count = patch_bridge(source, filename)
+    source, owner, count, helpers = patch_bridge(source, filename)
     mod, old, new = VERSIONS[filename]
     source = bump(source, mod, old, new)
     save(path, wrapper, source, was_packed)
-    report.append((filename, owner, count))
+    report.append((filename, owner, count, helpers))
 
-# Theme only accepts explicit icon intent.
 path = SRC / 'ch_07_theme.js'
 wrapper, source, was_packed = load(path)
 old = 'function decoratePanelIcon(viewObj, value, colorValue, sizeDp) {'
@@ -233,7 +245,6 @@ source = source.replace(
 source = bump(source, 'ch_07_theme', 9, 10)
 save(path, wrapper, source, was_packed)
 
-# Visible warning for skipped >768 KiB candidates.
 path = SRC / 'ch_11_filter.js'
 wrapper, source, was_packed = load(path)
 needle = '        regexScanState.oversizeSkipped = Number(oversizeSkipped || 0);'
@@ -243,7 +254,6 @@ notice = needle + '''\n        if (complete === true && regexScanState.oversizeS
 source = source.replace(needle, notice, 1)
 save(path, wrapper, source, was_packed)
 
-# Repository packed canonical-source SHA-256 verification.
 path = SRC / 'ch_06_repository.js'
 wrapper, source, was_packed = load(path)
 if not was_packed:
@@ -268,10 +278,8 @@ if 'var SOURCE_SHA256' not in wrapper:
     wrapper = wrapper.replace(old_eval, new_eval, 1)
 path.write_text(wrapper, encoding='utf-8')
 
-# Focused regression test.
 (ROOT / 'scripts/test_review_regressions.py').write_text('''#!/usr/bin/env python3\nimport base64,gzip,hashlib,json,re\nfrom pathlib import Path\ndef ex(p):\n t=Path(p).read_text(encoding="utf-8");m=re.search(r"\\bvar\\s+(?:PACKED_B64|encoded)\\s*=\\s*(.*?);",t,re.S)\n if not m:return t,t\n q=re.findall(r'"(?:\\\\.|[^"\\\\])*"',m.group(1));s=gzip.decompress(base64.b64decode("".join(json.loads(x) for x in q))).decode("utf-8");return t,s\n_,theme=ex("src/ch_07_theme.js");assert "explicitIcon !== true" in theme\nfor n in ''' + repr(BRIDGE_FILES) + ''':\n _,s=ex("src/"+n);assert "panel_icon_text_bridge_v1" not in s,n;assert "panel_icon_explicit_v2" in s,n\n_,ls=ex("src/ch_09_list.js");_,ed=ex("src/ch_10_editor.js");assert "makeText(String(row.content)" in ls;assert "makeText(String(tag.name)" in ed\nl,r=ex("src/ch_06_repository.js");m=re.search(r'var SOURCE_SHA256 = "([0-9a-f]{64})";',l);assert m;assert hashlib.sha256(r.encode()).hexdigest()==m.group(1);assert "(0, eval)(source);" in l\n_,f=ex("src/ch_11_filter.js");assert "条超大内容未参与正则扫描" in f;assert "oversizeNoticeGeneration" in f\nprint("Review regression checks: passed")\n''', encoding='utf-8')
 
-# Preflight contract updates.
 preflight = ROOT / 'scripts/release_preflight.sh'
 text = preflight.read_text(encoding='utf-8')
 for old, new in (
@@ -299,7 +307,6 @@ if text.count(anchor) != 1:
 text = text.replace(anchor, anchor + '  python3 scripts/test_review_regressions.py\n', 1)
 preflight.write_text(text, encoding='utf-8')
 
-# Manifest module set and Git blob SHAs.
 manifest_path = ROOT / 'module-manifest.json'
 manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
 assert manifest['sourceRef'] == 'beta-regex-settings-tabs-20260814'
