@@ -41,7 +41,7 @@ case "$MODE" in
     ;;
   --settings-tabs-beta)
     EXPECTED_REF='docs/tokenizer-softcode-hardening-20260815'
-    EXPECTED_MODULE_SET='20260816.01'
+    EXPECTED_MODULE_SET='20260816.02'
     EXPECTED_ENTRY_VERSION='8'
     EXPECTED_APP_MODULE_VERSION='23'
     REQUIRE_CLEAN='0'
@@ -319,9 +319,9 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
             "ch_15_app.js": ("ch_15_app", 23),
             "ch_12_translation.js": ("ch_12_translation", 21),
             "ch_16_ui_shell.js": ("ch_16_ui_shell", 7),
-            "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 9),
+            "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 10),
             "ch_18_tokenizer_core.js": ("ch_18_tokenizer_core", 2),
-            "ch_19_tokenizer_service.js": ("ch_19_tokenizer_service", 5),
+            "ch_19_tokenizer_service.js": ("ch_19_tokenizer_service", 6),
         }
     else:
         required_versions = {
@@ -488,13 +488,20 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert "getWorkerProbeSpec" in tokenizer_service_source
         assert "tokenizer_rule_config_isolated_v1" in tokenizer_source
         assert "tokenizer_rule_management_pages_v1" in tokenizer_source
+        assert "tokenizer_rule_drawer_v1" in tokenizer_source
         assert "tokenizer_rule_preview_uses_runtime_v1" in tokenizer_source
         assert "tokenizer_toolbar_three_actions_v1" in tokenizer_source
-        assert "function buildTokenizerRulesPage(column)" in tokenizer_source
+        assert "function createTokenizerRulesDrawerBundle()" in tokenizer_source
+        assert "function applyTokenizerRuleSelection()" in tokenizer_source
+        assert "function openTokenizerRuleEditorDrawer(rule)" in tokenizer_source
         assert "function buildTokenizerRuleEditorPage(column)" in tokenizer_source
         assert "function showTokenizerMoreMenu()" in tokenizer_source
+        assert "TokenizerService.setSelectedRuleIds" in tokenizer_source
         assert "TokenizerService.tokenizeWithRulesAsync" in tokenizer_source
-        assert "保存并参与" in tokenizer_source
+        assert "保存并参与" not in tokenizer_source
+        assert "创建规则副本" not in tokenizer_source
+        assert "预制" not in tokenizer_source
+        assert "自定义" not in tokenizer_source
         assert "已参与" in tokenizer_source
         regex_home = re.search(r"function buildRegexBody\(\).*?function applyModeStyles", tokenizer_source, re.S)
         assert regex_home is not None
@@ -506,7 +513,13 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert "清空" not in toolbar_block.group(0)
         assert "listRuleConfigs" in tokenizer_service_source
         assert "toggleRuleSelection" in tokenizer_service_source
+        assert "setSelectedRuleIds" in tokenizer_service_source
+        assert "getDefaultSelectedRuleIds" in tokenizer_service_source
         assert "upsertRuleConfig" in tokenizer_service_source
+        assert "resetRuleOverride" in tokenizer_service_source
+        assert "ruleOverrides" in tokenizer_service_source
+        assert "RULE_SCHEMA_VERSION = 2" in tokenizer_service_source
+        assert "预制分词规则不可覆盖" not in tokenizer_service_source
         assert "deleteRuleConfig" in tokenizer_service_source
         assert 'RULE_STORAGE_NAMESPACE = "cliphub_tokenizer_rules_v1"' in tokenizer_service_source
         assert 'RULE_FILE_NAME = "tokenizer_rules_v1.json"' in tokenizer_service_source

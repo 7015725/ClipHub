@@ -21,7 +21,7 @@
 
     var RULE_STORAGE_NAMESPACE = "cliphub_tokenizer_rules_v1";
     var RULE_FILE_NAME = "tokenizer_rules_v1.json";
-    var RULE_SCHEMA_VERSION = 1;
+    var RULE_SCHEMA_VERSION = 2;
     var MAX_CUSTOM_RULES = 64;
     var MAX_SELECTED_RULES = 64;
     var MAX_TITLE_LENGTH = 80;
@@ -30,6 +30,15 @@
         "builtin.url",
         "builtin.number_unit",
         "tokenizer.preset.punctuation"
+    ];
+    var OVERRIDE_FIELDS = [
+        "title",
+        "pattern",
+        "flags",
+        "priority",
+        "mode",
+        "keepDelimiter",
+        "groupMode"
     ];
     var EXTRA_PRESETS = [
         {
@@ -61,6 +70,7 @@
         }
     ];
 
+    var ruleOverrides = [];
     var customRules = [];
     var selectedRuleIds = [];
     var state = {
@@ -75,6 +85,7 @@
         ruleConfigDeleteCount: 0,
         ruleSelectionChangeCount: 0,
         ruleConfigLoadErrorCount: 0,
+        ruleMigrationCount: 0,
         engine: "regex-tokenizer-v2"
     };
 
@@ -141,7 +152,7 @@
         var mode = String(source.mode || source.action || "match").toLowerCase();
         var priority = Number(source.priority);
         if (!id) { throw new Error("分词规则 ID 不能为空"); }
-        if (!title) { title = preset ? "预制规则" : "自定义规则"; }
+        if (!title) { title = "分词规则"; }
         if (title.length > MAX_TITLE_LENGTH) {
             title = title.substring(0, MAX_TITLE_LENGTH);
         }
@@ -154,7 +165,7 @@
             title: title,
             pattern: pattern,
             flags: source.flags === undefined ? 0 : source.flags,
-            enabled: source.enabled !== false,
+            enabled: true,
             priority: priority,
             mode: mode === "split" ? "split" : "match",
             keepDelimiter: source.keepDelimiter === true,
@@ -166,7 +177,7 @@
         };
     }
 
-    function builtinPresetRules() {
+    function defaultRuleConfigs() {
         var source = [];
         var out = [];
         var index;
@@ -184,6 +195,114 @@
         for (index = 0; index < EXTRA_PRESETS.length; index += 1) {
             out.push(normalizeRuleConfig(EXTRA_PRESETS[index], true,
                 "tokenizer.preset." + index));
+        }
+        return out;
+    }
+
+    function defaultRuleById(id) {
+        var rules = defaultRuleConfigs();
+        var value = String(id || "");
+        var index;
+        for (index = 0; index < rules.length; index += 1) {
+            if (String(rules[index].id) === value) { return rules[index]; }
+        }
+        return null;
+    }
+
+    function ruleOverrideById(id) {
+        var value = String(id || "");
+        var index;
+        for (index = 0; index < ruleOverrides.length; index += 1) {
+            if (String(ruleOverrides[index].id) === value) {
+                return ruleOverrides[index];
+            }
+        }
+        return null;
+    }
+
+    function editableValueEqual(left, right) {
+        if (typeof left === "number" || typeof right === "number") {
+            return Number(left) === Number(right);
+        }
+        if (typeof left === "boolean" || typeof right === "boolean") {
+            return (left === true) === (right === true);
+        }
+        return String(left === undefined ? "" : left) ===
+            String(right === undefined ? "" : right);
+    }
+
+    function buildRuleOverride(base, effective) {
+        var out = { id: String(base.id) };
+        var index;
+        var key;
+        for (index = 0; index < OVERRIDE_FIELDS.length; index += 1) {
+            key = OVERRIDE_FIELDS[index];
+            if (!editableValueEqual(base[key], effective[key])) {
+                out[key] = effective[key];
+            }
+        }
+        return out;
+    }
+
+    function overrideHasChanges(value) {
+        var index;
+        for (index = 0; index < OVERRIDE_FIELDS.length; index += 1) {
+            if (own(value, OVERRIDE_FIELDS[index])) { return true; }
+        }
+        return false;
+    }
+
+    function applyRuleOverride(base, override) {
+        var merged = copyObject(base);
+        var index;
+        var key;
+        override = override || {};
+        for (index = 0; index < OVERRIDE_FIELDS.length; index += 1) {
+            key = OVERRIDE_FIELDS[index];
+            if (own(override, key)) { merged[key] = override[key]; }
+        }
+        merged.id = base.id;
+        merged.type = base.type;
+        return normalizeRuleConfig(merged, true, base.id);
+    }
+
+    function sanitizeRuleOverrides(source) {
+        var input = source || [];
+        var out = [];
+        var seen = {};
+        var index;
+        var raw;
+        var id;
+        var base;
+        var effective;
+        var delta;
+        for (index = 0; index < input.length; index += 1) {
+            raw = input[index] || {};
+            id = trimText(raw.id || "");
+            if (!id || seen[id]) { continue; }
+            base = defaultRuleById(id);
+            if (base === null) { continue; }
+            try {
+                effective = applyRuleOverride(base, raw);
+                delta = buildRuleOverride(base, effective);
+                if (overrideHasChanges(delta)) {
+                    seen[id] = true;
+                    out.push(delta);
+                }
+            } catch (ignoredOverride) {}
+        }
+        return out;
+    }
+
+    function effectiveDefaultRules() {
+        var defaults = defaultRuleConfigs();
+        var out = [];
+        var index;
+        var override;
+        for (index = 0; index < defaults.length; index += 1) {
+            override = ruleOverrideById(defaults[index].id);
+            out.push(override === null ? copyObject(defaults[index]) :
+                applyRuleOverride(defaults[index], override));
         }
         return out;
     }
@@ -209,7 +328,7 @@
     }
 
     function allRuleConfigs() {
-        return builtinPresetRules().concat(copyArray(customRules));
+        return effectiveDefaultRules().concat(copyArray(customRules));
     }
 
     function ruleById(id) {
@@ -224,15 +343,18 @@
 
     function sanitizeSelectedIds(source) {
         var input = source || [];
+        var requested = {};
+        var rules = allRuleConfigs();
         var out = [];
-        var seen = {};
         var index;
         var id;
-        for (index = 0; index < input.length && out.length < MAX_SELECTED_RULES; index += 1) {
+        for (index = 0; index < input.length; index += 1) {
             id = String(input[index] || "");
-            if (!id || seen[id] || ruleById(id) === null) { continue; }
-            seen[id] = true;
-            out.push(id);
+            if (id) { requested[id] = true; }
+        }
+        for (index = 0; index < rules.length && out.length < MAX_SELECTED_RULES; index += 1) {
+            id = String(rules[index].id || "");
+            if (requested[id] === true) { out.push(id); }
         }
         return out;
     }
@@ -303,6 +425,7 @@
         payload = JSON.stringify({
             schemaVersion: RULE_SCHEMA_VERSION,
             storageNamespace: RULE_STORAGE_NAMESPACE,
+            ruleOverrides: ruleOverrides,
             customRules: customRules,
             selectedRuleIds: selectedRuleIds
         }, null, 2) + "\n";
@@ -319,18 +442,64 @@
         return true;
     }
 
+    function backupV1State(rawText) {
+        var parent;
+        var backup;
+        if (ruleStateFile === null || !ruleStateFile.isFile()) { return false; }
+        parent = ruleStateFile.getParentFile();
+        backup = new File(parent, RULE_FILE_NAME + ".bak.v1");
+        if (backup.exists()) { return false; }
+        writeUtf8File(backup, rawText);
+        return true;
+    }
+
+    function removeDisabledV1Selections(rawRules, ids) {
+        var blocked = {};
+        var out = [];
+        var index;
+        var id;
+        rawRules = rawRules || [];
+        ids = ids || [];
+        for (index = 0; index < rawRules.length; index += 1) {
+            if (rawRules[index] && rawRules[index].enabled === false) {
+                id = String(rawRules[index].id || "");
+                if (id) { blocked[id] = true; }
+            }
+        }
+        for (index = 0; index < ids.length; index += 1) {
+            id = String(ids[index] || "");
+            if (id && blocked[id] !== true) { out.push(id); }
+        }
+        return out;
+    }
+
     function loadRuleState() {
         var stored = {};
+        var rawText = "";
         var hasSelected = false;
+        var schemaVersion = 1;
+        var rawSelected = [];
+        ruleOverrides = [];
         customRules = [];
         selectedRuleIds = [];
         if (ruleStateFile === null) { return false; }
         if (ruleStateFile.isFile()) {
-            stored = parseRuleState(readUtf8File(ruleStateFile));
-            customRules = sanitizeCustomRules(stored.customRules || []);
+            rawText = readUtf8File(ruleStateFile);
+            stored = parseRuleState(rawText);
+            schemaVersion = Number(stored.schemaVersion || 1);
             hasSelected = own(stored, "selectedRuleIds");
-            selectedRuleIds = sanitizeSelectedIds(stored.selectedRuleIds ||
-                DEFAULT_SELECTED_IDS);
+            rawSelected = copyArray(stored.selectedRuleIds || DEFAULT_SELECTED_IDS);
+            if (schemaVersion < 2) {
+                backupV1State(rawText);
+                rawSelected = removeDisabledV1Selections(stored.customRules || [], rawSelected);
+                ruleOverrides = [];
+                customRules = sanitizeCustomRules(stored.customRules || []);
+                state.ruleMigrationCount += 1;
+            } else {
+                ruleOverrides = sanitizeRuleOverrides(stored.ruleOverrides || []);
+                customRules = sanitizeCustomRules(stored.customRules || []);
+            }
+            selectedRuleIds = sanitizeSelectedIds(rawSelected);
         }
         if (!hasSelected) {
             selectedRuleIds = sanitizeSelectedIds(DEFAULT_SELECTED_IDS);
@@ -364,13 +533,18 @@
             storageNamespace: RULE_STORAGE_NAMESPACE,
             selectedRuleIds: copyArray(selectedRuleIds),
             rules: out,
-            presetCount: builtinPresetRules().length,
+            presetCount: defaultRuleConfigs().length,
+            overrideCount: ruleOverrides.length,
             customCount: customRules.length
         };
     }
 
     function getSelectedRuleIds() {
         return copyArray(selectedRuleIds);
+    }
+
+    function getDefaultSelectedRuleIds() {
+        return sanitizeSelectedIds(DEFAULT_SELECTED_IDS);
     }
 
     function setSelectedRuleIds(ids) {
@@ -382,29 +556,77 @@
 
     function toggleRuleSelection(id, selected) {
         var value = String(id || "");
-        var current = selectedRuleIds.indexOf(value);
+        var requested = copyArray(selectedRuleIds);
+        var current = requested.indexOf(value);
         if (ruleById(value) === null) { return false; }
         if (selected === undefined) { selected = current < 0; }
-        if (selected && current < 0 && selectedRuleIds.length < MAX_SELECTED_RULES) {
-            selectedRuleIds.push(value);
+        if (selected && current < 0 && requested.length < MAX_SELECTED_RULES) {
+            requested.push(value);
         } else if (!selected && current >= 0) {
-            selectedRuleIds.splice(current, 1);
+            requested.splice(current, 1);
         }
+        selectedRuleIds = sanitizeSelectedIds(requested);
         state.ruleSelectionChangeCount += 1;
         persistRuleState();
         return selectedRuleIds.indexOf(value) >= 0;
     }
 
+    function replaceRuleOverride(delta) {
+        var id = String(delta.id || "");
+        var index;
+        for (index = 0; index < ruleOverrides.length; index += 1) {
+            if (String(ruleOverrides[index].id) === id) {
+                if (overrideHasChanges(delta)) {
+                    ruleOverrides[index] = delta;
+                } else {
+                    ruleOverrides.splice(index, 1);
+                }
+                return true;
+            }
+        }
+        if (overrideHasChanges(delta)) { ruleOverrides.push(delta); }
+        return true;
+    }
+
     function upsertRuleConfig(config) {
-        var source = config || {};
+        var source = copyObject(config || {});
         var id = trimText(source.id || "");
+        var base;
+        var merged;
+        var effective;
+        var delta;
         var item;
         var index;
-        if (id && id.indexOf("tokenizer.custom.") !== 0) {
-            throw new Error("预制分词规则不可覆盖");
+        if (!id) {
+            id = newCustomId();
+            source.id = id;
+            item = normalizeRuleConfig(source, false, id);
+            if (customRules.length >= MAX_CUSTOM_RULES) {
+                throw new Error("分词规则数量已达上限");
+            }
+            customRules.push(item);
+            state.ruleConfigSaveCount += 1;
+            persistRuleState();
+            return copyObject(item);
         }
-        if (!id) { id = newCustomId(); }
-        source = copyObject(source);
+        base = defaultRuleById(id);
+        if (base !== null) {
+            merged = copyObject(base);
+            for (index = 0; index < OVERRIDE_FIELDS.length; index += 1) {
+                if (own(source, OVERRIDE_FIELDS[index])) {
+                    merged[OVERRIDE_FIELDS[index]] = source[OVERRIDE_FIELDS[index]];
+                }
+            }
+            effective = normalizeRuleConfig(merged, true, id);
+            delta = buildRuleOverride(base, effective);
+            replaceRuleOverride(delta);
+            state.ruleConfigSaveCount += 1;
+            persistRuleState();
+            return copyObject(effective);
+        }
+        if (id.indexOf("tokenizer.custom.") !== 0) {
+            throw new Error("未知分词规则 ID");
+        }
         source.id = id;
         item = normalizeRuleConfig(source, false, id);
         for (index = 0; index < customRules.length; index += 1) {
@@ -415,17 +637,23 @@
                 return copyObject(item);
             }
         }
-        if (customRules.length >= MAX_CUSTOM_RULES) {
-            throw new Error("自定义分词规则数量已达上限");
+        throw new Error("分词规则不存在");
+    }
+
+    function resetRuleOverride(id) {
+        var value = String(id || "");
+        var base = defaultRuleById(value);
+        var index;
+        if (base === null) { return null; }
+        for (index = 0; index < ruleOverrides.length; index += 1) {
+            if (String(ruleOverrides[index].id) === value) {
+                ruleOverrides.splice(index, 1);
+                state.ruleConfigSaveCount += 1;
+                persistRuleState();
+                return copyObject(base);
+            }
         }
-        customRules.push(item);
-        state.ruleConfigSaveCount += 1;
-        if (selectedRuleIds.indexOf(id) < 0 &&
-                selectedRuleIds.length < MAX_SELECTED_RULES) {
-            selectedRuleIds.push(id);
-        }
-        persistRuleState();
-        return copyObject(item);
+        return copyObject(base);
     }
 
     function deleteRuleConfig(id) {
@@ -437,6 +665,7 @@
                 customRules.splice(index, 1);
                 index = selectedRuleIds.indexOf(value);
                 if (index >= 0) { selectedRuleIds.splice(index, 1); }
+                selectedRuleIds = sanitizeSelectedIds(selectedRuleIds);
                 state.ruleConfigDeleteCount += 1;
                 persistRuleState();
                 return true;
@@ -446,6 +675,7 @@
     }
 
     function resetRuleConfigs() {
+        ruleOverrides = [];
         customRules = [];
         selectedRuleIds = sanitizeSelectedIds(DEFAULT_SELECTED_IDS);
         persistRuleState();
@@ -458,9 +688,7 @@
         var rule;
         for (index = 0; index < selectedRuleIds.length; index += 1) {
             rule = ruleById(selectedRuleIds[index]);
-            if (rule !== null && rule.enabled !== false) {
-                out.push(copyObject(rule));
-            }
+            if (rule !== null) { out.push(copyObject(rule)); }
         }
         return out;
     }
@@ -669,6 +897,7 @@
         executor = null;
         mainHandler = null;
         ruleStateFile = null;
+        ruleOverrides = [];
         customRules = [];
         selectedRuleIds = [];
         state.ready = false;
@@ -691,13 +920,15 @@
             ruleStoragePath: ruleStateFile === null ? "" :
                 String(ruleStateFile.getAbsolutePath()),
             tokenizerRulesIsolatedFromFilter: true,
-            presetRuleCount: builtinPresetRules().length,
+            presetRuleCount: defaultRuleConfigs().length,
+            overrideRuleCount: ruleOverrides.length,
             customRuleCount: customRules.length,
             selectedRuleCount: selectedRuleIds.length,
             ruleConfigSaveCount: Number(state.ruleConfigSaveCount),
             ruleConfigDeleteCount: Number(state.ruleConfigDeleteCount),
             ruleSelectionChangeCount: Number(state.ruleSelectionChangeCount),
             ruleConfigLoadErrorCount: Number(state.ruleConfigLoadErrorCount),
+            ruleMigrationCount: Number(state.ruleMigrationCount),
             dictionaryLoaded: false,
             dictionaryWordCount: 0,
             dictionaryPath: ""
@@ -719,7 +950,7 @@
 
     ClipHub.TokenizerService = {
         MODULE_NAME: "ch_19_tokenizer_service",
-        MODULE_VERSION: 5,
+        MODULE_VERSION: 6,
         ENGINE_VERSION: 2,
         RULE_SCHEMA_VERSION: RULE_SCHEMA_VERSION,
         RULE_STORAGE_NAMESPACE: RULE_STORAGE_NAMESPACE,
@@ -732,9 +963,11 @@
         scanRegexRanges: scanRegexRanges,
         listRuleConfigs: listRuleConfigs,
         getSelectedRuleIds: getSelectedRuleIds,
+        getDefaultSelectedRuleIds: getDefaultSelectedRuleIds,
         setSelectedRuleIds: setSelectedRuleIds,
         toggleRuleSelection: toggleRuleSelection,
         upsertRuleConfig: upsertRuleConfig,
+        resetRuleOverride: resetRuleOverride,
         deleteRuleConfig: deleteRuleConfig,
         resetRuleConfigs: resetRuleConfigs,
         cancel: cancel,
