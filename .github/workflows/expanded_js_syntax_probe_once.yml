@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Unpack and syntax-check runtime sources
+      - name: Unpack and inspect Settings syntax after first repair
         shell: bash
         run: |
           set -euo pipefail
@@ -26,19 +26,20 @@ jobs:
           for path in targets:
               s=Path(path).read_text(encoding='utf-8')
               m=re.search(r'\bvar\s+(?:PACKED_B64|encoded)\s*=\s*(.*?);',s,re.S)
-              if not m:
-                  expanded=s
-              else:
+              expanded=s
+              if m:
                   parts=re.findall(r'"(?:\\.|[^"\\])*"',m.group(1))
                   expanded=gzip.decompress(base64.b64decode(''.join(json.loads(x) for x in parts))).decode('utf-8')
-              p=out/Path(path).name
-              p.write_text(expanded,encoding='utf-8')
-              print(path,'->',p,'chars=',len(expanded))
               if path.endswith('ch_13_settings.js'):
+                  broken='''            content.addView(handleRow, new LinearLayout.LayoutParams(\n                LinearLayout.LayoutParams.MATCH_PARENT, dp(16)));\n        }());'''
+                  fixed='''            content.addView(handleRow, new LinearLayout.LayoutParams(\n                LinearLayout.LayoutParams.MATCH_PARENT, dp(16)));\n            }\n        }());'''
+                  assert expanded.count(broken)==1
+                  expanded=expanded.replace(broken,fixed,1)
                   lines=expanded.splitlines()
-                  print('===== SETTINGS 3115-3165 =====')
-                  for n in range(3115, min(3166,len(lines)+1)):
+                  print('===== SETTINGS AFTER FIX1 3190-3260 =====')
+                  for n in range(3190, min(3261,len(lines)+1)):
                       print('%04d: %s' % (n, lines[n-1]))
+              (out/Path(path).name).write_text(expanded,encoding='utf-8')
           PY
           for f in /tmp/expanded/*.js; do
             echo "===== $f ====="
