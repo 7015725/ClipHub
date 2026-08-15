@@ -20,5 +20,20 @@ def bounded_replace_once(text, old, new, label):
     return text.replace(old, new, 1)
 
 
+original_unpack_tokenizer = module.unpack_tokenizer
+
+
+def unpack_tokenizer_with_current_padding(loader):
+    source = original_unpack_tokenizer(loader)
+    current = 'pageColumn.setPadding(0, 0, 0, dp(3));'
+    adapter = 'pageColumn.setPadding(dp(8), dp(2), dp(8), dp(3));'
+    if current in source:
+        return source.replace(current, adapter, 1)
+    if adapter in source or 'pageColumn.setPadding(dp(12), dp(2), dp(12), dp(3));' in source:
+        return source
+    raise SystemExit("tokenizer page padding baseline unavailable")
+
+
 module.replace_once = bounded_replace_once
+module.unpack_tokenizer = unpack_tokenizer_with_current_padding
 module.main()
