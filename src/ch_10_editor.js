@@ -2068,7 +2068,7 @@
         params.topMargin = dp(8);
         header.addView(titleStack, params);
 
-        headerCloseView = makeText("×", 22, colors.icon, true);
+        headerCloseView = makeText("×", 22, colors.icon, false);
         headerCloseView.setGravity(Gravity.CENTER);
         headerCloseView.setContentDescription("关闭编辑窗口");
         headerCloseView.setBackground(roundedBackground(
@@ -2840,7 +2840,7 @@
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 29,
+        MODULE_VERSION: 30,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;

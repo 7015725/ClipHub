@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260815.06",
+  "moduleSetVersion": "20260815.07",
   "entryMinVersion": 6,
   "sourceRef": "beta-regex-settings-tabs-20260814",
   "modules": [
@@ -52,7 +52,7 @@
     {
       "name": "ch_10_editor.js",
       "path": "src/ch_10_editor.js",
-      "sha": "aaaf5f6f63383b1088dea639bfff280faf77533c"
+      "sha": "09884afac46ad6e04b668d9dbd1bd9ac3da70910"
     },
     {
       "name": "ch_11_filter.js",
