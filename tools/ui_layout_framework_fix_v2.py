@@ -21,7 +21,7 @@ def replace_once_compat(text, old, new, label):
     if label == "settings root close icon":
         return _replace_regex_once(
             text,
-            r'        closeView = makeText\("×",\s*[0-9]+(?:\.[0-9]+)?,\s*colors\.icon,\s*false\);',
+            r'        closeView = makeText\("×",\s*[0-9]+(?:\.[0-9]+)?,\s*colors\.icon,\s*(?:true|false)\);',
             '        closeView = makeText("×", layoutMetrics.iconSp, colors.icon, false);',
             label,
         )
