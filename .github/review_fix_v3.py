@@ -46,14 +46,9 @@ def literal_icon_token(expr):
     wrapped = re.match(r'^String\(\s*(.+?)\s*\)$', expr, re.S)
     if wrapped:
         expr = wrapped.group(1).strip()
-    m = re.match(r'''^(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)')$''', expr, re.S)
-    if not m:
+    if len(expr) < 2 or expr[0] not in ('"', "'") or expr[-1] != expr[0]:
         return None
-    raw = m.group(1) if m.group(1) is not None else m.group(2)
-    try:
-        token = bytes(raw, 'utf-8').decode('unicode_escape') if '\\' in raw else raw
-    except Exception:
-        token = raw
+    token = expr[1:-1]
     return token if token in ICON_LITERAL_TOKENS else None
 
 
