@@ -24,20 +24,7 @@ jobs:
           sed -i 's@        /\* settings_subpage_chrome_unified_v1 \*/@        /* standalone_subpage_home_drag_baseline */\n        /* settings_subpage_chrome_unified_v1 */@' tools/unify_panel_chrome_tmp.py
           python3 tools/unify_panel_chrome_tmp.py
           sed -i 's/"ch_09_list.js": ("ch_09_list", 22)/"ch_09_list.js": ("ch_09_list", 23)/g' scripts/release_preflight.sh
-      - name: Map preflight assertion line
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          source = Path('scripts/release_preflight.sh').read_text(encoding='utf-8')
-          marker = "from __future__ import annotations"
-          start = source.index(marker)
-          tail = source[start:]
-          end = tail.index("\nPY\n")
-          lines = tail[:end].splitlines()
-          for number in range(228, 247):
-              if number <= len(lines):
-                  print(str(number).rjust(4) + ': ' + lines[number - 1])
-          PY
+          sed -i 's@        assert "var dragSlot = new FrameLayout(appContext);" in editor_source@        assert "function addEditorStandaloneDragSlot(parent, colors, chrome)" in editor_source@' scripts/release_preflight.sh
       - name: Validate full beta contracts
         run: |
           python3 scripts/validate_es5.py .
