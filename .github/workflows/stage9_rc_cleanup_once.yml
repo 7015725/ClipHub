@@ -107,7 +107,7 @@ jobs:
       - name: Verify remaining beta branch literals
         run: |
           set -euo pipefail
-          git grep -n 'beta-regex-settings-tabs-20260814' -- . || true
+          git -c core.quotePath=false grep -n 'beta-regex-settings-tabs-20260814' -- . || true
           python3 - <<'PY'
           import subprocess
           allowed = {
@@ -118,7 +118,7 @@ jobs:
               'scripts/release_preflight.sh',
           }
           p = subprocess.run(
-              ['git','grep','-l','beta-regex-settings-tabs-20260814','--','.'],
+              ['git','-c','core.quotePath=false','grep','-l','beta-regex-settings-tabs-20260814','--','.'],
               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
               text=True, check=False)
           found = {line.strip() for line in p.stdout.splitlines() if line.strip()}
