@@ -113,7 +113,7 @@ def repack_settings(loader, source):
                             assignment + '\n\n', loader, count=1, flags=re.S)
     if count != 1:
         raise SystemExit('settings packed assignment replacement failed')
-    loader = loader.replace('Settings27 source SHA mismatch', 'Settings28 source SHA mismatch', 1)
+    loader = loader.replace('Settings27 source SHA mismatch', 'Settings31 source SHA mismatch', 1)
     return loader, source_sha
 
 
@@ -135,9 +135,9 @@ def patch_settings():
         '        header.addView(closeView, new LinearLayout.LayoutParams(dp(36), dp(36)));\n        params = new LinearLayout.LayoutParams(\n            LinearLayout.LayoutParams.MATCH_PARENT, dp(36));\n        params.topMargin = -dp(2);\n        params.bottomMargin = dp(8);\n        content.addView(header, params);',
         'settings root header geometry')
     m = re.search(r'MODULE_NAME:\s*"ch_13_settings",\s*\n\s*MODULE_VERSION:\s*(\d+),', source)
-    if not m or int(m.group(1)) != 27:
+    if not m or int(m.group(1)) != 30:
         raise SystemExit('unexpected settings module version')
-    source = source[:m.start(1)] + '28' + source[m.end(1):]
+    source = source[:m.start(1)] + '31' + source[m.end(1):]
     loader, source_sha = repack_settings(loader, source)
     SETTINGS.write_text(loader, encoding='utf-8')
     pathlib.Path('/tmp/settings_header_source.js').write_text(source, encoding='utf-8')
