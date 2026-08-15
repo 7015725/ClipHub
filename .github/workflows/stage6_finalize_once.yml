@@ -1,0 +1,87 @@
+name: Stage6 Finalize Once
+
+on:
+  push:
+    branches:
+      - beta-regex-settings-tabs-20260814
+    paths:
+      - tools/stage6_finalize_20260815.py
+      - .github/workflows/stage6_finalize_once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@v4
+        with:
+          ref: beta-regex-settings-tabs-20260814
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Apply Stage6 finalization
+        run: python3 tools/stage6_finalize_20260815.py
+
+      - name: Remove one-time Stage6 tooling
+        run: |
+          rm -f \
+            .github/workflows/stage6_primary_navigation_probe_once.yml \
+            tools/stage6_primary_navigation_probe_20260815.py \
+            .github/workflows/stage6_finalize_once.yml \
+            tools/stage6_finalize_20260815.py
+
+      - name: Validate formal preflight
+        run: bash scripts/release_preflight.sh --settings-tabs-beta
+
+      - name: Validate Stage6 persistent boundary
+        run: |
+          set -euo pipefail
+          BASE=3c0ec15383be61f92921cf187a6c41c84756fa8c
+          expected=$(printf '%s\n' \
+            scripts/release_preflight.sh \
+            scripts/test_ui_shell_navigation.js | sort)
+          actual=$(git diff --name-only "$BASE" | sort)
+          printf '%s\n' "$actual"
+          test "$actual" = "$expected"
+
+          for path in \
+            module-manifest.json \
+            src/ch_03_database.js \
+            src/ch_06_repository.js \
+            src/ch_07_theme.js \
+            src/ch_08_window.js \
+            src/ch_09_list.js \
+            src/ch_10_editor.js \
+            src/ch_11_filter.js \
+            src/ch_12_translation.js \
+            src/ch_13_settings.js \
+            src/ch_15_app.js \
+            src/ch_16_ui_shell.js \
+            src/ch_17_tokenizer_ui.js; do
+            git diff --quiet "$BASE" -- "$path"
+          done
+
+          test ! -e .github/workflows/stage6_primary_navigation_probe_once.yml
+          test ! -e tools/stage6_primary_navigation_probe_20260815.py
+          test ! -e .github/workflows/stage6_finalize_once.yml
+          test ! -e tools/stage6_finalize_20260815.py
+          grep -q 'node scripts/test_ui_shell_navigation.js' scripts/release_preflight.sh
+          grep -q 'UI shell stage6 contracts: passed' scripts/release_preflight.sh
+          node scripts/test_ui_shell_navigation.js
+          git diff --check
+          echo 'Stage6 persistent boundary validation: passed'
+
+      - name: Commit and push Stage6 final tree
+        run: |
+          set -euo pipefail
+          git add -A
+          git diff --cached --check
+          git commit -m "Stage6固化Primary Window导航回归保护"
+          git push origin HEAD:beta-regex-settings-tabs-20260814
