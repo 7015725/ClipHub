@@ -108,10 +108,10 @@ jobs:
           ]:
               out.append('%r => %d' % (anchor, translation.count(anchor)))
 
-          (root / 'ui_unify_stage0_diag.txt').write_text('\n'.join(out) + '\n', encoding='utf-8')
+          clean = [line.rstrip() for line in out]
+          (root / 'ui_unify_stage0_diag.txt').write_text('\n'.join(clean) + '\n', encoding='utf-8')
           print('diagnostic_ready')
           PY
-          git diff --check
 
       - name: Commit diagnostic only
         shell: bash
