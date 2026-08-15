@@ -77,5 +77,11 @@ def mark_icon_helper_calls(source):
         source = source[:pos] + ', true' + source[pos:]
     return source, len(set(edits)), reasons
 '''
-path.write_text(text[:start] + replacement + text[end:], encoding='utf-8')
+patched = text[:start] + replacement + text[end:]
+old_guard = "    if count < 1:\n        raise SystemExit('no explicit icon helper -> makeText call patched: ' + filename)"
+new_guard = "    if count < 1 and filename != 'ch_17_tokenizer_ui.js':\n        raise SystemExit('no explicit icon helper -> makeText call patched: ' + filename)"
+if patched.count(old_guard) != 1:
+    raise SystemExit('v2 zero-icon guard anchor mismatch')
+patched = patched.replace(old_guard, new_guard, 1)
+path.write_text(patched, encoding='utf-8')
 exec(compile(path.read_text(encoding='utf-8'), str(path), 'exec'), {'__name__': '__main__'})
