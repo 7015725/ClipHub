@@ -187,15 +187,12 @@ entry = entry.replace(
     '                transport: remoteTransportLabel(),\n                warning: null\n            };',
     1,
 )
-# Ensure an installed update reports the aggregate transport after all module downloads.
 entry = entry.replace(
     '        installed.remoteAvailable = true;\n        installed.fallback = false;\n        installed.moduleSetVersion = String(remoteManifest.moduleSetVersion);',
     '        installed.remoteAvailable = true;\n        installed.fallback = false;\n        installed.transport = remoteTransportLabel();\n        installed.moduleSetVersion = String(remoteManifest.moduleSetVersion);',
     1,
 )
 
-# Manifest stays on .17; only the bootstrap minimum rises so old raw-only entry cannot
-# silently claim compatibility with this release channel.
 manifest['entryMinVersion'] = 7
 MANIFEST.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
@@ -214,10 +211,16 @@ preflight = preflight.replace(settings_block_old, settings_block_new, 1)
 contract_anchor = '''        assert '"ch_16_ui_shell.js"' in entry
         assert '"Translation", "UIShell"' in app
         assert 'uiShell: uiShell' in app
+        assert 'runtimeDiagnostics: runtimeDiagnostics' in app
+        assert 'RUNTIME_DIAGNOSTIC_SCHEMA_VERSION = 1' in ui_shell_source
+        assert 'getRuntimeDiagnostics: getRuntimeDiagnostics' in ui_shell_source
         print("UI shell stage7 contracts: passed")'''
 contract_replacement = '''        assert '"ch_16_ui_shell.js"' in entry
         assert '"Translation", "UIShell"' in app
         assert 'uiShell: uiShell' in app
+        assert 'runtimeDiagnostics: runtimeDiagnostics' in app
+        assert 'RUNTIME_DIAGNOSTIC_SCHEMA_VERSION = 1' in ui_shell_source
+        assert 'getRuntimeDiagnostics: getRuntimeDiagnostics' in ui_shell_source
         assert 'var ENTRY_VERSION = 7;' in entry
         assert 'https://api.github.com/repos/' in entry
         assert 'application/vnd.github.raw+json' in entry
