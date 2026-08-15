@@ -99,7 +99,7 @@ jobs:
             'ClipHub_Beta状态查询.txt' \
             module-manifest.json \
             scripts/release_preflight.sh | sort)
-          actual=$(git diff --name-only "$BETA" | sort)
+          actual=$(git -c core.quotePath=false diff --name-only "$BETA" | sort)
           printf '%s\n' "$actual"
           test "$actual" = "$expected"
           for path in src/ch_*.js; do
