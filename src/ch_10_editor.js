@@ -431,7 +431,11 @@
             view.setTypeface(Packages.android.graphics.Typeface.DEFAULT,
                 Packages.android.graphics.Typeface.BOLD);
         }
-        return view;
+        /* panel_icon_text_bridge_v1 */
+if (ClipHub.Theme && typeof ClipHub.Theme.decoratePanelIcon === "function") {
+    ClipHub.Theme.decoratePanelIcon(view, text, view.getCurrentTextColor(), sizeSp);
+}
+return view;
     }
 
     function makeButton(text, dark, primary, danger, selected, compact) {
@@ -3066,7 +3070,7 @@
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 34,
+        MODULE_VERSION: 35,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;

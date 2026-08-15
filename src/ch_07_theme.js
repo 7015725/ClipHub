@@ -358,6 +358,204 @@
         return metrics;
     }
 
+
+    /* panel_icon_system_v1: font-independent semantic icons on a 24x24 logical grid. */
+    var PANEL_ICON_TOKENS = {
+        "+": "add",
+        "＋": "add",
+        "×": "close",
+        "✕": "close",
+        "✖": "close",
+        "‹": "back",
+        "←": "back",
+        "›": "forward",
+        "→": "forward",
+        "✓": "check",
+        "✔": "check",
+        "⚙": "settings",
+        "🔍": "search",
+        "⌕": "search",
+        "☰": "list",
+        "⋮": "more_vertical",
+        "✎": "edit",
+        "✏": "edit",
+        "🗑": "delete",
+        "📋": "copy",
+        "⧉": "copy",
+        "▣": "copy",
+        "?": "help",
+        "↵": "input",
+        "⇩": "download",
+        "▲": "up",
+        "▼": "down",
+        "📌": "pin",
+        "⚑": "pin",
+        "⚐": "pin",
+        "🌐": "globe",
+        "◎": "globe",
+        "⊙": "globe",
+        "⌗": "rules"
+    };
+
+    function panelIconName(value) {
+        var key = String(value === null || value === undefined ? "" : value);
+        return PANEL_ICON_TOKENS.hasOwnProperty(key) ? PANEL_ICON_TOKENS[key] : null;
+    }
+
+    function isPanelIconToken(value) {
+        return panelIconName(value) !== null;
+    }
+
+    function makePanelIconDrawable(context, value, colorValue, sizeDp) {
+        var name = panelIconName(value);
+        var Bitmap = Packages.android.graphics.Bitmap;
+        var Canvas = Packages.android.graphics.Canvas;
+        var Paint = Packages.android.graphics.Paint;
+        var Path = Packages.android.graphics.Path;
+        var RectF = Packages.android.graphics.RectF;
+        var BitmapDrawable = Packages.android.graphics.drawable.BitmapDrawable;
+        var density = 1;
+        var logicalSize = Number(sizeDp || 18);
+        var px;
+        var scale;
+        var bitmap;
+        var canvas;
+        var stroke;
+        var fill;
+        var path;
+        var drawable;
+        var i;
+        var angle;
+        var x1;
+        var y1;
+        var x2;
+        var y2;
+        function v(number) { return Number(number) * scale; }
+        function line(ax, ay, bx, by) {
+            canvas.drawLine(v(ax), v(ay), v(bx), v(by), stroke);
+        }
+        function circle(cx, cy, radius, paintObj) {
+            canvas.drawCircle(v(cx), v(cy), v(radius), paintObj || stroke);
+        }
+        function rect(left, top, right, bottom, radius, paintObj) {
+            canvas.drawRoundRect(new RectF(v(left), v(top), v(right), v(bottom)),
+                v(radius || 0), v(radius || 0), paintObj || stroke);
+        }
+        if (name === null || context === null || context === undefined) { return null; }
+        try { density = Number(context.getResources().getDisplayMetrics().density || 1); }
+        catch (ignoredIconDensity) { density = 1; }
+        if (!isFinite(density) || density <= 0) { density = 1; }
+        if (!isFinite(logicalSize)) { logicalSize = 18; }
+        logicalSize = clampNumber(logicalSize, 14, 22);
+        px = Math.max(1, Math.round(logicalSize * density));
+        scale = px / 24;
+        bitmap = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888);
+        canvas = new Canvas(bitmap);
+        stroke = new Paint();
+        stroke.setAntiAlias(true);
+        stroke.setStyle(Paint.Style.STROKE);
+        stroke.setStrokeWidth(Math.max(1, v(2.05)));
+        stroke.setStrokeCap(Paint.Cap.ROUND);
+        stroke.setStrokeJoin(Paint.Join.ROUND);
+        safeSetPaintColor(stroke, colorValue);
+        fill = new Paint();
+        fill.setAntiAlias(true);
+        fill.setStyle(Paint.Style.FILL);
+        safeSetPaintColor(fill, colorValue);
+
+        if (name === "add") {
+            line(12, 5, 12, 19); line(5, 12, 19, 12);
+        } else if (name === "close") {
+            line(6.5, 6.5, 17.5, 17.5); line(17.5, 6.5, 6.5, 17.5);
+        } else if (name === "back") {
+            line(15.5, 5.5, 9, 12); line(9, 12, 15.5, 18.5);
+        } else if (name === "forward") {
+            line(8.5, 5.5, 15, 12); line(15, 12, 8.5, 18.5);
+        } else if (name === "check") {
+            line(5.5, 12.5, 10, 17); line(10, 17, 18.5, 7.5);
+        } else if (name === "search") {
+            circle(10.5, 10.5, 5.5); line(14.7, 14.7, 19, 19);
+        } else if (name === "settings") {
+            circle(12, 12, 3.2);
+            for (i = 0; i < 8; i += 1) {
+                angle = Math.PI * i / 4;
+                x1 = 12 + Math.cos(angle) * 6.0;
+                y1 = 12 + Math.sin(angle) * 6.0;
+                x2 = 12 + Math.cos(angle) * 8.2;
+                y2 = 12 + Math.sin(angle) * 8.2;
+                line(x1, y1, x2, y2);
+            }
+        } else if (name === "list") {
+            for (i = 0; i < 3; i += 1) {
+                circle(5.5, 7 + i * 5, 0.9, fill);
+                line(9, 7 + i * 5, 19, 7 + i * 5);
+            }
+        } else if (name === "more_vertical") {
+            circle(12, 6.5, 1.3, fill); circle(12, 12, 1.3, fill); circle(12, 17.5, 1.3, fill);
+        } else if (name === "edit") {
+            path = new Path();
+            path.moveTo(v(6.5), v(17.5));
+            path.lineTo(v(8), v(13.5));
+            path.lineTo(v(15.5), v(6));
+            path.lineTo(v(18), v(8.5));
+            path.lineTo(v(10.5), v(16));
+            path.close();
+            canvas.drawPath(path, stroke);
+            line(6.5, 17.5, 10.5, 16);
+        } else if (name === "copy") {
+            rect(8, 8, 18.5, 18.5, 1.8); rect(5.5, 5.5, 16, 16, 1.8);
+        } else if (name === "delete") {
+            rect(7.5, 8.5, 16.5, 19, 1.2);
+            line(6, 6.5, 18, 6.5); line(9.5, 5, 14.5, 5);
+            line(10.5, 10.5, 10.5, 16.8); line(13.5, 10.5, 13.5, 16.8);
+        } else if (name === "help") {
+            path = new Path();
+            path.moveTo(v(8), v(8.3));
+            path.cubicTo(v(8.5), v(4.8), v(15.8), v(4.8), v(16), v(9));
+            path.cubicTo(v(16.1), v(12.2), v(12), v(12.4), v(12), v(15));
+            canvas.drawPath(path, stroke);
+            circle(12, 19, 1.0, fill);
+        } else if (name === "pin") {
+            line(8, 6, 16, 6); line(9.2, 6, 10, 11.5); line(14.8, 6, 14, 11.5);
+            line(7, 11.5, 17, 11.5); line(12, 11.5, 12, 19);
+        } else if (name === "globe") {
+            circle(12, 12, 8);
+            canvas.drawOval(new RectF(v(8.5), v(4), v(15.5), v(20)), stroke);
+            line(4.5, 12, 19.5, 12);
+        } else if (name === "input") {
+            line(5, 12, 15.5, 12); line(12.5, 9, 15.5, 12); line(15.5, 12, 12.5, 15);
+            line(18.5, 6, 18.5, 18);
+        } else if (name === "download") {
+            line(12, 5, 12, 15); line(8.5, 11.5, 12, 15); line(12, 15, 15.5, 11.5);
+            line(6, 19, 18, 19);
+        } else if (name === "up") {
+            line(6, 15.5, 12, 9.5); line(12, 9.5, 18, 15.5);
+        } else if (name === "down") {
+            line(6, 8.5, 12, 14.5); line(12, 14.5, 18, 8.5);
+        } else if (name === "rules") {
+            line(8, 5, 6.5, 19); line(16.5, 5, 15, 19); line(4.5, 9.5, 19, 9.5); line(4, 14.5, 18.5, 14.5);
+        }
+
+        drawable = new BitmapDrawable(context.getResources(), bitmap);
+        drawable.setBounds(0, 0, px, px);
+        return drawable;
+    }
+
+    function decoratePanelIcon(viewObj, value, colorValue, sizeDp) {
+        var drawable;
+        if (viewObj === null || viewObj === undefined || !isPanelIconToken(value)) { return false; }
+        try {
+            drawable = makePanelIconDrawable(viewObj.getContext(), value, colorValue, sizeDp);
+            if (drawable === null) { return false; }
+            viewObj.setText("");
+            viewObj.setCompoundDrawablePadding(0);
+            viewObj.setCompoundDrawables(drawable, null, null, null);
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
     function configuredMode() {
         var value = mode;
         try {
@@ -387,7 +585,7 @@
 
     ClipHub.Theme = {
         MODULE_NAME: "ch_07_theme",
-        MODULE_VERSION: 6,
+        MODULE_VERSION: 7,
         init: function () { mode = "system"; return true; },
         setMode: function (value) {
             value = String(value || "system");
@@ -414,6 +612,9 @@
         getMetrics: function () { return copy(METRICS); },
         getLayoutMetrics: getLayoutMetrics,
         getPanelChromeMetrics: getPanelChromeMetrics,
+        isPanelIconToken: isPanelIconToken,
+        makePanelIconDrawable: makePanelIconDrawable,
+        decoratePanelIcon: decoratePanelIcon,
         token: function (name, context) {
             var value = palette(context)[String(name)];
             return value === undefined ? null : value;

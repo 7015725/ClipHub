@@ -1252,7 +1252,11 @@
             view.setTypeface(Packages.android.graphics.Typeface.DEFAULT,
                 Packages.android.graphics.Typeface.BOLD);
         }
-        return view;
+        /* panel_icon_text_bridge_v1 */
+if (ClipHub.Theme && typeof ClipHub.Theme.decoratePanelIcon === "function") {
+    ClipHub.Theme.decoratePanelIcon(view, text, view.getCurrentTextColor(), size);
+}
+return view;
     }
 
     function translationChromeMetrics() {
@@ -2120,7 +2124,7 @@
     }
     ClipHub.Translation = {
         MODULE_NAME: "ch_12_translation",
-        MODULE_VERSION: 19,
+        MODULE_VERSION: 20,
         init: function (context) {
             translationConfig = { enabled: true, provider: "settings" };
             navigationInit(context || {});
