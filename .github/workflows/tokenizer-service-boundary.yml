@@ -1,0 +1,159 @@
+name: Tokenizer Service Boundary
+
+on:
+  push:
+    branches:
+      - docs/tokenizer-softcode-hardening-20260815
+    paths:
+      - .github/workflows/tokenizer-service-boundary.yml
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: docs/tokenizer-softcode-hardening-20260815
+          fetch-depth: 1
+
+      - name: Patch worker boundary
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          service_path = Path('src/ch_19_tokenizer_service.js')
+          text = service_path.read_text(encoding='utf-8')
+
+          def one(old, new, label):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit('%s count=%d' % (label, count))
+              text = text.replace(old, new, 1)
+
+          one(
+              '    function configuredRules(regexText) {\n'
+              '        var rules = selectedRulesForTokenize();\n'
+              '        var temporary = trimText(regexText || "");\n',
+              '    function configuredRules(regexText, regexMode) {\n'
+              '        var rules = selectedRulesForTokenize();\n'
+              '        var temporary = trimText(regexText || "");\n'
+              '        var temporaryMode = String(regexMode || "match") === "split" ?\n'
+              '            "split" : "match";\n',
+              'configuredRules signature')
+
+          one(
+              '                mode: "match",\n'
+              '                keepDelimiter: false,\n'
+              '                groupMode: "whole",\n'
+              '                type: "word",\n'
+              '                source: "tokenizer-temporary"\n',
+              '                mode: temporaryMode,\n'
+              '                keepDelimiter: temporaryMode === "split",\n'
+              '                groupMode: "whole",\n'
+              '                type: temporaryMode === "split" ? "symbol" : "word",\n'
+              '                source: "tokenizer-temporary"\n',
+              'temporary mode')
+
+          one(
+              '                settings.rules = configuredRules(settings.regexText || "");\n',
+              '                settings.rules = configuredRules(settings.regexText || "",\n'
+              '                    settings.regexMode || "match");\n',
+              'sync configured rules')
+
+          one(
+              '            settings.configuredRulesJson = JSON.stringify(\n'
+              '                configuredRules(settings.regexText || ""));\n',
+              '            settings.configuredRulesJson = JSON.stringify(\n'
+              '                configuredRules(settings.regexText || "",\n'
+              '                    settings.regexMode || "match"));\n'
+              '            settings.selectedRuleIdsJson = JSON.stringify(\n'
+              '                getSelectedRuleIds());\n',
+              'async configured rules snapshot')
+
+          one(
+              '            result.selectedRuleIds = String(settings.mode || "normal") === "regex" ?\n'
+              '                getSelectedRuleIds() : [];\n',
+              '            result.selectedRuleIds = String(settings.mode || "normal") === "regex" ?\n'
+              '                (settings.selectedRuleIdsJson ?\n'
+              '                    parseJsonArray(settings.selectedRuleIdsJson, []) :\n'
+              '                    getSelectedRuleIds()) : [];\n',
+              'worker selected ids snapshot')
+
+          one(
+              '        MODULE_VERSION: 2,\n',
+              '        MODULE_VERSION: 3,\n',
+              'service module version')
+
+          service_path.write_text(text, encoding='utf-8')
+
+          def blob_sha(value):
+              data = value.encode('utf-8')
+              return hashlib.sha1(
+                  b'blob ' + str(len(data)).encode('ascii') + b'\0' + data
+              ).hexdigest()
+
+          manifest_path = Path('module-manifest.json')
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          if manifest.get('moduleSetVersion') != '20260815.31':
+              raise SystemExit('unexpected manifest version')
+          manifest['moduleSetVersion'] = '20260815.32'
+          for item in manifest['modules']:
+              if item.get('name') == 'ch_19_tokenizer_service.js':
+                  item['sha'] = blob_sha(text)
+          manifest_path.write_text(
+              json.dumps(manifest, ensure_ascii=False, indent=2) + '\n',
+              encoding='utf-8')
+
+          contract_path = Path('scripts/manifest_contract.py')
+          contract = contract_path.read_text(encoding='utf-8')
+          if contract.count('"moduleSetVersion": "20260815.31"') != 1:
+              raise SystemExit('contract version anchor mismatch')
+          contract = contract.replace(
+              '"moduleSetVersion": "20260815.31"',
+              '"moduleSetVersion": "20260815.32"', 1)
+          contract_path.write_text(contract, encoding='utf-8')
+
+          preflight_path = Path('scripts/release_preflight.sh')
+          preflight = preflight_path.read_text(encoding='utf-8')
+          if preflight.count("EXPECTED_MODULE_SET='20260815.31'") != 1:
+              raise SystemExit('preflight module version anchor mismatch')
+          preflight = preflight.replace(
+              "EXPECTED_MODULE_SET='20260815.31'",
+              "EXPECTED_MODULE_SET='20260815.32'", 1)
+          if preflight.count(
+                  '"ch_19_tokenizer_service.js": ("ch_19_tokenizer_service", 2),') != 1:
+              raise SystemExit('preflight service version anchor mismatch')
+          preflight = preflight.replace(
+              '"ch_19_tokenizer_service.js": ("ch_19_tokenizer_service", 2),',
+              '"ch_19_tokenizer_service.js": ("ch_19_tokenizer_service", 3),', 1)
+          anchor = '        assert "tokenizerRulesIsolatedFromFilter: true" in tokenizer_service_source\n'
+          if preflight.count(anchor) != 1:
+              raise SystemExit('worker boundary preflight anchor mismatch')
+          preflight = preflight.replace(
+              anchor,
+              anchor +
+              '        assert "selectedRuleIdsJson" in tokenizer_service_source\n' +
+              '        assert "settings.regexMode" in tokenizer_service_source\n',
+              1)
+          preflight_path.write_text(preflight, encoding='utf-8')
+          PY
+
+          node --check src/ch_19_tokenizer_service.js
+          python3 scripts/validate_es5.py .
+          node scripts/test_tokenizer_core.js
+          bash scripts/release_preflight.sh --settings-tabs-beta
+
+      - name: Commit hardening
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/tokenizer-service-boundary.yml
+          git add src/ch_19_tokenizer_service.js module-manifest.json scripts/manifest_contract.py scripts/release_preflight.sh
+          git commit -m "fix: harden tokenizer rule worker boundary"
+          git push origin HEAD:docs/tokenizer-softcode-hardening-20260815
