@@ -97,6 +97,9 @@ for expanded_js in "$PACKED_SYNTAX_DIR"/*.js; do
   node --check "$expanded_js" >/dev/null
 done
 echo 'Expanded JS syntax verification: passed'
+if [ "$MODE" = '--settings-tabs-beta' ]; then
+  node scripts/test_ui_shell_navigation.js
+fi
 if [ "$MODE" = '--beta' ]; then
   python3 scripts/audit_color_api.py \
     --json "$AUDIT_DIR/color-findings.json" \
@@ -365,6 +368,8 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert 'MODULE_NAME: "ch_16_ui_shell"' in ui_shell_source
         assert "MODULE_VERSION: 5" in ui_shell_source
         assert 'migrationStage: "primary_window_settings_regex_translation_editor_tags_tokenizer_detail_filter_overlay_closed"' in ui_shell_source
+        assert 'registerPage({ id: "filter"' not in ui_shell_source
+        assert 'MODULE_VERSION: 5' in ui_shell_source
         assert 'primaryWindowMode: true' in ui_shell_source
         assert 'legacyWindowBridge: true' in ui_shell_source
         assert "mountPrimaryChildPage" in filter_source
@@ -414,7 +419,7 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert '"ch_16_ui_shell.js"' in entry
         assert '"Translation", "UIShell"' in app
         assert 'uiShell: uiShell' in app
-        print("UI shell stage5 contracts: passed")
+        print("UI shell stage6 contracts: passed")
         print("Settings tabs safety contracts: passed")
     print("Regex beta safety contracts: passed")
 if mode in ("--current", "--main"):
