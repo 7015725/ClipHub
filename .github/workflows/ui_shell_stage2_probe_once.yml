@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Probe packed UI sources
+      - name: Compact migration anchors
         shell: bash
         run: |
           set -euo pipefail
@@ -23,74 +23,72 @@ jobs:
           from pathlib import Path
 
           def expand(path):
-              source = Path(path).read_text(encoding='utf-8')
-              m = re.search(r'\bvar\s+(?:PACKED_B64|encoded)\s*=\s*(.*?);', source, re.S)
+              s = Path(path).read_text(encoding='utf-8')
+              m = re.search(r'\bvar\s+(?:PACKED_B64|encoded)\s*=\s*(.*?);', s, re.S)
               if not m:
-                  return source
-              pieces = re.findall(r'"(?:\\.|[^"\\])*"', m.group(1))
-              encoded = ''.join(json.loads(p) for p in pieces)
-              return gzip.decompress(base64.b64decode(encoded)).decode('utf-8')
+                  return s
+              parts = re.findall(r'"(?:\\.|[^"\\])*"', m.group(1))
+              return gzip.decompress(base64.b64decode(''.join(json.loads(x) for x in parts))).decode('utf-8')
 
-          def func(source, name):
-              m = re.search(r'\bfunction\s+' + re.escape(name) + r'\s*\(', source)
-              if not m:
-                  return None
-              start = m.start(); brace = source.find('{', m.end())
-              depth = 0; quote = None; esc = False; i = brace
-              while i >= 0 and i < len(source):
-                  ch = source[i]
-                  if quote:
-                      if esc: esc = False
-                      elif ch == '\\': esc = True
-                      elif ch == quote: quote = None
-                  else:
-                      if ch in ('"', "'"): quote = ch
-                      elif ch == '{': depth += 1
-                      elif ch == '}':
-                          depth -= 1
-                          if depth == 0: return source[start:i+1]
-                  i += 1
-              return None
+          def function_spans(src):
+              out = []
+              for m in re.finditer(r'\bfunction\s+([A-Za-z0-9_$]+)\s*\(', src):
+                  name = m.group(1); brace = src.find('{', m.end())
+                  if brace < 0: continue
+                  depth=0; quote=None; esc=False; i=brace
+                  while i < len(src):
+                      ch=src[i]
+                      if quote:
+                          if esc: esc=False
+                          elif ch=='\\': esc=True
+                          elif ch==quote: quote=None
+                      else:
+                          if ch in ('"', "'"): quote=ch
+                          elif ch=='{': depth+=1
+                          elif ch=='}':
+                              depth-=1
+                              if depth==0:
+                                  out.append((name,m.start(),i+1)); break
+                      i+=1
+              return out
 
-          targets = {
-              'FILTER': ('src/ch_11_filter.js', [
-                  'createPanelCache','attachPanelCache','destroyPanelCache','buildPanelContent',
-                  'makePanelContent','buildRootContent','showPanel','openSettings',
-                  'translateResultRow','getPanelState'
-              ]),
-              'SETTINGS': ('src/ch_13_settings.js', [
-                  'installSettingsContent','makeSettingsSubpageHeader','handleSettingsBack',
-                  'buildPage','openRegexRules','openRegexEditor','openPage','closePage','getState'
-              ]),
-              'TRANSLATION': ('src/ch_12_translation.js', [
-                  'buildTranslationPanel','openTranslationForItem','closeTranslationPanel',
-                  'getTranslationState','refreshTranslationButtons'
-              ]),
-          }
-          for label, (path, names) in targets.items():
-              source = expand(path)
-              print('\n' + '='*24 + ' ' + label + ' ' + '='*24)
-              for name in names:
-                  body = func(source, name)
-                  if body:
-                      print('\n--- FUNCTION', name, '---')
-                      print(body[:18000])
-              for needle in [
-                  'settingsButton.setOnClickListener',
-                  'ClipHub.Settings.openPage(',
-                  'ClipHub.UIShell',
-                  'panelRoot =',
-                  'panelRoot.addView(',
-                  'panelManagedFrame =',
-                  'translationRoot = buildTranslationPanel()'
-              ]:
-                  pos = 0; count = 0
-                  while True:
-                      idx = source.find(needle, pos)
-                      if idx < 0: break
-                      count += 1
-                      print('\n--- AROUND', needle, '#'+str(count), '---')
-                      print(source[max(0,idx-1800):idx+3500])
-                      pos = idx + len(needle)
-                      if count >= 4: break
+          def print_func(src, spans, name, limit=8000):
+              for n,a,b in spans:
+                  if n == name:
+                      print('\n### '+name+' ###')
+                      print(src[a:min(b,a+limit)])
+                      return
+              print('\n### MISSING '+name+' ###')
+
+          def containing(src, spans, needle, limit=8000):
+              idx=src.find(needle)
+              print('\n### CONTAINING '+needle+' idx='+str(idx)+' ###')
+              if idx < 0: return
+              for n,a,b in spans:
+                  if a <= idx < b:
+                      print('FUNCTION='+n)
+                      print(src[a:min(b,a+limit)])
+                      return
+              print(src[max(0,idx-1200):idx+3500])
+
+          specs = [
+              ('FILTER','src/ch_11_filter.js',
+               ['createPanelCache','attachPanelCache','destroyPanelCache','showPanel','getPanelState'],
+               ['settingsButton.setOnClickListener','panelManagedFrame = ClipHub.Window.createManagedFrame','panelRoot.addView']),
+              ('SETTINGS','src/ch_13_settings.js',
+               ['buildRootPage','buildPage','makeSettingsSubpageHeader','handleSettingsBack','openPage','closePage','getState'],
+               ['openRegexRules','openRegexEditor','openRegexTest','settingsManagedFrame = ClipHub.Window.createManagedFrame']),
+              ('TRANSLATION','src/ch_12_translation.js',
+               ['buildTranslationPanel','openTranslationForItem','closeTranslationPanel','getTranslationState'],
+               ['translationManagedFrame = ClipHub.Window.createManagedFrame']),
+          ]
+          for label,path,names,needles in specs:
+              src=expand(path); spans=function_spans(src)
+              print('\n\n========== '+label+' ==========', 'LEN='+str(len(src)))
+              mm=re.findall(r'MODULE_NAME:\s*["\']([^"\']+)["\']\s*,\s*MODULE_VERSION:\s*(\d+)',src,re.S)
+              print('MODULES='+repr(mm[-4:]))
+              for name in names: print_func(src,spans,name)
+              for needle in needles: containing(src,spans,needle)
+              print('\n### EXPORT TAIL ###')
+              print(src[-5000:])
           PY
