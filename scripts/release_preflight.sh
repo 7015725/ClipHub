@@ -41,7 +41,7 @@ case "$MODE" in
     ;;
   --settings-tabs-beta)
     EXPECTED_REF='beta-regex-settings-tabs-20260814'
-    EXPECTED_MODULE_SET='20260815.17'
+    EXPECTED_MODULE_SET='20260815.18'
     EXPECTED_ENTRY_VERSION='7'
     EXPECTED_APP_MODULE_VERSION='22'
     REQUIRE_CLEAN='0'
@@ -295,7 +295,7 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
             "ch_06_repository.js": ("ch_06_repository", 19),
             "ch_10_editor.js": ("ch_10_editor", 32),
             "ch_11_filter.js": ("ch_11_filter", 85),
-            "ch_13_settings.js": ("ch_13_settings", 34),
+            "ch_13_settings.js": ("ch_13_settings", 35),
             "ch_15_app.js": ("ch_15_app", 22),
             "ch_12_translation.js": ("ch_12_translation", 17),
             "ch_16_ui_shell.js": ("ch_16_ui_shell", 6),
@@ -336,6 +336,10 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert "regexRuleTotalCount" in filter_source
         assert "regexInlineVisibleLimit" in filter_source
         assert "REGEX_TEST_TEXT_CHAR_BUDGET = 786432" in settings_source
+        assert "var handleHit = new LinearLayout(appContext);" in settings_source
+        assert "bindRegexRuleDrag(handleHit, root, rule.id);" in settings_source
+        assert "colors.stroke, layout.cardRadiusDp" in settings_source
+        assert "Math.abs(delta) >= dp(28)" in settings_source
     assert "feature.regex_rules.defaults_initialized" in repository_source
     assert "listRegexCandidateChunk" in repository_source
     assert ".matcher(text).matches()" not in filter_source
