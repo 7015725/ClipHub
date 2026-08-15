@@ -94,9 +94,48 @@ var overlap = core.tokenizeWithRules(
 assert.deepStrictEqual(texts(overlap), ['abc123']);
 assert.strictEqual(overlap.tokens[0].ruleId, 'long');
 
+var rawMatch = core.tokenizeWithRules(
+    '定位代码和函数，进行二次分析，注意边界。',
+    [
+        {
+            id: 'custom.raw.analysis',
+            pattern: '二次分析',
+            priority: 1200,
+            mode: 'match'
+        }
+    ],
+    { includeBuiltins: false, gapMode: 'raw' }
+);
+assert.deepStrictEqual(texts(rawMatch), [
+    '定位代码和函数，进行', '二次分析', '，注意边界。'
+]);
+assert.strictEqual(rawMatch.tokens[0].source, 'raw-gap');
+assert.strictEqual(rawMatch.tokens[1].ruleId, 'custom.raw.analysis');
+assert.strictEqual(rawMatch.gapMode, 'raw');
+
+var rawSplit = core.tokenizeWithRules(
+    '定位代码和函数，进行二次分析，注意边界。',
+    [
+        {
+            id: 'custom.raw.delimiter',
+            pattern: '[，。]+',
+            priority: 1200,
+            mode: 'split',
+            keepDelimiter: false
+        }
+    ],
+    { includeBuiltins: false, gapMode: 'raw' }
+);
+assert.deepStrictEqual(texts(rawSplit), [
+    '定位代码和函数', '进行二次分析', '注意边界'
+]);
+assert.ok(rawSplit.tokens.every(function (item) {
+    return item.source === 'raw-gap';
+}));
+
 var defaults = core.getDefaultRules();
 assert.ok(defaults.length >= 8);
-assert.strictEqual(core.MODULE_VERSION, 1);
+assert.strictEqual(core.MODULE_VERSION, 2);
 assert.strictEqual(core.ENGINE_VERSION, 2);
 
 console.log('Tokenizer regex core contract: passed');

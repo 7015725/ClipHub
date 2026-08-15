@@ -491,6 +491,7 @@
     function prepareConfiguredOptions(options) {
         var settings = copyOptions(options);
         var mode = String(settings.mode || "normal");
+        settings.gapMode = mode === "regex" ? "raw" : "fallback";
         if (settings.__explicitRules === true) {
             delete settings.__explicitRules;
             return settings;
@@ -718,7 +719,7 @@
 
     ClipHub.TokenizerService = {
         MODULE_NAME: "ch_19_tokenizer_service",
-        MODULE_VERSION: 4,
+        MODULE_VERSION: 5,
         ENGINE_VERSION: 2,
         RULE_SCHEMA_VERSION: RULE_SCHEMA_VERSION,
         RULE_STORAGE_NAMESPACE: RULE_STORAGE_NAMESPACE,

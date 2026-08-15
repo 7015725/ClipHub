@@ -241,7 +241,20 @@
         }
     }
 
-    function splitGap(text, start, end, splitMatches, out) {
+    function emitGap(text, start, end, out, gapMode) {
+        var raw;
+        if (start >= end) { return; }
+        if (String(gapMode || "fallback") === "raw") {
+            raw = text.substring(start, end);
+            if (!/^\s*$/.test(raw)) {
+                out.push(makeToken(raw, start, end, "word", "raw-gap", null));
+            }
+            return;
+        }
+        fallback(text, start, end, out);
+    }
+
+    function splitGap(text, start, end, splitMatches, out, gapMode) {
         var local = [];
         var accepted;
         var index;
@@ -254,7 +267,9 @@
         accepted = resolveOverlap(local);
         for (index = 0; index < accepted.length; index += 1) {
             item = accepted[index];
-            if (item.start > cursor) { fallback(text, cursor, item.start, out); }
+            if (item.start > cursor) {
+                emitGap(text, cursor, item.start, out, gapMode);
+            }
             if (item.rule.keepDelimiter) {
                 out.push(makeToken(item.text, item.start, item.end,
                     item.rule.type === "word" ? "word" : "symbol",
@@ -262,7 +277,7 @@
             }
             cursor = Math.max(cursor, item.end);
         }
-        if (cursor < end) { fallback(text, cursor, end, out); }
+        if (cursor < end) { emitGap(text, cursor, end, out, gapMode); }
     }
 
     function stats(tokens) {
@@ -281,6 +296,8 @@
         var settings = options || {};
         var charBudget = Number(settings.charBudget || CHAR_BUDGET);
         var matchBudget = Number(settings.matchBudget || MATCH_BUDGET);
+        var gapMode = String(settings.gapMode || "fallback") === "raw" ?
+            "raw" : "fallback";
         var rules;
         var matchResult;
         var splitResult;
@@ -305,14 +322,18 @@
         accepted = resolveOverlap(matchResult.matches);
         for (index = 0; index < accepted.length; index += 1) {
             item = accepted[index];
-            if (item.start > cursor) { splitGap(value, cursor, item.start, splitResult.matches, out); }
+            if (item.start > cursor) {
+                splitGap(value, cursor, item.start, splitResult.matches, out, gapMode);
+            }
             if (item.start >= cursor) {
                 out.push(makeToken(item.text, item.start, item.end,
                     item.rule.type, item.rule.source, item.rule));
                 cursor = item.end;
             }
         }
-        if (cursor < value.length) { splitGap(value, cursor, value.length, splitResult.matches, out); }
+        if (cursor < value.length) {
+            splitGap(value, cursor, value.length, splitResult.matches, out, gapMode);
+        }
         return {
             ok: true,
             engine: "regex-tokenizer-v2",
@@ -320,7 +341,8 @@
             stats: stats(out),
             errors: matchResult.errors.concat(splitResult.errors),
             ruleCount: rules.length,
-            acceptedMatchCount: accepted.length
+            acceptedMatchCount: accepted.length,
+            gapMode: gapMode
         };
     }
 
@@ -390,7 +412,7 @@
 
     ClipHub.TokenizerCore = {
         MODULE_NAME: "ch_18_tokenizer_core",
-        MODULE_VERSION: 1,
+        MODULE_VERSION: 2,
         ENGINE_VERSION: 2,
         getDefaultRules: getDefaultRules,
         tokenize: tokenize,
