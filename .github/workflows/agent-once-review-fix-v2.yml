@@ -1,5 +1,6 @@
 name: One-shot review fix v2
 
+# retry: explicit icon helper adapters
 on:
   push:
     branches:
