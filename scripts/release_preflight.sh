@@ -41,9 +41,9 @@ case "$MODE" in
     ;;
   --settings-tabs-beta)
     EXPECTED_REF='beta-regex-settings-tabs-20260814'
-    EXPECTED_MODULE_SET='20260815.09'
+    EXPECTED_MODULE_SET='20260815.11'
     EXPECTED_ENTRY_VERSION='6'
-    EXPECTED_APP_MODULE_VERSION='20'
+    EXPECTED_APP_MODULE_VERSION='21'
     REQUIRE_CLEAN='0'
     ;;
   --current)
@@ -146,7 +146,7 @@ assert manifest.get("schemaVersion") == 1, manifest.get("schemaVersion")
 assert manifest.get("moduleSetVersion") == expected_module_set, manifest.get("moduleSetVersion")
 assert manifest.get("entryMinVersion") == expected_entry_version, manifest.get("entryMinVersion")
 assert manifest.get("sourceRef") == expected_ref, manifest.get("sourceRef")
-expected_module_count = 16 if mode == "--settings-tabs-beta" else 15
+expected_module_count = 17 if mode == "--settings-tabs-beta" else 15
 assert len(manifest.get("modules", [])) == expected_module_count, len(manifest.get("modules", []))
 
 
@@ -262,7 +262,8 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
             "ch_06_repository.js": ("ch_06_repository", 19),
             "ch_11_filter.js": ("ch_11_filter", 83),
             "ch_13_settings.js": ("ch_13_settings", 32),
-            "ch_15_app.js": ("ch_15_app", 20),
+            "ch_15_app.js": ("ch_15_app", 21),
+            "ch_16_ui_shell.js": ("ch_16_ui_shell", 1),
         }
     else:
         required_versions = {
@@ -311,7 +312,7 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
     assert "filterRegexRuleIds" in settings_source
     assert "filterRegexMatchMode" in settings_source
     assert manifest.get("sourceRef") == expected_ref
-    assert len(manifest.get("modules", [])) == (16 if mode == "--settings-tabs-beta" else 15)
+    assert len(manifest.get("modules", [])) == (17 if mode == "--settings-tabs-beta" else 15)
     if mode == "--settings-tabs-beta":
         assert 'var settingsTab = "general";' in settings_source
         assert "function setSettingsTab(tab, origin)" in settings_source
@@ -325,6 +326,21 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert "performSetSettingsTab: function (tab)" in settings_source
         assert "performSettingsBack: function ()" in settings_source
         assert "Settings24 ES5 loader" not in settings_loader
+        ui_shell_source = actual_sources["ch_16_ui_shell.js"]
+        assert 'MODULE_NAME: "ch_16_ui_shell"' in ui_shell_source
+        assert "MODULE_VERSION: 1" in ui_shell_source
+        assert 'migrationStage: "registry_only"' in ui_shell_source
+        assert 'primaryWindowMode: false' in ui_shell_source
+        assert 'legacyWindowBridge: true' in ui_shell_source
+        assert 'registerPage({ id: "home"' in ui_shell_source
+        assert 'registerPage({ id: "settings"' in ui_shell_source
+        assert 'registerPage({ id: "regex_rules"' in ui_shell_source
+        assert 'registerPage({ id: "editor"' in ui_shell_source
+        assert 'registerPage({ id: "translation"' in ui_shell_source
+        assert '"ch_16_ui_shell.js"' in entry
+        assert '"Translation", "UIShell"' in app
+        assert 'uiShell: uiShell' in app
+        print("UI shell stage1 contracts: passed")
         print("Settings tabs safety contracts: passed")
     print("Regex beta safety contracts: passed")
 if mode in ("--current", "--main"):

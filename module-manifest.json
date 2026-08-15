@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260815.09",
+  "moduleSetVersion": "20260815.11",
   "entryMinVersion": 6,
   "sourceRef": "beta-regex-settings-tabs-20260814",
   "modules": [
@@ -77,7 +77,12 @@
     {
       "name": "ch_15_app.js",
       "path": "src/ch_15_app.js",
-      "sha": "9b93907ac47103a063b10a2257c1b37b4bb4b624"
+      "sha": "5ca6d0cbfa568de5fa8193e799b9ae53510a2a10"
+    },
+    {
+      "name": "ch_16_ui_shell.js",
+      "path": "src/ch_16_ui_shell.js",
+      "sha": "8e72993e341c7fd93a6c6f705448704ad218f5fa"
     },
     {
       "name": "ch_17_tokenizer_ui.js",
