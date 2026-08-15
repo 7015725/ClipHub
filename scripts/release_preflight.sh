@@ -41,7 +41,7 @@ case "$MODE" in
     ;;
   --settings-tabs-beta)
     EXPECTED_REF='beta-regex-settings-tabs-20260814'
-    EXPECTED_MODULE_SET='20260815.14'
+    EXPECTED_MODULE_SET='20260815.15'
     EXPECTED_ENTRY_VERSION='6'
     EXPECTED_APP_MODULE_VERSION='21'
     REQUIRE_CLEAN='0'
@@ -293,7 +293,7 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
             "ch_13_settings.js": ("ch_13_settings", 34),
             "ch_15_app.js": ("ch_15_app", 21),
             "ch_12_translation.js": ("ch_12_translation", 17),
-            "ch_16_ui_shell.js": ("ch_16_ui_shell", 3),
+            "ch_16_ui_shell.js": ("ch_16_ui_shell", 4),
             "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 3),
         }
     else:
@@ -361,9 +361,10 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         translation_source = actual_sources["ch_12_translation.js"]
         editor_source = actual_sources["ch_10_editor.js"]
         tokenizer_source = actual_sources["ch_17_tokenizer_ui.js"]
+        list_source = actual_sources["ch_09_list.js"]
         assert 'MODULE_NAME: "ch_16_ui_shell"' in ui_shell_source
-        assert "MODULE_VERSION: 3" in ui_shell_source
-        assert 'migrationStage: "primary_overlay_settings_regex_translation_editor_tags_tokenizer"' in ui_shell_source
+        assert "MODULE_VERSION: 4" in ui_shell_source
+        assert 'migrationStage: "primary_overlay_settings_regex_translation_editor_tags_tokenizer_detail"' in ui_shell_source
         assert 'primaryWindowMode: true' in ui_shell_source
         assert 'legacyWindowBridge: true' in ui_shell_source
         assert "mountPrimaryChildPage" in filter_source
@@ -380,6 +381,16 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert 'registerPage({ id: "editor"' in ui_shell_source
         assert 'registerPage({ id: "translation"' in ui_shell_source
         assert 'registerPage({ id: "tokenizer", parentId: "editor"' in ui_shell_source
+        assert 'registerPage({ id: "detail", parentId: "home"' in ui_shell_source
+        assert 'legacySurface: "detail", shellReady: true' in ui_shell_source
+        assert 'ClipHub.UIShell.canEmbed("detail")' in list_source
+        assert 'ClipHub.UIShell.mountPage("detail"' in list_source
+        assert "detailEmbeddedInPrimary" in list_source
+        assert "buildDetailView(row, true)" in list_source
+        assert "buildDetailView(row, false)" in list_source
+        assert "detailWindowManager.addView(detailWindowRoot, detailParams)" in list_source
+        assert "ClipHub.Clipboard.writeText(String(detailRow.content)" in list_source
+        assert "ClipHub.Editor.openItem(Number(row.id))" in list_source
         assert "embeddedInPrimary" in editor_source
         assert "mountPrimaryEditorPage" in editor_source
         assert "syncPrimaryEditorPage" in editor_source

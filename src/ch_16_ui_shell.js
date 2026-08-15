@@ -83,7 +83,7 @@
             legacySurface: "filter_root", shellReady: true });
         registerPage({ id: "detail", parentId: "home", owner: "detail",
             moduleName: "List", cachePolicy: "rebind",
-            legacySurface: "detail", shellReady: false });
+            legacySurface: "detail", shellReady: true });
         registerPage({ id: "editor", parentId: "home", owner: "editor",
             moduleName: "Editor", cachePolicy: "rebind",
             legacySurface: "editor", shellReady: true });
@@ -142,6 +142,7 @@
     function isSameShellFamily(pageId) {
         var current = currentPageId();
         if (current === "home") { return true; }
+        if (pageId === "detail") { return current === "detail"; }
         if (pageId === "translation") { return current === "translation"; }
         if (pageId === "settings") {
             return current === "settings" || current === "regex_rules" ||
@@ -159,10 +160,11 @@
         var id = normalizeId(pageId);
         var host = primaryHostState();
         if (!initialized || host.ready !== true) { return false; }
-        if (id !== "settings" && id !== "translation" &&
+        if (id !== "settings" && id !== "translation" && id !== "detail" &&
                 id !== "regex_rules" && id !== "regex_editor" &&
                 id !== "regex_test" && id !== "editor" &&
                 id !== "tags" && id !== "tokenizer") { return false; }
+        if (id === "detail") { return isSameShellFamily("detail"); }
         if (id === "translation") { return isSameShellFamily("translation"); }
         if (id === "editor" || id === "tags" || id === "tokenizer") {
             return isSameShellFamily(id);
@@ -363,7 +365,7 @@
         var host = primaryHostState();
         return {
             initialized: initialized === true,
-            migrationStage: "primary_overlay_settings_regex_translation_editor_tags_tokenizer",
+            migrationStage: "primary_overlay_settings_regex_translation_editor_tags_tokenizer_detail",
             primaryWindowMode: true,
             legacyWindowBridge: true,
             hostAttached: host.ready === true,
@@ -433,7 +435,7 @@
 
     ClipHub.UIShell = {
         MODULE_NAME: "ch_16_ui_shell",
-        MODULE_VERSION: 3,
+        MODULE_VERSION: 4,
         init: init,
         registerPage: registerPage,
         getPage: function (pageId) { return copyDescriptor(requirePage(pageId)); },
