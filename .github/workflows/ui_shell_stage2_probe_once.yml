@@ -1,0 +1,104 @@
+name: UI Shell Stage2 Probe Once
+
+on:
+  push:
+    branches: [beta-regex-settings-tabs-20260814]
+    paths:
+      - .github/workflows/ui_shell_stage2_probe_once.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe packed UI sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, gzip, json, re
+          from pathlib import Path
+
+          def expand(path):
+              source = Path(path).read_text(encoding='utf-8')
+              m = re.search(r'\bvar\s+(?:PACKED_B64|encoded)\s*=\s*(.*?);', source, re.S)
+              if not m:
+                  return source
+              pieces = re.findall(r'"(?:\\.|[^"\\])*"', m.group(1))
+              encoded = ''.join(json.loads(p) for p in pieces)
+              return gzip.decompress(base64.b64decode(encoded)).decode('utf-8')
+
+          def func(source, name):
+              m = re.search(r'\bfunction\s+' + re.escape(name) + r'\s*\(', source)
+              if not m:
+                  return None
+              start = m.start()
+              brace = source.find('{', m.end())
+              if brace < 0:
+                  return None
+              depth = 0
+              quote = None
+              esc = False
+              i = brace
+              while i < len(source):
+                  ch = source[i]
+                  if quote:
+                      if esc:
+                          esc = False
+                      elif ch == '\\':
+                          esc = True
+                      elif ch == quote:
+                          quote = None
+                  else:
+                      if ch in ('"', "'"):
+                          quote = ch
+                      elif ch == '{':
+                          depth += 1
+                      elif ch == '}':
+                          depth -= 1
+                          if depth == 0:
+                              return source[start:i+1]
+                  i += 1
+              return source[start:start+5000]
+
+          targets = {
+              'FILTER': ('src/ch_11_filter.js', [
+                  'showRoot','showPanel','buildPanel','buildPanelView','buildRoot','buildRootView',
+                  'buildHeader','headerMetrics','closePanel','getPanelState'
+              ]),
+              'SETTINGS': ('src/ch_13_settings.js', [
+                  'buildRootPage','openPage','closePage','makeSettingsTabBar',
+                  'buildRegexRulesPage','buildRegexEditorPage','buildRegexTestPage',
+                  'performSettingsBack','setSettingsTab'
+              ]),
+              'TRANSLATION': ('src/ch_12_translation.js', [
+                  'buildTranslationPanel','openTranslationForItem','closeTranslationPanel',
+                  'translationPanelSize','navigationInit'
+              ]),
+              'SHELL': ('src/ch_16_ui_shell.js', [
+                  'registerPage','pushPage','popPage','enterRoot','getState'
+              ]),
+          }
+
+          for label, (path, names) in targets.items():
+              source = expand(path)
+              print('\n' + '='*28 + ' ' + label + ' ' + '='*28)
+              print('length=', len(source))
+              for needle in ['createManagedFrame(', 'windowManager.addView(', 'attachWindow(',
+                             'panelRoot', 'settingsRoot', 'translationRoot', 'rootMode']:
+                  print('COUNT', needle, source.count(needle))
+              for name in names:
+                  body = func(source, name)
+                  if body:
+                      print('\n--- FUNCTION', name, '---')
+                      print(body[:12000])
+              for needle in ['ClipHub.Settings.openPage', 'ClipHub.Translation.open',
+                             'openPage(', 'openTranslationForItem(']:
+                  idx = source.find(needle)
+                  if idx >= 0:
+                      print('\n--- AROUND', needle, '---')
+                      print(source[max(0,idx-1200):idx+2400])
+          PY
