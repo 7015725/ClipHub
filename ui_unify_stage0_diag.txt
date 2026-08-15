@@ -1,0 +1,258 @@
+BASELINE moduleSetVersion=20260815.01
+TOKENIZER source_sha256=3eb6f44f925e4c923a324f79225e419b7b0fea98280c768ee8820e5daa60b06e
+TOKENIZER line_count=1583
+
+===== TOKENIZER FUNCTION LIST =====
+00100: function dp(value) {
+00104: function palette() {
+00112: function safeTextColor(view, color) {
+00120: function safeHintColor(view, color) {
+00128: function roundedBackground(fill, stroke, radiusDp) {
+00144: function applyBackground(view, fill, stroke, radiusDp) {
+00150: function makeText(text, sizeSp, color, bold) {
+00162: function selectedTextColor(colors) {
+00166: function makeClickText(text, sizeSp, colors, description) {
+00175: function copyArray(value) {
+00179: function indexSelected(index) {
+00183: function selectedCount() {
+00187: function normalizeToken(value, index) {
+00198: function normalizeTokens(values) {
+00208: function recalculateStats(stats) {
+00227: function updateStatsViews() {
+00240: function emitAction(action, extra) {
+00267: function cancelLongPress() {
+00275: function resetGesture() {
+00286: function applyTokenStyle(index) {
+00302: function setTokenSelected(index, selected) {
+00317: function toggleToken(index) {
+00321: function tokenAtRawPoint(rawX, rawY) {
+00346: function hidePopup() {
+00360: function makePopupAction(label, action, danger) {
+00377: function showPopup(index) {
+00417: function scheduleTokenLongPress(view, index) {
+00446: function makeTokenTouchListener(index) {
+00514: function buildTokenView(token, index) {
+00528: function clearFlowObserver() {
+00541: function reflowTokens() {
+00605: function scheduleReflow() {
+00620: function installFlowObserver() {
+00644: function renderTokenViews() {
+00656: function buildStatsRow(parent) {
+00680: function buildTokenScroll(parent) {
+00700: function buildNormalBody() {
+00706: function buildRegexBody() {
+00758: function applyModeStyles() {
+00777: function renderMode() {
+00789: function switchMode(mode) {
+00802: function makeToolbarCell(icon, label, action, danger) {
+00827: function buildHeader(column) {
+00864: function buildSegment(column) {
+00900: function buildDivider(column) {
+00909: function buildIndicator(column) {
+00923: function buildToolbar(column) {
+00944: function buildHint(column) {
+00954: function resetContentState() {
+00969: function clearPageRefs() {
+00987: function buildPage() {
+01016: function findTextByPrefix(root, prefix) {
+01038: function findEditorInput(root) {
+01064: function makeEditorEntry() {
+01078: function installEditorEntry() {
+01136: function scheduleEnsureEntry() {
+01147: function removeEditorObserver() {
+01159: function installEditorObserver() {
+01178: function captureEditorChildren() {
+01203: function restoreEditorChildren() {
+01229: function mountFromEditor() {
+01257: function returnToEditor(reason) {
+01277: function discardMountedPage() {
+01286: function clearEditorBinding(discard) {
+01301: function installWindowHooks() {
+01355: function restoreWindowHooks() {
+01371: function init(context) {
+01403: function shutdown() {
+01418: function setTokens(tokens, stats) {
+01428: function performTokenClick(index) {
+01432: function performTokenLongClick(index) {
+01441: function performToolbarClick(action) {
+01452: function performPopupActionClick(action) {
+01464: function getState() {
+01531: function installAppHooks() {
+
+===== TOKENIZER MARKER CONTEXT =====
+--- lines 372-391 markers=复制,输入,编辑 ---
+00372:             }
+00373:         }));
+00374:         return view;
+00375:     }
+00376:
+00377:     function showPopup(index) {
+00378:         var colors = palette();
+00379:         var labels = [
+00380:             ["复制", "copy", false],
+00381:             ["输入", "input", false],
+00382:             ["搜索", "search", false],
+00383:             ["编辑", "edit", false],
+00384:             ["删除", "delete", true]
+00385:         ];
+00386:         var item;
+00387:         var params;
+00388:         var index2;
+00389:         if (!state.mounted || pageRoot === null) { return false; }
+00390:         hidePopup();
+00391:         popupCard = new LinearLayout(appContext);
+--- lines 514-530 markers=分词 ---
+00514:     function buildTokenView(token, index) {
+00515:         var colors = palette();
+00516:         var view = makeText(token.text, 11.5, colors.textPrimary, false);
+00517:         view.setGravity(Gravity.CENTER);
+00518:         view.setPadding(dp(10), 0, dp(10), 0);
+00519:         view.setMinWidth(dp(30));
+00520:         view.setClickable(true);
+00521:         view.setFocusable(true);
+00522:         view.setContentDescription("分词：" + token.text);
+00523:         view.setOnTouchListener(makeTokenTouchListener(index));
+00524:         applyBackground(view, colors.surfaceMuted, colors.stroke, 8);
+00525:         return view;
+00526:     }
+00527:
+00528:     function clearFlowObserver() {
+00529:         try {
+00530:             if (flowObserver !== null && flowLayoutListener !== null &&
+--- lines 557-573 markers=分词 ---
+00557:         width = Number(tokenScroll.getWidth());
+00558:         if (width <= 0 && editorPanelRoot !== null) {
+00559:             width = Number(editorPanelRoot.getWidth()) - dp(28);
+00560:         }
+00561:         available = Math.max(dp(120), width - dp(4));
+00562:         tokenFlowRoot.removeAllViews();
+00563:         tokenRows = [];
+00564:         if (tokenViews.length === 0) {
+00565:             view = makeText("暂无分词结果", 12,
+00566:                 palette().textSecondary, false);
+00567:             view.setGravity(Gravity.CENTER);
+00568:             params = new LinearLayout.LayoutParams(
+00569:                 LinearLayout.LayoutParams.MATCH_PARENT, dp(120));
+00570:             tokenFlowRoot.addView(view, params);
+00571:             state.reflowCount += 1;
+00572:             return true;
+00573:         }
+--- lines 726-742 markers=输入 ---
+00726:         bodyContainer.addView(ruleHeader,
+00727:             new LinearLayout.LayoutParams(
+00728:                 LinearLayout.LayoutParams.MATCH_PARENT, dp(30)));
+00729:
+00730:         regexInput = new EditText(appContext);
+00731:         regexInput.setSingleLine(false);
+00732:         regexInput.setGravity(Gravity.TOP | Gravity.START);
+00733:         regexInput.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+00734:         regexInput.setHint("输入正则表达式");
+00735:         regexInput.setText(String(state.regexText || ""));
+00736:         regexInput.setPadding(dp(10), dp(8), dp(10), dp(8));
+00737:         regexInput.setInputType(InputType.TYPE_CLASS_TEXT |
+00738:             InputType.TYPE_TEXT_FLAG_MULTI_LINE |
+00739:             InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+00740:         safeTextColor(regexInput, colors.textPrimary);
+00741:         safeHintColor(regexInput, colors.textTertiary);
+00742:         applyBackground(regexInput, colors.surface, colors.stroke, 11);
+--- lines 822-842 markers=‹,编辑,分词,帮助 ---
+00822:             onClick: function () { emitAction(action, {}); }
+00823:         }));
+00824:         return cell;
+00825:     }
+00826:
+00827:     function buildHeader(column) {
+00828:         var colors = palette();
+00829:         var header = new FrameLayout(appContext);
+00830:         var back = makeClickText("‹", 28, colors, "返回编辑页");
+00831:         var title = makeText("分词", 17, colors.textPrimary, true);
+00832:         var right = new LinearLayout(appContext);
+00833:         var rule = makeClickText("▣", 15, colors, "规则");
+00834:         var help = makeClickText("?", 15, colors, "帮助");
+00835:         var params;
+00836:         title.setGravity(Gravity.CENTER);
+00837:         back.setOnClickListener(new JavaAdapter(View.OnClickListener, {
+00838:             onClick: function () { returnToEditor("header_back"); }
+00839:         }));
+00840:         rule.setOnClickListener(new JavaAdapter(View.OnClickListener, {
+00841:             onClick: function () { emitAction("rule", {}); }
+00842:         }));
+--- lines 863-881 markers=分词,普通分词,正则规则 ---
+00863:
+00864:     function buildSegment(column) {
+00865:         var colors = palette();
+00866:         var shell = new LinearLayout(appContext);
+00867:         var params;
+00868:         shell.setOrientation(LinearLayout.HORIZONTAL);
+00869:         shell.setPadding(dp(2), dp(2), dp(2), dp(2));
+00870:         applyBackground(shell, colors.surfaceMuted, colors.stroke, 10);
+00871:         modeNormalView = makeText("普通分词", 10.5,
+00872:             colors.textSecondary, true);
+00873:         modeRegexView = makeText("正则规则", 10.5,
+00874:             colors.textSecondary, true);
+00875:         modeNormalView.setGravity(Gravity.CENTER);
+00876:         modeRegexView.setGravity(Gravity.CENTER);
+00877:         modeNormalView.setClickable(true);
+00878:         modeNormalView.setFocusable(true);
+00879:         modeRegexView.setClickable(true);
+00880:         modeRegexView.setFocusable(true);
+00881:         modeNormalView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
+--- lines 921-945 markers=复制,输入,编辑,导出,清空 ---
+00921:     }
+00922:
+00923:     function buildToolbar(column) {
+00924:         var colors = palette();
+00925:         var toolbar = new LinearLayout(appContext);
+00926:         toolbar.setOrientation(LinearLayout.HORIZONTAL);
+00927:         toolbar.setGravity(Gravity.CENTER_VERTICAL);
+00928:         ClipHub.Theme.applyBackgroundColor(toolbar, colors.surface);
+00929:         toolbar.addView(makeToolbarCell("▣", "复制", "copy", false),
+00930:             new LinearLayout.LayoutParams(0, dp(52), 1));
+00931:         toolbar.addView(makeToolbarCell("↵", "输入", "input", false),
+00932:             new LinearLayout.LayoutParams(0, dp(52), 1));
+00933:         toolbar.addView(makeToolbarCell("✎", "编辑", "edit", false),
+00934:             new LinearLayout.LayoutParams(0, dp(52), 1));
+00935:         toolbar.addView(makeToolbarCell("⇩", "导出", "export", false),
+00936:             new LinearLayout.LayoutParams(0, dp(52), 1));
+00937:         toolbar.addView(makeToolbarCell("⌫", "清空", "clear", true),
+00938:             new LinearLayout.LayoutParams(0, dp(52), 1));
+00939:         column.addView(toolbar,
+00940:             new LinearLayout.LayoutParams(
+00941:                 LinearLayout.LayoutParams.MATCH_PARENT, dp(54)));
+00942:     }
+00943:
+00944:     function buildHint(column) {
+00945:         var colors = palette();
+--- lines 1058-1078 markers=分词,分词 ---
+01058:                 if (found !== null) { return found; }
+01059:             }
+01060:         }
+01061:         return null;
+01062:     }
+01063:
+01064:     function makeEditorEntry() {
+01065:         var colors = palette();
+01066:         var view = makeText("分词", 10, colors.accentStrong, true);
+01067:         view.setGravity(Gravity.CENTER);
+01068:         view.setClickable(true);
+01069:         view.setFocusable(true);
+01070:         view.setContentDescription("打开分词页面");
+01071:         applyBackground(view, colors.accentSoft, colors.accentBorder, 10);
+01072:         view.setOnClickListener(new JavaAdapter(View.OnClickListener, {
+01073:             onClick: function () { mountFromEditor(); }
+01074:         }));
+01075:         return view;
+01076:     }
+01077:
+01078:     function installEditorEntry() {
+
+===== EDITOR ANCHOR COUNTS =====
+'titleIconView = makeText(isNew ? "+" : "✎", 19,' => 1
+'header.addView(titleIconView, params);' => 1
+'titleTextView = makeText(isNew ? "新增剪贴板" : "编辑剪贴板",' => 1
+
+===== TRANSLATION ANCHOR COUNTS =====
+'root.addView(originalScroll, params);' => 1
+'dp(96)' => 1
+'translationCopyView = translationButton("复制译文", colors, true, false);' => 1
+'params = new LinearLayout.LayoutParams(0, dp(40), 1);' => 1
