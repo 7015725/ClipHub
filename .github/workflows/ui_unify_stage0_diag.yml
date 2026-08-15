@@ -1,0 +1,125 @@
+name: UI Unify Stage0 Diagnostic
+
+on:
+  push:
+    branches: [beta-regex-settings-tabs-20260814]
+    paths:
+      - .github/workflows/ui_unify_stage0_diag.yml
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify locked baseline and inspect packed tokenizer
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, gzip, hashlib, json, pathlib, re
+
+          root = pathlib.Path('.')
+          manifest = json.loads((root / 'module-manifest.json').read_text(encoding='utf-8'))
+          if manifest.get('moduleSetVersion') != '20260815.01':
+              raise SystemExit('unexpected moduleSetVersion: ' + str(manifest.get('moduleSetVersion')))
+          if manifest.get('sourceRef') != 'beta-regex-settings-tabs-20260814':
+              raise SystemExit('unexpected sourceRef')
+
+          expected = {
+              'src/ch_10_editor.js': '0929c76137b9b5a44a55062444393f9f06b364a8',
+              'src/ch_12_translation.js': '4a5e6af14f94f90046f2652590e4a45a24803a17',
+              'src/ch_17_tokenizer_ui.js': '9f8b5b9bb18b03dadeb2302dedbc5566d11cac07',
+          }
+          def blob_sha(data):
+              return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+          for path, want in expected.items():
+              got = blob_sha((root / path).read_bytes())
+              if got != want:
+                  raise SystemExit('%s baseline drift: %s' % (path, got))
+
+          loader_path = root / 'src/ch_17_tokenizer_ui.js'
+          loader = loader_path.read_text(encoding='utf-8')
+          sha_match = re.search(r'var\s+SOURCE_SHA256\s*=\s*"([0-9a-f]+)";', loader)
+          assign = re.search(r'var\s+PACKED_B64\s*=\s*(.*?);\s*\n\s*function\s+hexSha256', loader, re.S)
+          if sha_match is None or assign is None:
+              raise SystemExit('tokenizer packed loader contract missing')
+          pieces = re.findall(r'"(?:\\.|[^"\\])*"', assign.group(1))
+          encoded = ''.join(json.loads(piece) for piece in pieces)
+          source = gzip.decompress(base64.b64decode(encoded)).decode('utf-8')
+          source_sha = hashlib.sha256(source.encode('utf-8')).hexdigest()
+          if source_sha != sha_match.group(1):
+              raise SystemExit('tokenizer source integrity mismatch: ' + source_sha)
+          if source_sha != '3eb6f44f925e4c923a324f79225e419b7b0fea98280c768ee8820e5daa60b06e':
+              raise SystemExit('unexpected tokenizer source baseline: ' + source_sha)
+
+          lines = source.splitlines()
+          out = []
+          out.append('BASELINE moduleSetVersion=20260815.01')
+          out.append('TOKENIZER source_sha256=' + source_sha)
+          out.append('TOKENIZER line_count=' + str(len(lines)))
+          out.append('')
+          out.append('===== TOKENIZER FUNCTION LIST =====')
+          for no, line in enumerate(lines, 1):
+              if re.match(r'^\s*function\s+[A-Za-z_$][A-Za-z0-9_$]*\s*\(', line):
+                  out.append('%05d: %s' % (no, line.strip()))
+
+          markers = ['分词', '普通分词', '正则规则', '复制', '输入', '编辑', '导出', '清空', '‹', '帮助', 'createManagedFrame', 'dragView', 'resizeView']
+          ranges = []
+          for marker in markers:
+              for idx, line in enumerate(lines):
+                  if marker in line:
+                      ranges.append((max(0, idx - 8), min(len(lines), idx + 9), marker))
+          merged = []
+          for start, end, marker in sorted(ranges):
+              if merged and start <= merged[-1][1]:
+                  merged[-1] = (merged[-1][0], max(merged[-1][1], end), merged[-1][2] + ',' + marker)
+              else:
+                  merged.append((start, end, marker))
+          out.append('')
+          out.append('===== TOKENIZER MARKER CONTEXT =====')
+          for start, end, markers_text in merged:
+              out.append('--- lines %d-%d markers=%s ---' % (start + 1, end, markers_text))
+              for idx in range(start, end):
+                  out.append('%05d: %s' % (idx + 1, lines[idx]))
+
+          editor = (root / 'src/ch_10_editor.js').read_text(encoding='utf-8')
+          translation = (root / 'src/ch_12_translation.js').read_text(encoding='utf-8')
+          out.append('')
+          out.append('===== EDITOR ANCHOR COUNTS =====')
+          for anchor in [
+              'titleIconView = makeText(isNew ? "+" : "✎", 19,',
+              'header.addView(titleIconView, params);',
+              'titleTextView = makeText(isNew ? "新增剪贴板" : "编辑剪贴板",'
+          ]:
+              out.append('%r => %d' % (anchor, editor.count(anchor)))
+          out.append('')
+          out.append('===== TRANSLATION ANCHOR COUNTS =====')
+          for anchor in [
+              'root.addView(originalScroll, params);',
+              'dp(96)',
+              'translationCopyView = translationButton("复制译文", colors, true, false);',
+              'params = new LinearLayout.LayoutParams(0, dp(40), 1);'
+          ]:
+              out.append('%r => %d' % (anchor, translation.count(anchor)))
+
+          (root / 'ui_unify_stage0_diag.txt').write_text('\n'.join(out) + '\n', encoding='utf-8')
+          print('diagnostic_ready')
+          PY
+          git diff --check
+
+      - name: Commit diagnostic only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ui_unify_stage0_diag.txt
+          git diff --cached --check
+          git commit -m "诊断 UI 一致性修改锚点"
+          git push origin HEAD:beta-regex-settings-tabs-20260814
