@@ -117,6 +117,7 @@
     }
 
     function makeSettingsSubpageHeader(content, titleText, colors) {
+        if (typeof embeddedInPrimary !== "undefined" && embeddedInPrimary) { return null; }
         var header = new LinearLayout(appContext);
         var metrics = settingsLayoutMetrics();
         var layout = ClipHub.Theme.getMetrics();
@@ -678,7 +679,11 @@ function bindRegexRuleDrag(handle, rowRoot, ruleId) {
         var index;
         var params;
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(12), dp(8), dp(12), dp(28));
+        if (typeof embeddedInPrimary !== "undefined" && embeddedInPrimary) {
+            content.setPadding(0, 0, 0, dp(28));
+        } else {
+            content.setPadding(dp(12), dp(8), dp(12), dp(28));
+        }
         makeSettingsSubpageHeader(content, "正则表达式规则", colors);
         add.setOnClickListener(new JavaAdapter(View.OnClickListener, {
             onClick: function () { openRegexEditor(null); }
@@ -724,7 +729,11 @@ function bindRegexRuleDrag(handle, rowRoot, ruleId) {
         var draft = regexEditorDraft || { title: "", note: "", pattern: "",
             flags: 0, enabled: true };
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(12), dp(8), dp(12), dp(28));
+        if (typeof embeddedInPrimary !== "undefined" && embeddedInPrimary) {
+            content.setPadding(0, 0, 0, dp(28));
+        } else {
+            content.setPadding(dp(12), dp(8), dp(12), dp(28));
+        }
         makeSettingsSubpageHeader(content,
             regexEditorRuleId === null ? "新增正则规则" : "编辑正则规则",
             colors);
@@ -811,7 +820,11 @@ function bindRegexRuleDrag(handle, rowRoot, ruleId) {
         var line;
         var params;
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(12), dp(8), dp(12), dp(28));
+        if (typeof embeddedInPrimary !== "undefined" && embeddedInPrimary) {
+            content.setPadding(0, 0, 0, dp(28));
+        } else {
+            content.setPadding(dp(12), dp(8), dp(12), dp(28));
+        }
         makeSettingsSubpageHeader(content, "正则测试", colors);
         regexTestTextInput = makeRegexMultilineInput(
             "输入测试文本", regexTestText, colors, "regex.test.text", 5);

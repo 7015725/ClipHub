@@ -595,6 +595,12 @@
     }
 
     function dispatchBack(owner, reason) {
+        if (ClipHub.UIShell &&
+                typeof ClipHub.UIShell.getState === "function" &&
+                ClipHub.UIShell.getState().childAttached === true &&
+                typeof ClipHub.UIShell.dispatchBack === "function") {
+            return ClipHub.UIShell.dispatchBack("navigation_system_back");
+        }
         var timestamp = now();
         var signature = backSignature(owner, reason);
         var handled = false;
@@ -1170,6 +1176,7 @@
     };
 
     var translationRoot = null;
+    var translationEmbeddedInPrimary = false;
     var translationWindowRoot = null;
     var translationManagedFrame = null;
     var translationParams = null;
@@ -1699,39 +1706,45 @@
         var actionRow1 = new LinearLayout(appContext);
         var actionRow2 = new LinearLayout(appContext);
         var params;
+        var embedded = translationEmbeddedInPrimary === true;
 
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(12), dp(8), dp(12), dp(10));
-        root.setBackground(translationRounded(colors.surface,
-            colors.stroke, 24));
-        handleRow.setGravity(Gravity.CENTER);
-        handle.setBackground(translationRounded(colors.accentBorder, null, 3));
-        handleRow.addView(handle, new LinearLayout.LayoutParams(dp(42), dp(4)));
-        root.addView(handleRow, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(16)));
+        if (embedded) {
+            root.setPadding(0, 0, 0, 0);
+            translationHeaderCloseView = null;
+        } else {
+            root.setPadding(dp(12), dp(8), dp(12), dp(10));
+            root.setBackground(translationRounded(colors.surface,
+                colors.stroke, 24));
+            handleRow.setGravity(Gravity.CENTER);
+            handle.setBackground(translationRounded(colors.accentBorder, null, 3));
+            handleRow.addView(handle, new LinearLayout.LayoutParams(dp(42), dp(4)));
+            root.addView(handleRow, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(16)));
 
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.addView(title, new LinearLayout.LayoutParams(
-            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-        translationHeaderCloseView = translationText(
-            "×", 22, colors.icon, true);
-        translationHeaderCloseView.setGravity(Gravity.CENTER);
-        translationHeaderCloseView.setBackground(translationRounded(
-            colors.surfaceMuted, null, 18));
-        translationHeaderCloseView.setClickable(true);
-        translationHeaderCloseView.setFocusable(true);
-        translationHeaderCloseView.setOnClickListener(new JavaAdapter(
-            View.OnClickListener, { onClick: function () {
-                closeTranslationPanel("button");
-            }}));
-        header.addView(translationHeaderCloseView,
-            new LinearLayout.LayoutParams(dp(36), dp(36)));
-        params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(36));
-        params.topMargin = -dp(4);
-        params.bottomMargin = dp(6);
-        root.addView(header, params);
+            header.setOrientation(LinearLayout.HORIZONTAL);
+            header.setGravity(Gravity.CENTER_VERTICAL);
+            header.addView(title, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+            translationHeaderCloseView = translationText(
+                "×", 22, colors.icon, true);
+            translationHeaderCloseView.setGravity(Gravity.CENTER);
+            translationHeaderCloseView.setBackground(translationRounded(
+                colors.surfaceMuted, null, 18));
+            translationHeaderCloseView.setClickable(true);
+            translationHeaderCloseView.setFocusable(true);
+            translationHeaderCloseView.setOnClickListener(new JavaAdapter(
+                View.OnClickListener, { onClick: function () {
+                    closeTranslationPanel("button");
+                }}));
+            header.addView(translationHeaderCloseView,
+                new LinearLayout.LayoutParams(dp(36), dp(36)));
+            params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(36));
+            params.topMargin = -dp(4);
+            params.bottomMargin = dp(6);
+            root.addView(header, params);
+        }
 
         translationProviderView = translationText("准备翻译", 10,
             colors.accentStrong, true);
@@ -1839,9 +1852,13 @@
             return getTranslationState();
         }
         if (translationState.attached || translationRoot !== null) {
-            pendingTranslationItemId = Number(itemId);
-            closeTranslationPanel("replace");
-            return getTranslationState();
+            if (translationEmbeddedInPrimary) {
+                closeTranslationPanel("replace");
+            } else {
+                pendingTranslationItemId = Number(itemId);
+                closeTranslationPanel("replace");
+                return getTranslationState();
+            }
         }
         row = ClipHub.Repository.getItem(Number(itemId), false);
         if (row === null) { throw new Error("翻译目标不存在"); }
@@ -1851,6 +1868,34 @@
         translationState.provider = "none";
         translationState.targetLanguage = "";
         translationState.lastError = null;
+        if (ClipHub.UIShell &&
+                typeof ClipHub.UIShell.canEmbed === "function" &&
+                ClipHub.UIShell.canEmbed("translation") === true) {
+            runOnMainSync(function () {
+                var host = ClipHub.Filter.getPrimaryHostState();
+                translationEmbeddedInPrimary = true;
+                translationRoot = buildTranslationPanel();
+                translationWindowRoot = null;
+                translationManagedFrame = null;
+                translationParams = null;
+                translationState.attached = true;
+                translationState.panelWidthDp = Number(host.widthDp || 0);
+                translationState.panelHeightDp = Number(host.heightDp || 0);
+                ClipHub.UIShell.mountPage("translation", translationRoot, {
+                    title: "翻译结果",
+                    showBack: false,
+                    onBack: function () {
+                        return closeTranslationPanel("shell_back");
+                    },
+                    onClose: function () {
+                        return closeTranslationPanel("button");
+                    }
+                });
+                return true;
+            }, 3000);
+            beginTranslation();
+            return getTranslationState();
+        }
         runOnMainSync(function () {
             size = translationPanelSize();
             type = Build.VERSION.SDK_INT >= 26 ?
@@ -1926,11 +1971,18 @@
             return true;
         }
         return runOnMainSync(function () {
-            var capturedRoot = translationWindowRoot !== null ?
-                translationWindowRoot : translationRoot;
+            var wasEmbedded = translationEmbeddedInPrimary === true;
+            var capturedRoot = wasEmbedded ? null :
+                (translationWindowRoot !== null ?
+                    translationWindowRoot : translationRoot);
             var capturedManager = windowManager;
             var generation;
             var removal;
+            if (wasEmbedded && ClipHub.UIShell &&
+                    typeof ClipHub.UIShell.unmountPage === "function") {
+                ClipHub.UIShell.unmountPage("translation", reasonText);
+            }
+            translationEmbeddedInPrimary = false;
             translationClosing = true;
             translationRemovalPending = capturedRoot !== null;
             translationRemovalGeneration += 1;
@@ -2010,6 +2062,7 @@
         return {
             ready: initialized,
             attached: translationState.attached,
+            embeddedInPrimary: translationEmbeddedInPrimary === true,
             attachedToWindow: attachedToWindow,
             closing: translationClosing === true,
             removalPending: translationRemovalPending === true,
@@ -2040,7 +2093,7 @@
     }
     ClipHub.Translation = {
         MODULE_NAME: "ch_12_translation",
-        MODULE_VERSION: 16,
+        MODULE_VERSION: 17,
         init: function (context) {
             translationConfig = { enabled: true, provider: "settings" };
             navigationInit(context || {});

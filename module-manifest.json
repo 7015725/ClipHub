@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "moduleSetVersion": "20260815.11",
+  "moduleSetVersion": "20260815.12",
   "entryMinVersion": 6,
   "sourceRef": "beta-regex-settings-tabs-20260814",
   "modules": [
@@ -57,17 +57,17 @@
     {
       "name": "ch_11_filter.js",
       "path": "src/ch_11_filter.js",
-      "sha": "8ababbbeed80270b332559d442b69ea9484d99e0"
+      "sha": "0f71c7c562a3ccd6a1ab6490bbeedee8224cb024"
     },
     {
       "name": "ch_12_translation.js",
       "path": "src/ch_12_translation.js",
-      "sha": "65575caa406b8fb90123eb1362b24c60a22d6810"
+      "sha": "77d87d41f3e33b5315828891e4e0b82c73e3756b"
     },
     {
       "name": "ch_13_settings.js",
       "path": "src/ch_13_settings.js",
-      "sha": "4a4b18ff8eeae3f12071f1ed49d76426e77ae05f"
+      "sha": "b671f04a8aac71d494279ac21f6630154dbc6d84"
     },
     {
       "name": "ch_14_event_bus.js",
@@ -82,7 +82,7 @@
     {
       "name": "ch_16_ui_shell.js",
       "path": "src/ch_16_ui_shell.js",
-      "sha": "8e72993e341c7fd93a6c6f705448704ad218f5fa"
+      "sha": "9b91fbed38e95de7531747be8fb9b64b9c8305f4"
     },
     {
       "name": "ch_17_tokenizer_ui.js",

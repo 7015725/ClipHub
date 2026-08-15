@@ -41,7 +41,7 @@ case "$MODE" in
     ;;
   --settings-tabs-beta)
     EXPECTED_REF='beta-regex-settings-tabs-20260814'
-    EXPECTED_MODULE_SET='20260815.11'
+    EXPECTED_MODULE_SET='20260815.12'
     EXPECTED_ENTRY_VERSION='6'
     EXPECTED_APP_MODULE_VERSION='21'
     REQUIRE_CLEAN='0'
@@ -260,10 +260,11 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         required_versions = {
             "ch_03_database.js": ("ch_03_database", 5),
             "ch_06_repository.js": ("ch_06_repository", 19),
-            "ch_11_filter.js": ("ch_11_filter", 83),
-            "ch_13_settings.js": ("ch_13_settings", 32),
+            "ch_11_filter.js": ("ch_11_filter", 84),
+            "ch_13_settings.js": ("ch_13_settings", 33),
             "ch_15_app.js": ("ch_15_app", 21),
-            "ch_16_ui_shell.js": ("ch_16_ui_shell", 1),
+            "ch_12_translation.js": ("ch_12_translation", 17),
+            "ch_16_ui_shell.js": ("ch_16_ui_shell", 2),
         }
     else:
         required_versions = {
@@ -327,11 +328,20 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert "performSettingsBack: function ()" in settings_source
         assert "Settings24 ES5 loader" not in settings_loader
         ui_shell_source = actual_sources["ch_16_ui_shell.js"]
+        translation_source = actual_sources["ch_12_translation.js"]
         assert 'MODULE_NAME: "ch_16_ui_shell"' in ui_shell_source
-        assert "MODULE_VERSION: 1" in ui_shell_source
-        assert 'migrationStage: "registry_only"' in ui_shell_source
-        assert 'primaryWindowMode: false' in ui_shell_source
+        assert "MODULE_VERSION: 2" in ui_shell_source
+        assert 'migrationStage: "primary_overlay_settings_regex_translation"' in ui_shell_source
+        assert 'primaryWindowMode: true' in ui_shell_source
         assert 'legacyWindowBridge: true' in ui_shell_source
+        assert "mountPrimaryChildPage" in filter_source
+        assert "unmountPrimaryChildPage" in filter_source
+        assert "getPrimaryHostState" in filter_source
+        assert "embeddedInPrimary" in settings_source
+        assert "syncSettingsShellPage" in settings_source
+        assert "openEmbeddedSettingsPage" in settings_source
+        assert "translationEmbeddedInPrimary" in translation_source
+        assert 'ClipHub.UIShell.mountPage("translation"' in translation_source
         assert 'registerPage({ id: "home"' in ui_shell_source
         assert 'registerPage({ id: "settings"' in ui_shell_source
         assert 'registerPage({ id: "regex_rules"' in ui_shell_source
@@ -340,7 +350,7 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert '"ch_16_ui_shell.js"' in entry
         assert '"Translation", "UIShell"' in app
         assert 'uiShell: uiShell' in app
-        print("UI shell stage1 contracts: passed")
+        print("UI shell stage2 contracts: passed")
         print("Settings tabs safety contracts: passed")
     print("Regex beta safety contracts: passed")
 if mode in ("--current", "--main"):
