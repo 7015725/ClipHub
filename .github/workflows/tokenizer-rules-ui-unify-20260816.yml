@@ -22,6 +22,7 @@ jobs:
       - name: Apply unified Tokenizer rules UI
         run: |
           python3 scripts/tmp_unify_tokenizer_rules_ui_20260816.py
+          python3 scripts/tmp_fix_tokenizer_preflight_v7.py
 
       - name: Validate packed Tokenizer UI syntax
         shell: bash
@@ -57,6 +58,7 @@ jobs:
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git rm .github/workflows/tokenizer-rules-ui-unify-20260816.yml
           git rm scripts/tmp_unify_tokenizer_rules_ui_20260816.py
+          git rm scripts/tmp_fix_tokenizer_preflight_v7.py
           git add src/ch_16_ui_shell.js src/ch_17_tokenizer_ui.js \
             scripts/test_ui_shell_navigation.js scripts/test_runtime_diagnostics.js \
             module-manifest.json scripts/manifest_contract.py scripts/release_preflight.sh
