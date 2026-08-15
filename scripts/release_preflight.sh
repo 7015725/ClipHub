@@ -42,7 +42,7 @@ case "$MODE" in
   --settings-tabs-beta)
     EXPECTED_REF='beta-regex-settings-tabs-20260814'
     EXPECTED_MODULE_SET='20260815.17'
-    EXPECTED_ENTRY_VERSION='6'
+    EXPECTED_ENTRY_VERSION='7'
     EXPECTED_APP_MODULE_VERSION='22'
     REQUIRE_CLEAN='0'
     ;;
@@ -423,6 +423,18 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert 'runtimeDiagnostics: runtimeDiagnostics' in app
         assert 'RUNTIME_DIAGNOSTIC_SCHEMA_VERSION = 1' in ui_shell_source
         assert 'getRuntimeDiagnostics: getRuntimeDiagnostics' in ui_shell_source
+        assert 'var ENTRY_VERSION = 7;' in entry
+        assert 'https://api.github.com/repos/' in entry
+        assert 'application/vnd.github.raw+json' in entry
+        assert 'function fetchApiFile(path, ref)' in entry
+        assert 'function fetchRemoteFile(path, ref)' in entry
+        assert 'remoteTransportState.rawSuppressed = true;' in entry
+        assert 'remote = fetchRemoteFile(String(item.path), ref);' in entry
+        assert 'remoteFile = fetchRemoteFile(MANIFEST_PATH, ref);' in entry
+        assert 'installed.transport = remoteTransportLabel();' in entry
+        assert entry.count('fetchRawFile(') == 2
+        assert entry.count('fetchRemoteFile(') == 3
+        print("Bootstrap dual transport contracts: passed")
         print("UI shell stage7 contracts: passed")
         print("Settings tabs safety contracts: passed")
     print("Regex beta safety contracts: passed")

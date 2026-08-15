@@ -17,7 +17,7 @@
     var URLEncoder = Packages.java.net.URLEncoder;
     var MessageDigest = Packages.java.security.MessageDigest;
     var System = Packages.java.lang.System;
-    var ENTRY_VERSION = 6;
+    var ENTRY_VERSION = 7;
     var OWNER = "7015725";
     var REPO = "ClipHub";
     var DEFAULT_REF = "beta-regex-settings-tabs-20260814";
@@ -173,6 +173,103 @@
         }
     }
 
+    var remoteTransportState = {
+        rawSuppressed: false,
+        usedRaw: false,
+        usedApi: false,
+        lastRawError: "",
+        lastApiError: ""
+    };
+
+    function apiUrl(path, ref) {
+        return "https://api.github.com/repos/" + OWNER + "/" + REPO +
+            "/contents/" + encodePath(path) +
+            "?ref=" + encodeSegment(ref) +
+            "&cliphub=" + ENTRY_VERSION + "-" +
+            Number(System.currentTimeMillis());
+    }
+
+    function fetchApiFile(path, ref) {
+        var connection = null;
+        var code;
+        var bytes;
+        var response;
+        try {
+            connection = new URL(apiUrl(path, ref)).openConnection();
+            connection.setConnectTimeout(10000);
+            connection.setReadTimeout(20000);
+            connection.setUseCaches(false);
+            connection.setRequestProperty(
+                "Accept", "application/vnd.github.raw+json"
+            );
+            connection.setRequestProperty("Accept-Encoding", "identity");
+            connection.setRequestProperty("Cache-Control", "no-cache");
+            connection.setRequestProperty("Pragma", "no-cache");
+            connection.setRequestProperty(
+                "X-GitHub-Api-Version", "2022-11-28"
+            );
+            connection.setRequestProperty(
+                "User-Agent", "ClipHub-ShortX/" + ENTRY_VERSION
+            );
+            code = Number(connection.getResponseCode());
+            bytes = readBytes(code >= 200 && code < 300
+                ? connection.getInputStream() : connection.getErrorStream());
+            response = String(new JavaString(bytes, "UTF-8"));
+            if (code < 200 || code >= 300) {
+                throw new Error(
+                    "GitHub API HTTP " + code + " for " + path + ": " +
+                    response.substring(0, 400)
+                );
+            }
+            return { text: response, transport: "github-api" };
+        } finally {
+            if (connection !== null) {
+                try { connection.disconnect(); } catch (ignored) {}
+            }
+        }
+    }
+
+    function remoteTransportLabel() {
+        if (remoteTransportState.usedRaw && remoteTransportState.usedApi) {
+            return "raw+github-api";
+        }
+        if (remoteTransportState.usedApi) { return "github-api"; }
+        if (remoteTransportState.usedRaw) { return "raw"; }
+        return "none";
+    }
+
+    function fetchRemoteFile(path, ref) {
+        var result;
+        var rawError = null;
+        var apiError = null;
+        if (!remoteTransportState.rawSuppressed) {
+            try {
+                result = fetchRawFile(path, ref);
+                remoteTransportState.usedRaw = true;
+                return result;
+            } catch (error) {
+                rawError = error;
+                remoteTransportState.rawSuppressed = true;
+                remoteTransportState.lastRawError = errorText(error);
+            }
+        }
+        try {
+            result = fetchApiFile(path, ref);
+            remoteTransportState.usedApi = true;
+            return result;
+        } catch (error) {
+            apiError = error;
+            remoteTransportState.lastApiError = errorText(error);
+        }
+        throw new Error(
+            "ClipHub remote fetch failed for " + path +
+            "; raw=" + String(remoteTransportState.lastRawError ||
+                (rawError === null ? "suppressed" : errorText(rawError))) +
+            "; api=" + String(remoteTransportState.lastApiError ||
+                (apiError === null ? "unknown" : errorText(apiError)))
+        );
+    }
+
     function gitBlobSha(text) {
         var content = new JavaString(String(text)).getBytes("UTF-8");
         var prefix = new JavaString(
@@ -285,7 +382,7 @@
             for (index = 0; index < NAMES.length; index += 1) {
                 name = NAMES[index];
                 item = remoteManifest.moduleMap[name];
-                remote = fetchRawFile(String(item.path), ref);
+                remote = fetchRemoteFile(String(item.path), ref);
                 if (gitBlobSha(remote.text) !== String(item.sha)) {
                     throw new Error("Module integrity mismatch: " + name);
                 }
@@ -310,7 +407,7 @@
                 downloadedCount: NAMES.length,
                 backup: backup,
                 previousManifestText: previousManifestText,
-                transport: "raw"
+                transport: remoteTransportLabel()
             };
         } catch (error) {
             removeTree(stage);
@@ -334,7 +431,7 @@
         var remoteFile;
         var installed;
         try {
-            remoteFile = fetchRawFile(MANIFEST_PATH, ref);
+            remoteFile = fetchRemoteFile(MANIFEST_PATH, ref);
             remoteManifest = parseManifest(remoteFile.text, ref);
         } catch (remoteError) {
             if (localManifest && verifyModules(moduleDir, localManifest)) {
@@ -358,7 +455,7 @@
                 remoteAvailable: true,
                 fallback: false,
                 moduleSetVersion: String(remoteManifest.moduleSetVersion),
-                transport: "raw",
+                transport: remoteTransportLabel(),
                 warning: null
             };
         }
@@ -381,6 +478,7 @@
         }
         installed.remoteAvailable = true;
         installed.fallback = false;
+        installed.transport = remoteTransportLabel();
         installed.moduleSetVersion = String(remoteManifest.moduleSetVersion);
         installed.warning = null;
         return installed;
