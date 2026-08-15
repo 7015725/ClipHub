@@ -1,93 +1,173 @@
 {
-  "schemaVersion": 1,
-  "moduleSetVersion": "20260815.27",
-  "entryMinVersion": 7,
+  "schemaVersion": 2,
+  "moduleSetVersion": "20260815.29",
+  "entryMinVersion": 8,
   "sourceRef": "beta-regex-settings-tabs-20260814",
   "modules": [
     {
       "name": "ch_01_base.js",
       "path": "src/ch_01_base.js",
-      "sha": "563791ff518078bfd57d7b73fc51b9c7482a3ffb"
+      "sha": "563791ff518078bfd57d7b73fc51b9c7482a3ffb",
+      "export": "Base",
+      "runtimeRole": "base"
     },
     {
       "name": "ch_02_log.js",
       "path": "src/ch_02_log.js",
-      "sha": "581d7a9a0e47bdee2be0341cbfbe6b0308c207bb"
+      "sha": "581d7a9a0e47bdee2be0341cbfbe6b0308c207bb",
+      "export": "Log",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 1
     },
     {
       "name": "ch_03_database.js",
       "path": "src/ch_03_database.js",
-      "sha": "b8d8d436820639da11ea4246830b02975a070761"
+      "sha": "b8d8d436820639da11ea4246830b02975a070761",
+      "export": "Database",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 2
     },
     {
       "name": "ch_04_clipboard.js",
       "path": "src/ch_04_clipboard.js",
-      "sha": "847f28b25e8aa6c27ab490d4f89fdd96169588d2"
+      "sha": "847f28b25e8aa6c27ab490d4f89fdd96169588d2",
+      "export": "Clipboard",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 6
     },
     {
       "name": "ch_05_classifier.js",
       "path": "src/ch_05_classifier.js",
-      "sha": "6fe9b6968749a175d5ad10d8e157e17e68975919"
+      "sha": "6fe9b6968749a175d5ad10d8e157e17e68975919",
+      "export": "Classifier",
+      "runtimeRole": "passive"
     },
     {
       "name": "ch_06_repository.js",
       "path": "src/ch_06_repository.js",
-      "sha": "e3cb4a5cf99784ddd4e4351d6458aba3351ecb4a"
+      "sha": "e3cb4a5cf99784ddd4e4351d6458aba3351ecb4a",
+      "export": "Repository",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 3
     },
     {
       "name": "ch_07_theme.js",
       "path": "src/ch_07_theme.js",
-      "sha": "3e021df194381de73fdb3f9c7832ef43f1591b71"
+      "sha": "3e021df194381de73fdb3f9c7832ef43f1591b71",
+      "export": "Theme",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 5
     },
     {
       "name": "ch_08_window.js",
       "path": "src/ch_08_window.js",
-      "sha": "dfa9211951f2e80c8f69f029d3876f6378f3ecc9"
+      "sha": "dfa9211951f2e80c8f69f029d3876f6378f3ecc9",
+      "export": "Window",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 7
     },
     {
       "name": "ch_09_list.js",
       "path": "src/ch_09_list.js",
-      "sha": "af54b7b927d03b2630ea49e82098441b0fb27531"
+      "sha": "af54b7b927d03b2630ea49e82098441b0fb27531",
+      "export": "List",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 8
     },
     {
       "name": "ch_10_editor.js",
       "path": "src/ch_10_editor.js",
-      "sha": "fe64e20746737c9ac17a434921c0d45da25e214d"
+      "sha": "fe64e20746737c9ac17a434921c0d45da25e214d",
+      "export": "Editor",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 9
     },
     {
       "name": "ch_11_filter.js",
       "path": "src/ch_11_filter.js",
-      "sha": "b090c8f1913e4a8f4c8e5a1878d9a1565c136720"
+      "sha": "b090c8f1913e4a8f4c8e5a1878d9a1565c136720",
+      "export": "Filter",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 10
     },
     {
       "name": "ch_12_translation.js",
       "path": "src/ch_12_translation.js",
-      "sha": "e88d536167d0610f1f849e10de5ace2b5d53cf34"
+      "sha": "e88d536167d0610f1f849e10de5ace2b5d53cf34",
+      "export": "Translation",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 12
     },
     {
       "name": "ch_13_settings.js",
       "path": "src/ch_13_settings.js",
-      "sha": "d26e68895bd8b1bebb03090c70b0a3f3955ea16d"
+      "sha": "d26e68895bd8b1bebb03090c70b0a3f3955ea16d",
+      "export": "Settings",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 11
     },
     {
       "name": "ch_14_event_bus.js",
       "path": "src/ch_14_event_bus.js",
-      "sha": "a64b7973d02c42aea14ebfdfdd62de0886fa8057"
+      "sha": "a64b7973d02c42aea14ebfdfdd62de0886fa8057",
+      "export": "EventBus",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 4
     },
     {
       "name": "ch_15_app.js",
       "path": "src/ch_15_app.js",
-      "sha": "3f45a7e889f0e3d699db8c17ab10e3c5e9c0d025"
+      "sha": "d78022d4be8d17cf7136a4e01f00a2a9f8afc309",
+      "export": "App",
+      "runtimeRole": "app"
     },
     {
       "name": "ch_16_ui_shell.js",
       "path": "src/ch_16_ui_shell.js",
-      "sha": "1260afbaed3c4f5487356db0528a3105c2d4f41b"
+      "sha": "1260afbaed3c4f5487356db0528a3105c2d4f41b",
+      "export": "UIShell",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 13
     },
     {
       "name": "ch_17_tokenizer_ui.js",
       "path": "src/ch_17_tokenizer_ui.js",
-      "sha": "a9a89e0c800341955aa2d35323b36d9a147727df"
+      "sha": "6c3c82b00b298d117e9766e7ff9af487606f1944",
+      "export": "TokenizerUI",
+      "runtimeRole": "passive"
+    },
+    {
+      "name": "ch_18_tokenizer_core.js",
+      "path": "src/ch_18_tokenizer_core.js",
+      "sha": "a3866aa80284cd8149e6674cc0a3ae38ef5796d2",
+      "export": "TokenizerCore",
+      "runtimeRole": "passive"
+    },
+    {
+      "name": "ch_19_tokenizer_service.js",
+      "path": "src/ch_19_tokenizer_service.js",
+      "sha": "fd27f803cef56666bc3af8570f5b544ea6dc4780",
+      "export": "TokenizerService",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 14
+    }
+  ],
+  "resources": [
+    {
+      "id": "test.manifest.resource",
+      "purpose": "manifest-contract-test",
+      "path": "assets/test/manifest-resource.txt",
+      "encoding": "utf-8",
+      "loadPolicy": "on_demand",
+      "sha": "6d0af3644367dabd67237135e88e32f2e63b68da"
+    },
+    {
+      "id": "tokenizer.dictionary.default",
+      "purpose": "tokenizer-dictionary",
+      "path": "assets/tokenizer/jieba-small.gz.b64",
+      "encoding": "gzip+base64",
+      "loadPolicy": "on_demand",
+      "sha": "8baae50133e6863bfbe386bb44ddd8fd923f5652"
     }
   ]
 }

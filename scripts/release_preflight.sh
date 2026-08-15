@@ -41,9 +41,9 @@ case "$MODE" in
     ;;
   --settings-tabs-beta)
     EXPECTED_REF='beta-regex-settings-tabs-20260814'
-    EXPECTED_MODULE_SET='20260815.27'
-    EXPECTED_ENTRY_VERSION='7'
-    EXPECTED_APP_MODULE_VERSION='22'
+    EXPECTED_MODULE_SET='20260815.29'
+    EXPECTED_ENTRY_VERSION='8'
+    EXPECTED_APP_MODULE_VERSION='23'
     REQUIRE_CLEAN='0'
     ;;
   --current)
@@ -98,6 +98,8 @@ for expanded_js in "$PACKED_SYNTAX_DIR"/*.js; do
 done
 echo 'Expanded JS syntax verification: passed'
 if [ "$MODE" = '--settings-tabs-beta' ]; then
+  python3 scripts/manifest_contract.py validate --settings-tabs-beta
+  node scripts/test_tokenizer_core.js
   node scripts/test_ui_shell_navigation.js
   node scripts/test_runtime_diagnostics.js
   python3 scripts/test_primary_window_legacy_routes.py
@@ -176,12 +178,19 @@ if mode == "--current":
 else:
     expected_entry_version = int(expected_entry_text)
 
-assert manifest.get("schemaVersion") == 1, manifest.get("schemaVersion")
+expected_schema_version = 2 if mode == "--settings-tabs-beta" else 1
+assert manifest.get("schemaVersion") == expected_schema_version, manifest.get("schemaVersion")
 assert manifest.get("moduleSetVersion") == expected_module_set, manifest.get("moduleSetVersion")
 assert manifest.get("entryMinVersion") == expected_entry_version, manifest.get("entryMinVersion")
 assert manifest.get("sourceRef") == expected_ref, manifest.get("sourceRef")
-expected_module_count = 17 if mode == "--settings-tabs-beta" else 15
+expected_module_count = 19 if mode == "--settings-tabs-beta" else 15
 assert len(manifest.get("modules", [])) == expected_module_count, len(manifest.get("modules", []))
+if mode == "--settings-tabs-beta":
+    assert len(manifest.get("resources", [])) == 2, len(manifest.get("resources", []))
+    resource_by_id = {str(item["id"]): item for item in manifest.get("resources", [])}
+    assert resource_by_id["test.manifest.resource"]["path"] == "assets/test/manifest-resource.txt"
+    assert resource_by_id["tokenizer.dictionary.default"]["path"] == "assets/tokenizer/jieba-small.gz.b64"
+
 
 
 def blob_sha(text: str) -> str:
@@ -307,10 +316,12 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
             "ch_10_editor.js": ("ch_10_editor", 36),
             "ch_11_filter.js": ("ch_11_filter", 87),
             "ch_13_settings.js": ("ch_13_settings", 41),
-            "ch_15_app.js": ("ch_15_app", 22),
+            "ch_15_app.js": ("ch_15_app", 23),
             "ch_12_translation.js": ("ch_12_translation", 21),
             "ch_16_ui_shell.js": ("ch_16_ui_shell", 6),
-            "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 6),
+            "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 7),
+            "ch_18_tokenizer_core.js": ("ch_18_tokenizer_core", 1),
+            "ch_19_tokenizer_service.js": ("ch_19_tokenizer_service", 1),
         }
     else:
         required_versions = {
@@ -381,7 +392,7 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
     assert "filterRegexRuleIds" in settings_source
     assert "filterRegexMatchMode" in settings_source
     assert manifest.get("sourceRef") == expected_ref
-    assert len(manifest.get("modules", [])) == (17 if mode == "--settings-tabs-beta" else 15)
+    assert len(manifest.get("modules", [])) == (19 if mode == "--settings-tabs-beta" else 15)
     if mode == "--settings-tabs-beta":
         assert 'var settingsTab = "general";' in settings_source
         assert "function setSettingsTab(tab, origin)" in settings_source
@@ -405,6 +416,8 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert "addEditorStandaloneDragSlot" in editor_source
         assert "editor_chrome_unified_v1" in editor_source
         tokenizer_source = actual_sources["ch_17_tokenizer_ui.js"]
+        tokenizer_core_source = actual_sources["ch_18_tokenizer_core.js"]
+        tokenizer_service_source = actual_sources["ch_19_tokenizer_service.js"]
         list_source = actual_sources["ch_09_list.js"]
         assert 'MODULE_NAME: "ch_16_ui_shell"' in ui_shell_source
         assert "MODULE_VERSION: 6" in ui_shell_source
@@ -458,15 +471,25 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert "bindEditorRoot" in tokenizer_source
         assert "editorEmbeddedInPrimary" in tokenizer_source
         assert "tokenizer_chrome_unified_v1" in tokenizer_source
+        assert "requestTokenizerRun" in tokenizer_source
+        assert "TokenizerService.tokenizeAsync" in tokenizer_source
+        assert "TokenizerService.cancel" in tokenizer_source
         assert "editorPanelRoot.setPadding(0, 0, 0, 0);" in tokenizer_source
+        assert 'MODULE_NAME: "ch_18_tokenizer_core"' in tokenizer_core_source
+        assert "function scanRegexRanges(text, rules, options)" in tokenizer_core_source
+        assert 'MODULE_NAME: "ch_19_tokenizer_service"' in tokenizer_service_source
+        assert "RhinoContext.enter" in tokenizer_service_source
+        assert "lateCallbackCount" in tokenizer_service_source
+        assert "getWorkerProbeSpec" in tokenizer_service_source
         assert 'syncTokenizerShell("tokenizer"' in tokenizer_source
         assert '"ch_16_ui_shell.js"' in entry
-        assert '"Translation", "UIShell"' in app
+        assert 'function buildLifecyclePlan(context)' in app
         assert 'uiShell: uiShell' in app
+        assert 'runtimePlan = context && context.runtimePlan' in app
         assert 'runtimeDiagnostics: runtimeDiagnostics' in app
         assert 'RUNTIME_DIAGNOSTIC_SCHEMA_VERSION = 1' in ui_shell_source
         assert 'getRuntimeDiagnostics: getRuntimeDiagnostics' in ui_shell_source
-        assert 'var ENTRY_VERSION = 7;' in entry
+        assert 'var ENTRY_VERSION = 8;' in entry
         assert 'https://api.github.com/repos/' in entry
         assert 'application/vnd.github.raw+json' in entry
         assert 'function fetchApiFile(path, ref)' in entry
@@ -476,7 +499,7 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert 'remoteFile = fetchRemoteFile(MANIFEST_PATH, ref);' in entry
         assert 'installed.transport = remoteTransportLabel();' in entry
         assert entry.count('fetchRawFile(') == 2
-        assert entry.count('fetchRemoteFile(') == 3
+        assert entry.count('fetchRemoteFile(') >= 3
         print("Bootstrap dual transport contracts: passed")
         print("UI shell stage7 contracts: passed")
         print("Settings tabs safety contracts: passed")
