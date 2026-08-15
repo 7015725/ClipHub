@@ -1,8 +1,6 @@
 moduleSetVersion=20260815.02
 
-===== THEME =====
---- var METRICS = { lines 91-178 ---
-00091:         toolbarPressed: "#FF3A3150"
+===== THEME :: var METRICS = { =====
 00092:     };
 00093:
 00094:     var METRICS = {
@@ -33,156 +31,67 @@ moduleSetVersion=20260815.02
 00119:         var text;
 00120:         var number;
 00121:         if (source === null || source === undefined || source === "") {
-00122:             source = fallback;
-00123:         }
-00124:         if (typeof source === "string") {
-00125:             text = String(source).replace(/^\s+|\s+$/g, "");
-00126:             if (text.length > 0) {
-00127:                 try { return Number(Color.parseColor(text)) | 0; }
-00128:                 catch (ignoredParse) {}
-00129:             }
-00130:         }
-00131:         number = Number(source);
-00132:         if (!isFinite(number)) {
-00133:             try { number = Number(Color.parseColor(String(fallback || "#00000000"))); }
-00134:             catch (ignoredFallback) { number = 0; }
-00135:         }
-00136:         return number | 0;
-00137:     }
-00138:
-00139:     function jintArray(values) {
-00140:         var source = values || [];
-00141:         var output = JavaArray.newInstance(JavaInteger.TYPE, source.length);
-00142:         var index;
-00143:         for (index = 0; index < source.length; index += 1) {
-00144:             output[index] = colorInt(source[index], 0);
-00145:         }
-00146:         return output;
-00147:     }
-00148:
-00149:     function jint2Array(rows) {
-00150:         var source = rows || [];
-00151:         var output = JavaArray.newInstance(JavaClass.forName("[I"), source.length);
-00152:         var index;
-00153:         for (index = 0; index < source.length; index += 1) {
-00154:             output[index] = jintArray(source[index]);
-00155:         }
-00156:         return output;
-00157:     }
-00158:
-00159:     var colorSafetyState = {
-00160:         applyCount: 0,
-00161:         failureCount: 0,
-00162:         lastError: null
-00163:     };
-00164:
-00165:     function safeColorStateList(colorValue) {
-00166:         var color = colorInt(colorValue, 0);
-00167:         return new ColorStateList(jint2Array([
-00168:             [Packages.android.R.attr.state_pressed],
-00169:             [Packages.android.R.attr.state_focused],
-00170:             [Packages.android.R.attr.state_selected],
-00171:             []
-00172:         ]), jintArray([color, color, color, color]));
-00173:     }
-00174:
-00175:     function safeApply(callback) {
-00176:         try {
-00177:             callback();
-00178:             colorSafetyState.applyCount += 1;
 
-===== FILTER =====
---- function makeHeaderAction lines 11542-11629 ---
-11542:         };
-11543:     }
-11544:
-11545:     function makeHeaderAction(iconText, description, colors, metrics,
-11546:             emphasized) {
-11547:         var view = makeIcon(iconText, metrics.iconSp,
-11548:             emphasized ? colors.accentStrong : colors.icon,
-11549:             description);
-11550:         view.setBackground(circleBackground(
-11551:             emphasized ? colors.accentSoft : colors.surfaceMuted,
-11552:             null));
-11553:         return view;
-11554:     }
-11555:
-11556:     function renderFilterActionView(root, colors, metrics) {
-11557:         var activeCount = activeAdvancedFilterCount();
-11558:         var icon = makeIcon("☷", metrics.iconSp,
-11559:             activeCount > 0 ? colors.accentStrong : colors.icon,
-11560:             activeCount > 0 ?
-11561:                 "打开筛选，已启用 " + String(activeCount) + " 类条件" :
-11562:                 "打开筛选");
-11563:         var badge;
-11564:         var params;
-11565:         root.removeAllViews();
-11566:         icon.setClickable(false);
-11567:         icon.setFocusable(false);
-11568:         root.setContentDescription(activeCount > 0 ?
-11569:             "打开筛选，已启用 " + String(activeCount) + " 类条件" :
-11570:             "打开筛选");
-11571:         root.setBackground(circleBackground(
-11572:             activeCount > 0 ? colors.accentSoft : colors.surfaceMuted,
-11573:             activeCount > 0 ? colors.accentBorder : null));
-11574:         root.addView(icon, new FrameLayout.LayoutParams(
-11575:             FrameLayout.LayoutParams.MATCH_PARENT,
-11576:             FrameLayout.LayoutParams.MATCH_PARENT));
-11577:         if (activeCount > 0) {
-11578:             badge = makeText(String(Math.min(9, activeCount)),
-11579:                 metrics.badgeSp, "#FFFFFFFF", true);
-11580:             badge.setGravity(Gravity.CENTER);
-11581:             badge.setBackground(circleBackground(colors.accentStrong, null));
-11582:             params = new FrameLayout.LayoutParams(
-11583:                 dp(metrics.badgeSizeDp), dp(metrics.badgeSizeDp));
-11584:             params.gravity = Gravity.TOP | Gravity.END;
-11585:             root.addView(badge, params);
-11586:         }
-11587:         state.headerFilterActiveCount = activeCount;
-11588:         return root;
-11589:     }
-11590:
-11591:     function makeFilterAction(colors, metrics) {
-11592:         var root = new FrameLayout(appContext);
-11593:         root.setClickable(true);
-11594:         root.setFocusable(true);
-11595:         renderFilterActionView(root, colors, metrics);
-11596:         root.setOnClickListener(new JavaAdapter(
-11597:             View.OnClickListener, {
-11598:                 onClick: function () { toggleAdvanced(); }
-11599:             }));
-11600:         advancedActionViews.push(root);
-11601:         return root;
-11602:     }
-11603:
-11604:     function refreshAdvancedHeaderSummaryOnMain() {
-11605:         var colors = palette();
-11606:         var metrics = headerMetrics();
-11607:         var index;
-11608:         if (sortSummaryView !== null) {
-11609:             sortSummaryView.setText("按" +
-11610:                 sortModeLabel(value.sortMode));
-11611:         }
-11612:         for (index = 0; index < advancedActionViews.length;
-11613:                 index += 1) {
-11614:             renderFilterActionView(
-11615:                 advancedActionViews[index], colors, metrics);
-11616:         }
-11617:         updateResultCountOnMain();
-11618:         return true;
-11619:     }
-11620:
-11621:     function updateSearchVisibility(requestKeyboard) {
-11622:         var showInput = searchExpanded && !advancedVisible;
-11623:         if (searchStatusRow !== null) {
-11624:             searchStatusRow.setVisibility(
-11625:                 showInput ? View.GONE : View.VISIBLE);
-11626:         }
-11627:         if (searchInputRow !== null) {
-11628:             searchInputRow.setVisibility(
-11629:                 showInput ? View.VISIBLE : View.GONE);
---- function buildSearchHeader lines 11665-11752 ---
-11665:         return true;
+===== FILTER :: function headerMetrics =====
+11477:     }
+11478:
+11479:     function headerMetrics() {
+11480:         var widthDp = Number(state.panelWidthDp || 0);
+11481:         var fontScale = resourceFontScale();
+11482:         var touchDp = Math.max(1, Number(touchSlop || 1) / density);
+11483:         var baseDp;
+11484:         var actionSizeDp;
+11485:         var controlHeightDp;
+11486:         var gapDp;
+11487:         var titleSp;
+11488:         var iconSp;
+11489:         var statusSp;
+11490:         var searchSp;
+11491:         var radiusDp;
+11492:         var inputPaddingDp;
+11493:         var badgeSizeDp;
+11494:         var badgeSp;
+11495:         if (widthDp <= 0 && Number(state.panelWidthPx || 0) > 0) {
+11496:             widthDp = Number(state.panelWidthPx) / density;
+11497:         }
+11498:         if (widthDp <= 0) {
+11499:             widthDp = Number(appContext.getResources()
+11500:                 .getDisplayMetrics().widthPixels) / density;
+11501:         }
+11502:         baseDp = Math.max(touchDp, widthDp * 0.018);
+11503:         actionSizeDp = clampNumber(widthDp * 0.092,
+11504:             baseDp * 4.4, widthDp * 0.12);
+11505:         controlHeightDp = clampNumber(actionSizeDp * 1.02,
+11506:             baseDp * 4.6, widthDp * 0.125);
+11507:         gapDp = clampNumber(widthDp * 0.014,
+11508:             baseDp * 0.65, actionSizeDp * 0.24);
+11509:         titleSp = clampNumber(widthDp / (fontScale * 23),
+11510:             actionSizeDp / (fontScale * 2.45),
+11511:             actionSizeDp / (fontScale * 1.85));
+11512:         iconSp = clampNumber(actionSizeDp / (fontScale * 2.05),
+11513:             titleSp * 0.86, titleSp * 1.18);
+11514:         statusSp = clampNumber(titleSp * 0.60,
+11515:             iconSp * 0.58, titleSp * 0.72);
+11516:         searchSp = clampNumber(titleSp * 0.70,
+11517:             statusSp, titleSp * 0.82);
+11518:         radiusDp = Math.max(baseDp * 1.3, controlHeightDp * 0.44);
+11519:         inputPaddingDp = Math.max(baseDp * 0.65, gapDp);
+11520:         badgeSizeDp = Math.max(baseDp * 2.0, actionSizeDp * 0.38);
+11521:         badgeSp = Math.max(statusSp * 0.64,
+11522:             badgeSizeDp / (fontScale * 3.4));
+11523:         state.headerHeightDp = actionSizeDp + gapDp + controlHeightDp;
+11524:         state.headerControlHeightDp = controlHeightDp;
+11525:         state.headerActionSizeDp = actionSizeDp;
+11526:         state.headerGapDp = gapDp;
+11527:         return {
+11528:             widthDp: widthDp,
+11529:             fontScale: fontScale,
+11530:             baseDp: baseDp,
+11531:             actionSizeDp: actionSizeDp,
+11532:             controlHeightDp: controlHeightDp,
+11533:             gapDp: gapDp,
+
+===== FILTER :: function buildSearchHeader =====
 11666:     }
 11667:
 11668:     function buildSearchHeader(colors) {
@@ -270,219 +179,8 @@ moduleSetVersion=20260815.02
 11750:         updateResultCountOnMain();
 11751:         statusRow.addView(resultCountView,
 11752:             new LinearLayout.LayoutParams(
---- function createPanelCache lines 13042-13129 ---
-13042:         }
-13043:     }
-13044:
-13045:     function createPanelCache(size, type, colors) {
-13046:         panelRoot = new LinearLayout(appContext);
-13047:         panelRoot.setOrientation(LinearLayout.VERTICAL);
-13048:         panelRoot.setPadding(dp(12), dp(8), dp(12), dp(10));
-13049:         panelRoot.setBackground(roundedBackground(colors.surface,
-13050:             colors.stroke, 24));
-13051:         if (Build.VERSION.SDK_INT >= 21) {
-13052:             panelRoot.setElevation(dp(20));
-13053:         }
-13054:         panelManagedFrame = ClipHub.Window.createManagedFrame(
-13055:             panelRoot, { accentColor: colors.accentStrong });
-13056:         panelWindowRoot = panelManagedFrame.rootView;
-13057:         primaryDragView = panelManagedFrame.dragView;
-13058:         primaryResizeView = panelManagedFrame.resizeView;
-13059:         panelParams = new WindowManager.LayoutParams(
-13060:             size.width, size.height, type,
-13061:             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
-13062:                 WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED |
-13063:                 WindowManager.LayoutParams.FLAG_DIM_BEHIND,
-13064:             PixelFormat.TRANSLUCENT);
-13065:         panelParams.gravity = Gravity.TOP | Gravity.START;
-13066:         panelParams.dimAmount = 0.44;
-13067:         panelParams.softInputMode =
-13068:             WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE |
-13069:             WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN;
-13070:         try {
-13071:             panelParams.setTitle(rootMode ?
-13072:                 "ClipHub Primary Window" : "ClipHub Filter Panel");
-13073:         } catch (ignoredTitle) {}
-13074:         panelBuilt = true;
-13075:         panelBuiltRootMode = rootMode;
-13076:         panelStructureDirty = true;
-13077:         state.panelBuilt = true;
-13078:         state.panelCacheBuildCount += 1;
-13079:         return true;
-13080:     }
-13081:
-13082:     function attachPanelCache(size, generation) {
-13083:         var thread = nowThread();
-13084:         panelParams.width = size.width;
-13085:         panelParams.height = size.height;
-13086:         panelParams.gravity = Gravity.TOP | Gravity.START;
-13087:         panelParams.x = Number(size.x || 0);
-13088:         panelParams.y = Number(size.y || 0);
-13089:         windowManager.addView(panelWindowRoot, panelParams);
-13090:         state.panelAttached = true;
-13091:         state.panelOpenCount += 1;
-13092:         state.panelWindowType = Number(panelParams.type);
-13093:         state.panelFlags = Number(panelParams.flags);
-13094:         state.panelX = Number(size.x || 0);
-13095:         state.panelY = Number(size.y || 0);
-13096:         state.panelWidthPx = size.width;
-13097:         state.panelHeightPx = size.height;
-13098:         state.panelWidthDp = size.widthDp;
-13099:         state.panelHeightDp = size.heightDp;
-13100:         state.dimAmount = Number(panelParams.dimAmount);
-13101:         state.modalWindow = true;
-13102:         state.opaqueBackground = true;
-13103:         state.panelAddThreadId = thread.id;
-13104:         state.panelAddThreadName = thread.name;
-13105:         state.primaryGeometryManaged = rootMode;
-13106:         state.primaryResizeViewPresent = primaryResizeView !== null;
-13107:         ClipHub.Window.attachWindow({
-13108:             role: rootMode ? "primary" : "filter_overlay",
-13109:             rootView: panelWindowRoot,
-13110:             contentView: panelRoot,
-13111:             layoutParams: panelParams,
-13112:             windowManager: windowManager,
-13113:             dragView: primaryDragView,
-13114:             resizeView: primaryResizeView,
-13115:             resizeVisual: panelManagedFrame.resizeVisual,
-13116:             geometry: size,
-13117:             onGeometryChanged: function (geometry) {
-13118:                 var previousWidth;
-13119:                 var nextWidth;
-13120:                 if (!geometry) { return; }
-13121:                 previousWidth = Number(state.panelWidthPx || 0);
-13122:                 nextWidth = Number(geometry.width || 0);
-13123:                 state.panelX = Number(geometry.x || 0);
-13124:                 state.panelY = Number(geometry.y || 0);
-13125:                 state.panelWidthPx = nextWidth;
-13126:                 state.panelHeightPx = Number(geometry.height || 0);
-13127:                 state.panelWidthDp = Number(geometry.widthDp || 0);
-13128:                 state.panelHeightDp = Number(geometry.heightDp || 0);
-13129:                 scheduleAdaptiveResultRefresh(previousWidth, nextWidth);
 
-===== EDITOR =====
---- function makeEditorAction lines 511-598 ---
-00511:         return view;
-00512:     }
-00513:
-00514:     function makeEditorAction(text, colors, primary) {
-00515:         var view = makeText(text, 12,
-00516:             primary ? "#FFFFFFFF" : colors.accentStrong, true);
-00517:         view.setGravity(Gravity.CENTER);
-00518:         view.setSingleLine(true);
-00519:         view.setBackground(roundedBackground(
-00520:             primary ? colors.accentStrong : colors.surface,
-00521:             primary ? colors.accentStrong : colors.accentBorder, 13));
-00522:         view.setClickable(true);
-00523:         view.setFocusable(true);
-00524:         return view;
-00525:     }
-00526:
-00527:     function contentTypeLabel(value) {
-00528:         value = String(value || "text").toLowerCase();
-00529:         if (value === "url" || value === "link") { return "链接"; }
-00530:         if (value === "code") { return "代码"; }
-00531:         if (value === "email") { return "邮件"; }
-00532:         if (value === "phone") { return "电话"; }
-00533:         return "文本";
-00534:     }
-00535:
-00536:     function updateCharacterCount() {
-00537:         var length = 0;
-00538:         try {
-00539:             length = contentInput === null ? 0 :
-00540:                 String(contentInput.getText()).length;
-00541:         } catch (ignored) {}
-00542:         state.contentLength = length;
-00543:         if (characterCountView !== null) {
-00544:             characterCountView.setText(String(length) + " / 200000");
-00545:         }
-00546:         return length;
-00547:     }
-00548:
-00549:     function statusBarHeightPx() {
-00550:         var resources;
-00551:         var resourceId;
-00552:         try {
-00553:             resources = appContext.getResources();
-00554:             resourceId = Number(resources.getIdentifier(
-00555:                 "status_bar_height", "dimen", "android"));
-00556:             if (resourceId > 0) {
-00557:                 return Number(resources.getDimensionPixelSize(resourceId));
-00558:             }
-00559:         } catch (ignored) {}
-00560:         return dp(24);
-00561:     }
-00562:
-00563:     function inputMethodVisibleHeightPx() {
-00564:         var height = 0;
-00565:         var method;
-00566:         var parameterTypes;
-00567:         var argumentsArray;
-00568:         if (inputMethodManager === null) { return 0; }
-00569:         try {
-00570:             height = Number(inputMethodManager
-00571:                 .getInputMethodWindowVisibleHeight());
-00572:             if (isFinite(height) && height > 0) { return height; }
-00573:         } catch (ignoredDirect) {}
-00574:         try {
-00575:             parameterTypes = Packages.java.lang.reflect.Array.newInstance(
-00576:                 Packages.java.lang.Class, 0);
-00577:             argumentsArray = Packages.java.lang.reflect.Array.newInstance(
-00578:                 Packages.java.lang.Object, 0);
-00579:             method = inputMethodManager.getClass().getDeclaredMethod(
-00580:                 "getInputMethodWindowVisibleHeight", parameterTypes);
-00581:             method.setAccessible(true);
-00582:             height = Number(method.invoke(inputMethodManager, argumentsArray));
-00583:             return isFinite(height) && height > 0 ? height : 0;
-00584:         } catch (ignoredReflection) { return 0; }
-00585:     }
-00586:
-00587:     function readImeState() {
-00588:         var metrics = displayMetrics();
-00589:         var output = {
-00590:             visible: false,
-00591:             bottomPx: 0,
-00592:             topInsetPx: statusBarHeightPx(),
-00593:             source: "none",
-00594:             supported: false,
-00595:             screenHeightPx: Number(metrics.heightPixels),
-00596:             visibleBottomPx: Number(metrics.heightPixels)
-00597:         };
-00598:         var rootInsets;
---- function buildTextContent lines 2015-2102 ---
-02015:         panelRoot.addView(subtitle, params);
-02016:     }
-02017:
-02018:     function buildTextContent(initialText, row, options) {
-02019:         var colors = editorPalette();
-02020:         var isNew = state.mode === "new";
-02021:         var sourceText = isNew ? "ClipHub 手动" :
-02022:             String(row && row.source_label ? row.source_label : "未知来源");
-02023:         var dragRow = new LinearLayout(appContext);
-02024:         var dragHandle = new View(appContext);
-02025:         var header = new LinearLayout(appContext);
-02026:         var titleStack = new LinearLayout(appContext);
-02027:         var metaRow = new LinearLayout(appContext);
-02028:         var sectionRow = new LinearLayout(appContext);
-02029:         var scroll = new ScrollView(appContext);
-02030:         var footer = new LinearLayout(appContext);
-02031:         var params;
-02032:         options = options || {};
-02033:
-02034:         panelRoot.removeAllViews();
-02035:         state.editorStyle = "reference_editor_v5";
-02036:         state.sourceMetaText = sourceText;
-02037:         state.typeMetaText = "";
-02038:         state.contentMinLines = 10;
-02039:         state.contentLength = String(initialText || "").length;
-02040:
-02041:         dragRow.setGravity(Gravity.CENTER);
-02042:         dragHandle.setBackground(roundedBackground(
-02043:             colors.accentBorder, null, 3));
-02044:         dragRow.addView(dragHandle,
-02045:             new LinearLayout.LayoutParams(dp(42), dp(4)));
-02046:         params = new LinearLayout.LayoutParams(
+===== EDITOR :: titleTextView = makeText(isNew ? =====
 02047:             LinearLayout.LayoutParams.MATCH_PARENT, dp(16));
 02048:         params.bottomMargin = dp(4);
 02049:         panelRoot.addView(dragRow, params);
@@ -539,10 +237,57 @@ moduleSetVersion=20260815.02
 02100:         metaRow.addView(metadataSourceView, params);
 02101:         metadataTypeView = makeEditorPill(
 02102:             editorDraftTagIds.length > 0 ?
+02103:                 "标签  " + String(editorDraftTagIds.length) + " 个" :
+02104:                 "标签  未设置", colors, editorDraftTagIds.length > 0);
+02105:         metadataTypeView.setClickable(true);
+02106:         metadataTypeView.setFocusable(true);
+02107:         metadataTypeView.setContentDescription("选择当前记录标签");
+02108:         metadataTypeView.setOnClickListener(new JavaAdapter(
+02109:             View.OnClickListener, {
 
-===== TRANSLATION =====
---- function translationButton lines 1247-1334 ---
-01247:         return view;
+===== EDITOR :: cancelView = makeEditorAction =====
+02175:         panelRoot.addView(scroll, params);
+02176:         updateCharacterCount();
+02177:
+02178:         footer.setOrientation(LinearLayout.HORIZONTAL);
+02179:         footer.setGravity(Gravity.CENTER_VERTICAL);
+02180:         cancelView = makeEditorAction("取消", colors, false);
+02181:         cancelView.setContentDescription("取消编辑");
+02182:         cancelView.setOnClickListener(new JavaAdapter(
+02183:             View.OnClickListener, {
+02184:                 onClick: function () { requestExit("cancel_button"); }
+02185:             }));
+02186:         saveView = makeEditorAction("保存", colors, true);
+02187:         saveView.setContentDescription("保存记录");
+02188:         saveView.setOnClickListener(new JavaAdapter(
+02189:             View.OnClickListener, {
+02190:                 onClick: function () { saveFromInput(); }
+02191:             }));
+02192:         params = new LinearLayout.LayoutParams(0, dp(42), 1);
+02193:         params.rightMargin = dp(8);
+02194:         footer.addView(cancelView, params);
+02195:         footer.addView(saveView,
+02196:             new LinearLayout.LayoutParams(0, dp(42), 1));
+02197:         editorFooterView = footer;
+02198:         panelRoot.addView(footer,
+02199:             new LinearLayout.LayoutParams(
+02200:                 LinearLayout.LayoutParams.MATCH_PARENT, dp(50)));
+02201:         state.footerActionCount = 2;
+02202:         state.editorFooterHeightDp = 50;
+02203:         state.cancelButtonPresent = true;
+02204:         state.saveButtonPresent = true;
+02205:         installEditorLayoutObserver();
+02206:
+02207:         if (options.requestKeyboard !== false) {
+02208:             requestKeyboardOnMain();
+02209:         }
+02210:         return true;
+02211:     }
+02212:
+02213:     function buildTagContent(requestFocus) {
+02214:         var colors = editorPalette();
+
+===== TRANSLATION :: function translationButton =====
 01248:     }
 01249:
 01250:     function translationButton(text, colors, primary, danger) {
@@ -575,63 +320,8 @@ moduleSetVersion=20260815.02
 01277:         return output.join("");
 01278:     }
 01279:
-01280:     function translationDigest(algorithm, value) {
-01281:         var digest = MessageDigest.getInstance(String(algorithm));
-01282:         var bytes = new JavaString(String(value)).getBytes("UTF-8");
-01283:         return translationHex(digest.digest(bytes));
-01284:     }
-01285:
-01286:     function translationEncode(value) {
-01287:         return String(URLEncoder.encode(String(value), "UTF-8"));
-01288:     }
-01289:
-01290:     function translationForm(params) {
-01291:         var parts = [];
-01292:         var key;
-01293:         for (key in params) {
-01294:             if (params.hasOwnProperty(key)) {
-01295:                 parts.push(translationEncode(key) + "=" +
-01296:                     translationEncode(params[key]));
-01297:             }
-01298:         }
-01299:         return parts.join("&");
-01300:     }
-01301:
-01302:     function translationReadStream(stream) {
-01303:         var reader = null;
-01304:         var builder = new SB();
-01305:         var line;
-01306:         if (stream === null) { return ""; }
-01307:         try {
-01308:             reader = new BR(new ISR(stream, "UTF-8"));
-01309:             while ((line = reader.readLine()) !== null) {
-01310:                 builder.append(line).append("\n");
-01311:             }
-01312:             return String(builder.toString());
-01313:         } finally {
-01314:             try { if (reader !== null) { reader.close(); } }
-01315:             catch (ignoredReader) {}
-01316:             try { stream.close(); } catch (ignoredStream) {}
-01317:         }
-01318:     }
-01319:
-01320:     function translationPost(urlText, params) {
-01321:         var connection = null;
-01322:         var writer = null;
-01323:         var code;
-01324:         var body;
-01325:         var response;
-01326:         try {
-01327:             connection = new URL(String(urlText)).openConnection();
-01328:             connection.setConnectTimeout(12000);
-01329:             connection.setReadTimeout(20000);
-01330:             connection.setUseCaches(false);
-01331:             connection.setDoInput(true);
-01332:             connection.setDoOutput(true);
-01333:             connection.setRequestMethod("POST");
-01334:             connection.setRequestProperty("Content-Type",
---- function buildTranslationPanel lines 1683-1770 ---
-01683:         return 76;
+
+===== TRANSLATION :: function buildTranslationPanel =====
 01684:     }
 01685:
 01686:     function buildTranslationPanel() {
@@ -719,188 +409,73 @@ moduleSetVersion=20260815.02
 01768:
 01769:         root.addView(resultLabel, new LinearLayout.LayoutParams(
 01770:             LinearLayout.LayoutParams.MATCH_PARENT,
+01771:             LinearLayout.LayoutParams.WRAP_CONTENT));
+01772:         translationResultView = translationText("正在请求翻译…", 12,
+01773:             colors.textPrimary, false);
+01774:         translationResultView.setTextIsSelectable(true);
+01775:         translationResultView.setPadding(dp(10), dp(8), dp(10), dp(8));
+01776:         translationResultView.setBackground(translationRounded(
+01777:             colors.accentSoft, colors.accentBorder, 12));
+01778:         resultScroll.addView(translationResultView,
+01779:             new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
+01780:                 FrameLayout.LayoutParams.WRAP_CONTENT));
+01781:         params = new LinearLayout.LayoutParams(
+01782:             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1);
+01783:         params.topMargin = dp(4);
+01784:         params.bottomMargin = dp(8);
+01785:         root.addView(resultScroll, params);
+01786:
+01787:         actionRow1.setOrientation(LinearLayout.HORIZONTAL);
+01788:         translationCopyView = translationButton("复制译文", colors, true, false);
+01789:         translationReplaceView = translationButton("替换原文", colors, false, false);
+01790:         translationSaveView = translationButton("保存为新记录", colors, false, false);
+01791:         params = new LinearLayout.LayoutParams(0, dp(42), 1);
+01792:         params.rightMargin = dp(6);
+01793:         actionRow1.addView(translationCopyView, params);
+01794:         actionRow1.addView(translationReplaceView, params);
+01795:         actionRow1.addView(translationSaveView,
+01796:             new LinearLayout.LayoutParams(0, dp(42), 1));
+01797:         root.addView(actionRow1, new LinearLayout.LayoutParams(
+01798:             LinearLayout.LayoutParams.MATCH_PARENT, dp(42)));
+01799:
+01800:         actionRow2.setOrientation(LinearLayout.HORIZONTAL);
+01801:         translationRetryView = translationButton(
+01802:             "重新翻译", colors, false, false);
+01803:         translationFooterCloseView = translationButton(
+01804:             "关闭", colors, false, false);
+01805:         params = new LinearLayout.LayoutParams(0, dp(38), 1);
+01806:         params.rightMargin = dp(6);
+01807:         actionRow2.addView(translationRetryView, params);
+01808:         actionRow2.addView(translationFooterCloseView,
+01809:             new LinearLayout.LayoutParams(0, dp(38), 1));
+01810:         params = new LinearLayout.LayoutParams(
+01811:             LinearLayout.LayoutParams.MATCH_PARENT, dp(38));
+01812:         params.topMargin = dp(6);
+01813:         root.addView(actionRow2, params);
+01814:
+01815:         translationCopyView.setOnClickListener(new JavaAdapter(
+01816:             View.OnClickListener, { onClick: copyTranslatedText }));
+01817:         translationReplaceView.setOnClickListener(new JavaAdapter(
+01818:             View.OnClickListener, { onClick: replaceOriginalText }));
+01819:         translationSaveView.setOnClickListener(new JavaAdapter(
+01820:             View.OnClickListener, { onClick: saveTranslationAsNew }));
+01821:         translationRetryView.setOnClickListener(new JavaAdapter(
+01822:             View.OnClickListener, { onClick: beginTranslation }));
+01823:         translationFooterCloseView.setOnClickListener(new JavaAdapter(
+01824:             View.OnClickListener, { onClick: function () {
+01825:                 closeTranslationPanel("button");
+01826:             }}));
+01827:         refreshTranslationButtons();
+01828:         return root;
+01829:     }
+01830:
+01831:     function openTranslationForItem(itemId) {
+01832:         var row;
+01833:         var size;
+01834:         var type;
+01835:         if (!initialized) { throw new Error("翻译模块尚未初始化"); }
 
-===== TOKENIZER =====
---- function makeClickText lines 163-250 ---
-00163:         return colors.dark ? colors.textPrimary : "#FFFFFFFF";
-00164:     }
-00165:
-00166:     function makeClickText(text, sizeSp, colors, description) {
-00167:         var view = makeText(text, sizeSp, colors.icon, false);
-00168:         view.setGravity(Gravity.CENTER);
-00169:         view.setClickable(true);
-00170:         view.setFocusable(true);
-00171:         if (description) { view.setContentDescription(String(description)); }
-00172:         return view;
-00173:     }
-00174:
-00175:     function copyArray(value) {
-00176:         return value && value.slice ? value.slice(0) : [];
-00177:     }
-00178:
-00179:     function indexSelected(index) {
-00180:         return state.selectedIndexes.indexOf(Number(index)) >= 0;
-00181:     }
-00182:
-00183:     function selectedCount() {
-00184:         return state.selectedIndexes.length;
-00185:     }
-00186:
-00187:     function normalizeToken(value, index) {
-00188:         var token = value || {};
-00189:         return {
-00190:             index: Number(index),
-00191:             text: String(token.text === undefined || token.text === null ?
-00192:                 "" : token.text),
-00193:             type: String(token.type || "word") === "symbol" ?
-00194:                 "symbol" : "word"
-00195:         };
-00196:     }
-00197:
-00198:     function normalizeTokens(values) {
-00199:         var source = values || [];
-00200:         var out = [];
-00201:         var index;
-00202:         for (index = 0; index < source.length; index += 1) {
-00203:             out.push(normalizeToken(source[index], index));
-00204:         }
-00205:         return out;
-00206:     }
-00207:
-00208:     function recalculateStats(stats) {
-00209:         var words = 0;
-00210:         var symbols = 0;
-00211:         var index;
-00212:         for (index = 0; index < state.tokens.length; index += 1) {
-00213:             if (String(state.tokens[index].type) === "symbol") {
-00214:                 symbols += 1;
-00215:             } else {
-00216:                 words += 1;
-00217:             }
-00218:         }
-00219:         state.tokenCount = stats && stats.total !== undefined ?
-00220:             Number(stats.total) : state.tokens.length;
-00221:         state.wordCount = stats && stats.words !== undefined ?
-00222:             Number(stats.words) : words;
-00223:         state.symbolCount = stats && stats.symbols !== undefined ?
-00224:             Number(stats.symbols) : symbols;
-00225:     }
-00226:
-00227:     function updateStatsViews() {
-00228:         if (statsLeftView !== null) {
-00229:             statsLeftView.setText(selectedCount() > 0 ?
-00230:                 "已选择 " + String(selectedCount()) + " 项" :
-00231:                 "共 " + String(state.tokenCount) + " 个词语");
-00232:         }
-00233:         if (statsRightView !== null) {
-00234:             statsRightView.setText(
-00235:                 "单词 " + String(state.wordCount) +
-00236:                 " / 符号 " + String(state.symbolCount));
-00237:         }
-00238:     }
-00239:
-00240:     function emitAction(action, extra) {
-00241:         var payload = {
-00242:             action: String(action || ""),
-00243:             mode: String(state.mode),
-00244:             tokenIndex: -1,
-00245:             selectedIndexes: copyArray(state.selectedIndexes),
-00246:             regexText: String(state.regexText || ""),
-00247:             sourceText: String(state.sourceText || "")
-00248:         };
-00249:         var key;
-00250:         extra = extra || {};
---- function makeToolbarCell lines 799-886 ---
-00799:         return true;
-00800:     }
-00801:
-00802:     function makeToolbarCell(icon, label, action, danger) {
-00803:         var colors = palette();
-00804:         var cell = new LinearLayout(appContext);
-00805:         var iconView = makeText(icon, 14.5,
-00806:             danger ? colors.danger : colors.icon, false);
-00807:         var labelView = makeText(label, 9.5,
-00808:             danger ? colors.danger : colors.textPrimary, false);
-00809:         cell.setOrientation(LinearLayout.VERTICAL);
-00810:         cell.setGravity(Gravity.CENTER);
-00811:         cell.setPadding(dp(2), dp(2), dp(2), dp(2));
-00812:         cell.setClickable(true);
-00813:         cell.setFocusable(true);
-00814:         cell.setContentDescription(String(label));
-00815:         applyBackground(cell,
-00816:             danger ? colors.dangerSoft : colors.surfaceMuted,
-00817:             danger ? colors.danger : colors.stroke, 10);
-00818:         iconView.setGravity(Gravity.CENTER);
-00819:         labelView.setGravity(Gravity.CENTER);
-00820:         cell.addView(iconView,
-00821:             new LinearLayout.LayoutParams(
-00822:                 LinearLayout.LayoutParams.MATCH_PARENT, dp(20)));
-00823:         cell.addView(labelView,
-00824:             new LinearLayout.LayoutParams(
-00825:                 LinearLayout.LayoutParams.MATCH_PARENT, dp(17)));
-00826:         cell.setOnClickListener(new JavaAdapter(View.OnClickListener, {
-00827:             onClick: function () { emitAction(action, {}); }
-00828:         }));
-00829:         return cell;
-00830:     }
-00831:
-00832:     function buildDragHandle(column) {
-00833:         var colors = palette();
-00834:         var row = new LinearLayout(appContext);
-00835:         var handle = new View(appContext);
-00836:         row.setGravity(Gravity.CENTER);
-00837:         applyBackground(handle, colors.accentBorder, null, 3);
-00838:         row.addView(handle,
-00839:             new LinearLayout.LayoutParams(dp(42), dp(4)));
-00840:         column.addView(row,
-00841:             new LinearLayout.LayoutParams(
-00842:                 LinearLayout.LayoutParams.MATCH_PARENT, dp(16)));
-00843:     }
-00844:
-00845:     function buildHeader(column) {
-00846:         var colors = palette();
-00847:         var header = new LinearLayout(appContext);
-00848:         var back = makeClickText("‹", 22, colors, "返回编辑页");
-00849:         var title = makeText("分词", 18, colors.textPrimary, true);
-00850:         var right = new LinearLayout(appContext);
-00851:         var rule = makeClickText("▣", 15, colors, "规则");
-00852:         var help = makeClickText("?", 15, colors, "帮助");
-00853:         var params;
-00854:         header.setOrientation(LinearLayout.HORIZONTAL);
-00855:         header.setGravity(Gravity.CENTER_VERTICAL);
-00856:         back.setGravity(Gravity.CENTER);
-00857:         applyBackground(back, colors.surfaceMuted, null, 18);
-00858:         title.setGravity(Gravity.CENTER_VERTICAL);
-00859:         rule.setGravity(Gravity.CENTER);
-00860:         safeTextColor(rule, colors.accentStrong);
-00861:         applyBackground(rule, colors.accentSoft, colors.accentBorder, 18);
-00862:         help.setGravity(Gravity.CENTER);
-00863:         applyBackground(help, colors.surfaceMuted, null, 18);
-00864:         back.setOnClickListener(new JavaAdapter(View.OnClickListener, {
-00865:             onClick: function () { returnToEditor("header_back"); }
-00866:         }));
-00867:         rule.setOnClickListener(new JavaAdapter(View.OnClickListener, {
-00868:             onClick: function () { emitAction("rule", {}); }
-00869:         }));
-00870:         help.setOnClickListener(new JavaAdapter(View.OnClickListener, {
-00871:             onClick: function () { emitAction("help", {}); }
-00872:         }));
-00873:         header.addView(back,
-00874:             new LinearLayout.LayoutParams(dp(38), dp(38)));
-00875:         params = new LinearLayout.LayoutParams(
-00876:             0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
-00877:         params.leftMargin = dp(8);
-00878:         params.rightMargin = dp(8);
-00879:         header.addView(title, params);
-00880:         right.setOrientation(LinearLayout.HORIZONTAL);
-00881:         right.setGravity(Gravity.CENTER_VERTICAL);
-00882:         right.addView(rule,
-00883:             new LinearLayout.LayoutParams(dp(38), dp(38)));
-00884:         params = new LinearLayout.LayoutParams(dp(38), dp(38));
-00885:         params.leftMargin = dp(4);
-00886:         right.addView(help, params);
---- function buildHeader lines 842-929 ---
-00842:                 LinearLayout.LayoutParams.MATCH_PARENT, dp(16)));
+===== TOKENIZER :: function buildHeader =====
 00843:     }
 00844:
 00845:     function buildHeader(column) {
@@ -978,18 +553,8 @@ moduleSetVersion=20260815.02
 00917:             onClick: function () { switchMode("regex"); }
 00918:         }));
 00919:         shell.addView(modeNormalView,
-00920:             new LinearLayout.LayoutParams(0, dp(32), 1));
-00921:         shell.addView(modeRegexView,
-00922:             new LinearLayout.LayoutParams(0, dp(32), 1));
-00923:         params = new LinearLayout.LayoutParams(
-00924:             LinearLayout.LayoutParams.MATCH_PARENT, dp(36));
-00925:         params.leftMargin = dp(2);
-00926:         params.rightMargin = dp(2);
-00927:         params.bottomMargin = dp(8);
-00928:         column.addView(shell, params);
-00929:         applyModeStyles();
---- function buildSegment lines 893-980 ---
-00893:         column.addView(header, params);
+
+===== TOKENIZER :: function buildSegment =====
 00894:     }
 00895:
 00896:     function buildSegment(column) {
@@ -1047,38 +612,67 @@ moduleSetVersion=20260815.02
 00948:         row.addView(line, new LinearLayout.LayoutParams(0, dp(2), 3));
 00949:         row.addView(spacer, new LinearLayout.LayoutParams(0, dp(2), 2));
 00950:         column.addView(row,
-00951:             new LinearLayout.LayoutParams(
-00952:                 LinearLayout.LayoutParams.MATCH_PARENT, dp(3)));
-00953:     }
-00954:
-00955:     function buildToolbar(column) {
-00956:         var colors = palette();
-00957:         var toolbar = new LinearLayout(appContext);
-00958:         var params;
-00959:         toolbar.setOrientation(LinearLayout.HORIZONTAL);
-00960:         toolbar.setGravity(Gravity.CENTER_VERTICAL);
-00961:         toolbar.setPadding(0, dp(3), 0, dp(3));
-00962:         ClipHub.Theme.applyBackgroundColor(toolbar, colors.surface);
-00963:         params = new LinearLayout.LayoutParams(0, dp(42), 1);
-00964:         params.rightMargin = dp(4);
-00965:         toolbar.addView(makeToolbarCell("▣", "复制", "copy", false), params);
-00966:         params = new LinearLayout.LayoutParams(0, dp(42), 1);
-00967:         params.rightMargin = dp(4);
-00968:         toolbar.addView(makeToolbarCell("↵", "输入", "input", false), params);
-00969:         params = new LinearLayout.LayoutParams(0, dp(42), 1);
-00970:         params.rightMargin = dp(4);
-00971:         toolbar.addView(makeToolbarCell("✎", "编辑", "edit", false), params);
-00972:         params = new LinearLayout.LayoutParams(0, dp(42), 1);
-00973:         params.rightMargin = dp(4);
-00974:         toolbar.addView(makeToolbarCell("⇩", "导出", "export", false), params);
-00975:         toolbar.addView(makeToolbarCell("⌫", "清空", "clear", true),
-00976:             new LinearLayout.LayoutParams(0, dp(42), 1));
-00977:         column.addView(toolbar,
-00978:             new LinearLayout.LayoutParams(
-00979:                 LinearLayout.LayoutParams.MATCH_PARENT, dp(48)));
-00980:     }
---- function buildToolbar lines 952-1039 ---
-00952:                 LinearLayout.LayoutParams.MATCH_PARENT, dp(3)));
+
+===== TOKENIZER :: function makeToolbarCell =====
+00800:     }
+00801:
+00802:     function makeToolbarCell(icon, label, action, danger) {
+00803:         var colors = palette();
+00804:         var cell = new LinearLayout(appContext);
+00805:         var iconView = makeText(icon, 14.5,
+00806:             danger ? colors.danger : colors.icon, false);
+00807:         var labelView = makeText(label, 9.5,
+00808:             danger ? colors.danger : colors.textPrimary, false);
+00809:         cell.setOrientation(LinearLayout.VERTICAL);
+00810:         cell.setGravity(Gravity.CENTER);
+00811:         cell.setPadding(dp(2), dp(2), dp(2), dp(2));
+00812:         cell.setClickable(true);
+00813:         cell.setFocusable(true);
+00814:         cell.setContentDescription(String(label));
+00815:         applyBackground(cell,
+00816:             danger ? colors.dangerSoft : colors.surfaceMuted,
+00817:             danger ? colors.danger : colors.stroke, 10);
+00818:         iconView.setGravity(Gravity.CENTER);
+00819:         labelView.setGravity(Gravity.CENTER);
+00820:         cell.addView(iconView,
+00821:             new LinearLayout.LayoutParams(
+00822:                 LinearLayout.LayoutParams.MATCH_PARENT, dp(20)));
+00823:         cell.addView(labelView,
+00824:             new LinearLayout.LayoutParams(
+00825:                 LinearLayout.LayoutParams.MATCH_PARENT, dp(17)));
+00826:         cell.setOnClickListener(new JavaAdapter(View.OnClickListener, {
+00827:             onClick: function () { emitAction(action, {}); }
+00828:         }));
+00829:         return cell;
+00830:     }
+00831:
+00832:     function buildDragHandle(column) {
+00833:         var colors = palette();
+00834:         var row = new LinearLayout(appContext);
+00835:         var handle = new View(appContext);
+00836:         row.setGravity(Gravity.CENTER);
+00837:         applyBackground(handle, colors.accentBorder, null, 3);
+00838:         row.addView(handle,
+00839:             new LinearLayout.LayoutParams(dp(42), dp(4)));
+00840:         column.addView(row,
+00841:             new LinearLayout.LayoutParams(
+00842:                 LinearLayout.LayoutParams.MATCH_PARENT, dp(16)));
+00843:     }
+00844:
+00845:     function buildHeader(column) {
+00846:         var colors = palette();
+00847:         var header = new LinearLayout(appContext);
+00848:         var back = makeClickText("‹", 22, colors, "返回编辑页");
+00849:         var title = makeText("分词", 18, colors.textPrimary, true);
+00850:         var right = new LinearLayout(appContext);
+00851:         var rule = makeClickText("▣", 15, colors, "规则");
+00852:         var help = makeClickText("?", 15, colors, "帮助");
+00853:         var params;
+00854:         header.setOrientation(LinearLayout.HORIZONTAL);
+00855:         header.setGravity(Gravity.CENTER_VERTICAL);
+00856:         back.setGravity(Gravity.CENTER);
+
+===== TOKENIZER :: function buildToolbar =====
 00953:     }
 00954:
 00955:     function buildToolbar(column) {
@@ -1121,137 +715,3 @@ moduleSetVersion=20260815.02
 00992:     function resetContentState() {
 00993:         state.mode = "normal";
 00994:         state.regexText = "";
-00995:         state.tokens = [];
-00996:         state.selectedIndexes = [];
-00997:         state.tokenCount = 0;
-00998:         state.wordCount = 0;
-00999:         state.symbolCount = 0;
-01000:         state.popupVisible = false;
-01001:         state.popupTokenIndex = -1;
-01002:         tokenViews = [];
-01003:         tokenRows = [];
-01004:         resetGesture();
-01005:     }
-01006:
-01007:     function clearPageRefs() {
-01008:         clearFlowObserver();
-01009:         hidePopup();
-01010:         resetGesture();
-01011:         pageRoot = null;
-01012:         pageColumn = null;
-01013:         modeNormalView = null;
-01014:         modeRegexView = null;
-01015:         bodyContainer = null;
-01016:         statsLeftView = null;
-01017:         statsRightView = null;
-01018:         tokenScroll = null;
-01019:         tokenFlowRoot = null;
-01020:         regexInput = null;
-01021:         tokenViews = [];
-01022:         tokenRows = [];
-01023:     }
-01024:
-01025:     function buildPage() {
-01026:         var colors = palette();
-01027:         var bodyParams;
-01028:         pageRoot = new FrameLayout(appContext);
-01029:         pageColumn = new LinearLayout(appContext);
-01030:         pageColumn.setOrientation(LinearLayout.VERTICAL);
-01031:         pageColumn.setPadding(0, 0, 0, dp(3));
-01032:         ClipHub.Theme.applyBackgroundColor(pageRoot, colors.surface);
-01033:         buildDragHandle(pageColumn);
-01034:         buildHeader(pageColumn);
-01035:         buildSegment(pageColumn);
-01036:         buildDivider(pageColumn);
-01037:         bodyContainer = new LinearLayout(appContext);
-01038:         bodyContainer.setOrientation(LinearLayout.VERTICAL);
-01039:         bodyContainer.setPadding(0, dp(3), 0, 0);
---- function buildPage lines 1022-1109 ---
-01022:         tokenRows = [];
-01023:     }
-01024:
-01025:     function buildPage() {
-01026:         var colors = palette();
-01027:         var bodyParams;
-01028:         pageRoot = new FrameLayout(appContext);
-01029:         pageColumn = new LinearLayout(appContext);
-01030:         pageColumn.setOrientation(LinearLayout.VERTICAL);
-01031:         pageColumn.setPadding(0, 0, 0, dp(3));
-01032:         ClipHub.Theme.applyBackgroundColor(pageRoot, colors.surface);
-01033:         buildDragHandle(pageColumn);
-01034:         buildHeader(pageColumn);
-01035:         buildSegment(pageColumn);
-01036:         buildDivider(pageColumn);
-01037:         bodyContainer = new LinearLayout(appContext);
-01038:         bodyContainer.setOrientation(LinearLayout.VERTICAL);
-01039:         bodyContainer.setPadding(0, dp(3), 0, 0);
-01040:         bodyParams = new LinearLayout.LayoutParams(
-01041:             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1);
-01042:         pageColumn.addView(bodyContainer, bodyParams);
-01043:         buildIndicator(pageColumn);
-01044:         buildDivider(pageColumn);
-01045:         buildToolbar(pageColumn);
-01046:         buildHint(pageColumn);
-01047:         pageRoot.addView(pageColumn,
-01048:             new FrameLayout.LayoutParams(
-01049:                 FrameLayout.LayoutParams.MATCH_PARENT,
-01050:                 FrameLayout.LayoutParams.MATCH_PARENT));
-01051:         renderMode();
-01052:         return pageRoot;
-01053:     }
-01054:
-01055:     function findTextByPrefix(root, prefix) {
-01056:         var text;
-01057:         var group;
-01058:         var index;
-01059:         var found;
-01060:         if (root === null || root === undefined) { return null; }
-01061:         if (root instanceof TextView) {
-01062:             try {
-01063:                 text = String(root.getText());
-01064:                 if (text.indexOf(String(prefix)) === 0) { return root; }
-01065:             } catch (ignoredText) {}
-01066:         }
-01067:         if (root instanceof ViewGroup) {
-01068:             group = root;
-01069:             for (index = 0; index < group.getChildCount(); index += 1) {
-01070:                 found = findTextByPrefix(group.getChildAt(index), prefix);
-01071:                 if (found !== null) { return found; }
-01072:             }
-01073:         }
-01074:         return null;
-01075:     }
-01076:
-01077:     function findEditorInput(root) {
-01078:         var group;
-01079:         var index;
-01080:         var child;
-01081:         var hint;
-01082:         var found;
-01083:         if (root === null || root === undefined) { return null; }
-01084:         if (root instanceof EditText) {
-01085:             try {
-01086:                 hint = root.getHint();
-01087:                 if (hint !== null && String(hint).indexOf("剪贴板内容") >= 0) {
-01088:                     return root;
-01089:                 }
-01090:             } catch (ignoredHint) {}
-01091:         }
-01092:         if (root instanceof ViewGroup) {
-01093:             group = root;
-01094:             for (index = 0; index < group.getChildCount(); index += 1) {
-01095:                 child = group.getChildAt(index);
-01096:                 found = findEditorInput(child);
-01097:                 if (found !== null) { return found; }
-01098:             }
-01099:         }
-01100:         return null;
-01101:     }
-01102:
-01103:     function makeEditorEntry() {
-01104:         var colors = palette();
-01105:         var view = makeText("分词", 10, colors.accentStrong, true);
-01106:         view.setGravity(Gravity.CENTER);
-01107:         view.setClickable(true);
-01108:         view.setFocusable(true);
-01109:         view.setContentDescription("打开分词页面");
