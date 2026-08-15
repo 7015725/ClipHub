@@ -14,81 +14,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Compact migration anchors
+      - name: Settings embed anchors
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import base64, gzip, json, re
+          import base64,gzip,json,re
           from pathlib import Path
-
-          def expand(path):
-              s = Path(path).read_text(encoding='utf-8')
-              m = re.search(r'\bvar\s+(?:PACKED_B64|encoded)\s*=\s*(.*?);', s, re.S)
-              if not m:
-                  return s
-              parts = re.findall(r'"(?:\\.|[^"\\])*"', m.group(1))
-              return gzip.decompress(base64.b64decode(''.join(json.loads(x) for x in parts))).decode('utf-8')
-
-          def function_spans(src):
-              out = []
-              for m in re.finditer(r'\bfunction\s+([A-Za-z0-9_$]+)\s*\(', src):
-                  name = m.group(1); brace = src.find('{', m.end())
-                  if brace < 0: continue
-                  depth=0; quote=None; esc=False; i=brace
-                  while i < len(src):
-                      ch=src[i]
-                      if quote:
-                          if esc: esc=False
-                          elif ch=='\\': esc=True
-                          elif ch==quote: quote=None
-                      else:
-                          if ch in ('"', "'"): quote=ch
-                          elif ch=='{': depth+=1
-                          elif ch=='}':
-                              depth-=1
-                              if depth==0:
-                                  out.append((name,m.start(),i+1)); break
-                      i+=1
-              return out
-
-          def print_func(src, spans, name, limit=8000):
-              for n,a,b in spans:
-                  if n == name:
-                      print('\n### '+name+' ###')
-                      print(src[a:min(b,a+limit)])
-                      return
-              print('\n### MISSING '+name+' ###')
-
-          def containing(src, spans, needle, limit=8000):
-              idx=src.find(needle)
-              print('\n### CONTAINING '+needle+' idx='+str(idx)+' ###')
-              if idx < 0: return
-              for n,a,b in spans:
-                  if a <= idx < b:
-                      print('FUNCTION='+n)
-                      print(src[a:min(b,a+limit)])
-                      return
-              print(src[max(0,idx-1200):idx+3500])
-
-          specs = [
-              ('FILTER','src/ch_11_filter.js',
-               ['createPanelCache','attachPanelCache','destroyPanelCache','showPanel','getPanelState'],
-               ['settingsButton.setOnClickListener','panelManagedFrame = ClipHub.Window.createManagedFrame','panelRoot.addView']),
-              ('SETTINGS','src/ch_13_settings.js',
-               ['buildRootPage','buildPage','makeSettingsSubpageHeader','handleSettingsBack','openPage','closePage','getState'],
-               ['openRegexRules','openRegexEditor','openRegexTest','settingsManagedFrame = ClipHub.Window.createManagedFrame']),
-              ('TRANSLATION','src/ch_12_translation.js',
-               ['buildTranslationPanel','openTranslationForItem','closeTranslationPanel','getTranslationState'],
-               ['translationManagedFrame = ClipHub.Window.createManagedFrame']),
-          ]
-          for label,path,names,needles in specs:
-              src=expand(path); spans=function_spans(src)
-              print('\n\n========== '+label+' ==========', 'LEN='+str(len(src)))
-              mm=re.findall(r'MODULE_NAME:\s*["\']([^"\']+)["\']\s*,\s*MODULE_VERSION:\s*(\d+)',src,re.S)
-              print('MODULES='+repr(mm[-4:]))
-              for name in names: print_func(src,spans,name)
-              for needle in needles: containing(src,spans,needle)
-              print('\n### EXPORT TAIL ###')
-              print(src[-5000:])
+          s=Path('src/ch_13_settings.js').read_text(encoding='utf-8')
+          m=re.search(r'\bvar\s+(?:PACKED_B64|encoded)\s*=\s*(.*?);',s,re.S)
+          if m:
+              p=re.findall(r'"(?:\\.|[^"\\])*"',m.group(1))
+              s=gzip.decompress(base64.b64decode(''.join(json.loads(x) for x in p))).decode('utf-8')
+          for needle in ['buildPage =','function buildPage','addSettingsDragHandle','makeRegexRulesPage','makeRegexEditorPage','makeRegexTestPage','settingsPage = "regex_rules"']:
+              print('\n### '+needle+' count='+str(s.count(needle))+' ###')
+              pos=0
+              for i in range(min(5,s.count(needle))):
+                  idx=s.find(needle,pos)
+                  print(s[max(0,idx-1200):idx+4200])
+                  pos=idx+len(needle)
           PY
