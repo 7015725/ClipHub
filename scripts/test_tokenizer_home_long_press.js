@@ -1,0 +1,44 @@
+var fs = require("fs");
+var zlib = require("zlib");
+
+function expanded(path) {
+    var loader = fs.readFileSync(path, "utf8");
+    var match = loader.match(/var PACKED_B64\s*=\s*([\s\S]*?)\n\s*;/);
+    var chunks = [];
+    var reChunk = /"([A-Za-z0-9+/=]+)"/g;
+    var item;
+    if (!match) { throw new Error("PACKED_B64 missing: " + path); }
+    while ((item = reChunk.exec(match[1])) !== null) { chunks.push(item[1]); }
+    return zlib.gunzipSync(Buffer.from(chunks.join(""), "base64")).toString("utf8");
+}
+
+function requireText(source, value) {
+    if (source.indexOf(value) < 0) { throw new Error("missing: " + value); }
+}
+
+var filter = expanded("src/ch_11_filter.js");
+var tokenizer = expanded("src/ch_17_tokenizer_ui.js");
+var swipe;
+var card;
+requireText(filter, "tokenizer_home_long_press_v1");
+requireText(filter, "function openTokenizerForResultRow(row, origin)");
+requireText(filter, "View.OnLongClickListener");
+requireText(filter, "TokenizerUI.openFromHomeItem");
+requireText(filter, "MODULE_VERSION: 88");
+requireText(tokenizer, "tokenizer_home_direct_open_v1");
+requireText(tokenizer, "function openFromHomeItem(itemId, options)");
+requireText(tokenizer, "ClipHub.Editor.openItem(id, { requestKeyboard: false })");
+requireText(tokenizer, "tokenizerLaunchOrigin = String(options.origin || \"editor\")");
+requireText(tokenizer, "ClipHub.Editor.requestExit(\"tokenizer_home_back\")");
+requireText(tokenizer, "openFromHomeItem: function (itemId, options)");
+requireText(tokenizer, "MODULE_VERSION: 11");
+swipe = filter.match(/function bindSwipeGesture\([\s\S]*?function resultPreviewText/);
+if (!swipe || swipe[0].indexOf("if (!gesture.swiping) { return false; }") < 0) {
+    throw new Error("swipe non-capture contract changed");
+}
+card = filter.match(/function makeResultCard\([\s\S]*?function updateResultScrollState/);
+if (!card || card[0].indexOf("inputResultRow(currentCardHolderRow(holder)") < 0 ||
+        card[0].indexOf("bindSwipeGesture(holder, wrapper, card") < 0) {
+    throw new Error("card click/swipe contract missing");
+}
+console.log("Tokenizer home long-press contract: passed");

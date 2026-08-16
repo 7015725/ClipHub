@@ -41,7 +41,7 @@ case "$MODE" in
     ;;
   --settings-tabs-beta)
     EXPECTED_REF='docs/tokenizer-softcode-hardening-20260815'
-    EXPECTED_MODULE_SET='20260816.02'
+    EXPECTED_MODULE_SET='20260816.03'
     EXPECTED_ENTRY_VERSION='8'
     EXPECTED_APP_MODULE_VERSION='23'
     REQUIRE_CLEAN='0'
@@ -100,6 +100,7 @@ echo 'Expanded JS syntax verification: passed'
 if [ "$MODE" = '--settings-tabs-beta' ]; then
   python3 scripts/manifest_contract.py validate --settings-tabs-beta
   node scripts/test_tokenizer_core.js
+  node scripts/test_tokenizer_home_long_press.js
   node scripts/test_ui_shell_navigation.js
   node scripts/test_runtime_diagnostics.js
   python3 scripts/test_primary_window_legacy_routes.py
@@ -314,12 +315,12 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
             "ch_06_repository.js": ("ch_06_repository", 20),
             "ch_09_list.js": ("ch_09_list", 25),
             "ch_10_editor.js": ("ch_10_editor", 36),
-            "ch_11_filter.js": ("ch_11_filter", 87),
+            "ch_11_filter.js": ("ch_11_filter", 88),
             "ch_13_settings.js": ("ch_13_settings", 41),
             "ch_15_app.js": ("ch_15_app", 23),
             "ch_12_translation.js": ("ch_12_translation", 21),
             "ch_16_ui_shell.js": ("ch_16_ui_shell", 7),
-            "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 10),
+            "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 11),
             "ch_18_tokenizer_core.js": ("ch_18_tokenizer_core", 2),
             "ch_19_tokenizer_service.js": ("ch_19_tokenizer_service", 6),
         }
