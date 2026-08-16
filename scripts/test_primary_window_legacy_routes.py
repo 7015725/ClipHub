@@ -73,6 +73,15 @@ assert re.search(
 assert 'filter_overlay' in filter_source
 assert 'registerPage({ id: "filter"' not in shell_source
 
+# Primary child header icon controls must use the existing ShortX Remix drawable bridge.
+assert 'primary_child_shortx_icon_args_v1' in filter_source
+assert 'makeHeaderAction("×", "关闭", colors, metrics, false)' in filter_source
+assert 'makeHeaderAction("‹", "返回", colors, metrics, false)' in filter_source
+assert 'makeHeaderAction("×", colors, metrics, false)' not in filter_source
+assert 'makeHeaderAction("‹", colors, metrics, false)' not in filter_source
+assert 'var view = makeIcon(iconText, metrics.iconSp,' in filter_source
+assert 'decoratePanelIcon(view, text, view.getCurrentTextColor(), sizeSp, true)' in filter_source
+
 # No external product caller may reopen the historical filter overlay route.
 external_calls = []
 for name, source in sources.items():
