@@ -22,7 +22,7 @@ has('function openTokenizerRuleEditorDrawer(rule)');
 has('function resetTokenizerRuleOverride()');
 has('TokenizerService.setSelectedRuleIds');
 has('TokenizerService.getDefaultSelectedRuleIds');
-has('MODULE_VERSION: 15');
+has('MODULE_VERSION: 16');
 lacks('创建规则副本');
 lacks('保存并参与');
 lacks('预制');
