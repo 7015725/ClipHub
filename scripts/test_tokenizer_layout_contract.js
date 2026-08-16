@@ -28,12 +28,16 @@ var top = functionBody(source, "makeTokenizerTopActions");
 var toolbar = functionBody(source, "buildToolbar");
 var cell = functionBody(source, "makeToolbarCell");
 var click = functionBody(source, "performToolbarClick");
-if (source.indexOf("MODULE_VERSION: 16") < 0) { throw new Error("TokenizerUI v16 missing"); }
+var sync = functionBody(source, "syncTokenizerShell");
+if (sync.indexOf('showBack: tokenizerPage ? tokenizerLaunchOrigin !== "home" : true') < 0 ||
+        sync.indexOf('dispatchTokenizerBack("shell_close")') < 0) {
+    throw new Error("primary host header navigation contract missing");
+}
+if (source.indexOf("MODULE_VERSION: 17") < 0) { throw new Error("TokenizerUI v17 missing"); }
 if (source.indexOf("tokenizer_chip_layout_cleanup_v1") < 0) { throw new Error("chip cleanup marker missing"); }
-if (source.indexOf("tokenizer_previous_top_layout_v1") < 0 ||
-        header.indexOf("back.setVisibility(View.GONE)") < 0 ||
-        header.indexOf("title.setVisibility(View.INVISIBLE)") < 0) {
-    throw new Error("previous top layout not restored");
+if (source.indexOf("tokenizer_embedded_single_header_v1") < 0 ||
+        header.indexOf("if (editorEmbeddedInPrimary) { return; }") < 0) {
+    throw new Error("embedded duplicate tokenizer header remains");
 }
 if (segment.indexOf("makeTokenizerTopActions") >= 0 ||
         segment.indexOf("editorEmbeddedInPrimary") >= 0) {

@@ -41,7 +41,7 @@ case "$MODE" in
     ;;
   --settings-tabs-beta)
     EXPECTED_REF='docs/tokenizer-softcode-hardening-20260815'
-    EXPECTED_MODULE_SET='20260816.10'
+    EXPECTED_MODULE_SET='20260816.11'
     EXPECTED_ENTRY_VERSION='8'
     EXPECTED_APP_MODULE_VERSION='23'
     REQUIRE_CLEAN='0'
@@ -322,7 +322,7 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
             "ch_15_app.js": ("ch_15_app", 23),
             "ch_12_translation.js": ("ch_12_translation", 21),
             "ch_16_ui_shell.js": ("ch_16_ui_shell", 7),
-            "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 16),
+            "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 17),
             "ch_18_tokenizer_core.js": ("ch_18_tokenizer_core", 2),
             "ch_19_tokenizer_service.js": ("ch_19_tokenizer_service", 6),
         }
@@ -494,7 +494,7 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert "tokenizer_rule_drawer_v1" in tokenizer_source
         assert "tokenizer_rule_preview_uses_runtime_v1" in tokenizer_source
         assert "tokenizer_nav_controls_cleanup_v1" in tokenizer_source
-        assert "tokenizer_previous_top_layout_v1" in tokenizer_source
+        assert "tokenizer_embedded_single_header_v1" in tokenizer_source
         assert "function createTokenizerRulesDrawerBundle()" in tokenizer_source
         assert "function applyTokenizerRuleSelection()" in tokenizer_source
         assert "function openTokenizerRuleEditorDrawer(rule)" in tokenizer_source
