@@ -41,7 +41,7 @@ case "$MODE" in
     ;;
   --settings-tabs-beta)
     EXPECTED_REF='docs/tokenizer-softcode-hardening-20260815'
-    EXPECTED_MODULE_SET='20260816.03'
+    EXPECTED_MODULE_SET='20260816.04'
     EXPECTED_ENTRY_VERSION='8'
     EXPECTED_APP_MODULE_VERSION='23'
     REQUIRE_CLEAN='0'
@@ -315,12 +315,12 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
             "ch_06_repository.js": ("ch_06_repository", 20),
             "ch_09_list.js": ("ch_09_list", 25),
             "ch_10_editor.js": ("ch_10_editor", 36),
-            "ch_11_filter.js": ("ch_11_filter", 88),
+            "ch_11_filter.js": ("ch_11_filter", 89),
             "ch_13_settings.js": ("ch_13_settings", 41),
             "ch_15_app.js": ("ch_15_app", 23),
             "ch_12_translation.js": ("ch_12_translation", 21),
             "ch_16_ui_shell.js": ("ch_16_ui_shell", 7),
-            "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 11),
+            "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 12),
             "ch_18_tokenizer_core.js": ("ch_18_tokenizer_core", 2),
             "ch_19_tokenizer_service.js": ("ch_19_tokenizer_service", 6),
         }
