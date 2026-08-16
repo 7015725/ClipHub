@@ -24,11 +24,11 @@ requireText(filter, "tokenizer_home_long_press_v1");
 requireText(filter, "function openTokenizerForResultRow(row, origin)");
 requireText(filter, "View.OnLongClickListener");
 requireText(filter, "TokenizerUI.openFromHomeItem");
-requireText(filter, "MODULE_VERSION: 90");
+requireText(filter, "MODULE_VERSION: 91");
+requireText(filter, "tokenizer_home_long_press_guard_v1");
 requireText(filter, "primary_host_panel_attached_fix_v1");
 requireText(tokenizer, "tokenizer_home_direct_open_v2");
 requireText(tokenizer, "function openFromHomeItem(itemId, options)");
-requireText(filter, "card.post(new Packages.java.lang.Runnable");
 requireText(tokenizer, "function scheduleHomeTokenizerMount(itemId, origin, generation, attempt)");
 requireText(tokenizer, "attempt >= 10");
 requireText(tokenizer, "result.value === true");
@@ -41,10 +41,20 @@ swipe = filter.match(/function bindSwipeGesture\([\s\S]*?function resultPreviewT
 if (!swipe || swipe[0].indexOf("if (!gesture.swiping) { return false; }") < 0) {
     throw new Error("swipe non-capture contract changed");
 }
+if (swipe[0].indexOf("holder.longPressConsumed = false") < 0) {
+    throw new Error("long-press guard ACTION_DOWN reset missing");
+}
 card = filter.match(/function makeResultCard\([\s\S]*?function updateResultScrollState/);
 if (!card || card[0].indexOf("inputResultRow(currentCardHolderRow(holder)") < 0 ||
         card[0].indexOf("bindSwipeGesture(holder, wrapper, card") < 0) {
     throw new Error("card click/swipe contract missing");
+}
+if (card[0].indexOf("holder.longPressConsumed === true") < 0 ||
+        card[0].indexOf("holder.longPressConsumed = true") < 0 ||
+        card[0].indexOf("state.resultCardLongPressCount += 1") < 0 ||
+        card[0].indexOf("openTokenizerForResultRow(launchRow") < 0 ||
+        card[0].indexOf("card.post(new Packages.java.lang.Runnable") >= 0) {
+    throw new Error("long-press consumption guard contract missing");
 }
 var hostStart = filter.indexOf("function getPrimaryHostState()");
 var hostEnd = filter.indexOf("function mountPrimaryChildPage", hostStart);
