@@ -25,8 +25,22 @@ var build = functionBody(source, "buildTokenView");
 var reflow = functionBody(source, "reflowTokens");
 var surface = functionBody(source, "renderTokenizerSurface");
 var hit = functionBody(source, "tokenAtRawPoint");
-if (source.indexOf("MODULE_VERSION: 14") < 0) { throw new Error("TokenizerUI v14 missing"); }
+if (source.indexOf("MODULE_VERSION: 15") < 0) { throw new Error("TokenizerUI v14 missing"); }
 if (source.indexOf("tokenizer_chip_layout_cleanup_v1") < 0) { throw new Error("layout marker missing"); }
+
+var header = functionBody(source, "buildHeader");
+var segment = functionBody(source, "buildSegment");
+if (source.indexOf("tokenizer_compact_embedded_top_v1") < 0) {
+    throw new Error("compact embedded top marker missing");
+}
+if (header.indexOf("if (editorEmbeddedInPrimary) { return; }") < 0) {
+    throw new Error("embedded tokenizer still renders second header row");
+}
+if (segment.indexOf("makeTokenizerTopActions(colors, chrome)") < 0 ||
+        segment.indexOf("row.addView(shell, params)") < 0 ||
+        segment.indexOf("Math.max(36, chrome.actionSizeDp)") < 0) {
+    throw new Error("embedded segment/action compact row missing");
+}
 if (build.indexOf("/^\\s*$/.test") < 0 || build.indexOf("view.setVisibility(View.GONE)") < 0 ||
         build.indexOf("view.setClickable(false)") < 0) {
     throw new Error("whitespace token visual suppression missing");

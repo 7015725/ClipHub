@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "moduleSetVersion": "20260816.08",
+  "moduleSetVersion": "20260816.09",
   "entryMinVersion": 8,
   "sourceRef": "docs/tokenizer-softcode-hardening-20260815",
   "modules": [
@@ -132,7 +132,7 @@
     {
       "name": "ch_17_tokenizer_ui.js",
       "path": "src/ch_17_tokenizer_ui.js",
-      "sha": "31affa3d2b3c12509669f82850cfebe293b568a4",
+      "sha": "c7ec17af37b60567351ab556c2f4478ae34c40f4",
       "export": "TokenizerUI",
       "runtimeRole": "passive"
     },
