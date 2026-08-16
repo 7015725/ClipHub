@@ -27,16 +27,22 @@ requireText(filter, "TokenizerUI.openFromHomeItem");
 requireText(filter, "MODULE_VERSION: 91");
 requireText(filter, "tokenizer_home_long_press_guard_v1");
 requireText(filter, "primary_host_panel_attached_fix_v1");
-requireText(tokenizer, "tokenizer_home_direct_open_v2");
+requireText(tokenizer, "tokenizer_home_direct_open_v3");
 requireText(tokenizer, "function openFromHomeItem(itemId, options)");
 requireText(tokenizer, "function scheduleHomeTokenizerMount(itemId, origin, generation, attempt)");
+requireText(tokenizer, "function runTokenizerOnMainSync(callback, timeoutMs)");
+requireText(tokenizer, "function editorReadyForHomeTokenizer(itemId)");
+requireText(tokenizer, "editorState.removalPending === true");
+requireText(tokenizer, "editorState.attached !== true");
+requireText(tokenizer, "Math.floor(Number(editorState.itemId)) !== expectedId");
 requireText(tokenizer, "attempt >= 10");
 requireText(tokenizer, "result.value === true");
 requireText(tokenizer, "ClipHub.Editor.openItem(id, { requestKeyboard: false })");
 requireText(tokenizer, "tokenizerLaunchOrigin = String(options.origin || \"editor\")");
 requireText(tokenizer, "ClipHub.Editor.requestExit(\"tokenizer_home_back\")");
 requireText(tokenizer, "openFromHomeItem: function (itemId, options)");
-requireText(tokenizer, "MODULE_VERSION: 12");
+requireText(tokenizer, "MODULE_VERSION: 13");
+if (tokenizer.indexOf("runOnMainSync(") >= 0) { throw new Error("foreign runOnMainSync reference remains"); }
 swipe = filter.match(/function bindSwipeGesture\([\s\S]*?function resultPreviewText/);
 if (!swipe || swipe[0].indexOf("if (!gesture.swiping) { return false; }") < 0) {
     throw new Error("swipe non-capture contract changed");
