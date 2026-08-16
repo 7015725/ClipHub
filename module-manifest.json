@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "moduleSetVersion": "20260816.04",
+  "moduleSetVersion": "20260816.05",
   "entryMinVersion": 8,
   "sourceRef": "docs/tokenizer-softcode-hardening-20260815",
   "modules": [
@@ -85,7 +85,7 @@
     {
       "name": "ch_11_filter.js",
       "path": "src/ch_11_filter.js",
-      "sha": "3ce3fc6c5689e25da0bec41e50196f66fdbf1088",
+      "sha": "f2b55301f4041ec9be08357860325d9f0dce1ed0",
       "export": "Filter",
       "runtimeRole": "managed",
       "lifecycleIndex": 10

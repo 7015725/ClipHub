@@ -24,7 +24,8 @@ requireText(filter, "tokenizer_home_long_press_v1");
 requireText(filter, "function openTokenizerForResultRow(row, origin)");
 requireText(filter, "View.OnLongClickListener");
 requireText(filter, "TokenizerUI.openFromHomeItem");
-requireText(filter, "MODULE_VERSION: 89");
+requireText(filter, "MODULE_VERSION: 90");
+requireText(filter, "primary_host_panel_attached_fix_v1");
 requireText(tokenizer, "tokenizer_home_direct_open_v2");
 requireText(tokenizer, "function openFromHomeItem(itemId, options)");
 requireText(filter, "card.post(new Packages.java.lang.Runnable");
@@ -44,5 +45,13 @@ card = filter.match(/function makeResultCard\([\s\S]*?function updateResultScrol
 if (!card || card[0].indexOf("inputResultRow(currentCardHolderRow(holder)") < 0 ||
         card[0].indexOf("bindSwipeGesture(holder, wrapper, card") < 0) {
     throw new Error("card click/swipe contract missing");
+}
+var hostStart = filter.indexOf("function getPrimaryHostState()");
+var hostEnd = filter.indexOf("function mountPrimaryChildPage", hostStart);
+var primaryHost = hostStart >= 0 && hostEnd > hostStart ?
+    filter.substring(hostStart, hostEnd) : "";
+if (primaryHost.indexOf("state.panelAttached === true") < 0 ||
+        primaryHost.indexOf("state.attached") >= 0) {
+    throw new Error("primary host attached state contract invalid");
 }
 console.log("Tokenizer home long-press contract: passed");
