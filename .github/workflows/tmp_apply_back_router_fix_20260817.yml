@@ -1,0 +1,696 @@
+name: Temp Apply Back Router Fix 20260817
+
+on:
+  push:
+    branches:
+      - cleanup/tokenizer-no-regression-20260817
+    paths:
+      - .github/workflows/tmp_apply_back_router_fix_20260817.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.head_commit.message == 'chore: apply back router fix workflow'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: cleanup/tokenizer-no-regression-20260817
+          fetch-depth: 0
+
+      - name: Apply system Back gesture identity and UIShell request guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import json
+          import re
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise AssertionError('%s anchor count=%d' % (label, count))
+              return text.replace(old, new, 1)
+
+          # ---- Navigation embedded in ch_12_translation.js ----
+          nav_path = Path('src/ch_12_translation.js')
+          nav = nav_path.read_text(encoding='utf-8')
+          if 'MODULE_NAME: "ch_14_navigation_embedded",\n        MODULE_VERSION: 8' not in nav:
+              raise AssertionError('unexpected Navigation version')
+          if 'MODULE_NAME: "ch_12_translation",\n        MODULE_VERSION: 22' not in nav:
+              raise AssertionError('unexpected Translation version')
+
+          nav = replace_once(
+              nav,
+              '    var lastBackAt = 0;\n    var lastBackSignature = "";\n    var navState = {',
+              '    var lastBackAt = 0;\n'
+              '    var lastBackSignature = "";\n'
+              '    var backGestureSequence = 0;\n'
+              '    var activeBackGestureId = "";\n'
+              '    var lastBackGestureId = "";\n'
+              '    var lastBackGestureAt = 0;\n'
+              '    var consumedBackGestureId = "";\n'
+              '    var navState = {',
+              'navigation gesture vars')
+
+          nav = replace_once(
+              nav,
+              '        duplicateBackCount: 0,\n        filterBackCount: 0,',
+              '        duplicateBackCount: 0,\n'
+              '        systemBackGestureCount: 0,\n'
+              '        systemBackCommitCount: 0,\n'
+              '        filterBackCount: 0,',
+              'navigation gesture counters')
+
+          nav = replace_once(
+              nav,
+              '        lastBackSignature: "",\n        lastHideReason: "",',
+              '        lastBackSignature: "",\n'
+              '        lastBackGestureId: "",\n'
+              '        lastBackRequestId: "",\n'
+              '        lastBackPageId: "",\n'
+              '        lastBackPageGeneration: 0,\n'
+              '        lastHideReason: "",',
+              'navigation gesture state')
+
+          start = nav.index('    function dispatchBack(owner, reason) {')
+          end = nav.index('\n    function anyFocused()', start)
+          dispatch_replacement = r'''    function shellBackSnapshot() {
+              var shell = null;
+              try {
+                  if (ClipHub.UIShell &&
+                          typeof ClipHub.UIShell.getState === "function") {
+                      shell = ClipHub.UIShell.getState() || null;
+                  }
+              } catch (ignored) { shell = null; }
+              return {
+                  childAttached: !!(shell && shell.childAttached === true),
+                  pageId: shell ? String(shell.activePageId ||
+                      shell.currentPageId || "") : "",
+                  generation: shell ? Number(shell.generation || 0) : 0
+              };
+          }
+
+          function beginSystemBackGesture(reason) {
+              var timestamp = now();
+              if (activeBackGestureId) {
+                  lastBackGestureAt = timestamp;
+                  return activeBackGestureId;
+              }
+              backGestureSequence += 1;
+              activeBackGestureId = "system:" + String(backGestureSequence) +
+                  ":" + String(timestamp);
+              lastBackGestureId = activeBackGestureId;
+              lastBackGestureAt = timestamp;
+              navState.systemBackGestureCount += 1;
+              navState.lastBackGestureId = activeBackGestureId;
+              return activeBackGestureId;
+          }
+
+          function cancelSystemBackGesture() {
+              activeBackGestureId = "";
+              lastBackGestureId = "";
+              lastBackGestureAt = 0;
+              navState.lastBackGestureId = "";
+              return true;
+          }
+
+          function resolveSystemBackGesture(reason) {
+              var timestamp = now();
+              if (activeBackGestureId) { return activeBackGestureId; }
+              if (lastBackGestureId &&
+                      timestamp - lastBackGestureAt >= 0 &&
+                      timestamp - lastBackGestureAt <= 96) {
+                  return lastBackGestureId;
+              }
+              return beginSystemBackGesture(reason);
+          }
+
+          function consumeSystemBackGesture(gestureId) {
+              if (!gestureId) { return true; }
+              if (consumedBackGestureId === gestureId) {
+                  navState.duplicateBackCount += 1;
+                  return false;
+              }
+              consumedBackGestureId = gestureId;
+              activeBackGestureId = "";
+              lastBackGestureId = gestureId;
+              lastBackGestureAt = now();
+              navState.systemBackCommitCount += 1;
+              navState.lastBackGestureId = gestureId;
+              return true;
+          }
+
+          function dispatchBack(owner, reason) {
+              var timestamp = now();
+              var systemBack = isSystemBackReason(reason);
+              var gestureId = systemBack ? resolveSystemBackGesture(reason) : "";
+              var signature = systemBack ? "system:" + gestureId :
+                  backSignature(owner, reason);
+              var shell = shellBackSnapshot();
+              var request = null;
+              var handled = false;
+              if (systemBack) {
+                  if (!consumeSystemBackGesture(gestureId)) { return true; }
+              } else if (timestamp - lastBackAt < 180 &&
+                      signature === lastBackSignature) {
+                  navState.duplicateBackCount += 1;
+                  return true;
+              }
+              lastBackAt = timestamp;
+              lastBackSignature = signature;
+              navState.backInvokedCount += 1;
+              navState.lastBackOwner = String(owner || "");
+              navState.lastBackReason = String(reason || "system_back");
+              navState.lastBackSignature = signature;
+              if (systemBack) {
+                  request = {
+                      sourceFamily: "system",
+                      ownerPageId: shell.pageId || String(owner || ""),
+                      generation: Number(shell.generation || 0),
+                      requestId: "back:" + gestureId,
+                      gestureId: gestureId
+                  };
+                  navState.lastBackRequestId = request.requestId;
+                  navState.lastBackPageId = request.ownerPageId;
+                  navState.lastBackPageGeneration = request.generation;
+              }
+              if (shell.childAttached === true && ClipHub.UIShell &&
+                      typeof ClipHub.UIShell.dispatchBack === "function") {
+                  handled = ClipHub.UIShell.dispatchBack(
+                      "navigation_system_back", request) === true;
+                  if (handled) { navState.backHandledCount += 1; }
+                  log("I", "navigation child back page=" + shell.pageId +
+                      " request=" + String(request && request.requestId || "") +
+                      " handled=" + String(handled));
+                  return handled;
+              }
+              try {
+                  if (ClipHub.Window &&
+                          typeof ClipHub.Window.requestBack === "function") {
+                      handled = ClipHub.Window.requestBack(
+                          navState.lastBackReason) === true;
+                  }
+              } catch (windowBackError) {
+                  navState.lastError = String(windowBackError);
+                  handled = false;
+              }
+              if (!handled) {
+                  handled = closeTop(owner, navState.lastBackReason);
+              }
+              if (handled) { navState.backHandledCount += 1; }
+              log("I", "navigation back owner=" + navState.lastBackOwner +
+                  " reason=" + navState.lastBackReason +
+                  " signature=" + signature +
+                  " handled=" + String(handled));
+              return handled;
+          }
+          '''
+          nav = nav[:start] + dispatch_replacement + nav[end:]
+
+          nav = replace_once(
+              nav,
+              '                        onBackStarted: function (event) {\n'
+              '                            navState.backStartedCount += 1;\n'
+              '                            applyProgress(entry.view, event);',
+              '                        onBackStarted: function (event) {\n'
+              '                            navState.backStartedCount += 1;\n'
+              '                            beginSystemBackGesture("predictive_back");\n'
+              '                            applyProgress(entry.view, event);',
+              'predictive back start')
+
+          nav = replace_once(
+              nav,
+              '                        onBackCancelled: function () {\n'
+              '                            navState.backCancelledCount += 1;\n'
+              '                            resetVisual(entry.view);',
+              '                        onBackCancelled: function () {\n'
+              '                            navState.backCancelledCount += 1;\n'
+              '                            cancelSystemBackGesture();\n'
+              '                            resetVisual(entry.view);',
+              'predictive back cancel')
+
+          nav = replace_once(
+              nav,
+              '            duplicateBackCount: Number(navState.duplicateBackCount),\n'
+              '            filterBackCount: Number(navState.filterBackCount),',
+              '            duplicateBackCount: Number(navState.duplicateBackCount),\n'
+              '            systemBackGestureCount:\n'
+              '                Number(navState.systemBackGestureCount),\n'
+              '            systemBackCommitCount:\n'
+              '                Number(navState.systemBackCommitCount),\n'
+              '            filterBackCount: Number(navState.filterBackCount),',
+              'navigation state counters')
+
+          nav = replace_once(
+              nav,
+              '            lastBackSignature: navState.lastBackSignature,\n'
+              '            lastHideReason: navState.lastHideReason,',
+              '            lastBackSignature: navState.lastBackSignature,\n'
+              '            lastBackGestureId: navState.lastBackGestureId,\n'
+              '            lastBackRequestId: navState.lastBackRequestId,\n'
+              '            lastBackPageId: navState.lastBackPageId,\n'
+              '            lastBackPageGeneration:\n'
+              '                Number(navState.lastBackPageGeneration),\n'
+              '            lastHideReason: navState.lastHideReason,',
+              'navigation state gesture details')
+
+          nav = replace_once(
+              nav,
+              '        lastBackAt = 0;\n'
+              '        lastBackSignature = "";\n'
+              '        navState.lastBackSignature = "";\n'
+              '        navState.initCount += 1;',
+              '        lastBackAt = 0;\n'
+              '        lastBackSignature = "";\n'
+              '        backGestureSequence = 0;\n'
+              '        activeBackGestureId = "";\n'
+              '        lastBackGestureId = "";\n'
+              '        lastBackGestureAt = 0;\n'
+              '        consumedBackGestureId = "";\n'
+              '        navState.lastBackSignature = "";\n'
+              '        navState.lastBackGestureId = "";\n'
+              '        navState.lastBackRequestId = "";\n'
+              '        navState.lastBackPageId = "";\n'
+              '        navState.lastBackPageGeneration = 0;\n'
+              '        navState.initCount += 1;',
+              'navigation init reset')
+
+          nav = replace_once(
+              nav,
+              '        hideInProgress = false;\n'
+              '        lastBackAt = 0;\n'
+              '        lastBackSignature = "";\n'
+              '        return true;',
+              '        hideInProgress = false;\n'
+              '        lastBackAt = 0;\n'
+              '        lastBackSignature = "";\n'
+              '        activeBackGestureId = "";\n'
+              '        lastBackGestureId = "";\n'
+              '        lastBackGestureAt = 0;\n'
+              '        consumedBackGestureId = "";\n'
+              '        return true;',
+              'navigation shutdown reset')
+
+          nav = replace_once(
+              nav,
+              '        MODULE_NAME: "ch_14_navigation_embedded",\n        MODULE_VERSION: 8,',
+              '        MODULE_NAME: "ch_14_navigation_embedded",\n        MODULE_VERSION: 9,',
+              'navigation module version')
+          nav = replace_once(
+              nav,
+              '        MODULE_NAME: "ch_12_translation",\n        MODULE_VERSION: 22,',
+              '        MODULE_NAME: "ch_12_translation",\n        MODULE_VERSION: 23,',
+              'translation module version')
+          nav_path.write_text(nav, encoding='utf-8')
+
+          # ---- UIShell request identity + reentrancy guard ----
+          shell_path = Path('src/ch_16_ui_shell.js')
+          shell = shell_path.read_text(encoding='utf-8')
+          if 'MODULE_NAME: "ch_16_ui_shell",\n        MODULE_VERSION: 8' not in shell:
+              raise AssertionError('unexpected UIShell version')
+
+          shell = replace_once(
+              shell,
+              '    var mountCount = 0;\n'
+              '    var unmountCount = 0;\n'
+              '    var syncCount = 0;',
+              '    var mountCount = 0;\n'
+              '    var unmountCount = 0;\n'
+              '    var syncCount = 0;\n'
+              '    var backDispatchInProgress = false;\n'
+              '    var backDispatchCount = 0;\n'
+              '    var duplicateBackRequestCount = 0;\n'
+              '    var backCascadeGuardCount = 0;\n'
+              '    var lastBackRequestId = "";\n'
+              '    var lastBackRequestGeneration = -1;\n'
+              '    var lastBackFromPageId = "";\n'
+              '    var lastBackToPageId = "";\n'
+              '    var lastBackDepthBefore = 0;\n'
+              '    var lastBackDepthAfter = 0;',
+              'uishell back state vars')
+
+          old_start = shell.index('    function dispatchBack(reason) {')
+          old_end = shell.index('\n    function dispatchClose(reason)', old_start)
+          shell_dispatch = r'''    function dispatchBack(reason, request) {
+              var value = request || {};
+              var requestId = normalizeId(value.requestId || "");
+              var beforeDepth = Number(stack.length);
+              var beforePageId = currentPageId();
+              var handled = false;
+              lastAction = "dispatch_back";
+              lastReason = String(reason || "");
+              if (requestId && requestId === lastBackRequestId) {
+                  duplicateBackRequestCount += 1;
+                  return true;
+              }
+              if (backDispatchInProgress) {
+                  duplicateBackRequestCount += 1;
+                  return true;
+              }
+              if (requestId) { lastBackRequestId = requestId; }
+              lastBackRequestGeneration = value.generation === undefined ? -1 :
+                  Number(value.generation);
+              lastBackFromPageId = beforePageId === null ? "" :
+                  String(beforePageId);
+              lastBackDepthBefore = beforeDepth;
+              backDispatchInProgress = true;
+              backDispatchCount += 1;
+              try {
+                  if (typeof activeBack === "function") {
+                      handled = activeBack() === true;
+                  } else if (activePageId !== null) {
+                      handled = unmountPage(activePageId, reason) === true;
+                  }
+                  return handled;
+              } finally {
+                  lastBackToPageId = currentPageId() === null ? "" :
+                      String(currentPageId());
+                  lastBackDepthAfter = Number(stack.length);
+                  if (lastBackDepthBefore - lastBackDepthAfter > 1) {
+                      backCascadeGuardCount += 1;
+                  }
+                  backDispatchInProgress = false;
+              }
+          }
+          '''
+          shell = shell[:old_start] + shell_dispatch + shell[old_end:]
+
+          shell = replace_once(
+              shell,
+              '            syncCount: Number(syncCount),\n'
+              '            lastAction: String(lastAction || ""),',
+              '            syncCount: Number(syncCount),\n'
+              '            backDispatchCount: Number(backDispatchCount),\n'
+              '            duplicateBackRequestCount:\n'
+              '                Number(duplicateBackRequestCount),\n'
+              '            backCascadeGuardCount:\n'
+              '                Number(backCascadeGuardCount),\n'
+              '            lastBackRequestId: String(lastBackRequestId || ""),\n'
+              '            lastBackRequestGeneration:\n'
+              '                Number(lastBackRequestGeneration),\n'
+              '            lastBackFromPageId: String(lastBackFromPageId || ""),\n'
+              '            lastBackToPageId: String(lastBackToPageId || ""),\n'
+              '            lastBackDepthBefore: Number(lastBackDepthBefore),\n'
+              '            lastBackDepthAfter: Number(lastBackDepthAfter),\n'
+              '            lastAction: String(lastAction || ""),',
+              'uishell back diagnostics')
+
+          shell = replace_once(
+              shell,
+              '        mountCount = 0;\n'
+              '        unmountCount = 0;\n'
+              '        syncCount = 0;\n'
+              '        generation += 1;',
+              '        mountCount = 0;\n'
+              '        unmountCount = 0;\n'
+              '        syncCount = 0;\n'
+              '        backDispatchInProgress = false;\n'
+              '        backDispatchCount = 0;\n'
+              '        duplicateBackRequestCount = 0;\n'
+              '        backCascadeGuardCount = 0;\n'
+              '        lastBackRequestId = "";\n'
+              '        lastBackRequestGeneration = -1;\n'
+              '        lastBackFromPageId = "";\n'
+              '        lastBackToPageId = "";\n'
+              '        lastBackDepthBefore = 0;\n'
+              '        lastBackDepthAfter = 0;\n'
+              '        generation += 1;',
+              'uishell init reset')
+
+          shell = replace_once(
+              shell,
+              '        activeBack = null;\n'
+              '        activeClose = null;\n'
+              '        generation += 1;\n'
+              '        lastAction = "shutdown";',
+              '        activeBack = null;\n'
+              '        activeClose = null;\n'
+              '        backDispatchInProgress = false;\n'
+              '        lastBackRequestId = "";\n'
+              '        lastBackRequestGeneration = -1;\n'
+              '        generation += 1;\n'
+              '        lastAction = "shutdown";',
+              'uishell shutdown reset')
+
+          shell = replace_once(
+              shell,
+              '        MODULE_NAME: "ch_16_ui_shell",\n        MODULE_VERSION: 8,',
+              '        MODULE_NAME: "ch_16_ui_shell",\n        MODULE_VERSION: 9,',
+              'uishell module version')
+          shell_path.write_text(shell, encoding='utf-8')
+
+          # ---- New contract test: same request cannot cascade through child pages ----
+          test = r'''var fs = require("fs");
+          var vm = require("vm");
+          var nav = fs.readFileSync("src/ch_12_translation.js", "utf8");
+          var shellSource = fs.readFileSync("src/ch_16_ui_shell.js", "utf8");
+          function requireText(source, text) {
+              if (source.indexOf(text) < 0) { throw new Error("missing: " + text); }
+          }
+          requireText(nav, "function beginSystemBackGesture(reason)");
+          requireText(nav, "function resolveSystemBackGesture(reason)");
+          requireText(nav, "function consumeSystemBackGesture(gestureId)");
+          requireText(nav, 'requestId: "back:" + gestureId');
+          requireText(nav, 'ClipHub.UIShell.dispatchBack(\n                      "navigation_system_back", request)');
+          var navDispatchStart = nav.indexOf("function dispatchBack(owner, reason)");
+          var navDispatchEnd = nav.indexOf("function anyFocused()", navDispatchStart);
+          var navDispatch = nav.substring(navDispatchStart, navDispatchEnd);
+          if (navDispatch.indexOf("consumeSystemBackGesture") < 0 ||
+                  navDispatch.indexOf("ClipHub.UIShell.dispatchBack") < 0 ||
+                  navDispatch.indexOf("consumeSystemBackGesture") >
+                      navDispatch.indexOf("ClipHub.UIShell.dispatchBack")) {
+              throw new Error("system gesture must be consumed before child dispatch");
+          }
+          requireText(shellSource, "function dispatchBack(reason, request)");
+          requireText(shellSource, "duplicateBackRequestCount += 1");
+          requireText(shellSource, "backDispatchInProgress");
+
+          var mounted = null;
+          var sandbox = {
+              console: console,
+              ClipHub: {
+                  Filter: {
+                      getPrimaryHostState: function () {
+                          return { ready: true, attached: true, rootMode: true,
+                              childAttached: mounted !== null };
+                      },
+                      mountPrimaryChildPage: function (spec) {
+                          mounted = spec;
+                          return true;
+                      },
+                      unmountPrimaryChildPage: function () {
+                          mounted = null;
+                          return true;
+                      }
+                  }
+              }
+          };
+          vm.createContext(sandbox);
+          vm.runInContext(shellSource, sandbox, { filename: "ch_16_ui_shell.js" });
+          var ui = sandbox.ClipHub.UIShell;
+          var editorView = { id: "editor" };
+          var editorBackCount = 0;
+          var tagBackCount = 0;
+          function mountEditor() {
+              ui.mountPage("editor", editorView, {
+                  title: "编辑",
+                  showBack: true,
+                  onBack: function () {
+                      editorBackCount += 1;
+                      return ui.unmountPage("editor", "test_editor_back");
+                  }
+              });
+          }
+          function syncEditor() {
+              return ui.syncEmbeddedPage({
+                  pageId: "editor",
+                  path: ["editor"],
+                  title: "编辑",
+                  showBack: true,
+                  view: editorView,
+                  onBack: function () {
+                      editorBackCount += 1;
+                      return ui.unmountPage("editor", "test_editor_back");
+                  }
+              });
+          }
+          ui.init({});
+          mountEditor();
+          ui.syncEmbeddedPage({
+              pageId: "tags",
+              path: ["editor", "tags"],
+              title: "标签",
+              showBack: true,
+              view: editorView,
+              onBack: function () {
+                  tagBackCount += 1;
+                  return syncEditor();
+              }
+          });
+          var request1 = {
+              sourceFamily: "system", ownerPageId: "tags",
+              generation: ui.getState().generation,
+              requestId: "back:system:1", gestureId: "system:1"
+          };
+          if (ui.dispatchBack("navigation_system_back", request1) !== true) {
+              throw new Error("first child back not handled");
+          }
+          if (ui.getState().currentPageId !== "editor" || tagBackCount !== 1) {
+              throw new Error("tags must return exactly one level to editor");
+          }
+          if (ui.dispatchBack("navigation_system_back", request1) !== true) {
+              throw new Error("duplicate request must be consumed");
+          }
+          if (ui.getState().currentPageId !== "editor" || editorBackCount !== 0) {
+              throw new Error("same gesture cascaded through editor");
+          }
+          var request2 = {
+              sourceFamily: "system", ownerPageId: "editor",
+              generation: ui.getState().generation,
+              requestId: "back:system:2", gestureId: "system:2"
+          };
+          if (ui.dispatchBack("navigation_system_back", request2) !== true) {
+              throw new Error("second distinct back not handled");
+          }
+          if (ui.getState().currentPageId !== "home" || editorBackCount !== 1) {
+              throw new Error("distinct gesture must return editor to home");
+          }
+          if (ui.getState().duplicateBackRequestCount !== 1) {
+              throw new Error("duplicate request diagnostics mismatch");
+          }
+          if (ui.getState().backCascadeGuardCount !== 0) {
+              throw new Error("unexpected multi-level cascade detected");
+          }
+          console.log("System Back gesture/request contract: passed");
+          '''
+          Path('scripts/test_system_back_gesture_contract.js').write_text(
+              test.replace('\n          ', '\n').lstrip(), encoding='utf-8')
+
+          # ---- Existing Back contract test ----
+          p = Path('scripts/test_primary_window_system_back.py')
+          text = p.read_text(encoding='utf-8')
+          text = replace_once(text,
+              'assert \'MODULE_VERSION: 8\' in nav',
+              'assert \'MODULE_VERSION: 9\' in nav',
+              'nav contract version')
+          text = replace_once(text,
+              'assert \'ClipHub.UIShell.dispatchBack("navigation_system_back")\' in nav',
+              'assert \'ClipHub.UIShell.dispatchBack(\' in nav\n'
+              'assert \'"navigation_system_back", request\' in nav\n'
+              'assert \'function beginSystemBackGesture(reason)\' in nav\n'
+              'assert \'function resolveSystemBackGesture(reason)\' in nav\n'
+              'assert \'function consumeSystemBackGesture(gestureId)\' in nav',
+              'nav system back assertions')
+          text = replace_once(text,
+              'assert \'function dispatchBack(reason)\' in shell',
+              'assert \'function dispatchBack(reason, request)\' in shell\n'
+              'assert \'duplicateBackRequestCount\' in shell',
+              'shell request assertion')
+          p.write_text(text, encoding='utf-8')
+
+          # ---- Regression suite / release preflight ----
+          p = Path('scripts/run_tokenizer_regression_suite.sh')
+          text = p.read_text(encoding='utf-8')
+          text = replace_once(text,
+              'run_python scripts/test_primary_window_system_back.py\n',
+              'run_python scripts/test_primary_window_system_back.py\n'
+              'run_node scripts/test_system_back_gesture_contract.js\n',
+              'suite system back test')
+          text = replace_once(text,
+              'Tokenizer regression suite: all 21 test scripts passed',
+              'Tokenizer regression suite: all 22 test scripts passed',
+              'suite count')
+          p.write_text(text, encoding='utf-8')
+
+          p = Path('scripts/manifest_contract.py')
+          text = p.read_text(encoding='utf-8')
+          text = replace_once(text, '"moduleSetVersion": "20260817.11"',
+              '"moduleSetVersion": "20260817.12"', 'manifest contract set')
+          p.write_text(text, encoding='utf-8')
+
+          p = Path('scripts/release_preflight.sh')
+          text = p.read_text(encoding='utf-8')
+          text = replace_once(text,
+              "EXPECTED_MODULE_SET='20260817.11'",
+              "EXPECTED_MODULE_SET='20260817.12'",
+              'release module set')
+          text = replace_once(text,
+              '"ch_12_translation.js": ("ch_12_translation", 22),',
+              '"ch_12_translation.js": ("ch_12_translation", 23),',
+              'release translation version')
+          text = replace_once(text,
+              '"ch_16_ui_shell.js": ("ch_16_ui_shell", 8),',
+              '"ch_16_ui_shell.js": ("ch_16_ui_shell", 9),',
+              'release shell version')
+          text = replace_once(text,
+              '  python3 scripts/test_primary_window_legacy_routes.py\n'
+              '  python3 scripts/test_review_regressions.py\n',
+              '  python3 scripts/test_primary_window_legacy_routes.py\n'
+              '  python3 scripts/test_review_regressions.py\n'
+              '  node scripts/test_system_back_gesture_contract.js\n',
+              'release system back test')
+          p.write_text(text, encoding='utf-8')
+
+          # ---- Manifest module set + source blob SHAs ----
+          manifest_path = Path('module-manifest.json')
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          if manifest.get('moduleSetVersion') != '20260817.11':
+              raise AssertionError('unexpected module set: %r' % manifest.get('moduleSetVersion'))
+          manifest['moduleSetVersion'] = '20260817.12'
+
+          def git_blob_sha(path):
+              data = Path(path).read_bytes()
+              return hashlib.sha1(('blob %d\0' % len(data)).encode('utf-8') + data).hexdigest()
+
+          by_name = {item['name']: item for item in manifest['modules']}
+          by_name['ch_12_translation.js']['sha'] = git_blob_sha('src/ch_12_translation.js')
+          by_name['ch_16_ui_shell.js']['sha'] = git_blob_sha('src/ch_16_ui_shell.js')
+          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n',
+              encoding='utf-8')
+
+          # No stale expected version should remain in guarded release files.
+          for path in ('module-manifest.json', 'scripts/manifest_contract.py',
+                       'scripts/release_preflight.sh'):
+              if '20260817.11' in Path(path).read_text(encoding='utf-8'):
+                  raise AssertionError('stale module set remains in ' + path)
+          PY
+
+      - name: Validate focused Back contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/validate_es5.py .
+          node --check src/ch_12_translation.js
+          node --check src/ch_16_ui_shell.js
+          python3 scripts/test_primary_window_system_back.py
+          node scripts/test_system_back_gesture_contract.js
+          node scripts/test_ui_shell_navigation.js
+          node scripts/test_editor_ime_back_rearm.js
+
+      - name: Run full tokenizer no-regression suite
+        run: bash scripts/run_tokenizer_regression_suite.sh
+
+      - name: Run release preflight
+        run: bash scripts/release_preflight.sh --settings-tabs-beta
+
+      - name: Commit fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/ch_12_translation.js src/ch_16_ui_shell.js \
+            scripts/test_system_back_gesture_contract.js \
+            scripts/test_primary_window_system_back.py \
+            scripts/run_tokenizer_regression_suite.sh \
+            scripts/manifest_contract.py scripts/release_preflight.sh \
+            module-manifest.json
+          git diff --cached --check
+          git commit -m 'fix: guard child system back gesture commits'
+          git push origin HEAD:cleanup/tokenizer-no-regression-20260817
