@@ -47,9 +47,11 @@ if (source.indexOf('presentationState: "source"') < 0) { throw new Error("source
 if (mount.indexOf('requestTokenizerRun("open")') >= 0 || mount.indexOf('presentationState = "source"') < 0) {
     throw new Error("initial mount must remain source-first without tokenize");
 }
-if (mode.indexOf('mode === "regex"') < 0 || mode.indexOf('presentationState = "source"') < 0 ||
+if (mode.indexOf('mode === "regex"') < 0 ||
+        mode.indexOf('requestTokenizerRun("mode_regex")') < 0 ||
+        mode.indexOf('presentationState = "source"') >= 0 ||
         mode.indexOf('requestTokenizerRun("mode_normal")') < 0) {
-    throw new Error("normal/regex presentation contract missing");
+    throw new Error("normal/regex mode-run contract missing");
 }
 if (request.indexOf('presentationState = "tokenizing"') < 0 ||
         request.indexOf('generation !== state.requestGeneration') < 0) {

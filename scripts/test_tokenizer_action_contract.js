@@ -43,6 +43,10 @@ var range = body(source, "applySelectionTokenRange");
 var effective = body(source, "getEffectiveActionText");
 var toolbar = body(source, "performToolbarClick");
 var request = body(source, "requestTokenizerRun");
+var modeSwitch = body(source, "switchMode");
+var service = fs.readFileSync("src/ch_19_tokenizer_service.js", "utf8");
+var configuredRules = body(service, "configuredRules");
+var asyncOptions = body(service, "prepareAsyncOptions");
 if (normalize.indexOf("start:") < 0 || normalize.indexOf("end:") < 0) {
     throw new Error("UTF-16 token ranges are not preserved");
 }
@@ -62,5 +66,16 @@ if (toolbar.indexOf("ClipHub.Clipboard.writeText") < 0 || toolbar.indexOf("List.
 if (source.indexOf("actionDraft") < 0 || source.indexOf("selectionGeneration") < 0 ||
         source.indexOf("resultGeneration") < 0 || request.indexOf("requestGeneration") < 0) {
     throw new Error("selection/action generation invalidation contract missing");
+}
+if (modeSwitch.indexOf("tokenizer_regex_mode_autorun_selected_v1") < 0 ||
+        modeSwitch.indexOf('return requestTokenizerRun("mode_regex");') < 0 ||
+        modeSwitch.indexOf('cancelTokenizerRun("mode_regex_source")') >= 0 ||
+        modeSwitch.indexOf('state.presentationState = "source"') >= 0) {
+    throw new Error("regex mode must immediately tokenize with configured selected rules");
+}
+if (configuredRules.indexOf("selectedRulesForTokenize()") < 0 ||
+        asyncOptions.indexOf("configuredRulesJson") < 0 ||
+        asyncOptions.indexOf("selectedRuleIdsJson") < 0) {
+    throw new Error("regex async request must snapshot persisted selected rules");
 }
 console.log("Tokenizer action contract: passed");

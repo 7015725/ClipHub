@@ -41,7 +41,7 @@ case "$MODE" in
     ;;
   --settings-tabs-beta)
     EXPECTED_REF='docs/tokenizer-softcode-hardening-20260815'
-    EXPECTED_MODULE_SET='20260817.4'
+    EXPECTED_MODULE_SET='20260817.5'
     EXPECTED_ENTRY_VERSION='8'
     EXPECTED_APP_MODULE_VERSION='23'
     REQUIRE_CLEAN='0'
@@ -322,7 +322,7 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
             "ch_15_app.js": ("ch_15_app", 23),
             "ch_12_translation.js": ("ch_12_translation", 21),
             "ch_16_ui_shell.js": ("ch_16_ui_shell", 7),
-            "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 21),
+            "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 22),
             "ch_18_tokenizer_core.js": ("ch_18_tokenizer_core", 2),
             "ch_19_tokenizer_service.js": ("ch_19_tokenizer_service", 6),
         }
@@ -546,6 +546,12 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert "Context.MODE_PRIVATE" not in tokenizer_service_source
         assert "tokenizerRulesIsolatedFromFilter: true" in tokenizer_service_source
         assert "selectedRuleIdsJson" in tokenizer_service_source
+        mode_switch = re.search(r"function switchMode\(mode\).*?\n    function ", tokenizer_source, re.S)
+        assert mode_switch is not None
+        assert "tokenizer_regex_mode_autorun_selected_v1" in mode_switch.group(0)
+        assert 'return requestTokenizerRun("mode_regex");' in mode_switch.group(0)
+        assert 'cancelTokenizerRun("mode_regex_source")' not in mode_switch.group(0)
+        assert 'state.presentationState = "source"' not in mode_switch.group(0)
         assert "settings.regexMode" in tokenizer_service_source
         assert 'settings.gapMode = mode === "regex" ? "raw" : "fallback"' in tokenizer_service_source
         assert '"raw-gap"' in tokenizer_core_source
