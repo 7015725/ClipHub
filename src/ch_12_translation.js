@@ -9,6 +9,8 @@
     var KeyEvent = Packages.android.view.KeyEvent;
     var WindowManager = Packages.android.view.WindowManager;
     var Context = Packages.android.content.Context;
+    var Intent = Packages.android.content.Intent;
+    var ComponentName = Packages.android.content.ComponentName;
     var CountDownLatch = Packages.java.util.concurrent.CountDownLatch;
     var TimeUnit = Packages.java.util.concurrent.TimeUnit;
     var AtomicReference = Packages.java.util.concurrent.atomic.AtomicReference;
@@ -814,6 +816,7 @@ function dispatchBack(owner, reason) {
         if (!initialized || hideInProgress || !uiVisible() || anyFocused()) {
             return false;
         }
+        if (now() < googleKeepVisibleUntil) { return false; }
         navState.backgroundCheckCount += 1;
         snapshot = taskSnapshot();
         navState.lastTopPackage = snapshot.packageName;
@@ -1430,6 +1433,25 @@ function dispatchBack(owner, reason) {
     var translationRemovalPending = false;
     var translationRemovalGeneration = 0;
     var pendingTranslationItemId = null;
+    var GOOGLE_TRANSLATE_PACKAGE = "com.google.android.apps.translate";
+    var GOOGLE_TRANSLATE_ACTIVITY =
+        "com.google.android.apps.translate.copydrop.gm3.TapToTranslateActivity";
+    var GOOGLE_TRANSLATE_ACTION_PROCESS_TEXT =
+        "android.intent.action.PROCESS_TEXT";
+    var GOOGLE_TRANSLATE_EXTRA_PROCESS_TEXT =
+        "android.intent.extra.PROCESS_TEXT";
+    var GOOGLE_TRANSLATE_EXTRA_PROCESS_TEXT_READONLY =
+        "android.intent.extra.PROCESS_TEXT_READONLY";
+    var GOOGLE_TRANSLATE_DEBOUNCE_MS = 400;
+    var googleLastLaunchAt = 0;
+    var googleKeepVisibleUntil = 0;
+    var googleLaunchCount = 0;
+    var googleLaunchSuccessCount = 0;
+    var googleLaunchFallbackCount = 0;
+    var googleLastLaunchMethod = "none";
+    var googleLastError = null;
+    var googleFeedbackView = null;
+    var googleFeedbackRunnable = null;
     var translationState = {
         attached: false,
         itemId: null,
@@ -1641,11 +1663,14 @@ return view;
     function translationSettings() {
         var settings = ClipHub.Settings;
         var engine;
+        var mode;
         if (!settings || typeof settings.get !== "function") {
             throw new Error("翻译设置尚未初始化");
         }
         engine = String(settings.get("translation.engine", "baidu"));
+        mode = String(settings.get("translation.mode", "builtin"));
         return {
+            mode: mode === "google" ? "google" : "builtin",
             engine: engine === "youdao" ? "youdao" : "baidu",
             baiduAppId: String(settings.get("translation.baidu.app_id", "")),
             baiduSecret: String(settings.get("translation.baidu.app_secret", "")),
@@ -1654,6 +1679,209 @@ return view;
             maxChars: Math.max(1, Math.min(10000,
                 Number(settings.get("translation.max_chars", 5000))))
         };
+    }
+
+    function isBlankGoogleText(value) {
+        return value === null || value === undefined ||
+            String(value).replace(/^\s+|\s+$/g, "").length === 0;
+    }
+
+    function isGoogleTranslateInstalled() {
+        var manager;
+        var launchIntent;
+        if (!appContext) { return false; }
+        try {
+            manager = appContext.getPackageManager();
+            manager.getPackageInfo(GOOGLE_TRANSLATE_PACKAGE, 0);
+            return true;
+        } catch (ignoredPackageInfo) {}
+        try {
+            manager = appContext.getPackageManager();
+            launchIntent = manager.getLaunchIntentForPackage(
+                GOOGLE_TRANSLATE_PACKAGE);
+            return launchIntent !== null;
+        } catch (ignoredLaunchIntent) {}
+        return false;
+    }
+
+    function fillGoogleTextIntent(intent, text) {
+        intent.setType("text/plain");
+        intent.putExtra(GOOGLE_TRANSLATE_EXTRA_PROCESS_TEXT, String(text));
+        intent.putExtra(Intent.EXTRA_TEXT, String(text));
+        intent.putExtra(GOOGLE_TRANSLATE_EXTRA_PROCESS_TEXT_READONLY, true);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        return intent;
+    }
+
+    function clearGoogleFeedback() {
+        var captured = googleFeedbackView;
+        googleFeedbackView = null;
+        if (mainHandler !== null && googleFeedbackRunnable !== null) {
+            try { mainHandler.removeCallbacks(googleFeedbackRunnable); }
+            catch (ignoredCallback) {}
+        }
+        googleFeedbackRunnable = null;
+        if (captured !== null && windowManager !== null) {
+            try { windowManager.removeView(captured); }
+            catch (ignoredRemove) {}
+        }
+        return true;
+    }
+
+    function showClipHubTranslationFeedback(message) {
+        if (!initialized || appContext === null || windowManager === null ||
+                mainHandler === null) { return false; }
+        return runOnMain(function () {
+            var colors = translationPalette();
+            var view;
+            var params;
+            var type;
+            clearGoogleFeedback();
+            view = translationText(String(message || ""), 11,
+                colors.textPrimary, false);
+            view.setGravity(Gravity.CENTER);
+            view.setPadding(dp(14), dp(9), dp(14), dp(9));
+            view.setBackground(translationRounded(
+                colors.surface, colors.stroke, 12));
+            if (Build.VERSION.SDK_INT >= 21) { view.setElevation(dp(8)); }
+            type = Build.VERSION.SDK_INT >= 26 ?
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY :
+                WindowManager.LayoutParams.TYPE_SYSTEM_ALERT;
+            params = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                type,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE |
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE |
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL |
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                PixelFormat.TRANSLUCENT);
+            params.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+            params.y = dp(76);
+            try { params.setTitle("ClipHub Internal Translation Feedback"); }
+            catch (ignoredTitle) {}
+            windowManager.addView(view, params);
+            googleFeedbackView = view;
+            googleFeedbackRunnable = new Packages.java.lang.Runnable({
+                run: function () { clearGoogleFeedback(); }
+            });
+            mainHandler.postDelayed(googleFeedbackRunnable, 1800);
+            return true;
+        }, 0);
+    }
+
+    function startGoogleTranslateIntent(intent, method) {
+        googleKeepVisibleUntil = now() + 3000;
+        appContext.startActivity(intent);
+        googleLastLaunchMethod = String(method || "unknown");
+        googleLaunchSuccessCount += 1;
+        googleLastError = null;
+        return {
+            ok: true,
+            provider: "google",
+            providerLabel: "Google 翻译",
+            launchMethod: googleLastLaunchMethod,
+            translatedText: "已发送到 Google 翻译",
+            targetLanguage: "Google 翻译"
+        };
+    }
+
+    function launchGoogleTranslateText(text) {
+        var intent;
+        var manager;
+        var lastError = null;
+        text = String(text === null || text === undefined ? "" : text);
+        googleLaunchCount += 1;
+        if (isBlankGoogleText(text)) {
+            googleLastError = "没有可翻译文本";
+            return { ok: false, error: googleLastError, blank: true };
+        }
+        if (!isGoogleTranslateInstalled()) {
+            googleLastError = "未安装 Google 翻译";
+            return {
+                ok: false,
+                error: googleLastError,
+                notInstalled: true
+            };
+        }
+        try {
+            intent = fillGoogleTextIntent(
+                new Intent(GOOGLE_TRANSLATE_ACTION_PROCESS_TEXT), text);
+            intent.setComponent(new ComponentName(
+                GOOGLE_TRANSLATE_PACKAGE, GOOGLE_TRANSLATE_ACTIVITY));
+            return startGoogleTranslateIntent(intent, "tap_to_translate");
+        } catch (explicitError) {
+            lastError = explicitError;
+        }
+        try {
+            intent = fillGoogleTextIntent(
+                new Intent(GOOGLE_TRANSLATE_ACTION_PROCESS_TEXT), text);
+            intent.setPackage(GOOGLE_TRANSLATE_PACKAGE);
+            return startGoogleTranslateIntent(intent, "process_text_package");
+        } catch (processTextError) {
+            lastError = processTextError;
+        }
+        try {
+            intent = new Intent(Intent.ACTION_SEND);
+            intent.setType("text/plain");
+            intent.setPackage(GOOGLE_TRANSLATE_PACKAGE);
+            intent.putExtra(Intent.EXTRA_TEXT, text);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            return startGoogleTranslateIntent(intent, "send_text_package");
+        } catch (sendError) {
+            lastError = sendError;
+        }
+        try {
+            manager = appContext.getPackageManager();
+            intent = manager.getLaunchIntentForPackage(GOOGLE_TRANSLATE_PACKAGE);
+            if (intent === null) {
+                throw new Error("Google 翻译启动入口不存在");
+            }
+            intent.putExtra(Intent.EXTRA_TEXT, text);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            return startGoogleTranslateIntent(intent, "launch_app");
+        } catch (launchError) {
+            lastError = launchError;
+        }
+        googleLastError = String(lastError || "Google 翻译启动失败");
+        return { ok: false, error: googleLastError, launchFailed: true };
+    }
+
+    function openGoogleTranslationForItem(itemId) {
+        var row;
+        var text;
+        var result;
+        var current = now();
+        if (current - googleLastLaunchAt < GOOGLE_TRANSLATE_DEBOUNCE_MS) {
+            return { handled: true, debounced: true, fallbackBuiltin: false };
+        }
+        googleLastLaunchAt = current;
+        row = ClipHub.Repository.getItem(Number(itemId), false);
+        if (row === null) { throw new Error("翻译目标不存在"); }
+        text = String(row.content || "");
+        translationState.itemId = Number(row.id);
+        translationState.sourceText = text;
+        translationState.translatedText = "";
+        translationState.provider = "google";
+        translationState.targetLanguage = "Google 翻译";
+        translationState.running = false;
+        translationState.lastError = null;
+        translationState.requestCount += 1;
+        result = launchGoogleTranslateText(text);
+        if (result.ok === true) {
+            translationState.successCount += 1;
+            return { handled: true, result: result, fallbackBuiltin: false };
+        }
+        translationState.errorCount += 1;
+        translationState.lastError = String(result.error || "Google 翻译启动失败");
+        if (result.notInstalled === true || result.blank === true) {
+            showClipHubTranslationFeedback(translationState.lastError);
+            return { handled: true, result: result, fallbackBuiltin: false };
+        }
+        googleLaunchFallbackCount += 1;
+        showClipHubTranslationFeedback(
+            "Google 翻译启动失败，已切换内置翻译");
+        return { handled: false, result: result, fallbackBuiltin: true };
     }
 
     function translateBaidu(text, config) {
@@ -2108,7 +2336,7 @@ return view;
         return root;
     }
 
-    function openTranslationForItem(itemId) {
+    function openBuiltinTranslationForItem(itemId) {
         var row;
         var size;
         var type;
@@ -2226,6 +2454,20 @@ return view;
         return getTranslationState();
     }
 
+    function openTranslationForItem(itemId) {
+        var config;
+        var googleResult;
+        if (!initialized) { throw new Error("翻译模块尚未初始化"); }
+        config = translationSettings();
+        if (config.mode === "google") {
+            googleResult = openGoogleTranslationForItem(itemId);
+            if (googleResult.fallbackBuiltin !== true) {
+                return getTranslationState();
+            }
+        }
+        return openBuiltinTranslationForItem(itemId);
+    }
+
     function closeTranslationPanel(reason) {
         var reasonText = String(reason || "close");
         translationGeneration += 1;
@@ -2335,6 +2577,16 @@ return view;
             open: translationState.attached,
             itemId: translationState.itemId,
             provider: translationState.provider,
+            mode: (function () {
+                try { return translationSettings().mode; }
+                catch (ignoredMode) { return "builtin"; }
+            }()),
+            googleInstalled: isGoogleTranslateInstalled(),
+            googleLaunchCount: Number(googleLaunchCount),
+            googleLaunchSuccessCount: Number(googleLaunchSuccessCount),
+            googleLaunchFallbackCount: Number(googleLaunchFallbackCount),
+            googleLastLaunchMethod: String(googleLastLaunchMethod || "none"),
+            googleLastError: googleLastError,
             sourceLength: String(translationState.sourceText || "").length,
             translatedLength:
                 String(translationState.translatedText || "").length,
@@ -2374,6 +2626,15 @@ return view;
             translationRemovalPending = false;
             translationRemovalGeneration = 0;
             pendingTranslationItemId = null;
+            googleLastLaunchAt = 0;
+            googleKeepVisibleUntil = 0;
+            googleLaunchCount = 0;
+            googleLaunchSuccessCount = 0;
+            googleLaunchFallbackCount = 0;
+            googleLastLaunchMethod = "none";
+            googleLastError = null;
+            googleFeedbackView = null;
+            googleFeedbackRunnable = null;
             return true;
         },
         configure: function (provider, enabled) {
@@ -2388,10 +2649,22 @@ return view;
             return translateConfiguredSync(text, provider);
         },
         testConfigured: function (text, callback) {
+            var config = translationSettings();
+            var result;
+            if (config.mode === "google") {
+                result = launchGoogleTranslateText(
+                    text || "ClipHub 翻译测试");
+                postTranslationCallback(callback, result);
+                return result;
+            }
             return translateConfiguredAsync(text || "ClipHub 翻译测试",
                 callback);
         },
         openForItem: openTranslationForItem,
+        isGoogleTranslateInstalled: isGoogleTranslateInstalled,
+        launchGoogleText: function (text) {
+            return launchGoogleTranslateText(text);
+        },
         close: closeTranslationPanel,
         isAttached: function () {
             return translationState.attached === true;
@@ -2404,6 +2677,8 @@ return view;
         shutdown: function () {
             try { closeTranslationPanel("shutdown"); }
             catch (ignoredTranslationClose) {}
+            try { clearGoogleFeedback(); }
+            catch (ignoredGoogleFeedback) {}
             try { navigationShutdown(); }
             catch (ignoredNavigation) {}
             translationConfig.enabled = false;
