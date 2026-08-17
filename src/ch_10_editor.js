@@ -79,6 +79,8 @@
     var editorRemovalPending = false;
     var editorRemovalGeneration = 0;
     var pendingOpenRequest = null;
+    var transientTextSession = null;
+    var transientTextGeneration = 0;
     var ready = false;
     var state = {
         open: false,
@@ -1498,7 +1500,125 @@ return view;
         }) === true;
     }
 
-    function bindTokenizerToEditor() {
+        function restoreTransientMetadataView(session) {
+        if (metadataTypeView === null || session === null || session === undefined) {
+            return false;
+        }
+        try { metadataTypeView.setEnabled(session.metadataEnabled === true); }
+        catch (ignoredEnabled) {}
+        try { metadataTypeView.setClickable(session.metadataClickable === true); }
+        catch (ignoredClickable) {}
+        return true;
+    }
+
+    function completeTransientTextSession(save) {
+        var session = transientTextSession;
+        var content = "";
+        var start;
+        var end;
+        var callback = null;
+        if (session === null || session === undefined || session.completing === true) {
+            return false;
+        }
+        if (contentInput === null) {
+            transientTextSession = null;
+            transientTextGeneration += 1;
+            return false;
+        }
+        session.completing = true;
+        if (save === true) {
+            content = String(contentInput.getText());
+            if (content.replace(/^\s+|\s+$/g, "").length === 0) {
+                session.completing = false;
+                state.lastError = "内容不能为空";
+                return false;
+            }
+            if (content.length > 200000) {
+                session.completing = false;
+                state.lastError = "内容长度不能超过 200000 字符";
+                return false;
+            }
+        }
+        try {
+            contentInput.setText(String(session.originalText || ""));
+            start = Math.max(0, Math.min(Number(session.originalSelectionStart || 0),
+                contentInput.getText().length()));
+            end = Math.max(start, Math.min(Number(session.originalSelectionEnd || start),
+                contentInput.getText().length()));
+            contentInput.setSelection(start, end);
+            updateCharacterCount();
+        } catch (restoreError) {
+            state.lastError = String(restoreError);
+        }
+        restoreTransientMetadataView(session);
+        try { hideKeyboardOnMain(); } catch (ignoredKeyboard) {}
+        callback = save === true ? session.onComplete : session.onCancel;
+        transientTextSession = null;
+        transientTextGeneration += 1;
+        try {
+            syncPrimaryEditorPage("editor", primaryEditorTitle(), function () {
+                return requestExit("shell_back");
+            });
+        } catch (ignoredShell) {}
+        if (typeof callback === "function") {
+            try {
+                if (save === true) { callback(content); }
+                else { callback(); }
+            } catch (callbackError) {
+                state.lastError = String(callbackError);
+            }
+        }
+        return true;
+    }
+
+    function beginTransientTextSessionOnMain(text, options) {
+        var originalStart = 0;
+        var originalEnd = 0;
+        var metadataEnabled = false;
+        var metadataClickable = false;
+        options = options || {};
+        if (!state.attached || contentInput === null || transientTextSession !== null) {
+            return false;
+        }
+        try { originalStart = Number(contentInput.getSelectionStart()); }
+        catch (ignoredStart) { originalStart = 0; }
+        try { originalEnd = Number(contentInput.getSelectionEnd()); }
+        catch (ignoredEnd) { originalEnd = originalStart; }
+        if (metadataTypeView !== null) {
+            try { metadataEnabled = metadataTypeView.isEnabled() === true; }
+            catch (ignoredMetaEnabled) {}
+            try { metadataClickable = metadataTypeView.isClickable() === true; }
+            catch (ignoredMetaClickable) {}
+        }
+        transientTextGeneration += 1;
+        transientTextSession = {
+            generation: transientTextGeneration,
+            completing: false,
+            originalText: String(contentInput.getText()),
+            originalSelectionStart: originalStart,
+            originalSelectionEnd: originalEnd,
+            metadataEnabled: metadataEnabled,
+            metadataClickable: metadataClickable,
+            onComplete: typeof options.onComplete === "function" ? options.onComplete : null,
+            onCancel: typeof options.onCancel === "function" ? options.onCancel : null
+        };
+        contentInput.setText(String(text === null || text === undefined ? "" : text));
+        contentInput.setSelection(contentInput.getText().length());
+        updateCharacterCount();
+        if (metadataTypeView !== null) {
+            try { metadataTypeView.setEnabled(false); } catch (ignoredDisable) {}
+            try { metadataTypeView.setClickable(false); } catch (ignoredClick) {}
+        }
+        state.lastError = null;
+        syncPrimaryEditorPage("editor", "编辑选中文本", function () {
+            return requestExit("transient_shell_back");
+        });
+        requestKeyboardOnMain();
+        return true;
+    }
+
+function bindTokenizerToEditor() {
+        if (transientTextSession !== null) { return false; }
         if (!ClipHub.TokenizerUI ||
                 typeof ClipHub.TokenizerUI.bindEditorRoot !== "function" ||
                 panelRoot === null) {
@@ -1624,6 +1744,9 @@ return view;
     function requestExit(reason) {
         return requireMain(runOnMainSync(function () {
             if (!state.attached) { return true; }
+            if (transientTextSession !== null) {
+                return completeTransientTextSession(false);
+            }
             if (exitConfirmOverlay !== null) {
                 removeExitConfirmOnMain();
                 return true;
@@ -1743,6 +1866,10 @@ return view;
     }
 
     function closePanel(reason) {
+        if (transientTextSession !== null) {
+            transientTextSession = null;
+            transientTextGeneration += 1;
+        }
         var reasonText = String(reason || "close");
         var removalOk;
         if (state.mode === "tags" && tagReturnMode !== null &&
@@ -1871,6 +1998,9 @@ return view;
         var delivered;
         var saved;
         if (contentInput === null) { return false; }
+        if (transientTextSession !== null) {
+            return completeTransientTextSession(true);
+        }
         try {
             content = String(contentInput.getText());
             if (content.replace(/^\s+|\s+$/g, "").length === 0) {
@@ -3071,7 +3201,7 @@ return view;
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 36,
+        MODULE_VERSION: 37,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
@@ -3118,6 +3248,20 @@ return view;
         close: function () { return closePanel("force_close"); },
         handleBack: function () { return requestExit("system_back"); },
         requestExit: requestExit,
+        beginTransientTextSession: function (text, options) {
+            return requireMain(runOnMainSync(function () {
+                return beginTransientTextSessionOnMain(text, options || {});
+            }, 2500));
+        },
+        cancelTransientTextSession: function () {
+            return requireMain(runOnMainSync(function () {
+                return transientTextSession !== null ?
+                    completeTransientTextSession(false) : false;
+            }, 2500));
+        },
+        isTransientTextSessionActive: function () {
+            return transientTextSession !== null;
+        },
         hasUnsavedChanges: hasEditorUnsavedChanges,
         captureDraft: captureDraft,
         hasPendingDraft: hasPendingDraft,

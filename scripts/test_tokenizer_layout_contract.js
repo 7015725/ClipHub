@@ -33,7 +33,7 @@ if (sync.indexOf('showBack: tokenizerPage ? tokenizerLaunchOrigin !== "home" : t
         sync.indexOf('dispatchTokenizerBack("shell_close")') < 0) {
     throw new Error("primary host header navigation contract missing");
 }
-if (source.indexOf("MODULE_VERSION: 17") < 0) { throw new Error("TokenizerUI v17 missing"); }
+if (source.indexOf("MODULE_VERSION: 18") < 0) { throw new Error("TokenizerUI v18 missing"); }
 if (source.indexOf("tokenizer_chip_layout_cleanup_v1") < 0) { throw new Error("chip cleanup marker missing"); }
 if (source.indexOf("tokenizer_embedded_single_header_v1") < 0 ||
         header.indexOf("if (editorEmbeddedInPrimary) { return; }") < 0) {
@@ -48,7 +48,7 @@ if (top.indexOf("关闭分词") < 0 || top.indexOf("返回编辑页") < 0 ||
         top.indexOf("规则") >= 0 || top.indexOf("帮助") >= 0) {
     throw new Error("top controls were not cleaned to context navigation");
 }
-var requiredActions = ["copy", "input", "edit", "export", "back"];
+var requiredActions = ["copy", "input", "edit"];
 var actionIndex;
 var action;
 for (actionIndex = 0; actionIndex < requiredActions.length; actionIndex += 1) {
@@ -61,9 +61,12 @@ if (toolbar.indexOf('"清空"') >= 0 || toolbar.indexOf('"clear"') >= 0 ||
         click.indexOf("clear: true") >= 0) {
     throw new Error("destructive clear toolbar contract remains");
 }
-if (cell.indexOf('String(action) === "back"') < 0 ||
-        click.indexOf('action === "back"') < 0) {
-    throw new Error("toolbar back/close dispatch missing");
+if (toolbar.indexOf('"export"') >= 0 || toolbar.indexOf('"back"') >= 0 ||
+        click.indexOf('action === "back"') >= 0 || click.indexOf('export: true') >= 0) {
+    throw new Error("removed toolbar export/back action contract regressed");
+}
+if (cell.indexOf("decorateSemanticPanelIcon") < 0) {
+    throw new Error("semantic toolbar icon contract missing");
 }
 if (build.indexOf("/^\\s*$/.test") < 0 || build.indexOf("view.setVisibility(View.GONE)") < 0 ||
         reflow.indexOf("view.getVisibility() !== View.VISIBLE") < 0 ||

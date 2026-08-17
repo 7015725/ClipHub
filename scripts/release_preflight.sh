@@ -41,7 +41,7 @@ case "$MODE" in
     ;;
   --settings-tabs-beta)
     EXPECTED_REF='docs/tokenizer-softcode-hardening-20260815'
-    EXPECTED_MODULE_SET='20260816.12'
+    EXPECTED_MODULE_SET='20260817.1'
     EXPECTED_ENTRY_VERSION='8'
     EXPECTED_APP_MODULE_VERSION='23'
     REQUIRE_CLEAN='0'
@@ -253,7 +253,7 @@ assert re.search(
 assert re.search(r"var TASK_VERSION = 3;", toggle)
 assert re.search(r"var REQUIRED_ENDPOINT_SCHEMA = 3;", toggle)
 assert re.search(r"var MIN_ENTRY_VERSION = 5;", toggle)
-expected_theme_version = 10 if mode == "--settings-tabs-beta" else 4
+expected_theme_version = 11 if mode == "--settings-tabs-beta" else 4
 assert re.search(
     r"MODULE_NAME:\s*\"ch_07_theme\"\s*,\s*MODULE_VERSION:\s*" +
     str(expected_theme_version), theme, re.S)
@@ -316,13 +316,13 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
             "ch_03_database.js": ("ch_03_database", 5),
             "ch_06_repository.js": ("ch_06_repository", 20),
             "ch_09_list.js": ("ch_09_list", 25),
-            "ch_10_editor.js": ("ch_10_editor", 36),
-            "ch_11_filter.js": ("ch_11_filter", 92),
+            "ch_10_editor.js": ("ch_10_editor", 37),
+            "ch_11_filter.js": ("ch_11_filter", 93),
             "ch_13_settings.js": ("ch_13_settings", 41),
             "ch_15_app.js": ("ch_15_app", 23),
             "ch_12_translation.js": ("ch_12_translation", 21),
             "ch_16_ui_shell.js": ("ch_16_ui_shell", 7),
-            "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 17),
+            "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 18),
             "ch_18_tokenizer_core.js": ("ch_18_tokenizer_core", 2),
             "ch_19_tokenizer_service.js": ("ch_19_tokenizer_service", 6),
         }
@@ -513,12 +513,12 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert "输入分词正则表达式" not in regex_home.group(0)
         toolbar_block = re.search(r"function buildToolbar\(column\).*?function buildHint", tokenizer_source, re.S)
         assert toolbar_block is not None
-        assert toolbar_block.group(0).count("makeToolbarCell(") == 5
+        assert toolbar_block.group(0).count("makeToolbarCell(") == 3
         assert '"copy"' in toolbar_block.group(0)
         assert '"input"' in toolbar_block.group(0)
         assert '"edit"' in toolbar_block.group(0)
-        assert '"export"' in toolbar_block.group(0)
-        assert '"back"' in toolbar_block.group(0)
+        assert '"export"' not in toolbar_block.group(0)
+        assert '"back"' not in toolbar_block.group(0)
         assert "清空" not in toolbar_block.group(0)
         assert "clear: true" not in tokenizer_source
         assert "关闭分词" in tokenizer_source

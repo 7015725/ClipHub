@@ -465,7 +465,9 @@
     }
 
     function makeShortXPanelIconDrawable(context, value, colorValue, sizeDp) {
-        var semantic = panelIconName(value);
+        var semanticKey = String(value === null || value === undefined ? "" : value);
+        var semantic = SHORTX_ICON_RESOURCES.hasOwnProperty(semanticKey) ?
+            semanticKey : panelIconName(value);
         var resourceName;
         var runtime;
         var resourceId;
@@ -513,7 +515,29 @@
         return drawable;
     }
 
-    function decoratePanelIcon(viewObj, value, colorValue, sizeDp, explicitIcon) {
+        function makeShortXSemanticIconDrawable(context, semanticName, colorValue, sizeDp) {
+        var semantic = String(semanticName || "");
+        if (!SHORTX_ICON_RESOURCES[semantic]) { return null; }
+        return makeShortXPanelIconDrawable(context, semantic, colorValue, sizeDp);
+    }
+
+    function decorateSemanticPanelIcon(view, semanticName, colorValue, sizeDp) {
+        var drawable;
+        if (view === null || view === undefined) { return false; }
+        drawable = makeShortXSemanticIconDrawable(
+            view.getContext(), semanticName, colorValue, sizeDp);
+        try {
+            view.setText("");
+            if (drawable !== null) {
+                view.setCompoundDrawables(drawable, null, null, null);
+                return true;
+            }
+            view.setCompoundDrawables(null, null, null, null);
+        } catch (ignored) {}
+        return false;
+    }
+
+function decoratePanelIcon(viewObj, value, colorValue, sizeDp, explicitIcon) {
         var drawable;
         var Gravity = Packages.android.view.Gravity;
         if (viewObj === null || viewObj === undefined || explicitIcon !== true ||
@@ -574,7 +598,9 @@
 
     ClipHub.Theme = {
         MODULE_NAME: "ch_07_theme",
-        MODULE_VERSION: 10,
+        MODULE_VERSION: 11,
+        makeShortXSemanticIconDrawable: makeShortXSemanticIconDrawable,
+        decorateSemanticPanelIcon: decorateSemanticPanelIcon,
         init: function () { mode = "system"; return true; },
         setMode: function (value) {
             value = String(value || "system");

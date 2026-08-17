@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "moduleSetVersion": "20260816.12",
+  "moduleSetVersion": "20260817.1",
   "entryMinVersion": 8,
   "sourceRef": "docs/tokenizer-softcode-hardening-20260815",
   "modules": [
@@ -53,7 +53,7 @@
     {
       "name": "ch_07_theme.js",
       "path": "src/ch_07_theme.js",
-      "sha": "3e021df194381de73fdb3f9c7832ef43f1591b71",
+      "sha": "61495b5983b20fbed85a17dda2664cc83960ae22",
       "export": "Theme",
       "runtimeRole": "managed",
       "lifecycleIndex": 5
@@ -77,7 +77,7 @@
     {
       "name": "ch_10_editor.js",
       "path": "src/ch_10_editor.js",
-      "sha": "fe64e20746737c9ac17a434921c0d45da25e214d",
+      "sha": "64523d6affd5536b51d02b898de1ae92eb518a68",
       "export": "Editor",
       "runtimeRole": "managed",
       "lifecycleIndex": 9
@@ -85,7 +85,7 @@
     {
       "name": "ch_11_filter.js",
       "path": "src/ch_11_filter.js",
-      "sha": "8aadc127a1add99b38a2ba4404e9942637a7354b",
+      "sha": "6116a8a0aaacc2f69267a7f06d5a9cffb57b5b53",
       "export": "Filter",
       "runtimeRole": "managed",
       "lifecycleIndex": 10
@@ -132,7 +132,7 @@
     {
       "name": "ch_17_tokenizer_ui.js",
       "path": "src/ch_17_tokenizer_ui.js",
-      "sha": "900d32dea210039f9ebe2697797f96173559602f",
+      "sha": "42b65c75703ce6c0c96567490f24553ba75b8998",
       "export": "TokenizerUI",
       "runtimeRole": "passive"
     },
