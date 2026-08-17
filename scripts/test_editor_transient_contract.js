@@ -12,7 +12,7 @@ var complete = section("completeTransientTextSession");
 var save = section("saveFromInput");
 var bind = section("bindTokenizerToEditor");
 var exit = section("requestExit");
-if (source.indexOf("MODULE_VERSION: 37") < 0 || source.indexOf('openPanel("transient"') >= 0) {
+if (source.indexOf("MODULE_VERSION: 38") < 0 || source.indexOf('openPanel("transient"') >= 0) {
     throw new Error("Editor transient mode boundary regressed");
 }
 if (begin.indexOf("Repository.") >= 0 || complete.indexOf("Repository.") >= 0) {

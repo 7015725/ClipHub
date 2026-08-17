@@ -40,8 +40,8 @@ case "$MODE" in
     REQUIRE_CLEAN='1'
     ;;
   --settings-tabs-beta)
-    EXPECTED_REF='docs/tokenizer-softcode-hardening-20260815'
-    EXPECTED_MODULE_SET='20260817.8'
+    EXPECTED_REF='cleanup/tokenizer-no-regression-20260817'
+    EXPECTED_MODULE_SET='20260817.10'
     EXPECTED_ENTRY_VERSION='8'
     EXPECTED_APP_MODULE_VERSION='23'
     REQUIRE_CLEAN='0'
@@ -318,13 +318,13 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
             "ch_04_clipboard.js": ("ch_04_clipboard", 10),
             "ch_06_repository.js": ("ch_06_repository", 20),
             "ch_09_list.js": ("ch_09_list", 25),
-            "ch_10_editor.js": ("ch_10_editor", 37),
-            "ch_11_filter.js": ("ch_11_filter", 93),
-            "ch_13_settings.js": ("ch_13_settings", 41),
+            "ch_10_editor.js": ("ch_10_editor", 38),
+            "ch_11_filter.js": ("ch_11_filter", 95),
+            "ch_13_settings.js": ("ch_13_settings", 42),
             "ch_15_app.js": ("ch_15_app", 23),
-            "ch_12_translation.js": ("ch_12_translation", 21),
-            "ch_16_ui_shell.js": ("ch_16_ui_shell", 7),
-            "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 25),
+            "ch_12_translation.js": ("ch_12_translation", 22),
+            "ch_16_ui_shell.js": ("ch_16_ui_shell", 8),
+            "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 26),
             "ch_18_tokenizer_core.js": ("ch_18_tokenizer_core", 2),
             "ch_19_tokenizer_service.js": ("ch_19_tokenizer_service", 6),
         }
@@ -427,10 +427,10 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         list_source = actual_sources["ch_09_list.js"]
         clipboard_source = actual_sources["ch_04_clipboard.js"]
         assert 'MODULE_NAME: "ch_16_ui_shell"' in ui_shell_source
-        assert "MODULE_VERSION: 7" in ui_shell_source
+        assert "MODULE_VERSION: 8" in ui_shell_source
         assert 'migrationStage: "primary_window_settings_regex_translation_editor_tags_tokenizer_detail_filter_overlay_closed_runtime_diagnostics"' in ui_shell_source
         assert 'registerPage({ id: "filter"' not in ui_shell_source
-        assert 'MODULE_VERSION: 7' in ui_shell_source
+        assert 'MODULE_VERSION: 8' in ui_shell_source
         assert 'primaryWindowMode: true' in ui_shell_source
         assert 'legacyWindowBridge: true' in ui_shell_source
         assert "mountPrimaryChildPage" in filter_source
@@ -529,7 +529,7 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert "function applyTokenizerRuleSelection()" in tokenizer_source
         assert "function openTokenizerRuleEditorDrawer(rule)" in tokenizer_source
         assert "function buildTokenizerRuleEditorPage(column)" in tokenizer_source
-        assert "function showTokenizerMoreMenu()" in tokenizer_source
+        assert "function showTokenizerMoreMenu()" not in tokenizer_source
         assert "TokenizerService.setSelectedRuleIds" in tokenizer_source
         assert "TokenizerService.tokenizeWithRulesAsync" in tokenizer_source
         assert "保存并参与" not in tokenizer_source

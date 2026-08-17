@@ -389,14 +389,6 @@
         return value.attached === true || value.attachedToWindow === true;
     }
 
-    function runtimeListContains(values, target) {
-        var index;
-        values = values || [];
-        for (index = 0; index < values.length; index += 1) {
-            if (String(values[index]) === String(target)) { return true; }
-        }
-        return false;
-    }
 
     function runtimeAddIssue(issues, code, detail) {
         issues.push({ code: String(code), detail: String(detail || "") });
@@ -815,7 +807,7 @@
 
     ClipHub.UIShell = {
         MODULE_NAME: "ch_16_ui_shell",
-        MODULE_VERSION: 7,
+        MODULE_VERSION: 8,
         init: init,
         registerPage: registerPage,
         getPage: function (pageId) { return copyDescriptor(requirePage(pageId)); },

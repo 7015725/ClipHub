@@ -441,34 +441,6 @@ if (semanticIcon === true && ClipHub.Theme &&
 return view;
     }
 
-    function makeButton(text, dark, primary, danger, selected, compact) {
-        var color;
-        var fill;
-        var stroke;
-        var view;
-        if (danger) {
-            color = dark ? "#FFFFB0B0" : "#FFB42323";
-            fill = dark ? "#2AD75D66" : "#14D92D36";
-            stroke = dark ? "#4FD75D66" : "#30D92D36";
-        } else if (selected || primary) {
-            color = dark ? "#FFE5F1FC" : "#FF285777";
-            fill = dark ? "#FF2C4356" : "#FFE8F1F8";
-            stroke = dark ? "#556F9FC7" : "#40799DBB";
-        } else {
-            color = dark ? "#FFD8D8DC" : "#FF45454D";
-            fill = dark ? "#FF292C31" : "#FFF3F3F5";
-            stroke = dark ? "#28FFFFFF" : "#14000000";
-        }
-        view = makeText(text, compact ? 11 : 12, color,
-            primary || danger || selected);
-        view.setGravity(Gravity.CENTER);
-        view.setPadding(dp(compact ? 9 : 11), dp(compact ? 6 : 7),
-            dp(compact ? 9 : 11), dp(compact ? 6 : 7));
-        view.setBackground(roundedBackground(fill, stroke, compact ? 9 : 10));
-        view.setClickable(true);
-        view.setFocusable(true);
-        return view;
-    }
 
     function makeCloseButton(dark) {
         var view = makeText("×", 22,
@@ -583,14 +555,6 @@ return view;
         return view;
     }
 
-    function contentTypeLabel(value) {
-        value = String(value || "text").toLowerCase();
-        if (value === "url" || value === "link") { return "链接"; }
-        if (value === "code") { return "代码"; }
-        if (value === "email") { return "邮件"; }
-        if (value === "phone") { return "电话"; }
-        return "文本";
-    }
 
     function updateCharacterCount() {
         var length = 0;
@@ -2286,44 +2250,7 @@ function bindTokenizerToEditor() {
         }, 2500));
     }
 
-    function cancelTagSelectionDraft() {
-        return requireMain(runOnMainSync(function () {
-            return restoreTextEditorOnMain(false);
-        }, 2500));
-    }
 
-    function addTitle(titleText, subtitleText) {
-        var dark = isDarkMode();
-        var primary = dark ? "#FFF1F1F3" : "#FF1B1B1F";
-        var secondary = dark ? "#FFA9A9B2" : "#FF6A6A73";
-        var titleRow = new LinearLayout(appContext);
-        var title = makeText(titleText, 15, primary, true);
-        var subtitle;
-        var params;
-        titleRow.setOrientation(LinearLayout.HORIZONTAL);
-        titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        titleRow.addView(title, new LinearLayout.LayoutParams(
-            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-        cancelView = makeCloseButton(dark);
-        cancelView.setContentDescription("关闭编辑窗口");
-        cancelView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
-            onClick: function () { requestExit("cancel_button"); }
-        }));
-        titleRow.addView(cancelView, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT));
-        params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dp(5);
-        panelRoot.addView(titleRow, params);
-        subtitle = makeText(subtitleText, 11, secondary, false);
-        params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dp(9);
-        panelRoot.addView(subtitle, params);
-    }
 
     function buildTextContent(initialText, row, options) {
         var colors = editorPalette();
@@ -3201,7 +3128,7 @@ function bindTokenizerToEditor() {
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 37,
+        MODULE_VERSION: 38,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;

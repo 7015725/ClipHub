@@ -55,6 +55,8 @@
         entryPurgeCount: 0,
         residualWindowRemoveCount: 0,
         mainFocusableUpgradeCount: 0,
+        backRefreshCount: 0,
+        backRefreshFailureCount: 0,
         keyBackCount: 0,
         backStartedCount: 0,
         backProgressCount: 0,
@@ -760,6 +762,89 @@
         scheduleBackground("focus_lost_" + String(owner || "unknown"));
     }
 
+    function backCallbackPriority() {
+        try {
+            return Number(Packages.android.window.OnBackInvokedDispatcher
+                .PRIORITY_OVERLAY);
+        } catch (ignoredOverlayPriority) {
+            try {
+                return Number(Packages.android.window.OnBackInvokedDispatcher
+                    .PRIORITY_DEFAULT);
+            } catch (ignoredDefaultPriority) { return 0; }
+        }
+    }
+
+    function refreshEntryBackCallback(entry, reason) {
+        var dispatcher = null;
+        var callback = null;
+        var oldDispatcher;
+        var oldCallback;
+        var oldMode;
+        var priority;
+        if (!entry || entry.removed || Build.VERSION.SDK_INT < 33) {
+            return true;
+        }
+        try {
+            if (!entry.view || !entry.view.isAttachedToWindow()) {
+                return false;
+            }
+        } catch (ignoredAttached) { return false; }
+        try { dispatcher = entry.view.findOnBackInvokedDispatcher(); }
+        catch (ignoredDispatcher) { dispatcher = null; }
+        if (!dispatcher) {
+            navState.backRefreshFailureCount += 1;
+            return false;
+        }
+        oldDispatcher = entry.dispatcher;
+        oldCallback = entry.callback;
+        oldMode = entry.callbackMode;
+        callback = callbackFor(entry);
+        if (!callback) {
+            entry.callbackMode = oldMode;
+            navState.backRefreshFailureCount += 1;
+            return false;
+        }
+        priority = backCallbackPriority();
+        if (oldDispatcher && oldCallback) {
+            try {
+                oldDispatcher.unregisterOnBackInvokedCallback(oldCallback);
+            } catch (unregisterError) {
+                entry.callbackMode = oldMode;
+                navState.lastError = String(unregisterError);
+                navState.backRefreshFailureCount += 1;
+                return false;
+            }
+        }
+        try {
+            dispatcher.registerOnBackInvokedCallback(
+                Number(priority), callback);
+            entry.dispatcher = dispatcher;
+            entry.callback = callback;
+            navState.callbackMode = entry.callbackMode;
+            navState.backRefreshCount += 1;
+            log("D", "navigation system back refreshed owner=" +
+                String(entry.owner || "") + " reason=" +
+                String(reason || "refresh"));
+            return true;
+        } catch (registerError) {
+            entry.dispatcher = null;
+            entry.callback = null;
+            entry.callbackMode = oldMode;
+            navState.lastError = String(registerError);
+            navState.backRefreshFailureCount += 1;
+            if (oldDispatcher && oldCallback) {
+                try {
+                    oldDispatcher.registerOnBackInvokedCallback(
+                        Number(priority), oldCallback);
+                    entry.dispatcher = oldDispatcher;
+                    entry.callback = oldCallback;
+                    navState.callbackMode = oldMode;
+                } catch (ignoredRestore) {}
+            }
+            return false;
+        }
+    }
+
     function callbackFor(entry) {
         var callback = null;
         var animationClass;
@@ -910,10 +995,7 @@
             if (dispatcher) {
                 entry.callback = callbackFor(entry);
                 if (entry.callback) {
-                    try {
-                        priority = Packages.android.window
-                            .OnBackInvokedDispatcher.PRIORITY_DEFAULT;
-                    } catch (ignoredPriority) { priority = 0; }
+                    priority = backCallbackPriority();
                     dispatcher.registerOnBackInvokedCallback(
                         Number(priority), entry.callback);
                     entry.dispatcher = dispatcher;
@@ -958,6 +1040,31 @@
             return registerView(view,
                 String(owner || ownerFor(view, "unknown")), 0);
         }, 2500);
+    }
+
+    function refreshSystemBackCapture(reason) {
+        if (!initialized) { return false; }
+        if (Build.VERSION.SDK_INT < 33) { return true; }
+        return runOnMainSync(function () {
+            var index;
+            var entry;
+            var targetCount = 0;
+            var refreshedCount = 0;
+            pruneEntries();
+            for (index = 0; index < entries.length; index += 1) {
+                entry = entries[index];
+                if (!entry || entry.removed) { continue; }
+                targetCount += 1;
+                if (refreshEntryBackCallback(entry, reason)) {
+                    refreshedCount += 1;
+                }
+            }
+            if (targetCount <= 0) {
+                scheduleScan(null);
+                return false;
+            }
+            return refreshedCount === targetCount;
+        }, 2500) === true;
     }
 
     function scan(owner) {
@@ -1080,6 +1187,9 @@
             callbackMode: navState.callbackMode,
             mainFocusableUpgradeCount:
                 Number(navState.mainFocusableUpgradeCount),
+            backRefreshCount: Number(navState.backRefreshCount),
+            backRefreshFailureCount:
+                Number(navState.backRefreshFailureCount),
             keyBackCount: Number(navState.keyBackCount),
             backStartedCount: Number(navState.backStartedCount),
             backProgressCount: Number(navState.backProgressCount),
@@ -1157,7 +1267,7 @@
 
     ClipHub.Navigation = {
         MODULE_NAME: "ch_14_navigation_embedded",
-        MODULE_VERSION: 7,
+        MODULE_VERSION: 8,
         init: navigationInit,
         dispatchBack: function (reason) {
             return dispatchBack("", reason || "api_back");
@@ -1171,6 +1281,7 @@
         },
         scanNow: function () { return scan(null); },
         registerWindow: registerManagedWindow,
+        refreshSystemBackCapture: refreshSystemBackCapture,
         getState: navigationState,
         shutdown: navigationShutdown
     };
@@ -2124,7 +2235,7 @@ return view;
     }
     ClipHub.Translation = {
         MODULE_NAME: "ch_12_translation",
-        MODULE_VERSION: 21,
+        MODULE_VERSION: 22,
         init: function (context) {
             translationConfig = { enabled: true, provider: "settings" };
             navigationInit(context || {});

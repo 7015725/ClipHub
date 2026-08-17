@@ -18,8 +18,8 @@ class ContractError(RuntimeError):
 
 MODE_DEFAULTS = {
     "--settings-tabs-beta": {
-        "sourceRef": "docs/tokenizer-softcode-hardening-20260815",
-        "moduleSetVersion": "20260817.8",
+        "sourceRef": "cleanup/tokenizer-no-regression-20260817",
+        "moduleSetVersion": "20260817.10",
         "entryVersion": 8,
         "appModuleVersion": 23,
     },
