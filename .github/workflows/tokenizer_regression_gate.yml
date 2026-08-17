@@ -1,0 +1,44 @@
+name: Tokenizer Regression Gate
+
+on:
+  push:
+    branches:
+      - cleanup/tokenizer-no-regression-20260817
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Assert runtime and performance chain unchanged
+        run: |
+          git diff --exit-code 622bf132da368d758d8a166cd9df284cae4bd5f6 HEAD -- \
+            ClipHub.js module-manifest.json src tasks
+
+      - name: Rhino ES5 validation
+        run: python3 scripts/validate_es5.py .
+
+      - name: Color API release audit
+        run: python3 scripts/audit_color_api.py --release-strict
+
+      - name: Manifest contract
+        run: python3 scripts/manifest_contract.py validate --settings-tabs-beta
+
+      - name: Unified tokenizer regression suite
+        run: bash scripts/run_tokenizer_regression_suite.sh
