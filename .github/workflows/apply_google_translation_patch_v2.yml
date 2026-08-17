@@ -1,0 +1,87 @@
+name: Apply Google Translation Integration V2
+
+on:
+  push:
+    branches:
+      - cleanup/tokenizer-no-regression-20260817
+    paths:
+      - .github/workflows/apply_google_translation_patch_v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@v4
+        with:
+          ref: cleanup/tokenizer-no-regression-20260817
+          fetch-depth: 0
+
+      - name: Reuse guarded patch and correct manifest hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          source = Path('.github/workflows/apply_google_translation_patch.yml').read_text(encoding='utf-8')
+          match = re.search(r"echo '([A-Za-z0-9+/=]+)' \| base64 -d", source)
+          if match is None:
+              raise SystemExit('embedded patch payload not found')
+          Path('/tmp/apply_google_translation_repo.py.gz.b64').write_text(match.group(1), encoding='ascii')
+          PY
+          base64 -d /tmp/apply_google_translation_repo.py.gz.b64 | gzip -d > /tmp/apply_google_translation_repo.py
+          python3 /tmp/apply_google_translation_repo.py
+
+          export CH12_SHA="$(git hash-object src/ch_12_translation.js)"
+          export CH13_SHA="$(git hash-object src/ch_13_settings.js)"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          path = Path('module-manifest.json')
+          data = json.loads(path.read_text(encoding='utf-8'))
+          wanted = {
+              'ch_12_translation.js': os.environ['CH12_SHA'],
+              'ch_13_settings.js': os.environ['CH13_SHA'],
+          }
+          seen = set()
+          for item in data.get('modules', []):
+              name = str(item.get('name', ''))
+              if name in wanted:
+                  item['sha'] = wanted[name]
+                  seen.add(name)
+          if seen != set(wanted):
+              raise SystemExit('translation manifest entries missing')
+          path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          print('corrected ch12 sha=' + wanted['ch_12_translation.js'])
+          print('corrected ch13 sha=' + wanted['ch_13_settings.js'])
+          PY
+
+      - name: Validate ES5 and no-regression contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check src/ch_12_translation.js
+          node --check src/ch_13_settings.js
+          python3 scripts/validate_es5.py .
+          python3 scripts/manifest_contract.py validate --settings-tabs-beta
+          bash scripts/release_preflight.sh --settings-tabs-beta
+          git diff --check
+
+      - name: Commit implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/ch_12_translation.js src/ch_13_settings.js module-manifest.json
+          if git diff --cached --quiet; then
+            echo 'No implementation changes to commit.'
+            exit 0
+          fi
+          git commit -m 'feat: add Google translation mode'
+          git push origin HEAD:cleanup/tokenizer-no-regression-20260817
