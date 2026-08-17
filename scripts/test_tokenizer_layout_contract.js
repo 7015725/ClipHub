@@ -33,7 +33,7 @@ if (sync.indexOf('showBack: tokenizerPage ? tokenizerLaunchOrigin !== "home" : t
         sync.indexOf('dispatchTokenizerBack("shell_close")') < 0) {
     throw new Error("primary host header navigation contract missing");
 }
-if (source.indexOf("MODULE_VERSION: 20") < 0) { throw new Error("TokenizerUI v20 missing"); }
+if (source.indexOf("MODULE_VERSION: 21") < 0) { throw new Error("TokenizerUI v21 missing"); }
 if (source.indexOf("tokenizer_chip_layout_cleanup_v1") < 0) { throw new Error("chip cleanup marker missing"); }
 if (source.indexOf("tokenizer_embedded_single_header_v1") < 0 ||
         header.indexOf("if (editorEmbeddedInPrimary) { return; }") < 0) {
@@ -67,6 +67,17 @@ if (toolbar.indexOf('"export"') >= 0 || toolbar.indexOf('"back"') >= 0 ||
 }
 if (cell.indexOf("decorateSemanticPanelIcon") < 0) {
     throw new Error("semantic toolbar icon contract missing");
+}
+if (cell.indexOf("tokenizer_toolbar_horizontal_compact_v1") < 0 ||
+        cell.indexOf("cell.setOrientation(LinearLayout.HORIZONTAL)") < 0 ||
+        cell.indexOf("new LinearLayout.LayoutParams(dp(18), dp(18))") < 0 ||
+        cell.indexOf("labelParams.leftMargin = dp(7)") < 0 ||
+        cell.indexOf("cell.setOrientation(LinearLayout.VERTICAL)") >= 0) {
+    throw new Error("compact horizontal toolbar cell contract regressed");
+}
+if ((toolbar.match(/params\.rightMargin = dp\(6\);/g) || []).length !== 2 ||
+        toolbar.indexOf("ViewGroup.LayoutParams.MATCH_PARENT, dp(46)") < 0) {
+    throw new Error("toolbar spacing symmetry contract regressed");
 }
 if (build.indexOf("/^\\s*$/.test") < 0 || build.indexOf("view.setVisibility(View.GONE)") < 0 ||
         reflow.indexOf("view.getVisibility() !== View.VISIBLE") < 0 ||
