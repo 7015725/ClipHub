@@ -41,7 +41,7 @@ case "$MODE" in
     ;;
   --settings-tabs-beta)
     EXPECTED_REF='docs/tokenizer-softcode-hardening-20260815'
-    EXPECTED_MODULE_SET='20260817.2'
+    EXPECTED_MODULE_SET='20260817.3'
     EXPECTED_ENTRY_VERSION='8'
     EXPECTED_APP_MODULE_VERSION='23'
     REQUIRE_CLEAN='0'
@@ -322,7 +322,7 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
             "ch_15_app.js": ("ch_15_app", 23),
             "ch_12_translation.js": ("ch_12_translation", 21),
             "ch_16_ui_shell.js": ("ch_16_ui_shell", 7),
-            "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 19),
+            "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 20),
             "ch_18_tokenizer_core.js": ("ch_18_tokenizer_core", 2),
             "ch_19_tokenizer_service.js": ("ch_19_tokenizer_service", 6),
         }
@@ -483,6 +483,12 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert "TokenizerService.tokenizeAsync" in tokenizer_source
         assert "TokenizerService.cancel" in tokenizer_source
         assert "editorPanelRoot.setPadding(0, 0, 0, 0);" in tokenizer_source
+        source_render = re.search(r"function buildSourceTextContent\(container\).*?\n    function ", tokenizer_source, re.S)
+        assert source_render is not None
+        assert "ScrollView.LayoutParams" not in source_render.group(0)
+        assert "new FrameLayout.LayoutParams(" in source_render.group(0)
+        assert "ViewGroup.LayoutParams.MATCH_PARENT" in source_render.group(0)
+        assert "ViewGroup.LayoutParams.WRAP_CONTENT" in source_render.group(0)
         assert 'MODULE_NAME: "ch_18_tokenizer_core"' in tokenizer_core_source
         assert "function scanRegexRanges(text, rules, options)" in tokenizer_core_source
         assert 'MODULE_NAME: "ch_19_tokenizer_service"' in tokenizer_service_source
