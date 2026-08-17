@@ -31,13 +31,17 @@ flt = expanded('src/ch_11_filter.js')
 shell = expanded('src/ch_16_ui_shell.js')
 
 assert 'MODULE_NAME: "ch_14_navigation_embedded"' in nav
-assert 'MODULE_VERSION: 8' in nav
+assert 'MODULE_VERSION: 9' in nav
 assert 'PRIORITY_OVERLAY' in nav
 assert 'PRIORITY_DEFAULT' in nav
 assert 'OnBackInvokedCallback' in nav
 assert 'OnBackAnimationCallback' in nav
 assert 'KeyEvent.KEYCODE_BACK' in nav
-assert 'ClipHub.UIShell.dispatchBack("navigation_system_back")' in nav
+assert 'ClipHub.UIShell.dispatchBack(' in nav
+assert '"navigation_system_back", request' in nav
+assert 'function beginSystemBackGesture(reason)' in nav
+assert 'function resolveSystemBackGesture(reason)' in nav
+assert 'function consumeSystemBackGesture(gestureId)' in nav
 refresh = function_block(nav, 'refreshSystemBackCapture')
 assert 'refreshEntryBackCallback' in refresh
 assert 'requestFocus' not in refresh
@@ -57,5 +61,6 @@ for page_id in (
     'tokenizer', 'tokenizer_rules', 'tokenizer_rule_editor', 'detail'
 ):
     assert 'id: "' + page_id + '"' in shell, page_id
-assert 'function dispatchBack(reason)' in shell
+assert 'function dispatchBack(reason, request)' in shell
+assert 'duplicateBackRequestCount' in shell
 print('Primary window system Back contracts: passed')

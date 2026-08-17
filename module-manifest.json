@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "moduleSetVersion": "20260817.11",
+  "moduleSetVersion": "20260817.12",
   "entryMinVersion": 8,
   "sourceRef": "cleanup/tokenizer-no-regression-20260817",
   "modules": [
@@ -93,7 +93,7 @@
     {
       "name": "ch_12_translation.js",
       "path": "src/ch_12_translation.js",
-      "sha": "edaf8af055abe2fb7072529a5c5b050d7fe024a5",
+      "sha": "409050936b9b6c36e3ad1d4d87532b2e0315105a",
       "export": "Translation",
       "runtimeRole": "managed",
       "lifecycleIndex": 12
@@ -124,7 +124,7 @@
     {
       "name": "ch_16_ui_shell.js",
       "path": "src/ch_16_ui_shell.js",
-      "sha": "a60ba45a9ed4ec9753f4eb03a3a3d9a477c86701",
+      "sha": "602a5666b475897c676f91294ee248b56d101339",
       "export": "UIShell",
       "runtimeRole": "managed",
       "lifecycleIndex": 13

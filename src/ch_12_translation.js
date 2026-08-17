@@ -46,6 +46,11 @@
     var originalAppHideUi = null;
     var lastBackAt = 0;
     var lastBackSignature = "";
+    var backGestureSequence = 0;
+    var activeBackGestureId = "";
+    var lastBackGestureId = "";
+    var lastBackGestureAt = 0;
+    var consumedBackGestureId = "";
     var navState = {
         initCount: 0,
         shutdownCount: 0,
@@ -64,6 +69,8 @@
         backInvokedCount: 0,
         backHandledCount: 0,
         duplicateBackCount: 0,
+        systemBackGestureCount: 0,
+        systemBackCommitCount: 0,
         filterBackCount: 0,
         uiHideCount: 0,
         backgroundCheckCount: 0,
@@ -77,6 +84,10 @@
         lastBackOwner: "",
         lastBackReason: "",
         lastBackSignature: "",
+        lastBackGestureId: "",
+        lastBackRequestId: "",
+        lastBackPageId: "",
+        lastBackPageGeneration: 0,
         lastHideReason: "",
         lastBackgroundReason: "",
         lastError: null
@@ -596,47 +607,136 @@
             "owner:" + String(owner || "auto");
     }
 
-    function dispatchBack(owner, reason) {
+    function shellBackSnapshot() {
+    var shell = null;
+    try {
         if (ClipHub.UIShell &&
-                typeof ClipHub.UIShell.getState === "function" &&
-                ClipHub.UIShell.getState().childAttached === true &&
-                typeof ClipHub.UIShell.dispatchBack === "function") {
-            return ClipHub.UIShell.dispatchBack("navigation_system_back");
+                typeof ClipHub.UIShell.getState === "function") {
+            shell = ClipHub.UIShell.getState() || null;
         }
-        var timestamp = now();
-        var signature = backSignature(owner, reason);
-        var handled = false;
-        if (timestamp - lastBackAt < 180 &&
-                signature === lastBackSignature) {
-            navState.duplicateBackCount += 1;
-            return true;
-        }
-        lastBackAt = timestamp;
-        lastBackSignature = signature;
-        navState.backInvokedCount += 1;
-        navState.lastBackOwner = String(owner || "");
-        navState.lastBackReason = String(reason || "system_back");
-        navState.lastBackSignature = signature;
-        try {
-            if (ClipHub.Window &&
-                    typeof ClipHub.Window.requestBack === "function") {
-                handled = ClipHub.Window.requestBack(
-                    navState.lastBackReason) === true;
-            }
-        } catch (windowBackError) {
-            navState.lastError = String(windowBackError);
-            handled = false;
-        }
-        if (!handled) {
-            handled = closeTop(owner, navState.lastBackReason);
-        }
+    } catch (ignored) { shell = null; }
+    return {
+        childAttached: !!(shell && shell.childAttached === true),
+        pageId: shell ? String(shell.activePageId ||
+            shell.currentPageId || "") : "",
+        generation: shell ? Number(shell.generation || 0) : 0
+    };
+}
+
+function beginSystemBackGesture(reason) {
+    var timestamp = now();
+    if (activeBackGestureId) {
+        lastBackGestureAt = timestamp;
+        return activeBackGestureId;
+    }
+    backGestureSequence += 1;
+    activeBackGestureId = "system:" + String(backGestureSequence) +
+        ":" + String(timestamp);
+    lastBackGestureId = activeBackGestureId;
+    lastBackGestureAt = timestamp;
+    navState.systemBackGestureCount += 1;
+    navState.lastBackGestureId = activeBackGestureId;
+    return activeBackGestureId;
+}
+
+function cancelSystemBackGesture() {
+    activeBackGestureId = "";
+    lastBackGestureId = "";
+    lastBackGestureAt = 0;
+    navState.lastBackGestureId = "";
+    return true;
+}
+
+function resolveSystemBackGesture(reason) {
+    var timestamp = now();
+    if (activeBackGestureId) { return activeBackGestureId; }
+    if (lastBackGestureId &&
+            timestamp - lastBackGestureAt >= 0 &&
+            timestamp - lastBackGestureAt <= 96) {
+        return lastBackGestureId;
+    }
+    return beginSystemBackGesture(reason);
+}
+
+function consumeSystemBackGesture(gestureId) {
+    if (!gestureId) { return true; }
+    if (consumedBackGestureId === gestureId) {
+        navState.duplicateBackCount += 1;
+        return false;
+    }
+    consumedBackGestureId = gestureId;
+    activeBackGestureId = "";
+    lastBackGestureId = gestureId;
+    lastBackGestureAt = now();
+    navState.systemBackCommitCount += 1;
+    navState.lastBackGestureId = gestureId;
+    return true;
+}
+
+function dispatchBack(owner, reason) {
+    var timestamp = now();
+    var systemBack = isSystemBackReason(reason);
+    var gestureId = systemBack ? resolveSystemBackGesture(reason) : "";
+    var signature = systemBack ? "system:" + gestureId :
+        backSignature(owner, reason);
+    var shell = shellBackSnapshot();
+    var request = null;
+    var handled = false;
+    if (systemBack) {
+        if (!consumeSystemBackGesture(gestureId)) { return true; }
+    } else if (timestamp - lastBackAt < 180 &&
+            signature === lastBackSignature) {
+        navState.duplicateBackCount += 1;
+        return true;
+    }
+    lastBackAt = timestamp;
+    lastBackSignature = signature;
+    navState.backInvokedCount += 1;
+    navState.lastBackOwner = String(owner || "");
+    navState.lastBackReason = String(reason || "system_back");
+    navState.lastBackSignature = signature;
+    if (systemBack) {
+        request = {
+            sourceFamily: "system",
+            ownerPageId: shell.pageId || String(owner || ""),
+            generation: Number(shell.generation || 0),
+            requestId: "back:" + gestureId,
+            gestureId: gestureId
+        };
+        navState.lastBackRequestId = request.requestId;
+        navState.lastBackPageId = request.ownerPageId;
+        navState.lastBackPageGeneration = request.generation;
+    }
+    if (shell.childAttached === true && ClipHub.UIShell &&
+            typeof ClipHub.UIShell.dispatchBack === "function") {
+        handled = ClipHub.UIShell.dispatchBack(
+            "navigation_system_back", request) === true;
         if (handled) { navState.backHandledCount += 1; }
-        log("I", "navigation back owner=" + navState.lastBackOwner +
-            " reason=" + navState.lastBackReason +
-            " signature=" + signature +
+        log("I", "navigation child back page=" + shell.pageId +
+            " request=" + String(request && request.requestId || "") +
             " handled=" + String(handled));
         return handled;
     }
+    try {
+        if (ClipHub.Window &&
+                typeof ClipHub.Window.requestBack === "function") {
+            handled = ClipHub.Window.requestBack(
+                navState.lastBackReason) === true;
+        }
+    } catch (windowBackError) {
+        navState.lastError = String(windowBackError);
+        handled = false;
+    }
+    if (!handled) {
+        handled = closeTop(owner, navState.lastBackReason);
+    }
+    if (handled) { navState.backHandledCount += 1; }
+    log("I", "navigation back owner=" + navState.lastBackOwner +
+        " reason=" + navState.lastBackReason +
+        " signature=" + signature +
+        " handled=" + String(handled));
+    return handled;
+}
 
     function anyFocused() {
         var index;
@@ -856,6 +956,7 @@
                     Packages.android.window.OnBackAnimationCallback, {
                         onBackStarted: function (event) {
                             navState.backStartedCount += 1;
+                            beginSystemBackGesture("predictive_back");
                             applyProgress(entry.view, event);
                         },
                         onBackProgressed: function (event) {
@@ -863,6 +964,7 @@
                         },
                         onBackCancelled: function () {
                             navState.backCancelledCount += 1;
+                            cancelSystemBackGesture();
                             resetVisual(entry.view);
                         },
                         onBackInvoked: function () {
@@ -1197,6 +1299,10 @@
             backInvokedCount: Number(navState.backInvokedCount),
             backHandledCount: Number(navState.backHandledCount),
             duplicateBackCount: Number(navState.duplicateBackCount),
+            systemBackGestureCount:
+                Number(navState.systemBackGestureCount),
+            systemBackCommitCount:
+                Number(navState.systemBackCommitCount),
             filterBackCount: Number(navState.filterBackCount),
             uiHideCount: Number(navState.uiHideCount),
             backgroundCheckCount:
@@ -1211,6 +1317,11 @@
             lastBackOwner: navState.lastBackOwner,
             lastBackReason: navState.lastBackReason,
             lastBackSignature: navState.lastBackSignature,
+            lastBackGestureId: navState.lastBackGestureId,
+            lastBackRequestId: navState.lastBackRequestId,
+            lastBackPageId: navState.lastBackPageId,
+            lastBackPageGeneration:
+                Number(navState.lastBackPageGeneration),
             lastHideReason: navState.lastHideReason,
             lastBackgroundReason: navState.lastBackgroundReason,
             lastError: navState.lastError
@@ -1233,7 +1344,16 @@
         initialized = true;
         lastBackAt = 0;
         lastBackSignature = "";
+        backGestureSequence = 0;
+        activeBackGestureId = "";
+        lastBackGestureId = "";
+        lastBackGestureAt = 0;
+        consumedBackGestureId = "";
         navState.lastBackSignature = "";
+        navState.lastBackGestureId = "";
+        navState.lastBackRequestId = "";
+        navState.lastBackPageId = "";
+        navState.lastBackPageGeneration = 0;
         navState.initCount += 1;
         installWrappers();
         captureTaskBaseline(true);
@@ -1262,12 +1382,16 @@
         hideInProgress = false;
         lastBackAt = 0;
         lastBackSignature = "";
+        activeBackGestureId = "";
+        lastBackGestureId = "";
+        lastBackGestureAt = 0;
+        consumedBackGestureId = "";
         return true;
     }
 
     ClipHub.Navigation = {
         MODULE_NAME: "ch_14_navigation_embedded",
-        MODULE_VERSION: 8,
+        MODULE_VERSION: 9,
         init: navigationInit,
         dispatchBack: function (reason) {
             return dispatchBack("", reason || "api_back");
@@ -2235,7 +2359,7 @@ return view;
     }
     ClipHub.Translation = {
         MODULE_NAME: "ch_12_translation",
-        MODULE_VERSION: 22,
+        MODULE_VERSION: 23,
         init: function (context) {
             translationConfig = { enabled: true, provider: "settings" };
             navigationInit(context || {});

@@ -17,6 +17,16 @@
     var mountCount = 0;
     var unmountCount = 0;
     var syncCount = 0;
+    var backDispatchInProgress = false;
+    var backDispatchCount = 0;
+    var duplicateBackRequestCount = 0;
+    var backCascadeGuardCount = 0;
+    var lastBackRequestId = "";
+    var lastBackRequestGeneration = -1;
+    var lastBackFromPageId = "";
+    var lastBackToPageId = "";
+    var lastBackDepthBefore = 0;
+    var lastBackDepthAfter = 0;
 
     function normalizeId(value) {
         return String(value === null || value === undefined ? "" : value)
@@ -289,13 +299,47 @@
         return true;
     }
 
-    function dispatchBack(reason) {
-        lastAction = "dispatch_back";
-        lastReason = String(reason || "");
-        if (typeof activeBack === "function") { return activeBack(); }
-        if (activePageId !== null) { return unmountPage(activePageId, reason); }
-        return false;
+    function dispatchBack(reason, request) {
+    var value = request || {};
+    var requestId = normalizeId(value.requestId || "");
+    var beforeDepth = Number(stack.length);
+    var beforePageId = currentPageId();
+    var handled = false;
+    lastAction = "dispatch_back";
+    lastReason = String(reason || "");
+    if (requestId && requestId === lastBackRequestId) {
+        duplicateBackRequestCount += 1;
+        return true;
     }
+    if (backDispatchInProgress) {
+        duplicateBackRequestCount += 1;
+        return true;
+    }
+    if (requestId) { lastBackRequestId = requestId; }
+    lastBackRequestGeneration = value.generation === undefined ? -1 :
+        Number(value.generation);
+    lastBackFromPageId = beforePageId === null ? "" :
+        String(beforePageId);
+    lastBackDepthBefore = beforeDepth;
+    backDispatchInProgress = true;
+    backDispatchCount += 1;
+    try {
+        if (typeof activeBack === "function") {
+            handled = activeBack() === true;
+        } else if (activePageId !== null) {
+            handled = unmountPage(activePageId, reason) === true;
+        }
+        return handled;
+    } finally {
+        lastBackToPageId = currentPageId() === null ? "" :
+            String(currentPageId());
+        lastBackDepthAfter = Number(stack.length);
+        if (lastBackDepthBefore - lastBackDepthAfter > 1) {
+            backCascadeGuardCount += 1;
+        }
+        backDispatchInProgress = false;
+    }
+}
 
     function dispatchClose(reason) {
         lastAction = "dispatch_close";
@@ -756,6 +800,18 @@
             mountCount: Number(mountCount),
             unmountCount: Number(unmountCount),
             syncCount: Number(syncCount),
+            backDispatchCount: Number(backDispatchCount),
+            duplicateBackRequestCount:
+                Number(duplicateBackRequestCount),
+            backCascadeGuardCount:
+                Number(backCascadeGuardCount),
+            lastBackRequestId: String(lastBackRequestId || ""),
+            lastBackRequestGeneration:
+                Number(lastBackRequestGeneration),
+            lastBackFromPageId: String(lastBackFromPageId || ""),
+            lastBackToPageId: String(lastBackToPageId || ""),
+            lastBackDepthBefore: Number(lastBackDepthBefore),
+            lastBackDepthAfter: Number(lastBackDepthAfter),
             lastAction: String(lastAction || ""),
             lastReason: String(lastReason || "")
         };
@@ -775,6 +831,16 @@
         mountCount = 0;
         unmountCount = 0;
         syncCount = 0;
+        backDispatchInProgress = false;
+        backDispatchCount = 0;
+        duplicateBackRequestCount = 0;
+        backCascadeGuardCount = 0;
+        lastBackRequestId = "";
+        lastBackRequestGeneration = -1;
+        lastBackFromPageId = "";
+        lastBackToPageId = "";
+        lastBackDepthBefore = 0;
+        lastBackDepthAfter = 0;
         generation += 1;
         mutationCount = 0;
         lastAction = "init";
@@ -799,6 +865,9 @@
         activeView = null;
         activeBack = null;
         activeClose = null;
+        backDispatchInProgress = false;
+        lastBackRequestId = "";
+        lastBackRequestGeneration = -1;
         generation += 1;
         lastAction = "shutdown";
         lastReason = "";
@@ -807,7 +876,7 @@
 
     ClipHub.UIShell = {
         MODULE_NAME: "ch_16_ui_shell",
-        MODULE_VERSION: 8,
+        MODULE_VERSION: 9,
         init: init,
         registerPage: registerPage,
         getPage: function (pageId) { return copyDescriptor(requirePage(pageId)); },
