@@ -33,7 +33,7 @@ if (sync.indexOf('showBack: tokenizerPage ? tokenizerLaunchOrigin !== "home" : t
         sync.indexOf('dispatchTokenizerBack("shell_close")') < 0) {
     throw new Error("primary host header navigation contract missing");
 }
-if (source.indexOf("MODULE_VERSION: 24") < 0) { throw new Error("TokenizerUI v24 missing"); }
+if (source.indexOf("MODULE_VERSION: 25") < 0) { throw new Error("TokenizerUI v25 missing"); }
 if (source.indexOf("tokenizer_chip_layout_cleanup_v1") < 0) { throw new Error("chip cleanup marker missing"); }
 if (source.indexOf("tokenizer_embedded_single_header_v1") < 0 ||
         header.indexOf("if (editorEmbeddedInPrimary) { return; }") < 0) {

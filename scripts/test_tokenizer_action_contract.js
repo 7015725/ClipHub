@@ -51,13 +51,13 @@ var asyncOptions = body(service, "prepareAsyncOptions");
 if (normalize.indexOf("start:") < 0 || normalize.indexOf("end:") < 0) {
     throw new Error("UTF-16 token ranges are not preserved");
 }
-if (range.indexOf("state.tokens[firstSelectable].start") < 0 ||
-        range.indexOf("state.tokens[lastSelectable].end") < 0) {
-    throw new Error("selection range does not derive from source offsets");
+if (range.indexOf("applySelectionIndexes(selected)") < 0 ||
+        source.indexOf("state.tokens[normalized[0]].start") < 0 ||
+        source.indexOf("state.tokens[normalized[normalized.length - 1]].end") < 0) {
+    throw new Error("selection range does not derive from exact selected source offsets");
 }
-if (effective.indexOf("substring") < 0 || effective.indexOf("selectionStart") < 0 ||
-        effective.indexOf("selectionEnd") < 0) {
-    throw new Error("action text must use sourceText.substring range truth");
+if (effective.indexOf("selectedOriginalTextFromIndexes()") < 0) {
+    throw new Error("action text must follow exact selected token indexes");
 }
 if (toolbar.indexOf("copyTokenizerSelectionToHome") < 0 ||
         toolbar.indexOf("getSelectedOriginalText()") < 0 || toolbar.indexOf("List.copyRow") >= 0 ||

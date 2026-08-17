@@ -48,7 +48,7 @@ var sharedCopy = body(tokenizer, "copyTokenizerSelectionToHome");
 var toolbar = body(tokenizer, "performToolbarClick");
 var popup = body(tokenizer, "performPopupActionClick");
 var popupView = body(tokenizer, "makePopupAction");
-if (clipboard.indexOf('MODULE_VERSION: 10') < 0 || tokenizer.indexOf('MODULE_VERSION: 24') < 0) {
+if (clipboard.indexOf('MODULE_VERSION: 10') < 0 || tokenizer.indexOf('MODULE_VERSION: 25') < 0) {
     throw new Error("copy ingest module versions missing");
 }
 if (writeText.indexOf("markOwnWrite(hash") < 0 ||
@@ -72,11 +72,10 @@ if (copyAndRecord.indexOf("writeText(text") < 0 ||
         clipboard.indexOf("copyAndRecordText: copyAndRecordText") < 0) {
     throw new Error("atomic copy-and-record Clipboard API missing");
 }
-if (selectedOriginal.indexOf("sourceText") < 0 ||
-        selectedOriginal.indexOf("selectionStart") < 0 ||
-        selectedOriginal.indexOf("selectionEnd") < 0 ||
-        selectedOriginal.indexOf("substring") < 0) {
-    throw new Error("selected copy must use original UTF-16 source interval");
+if (selectedOriginal.indexOf("selectedOriginalTextFromIndexes()") < 0 ||
+        tokenizer.indexOf("function selectedOriginalTextFromIndexes()") < 0 ||
+        tokenizer.indexOf("state.selectedIndexes") < 0) {
+    throw new Error("selected copy must follow exact selected token indexes");
 }
 if (sharedCopy.indexOf("tokenizer_selection_copy_ingest_v1") < 0 ||
         sharedCopy.indexOf("ClipHub.Clipboard.copyAndRecordText") < 0 ||

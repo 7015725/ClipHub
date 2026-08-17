@@ -10,7 +10,7 @@ var start = source.indexOf("function buildSourceTextContent(");
 var end = source.indexOf("\n    function ", start + 10);
 var body = source.substring(start, end < 0 ? source.length : end);
 if (start < 0) { throw new Error("buildSourceTextContent missing"); }
-if (source.indexOf("MODULE_VERSION: 24") < 0) { throw new Error("TokenizerUI v24 missing"); }
+if (source.indexOf("MODULE_VERSION: 25") < 0) { throw new Error("TokenizerUI v25 missing"); }
 if (body.indexOf("ScrollView.LayoutParams") >= 0) { throw new Error("Rhino-unsafe ScrollView.LayoutParams remains"); }
 if (body.indexOf("new FrameLayout.LayoutParams(") < 0) { throw new Error("FrameLayout.LayoutParams constructor missing"); }
 if (body.indexOf("ViewGroup.LayoutParams.MATCH_PARENT") < 0 || body.indexOf("ViewGroup.LayoutParams.WRAP_CONTENT") < 0) { throw new Error("ViewGroup LayoutParams constants missing"); }
