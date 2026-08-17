@@ -41,7 +41,7 @@ case "$MODE" in
     ;;
   --settings-tabs-beta)
     EXPECTED_REF='docs/tokenizer-softcode-hardening-20260815'
-    EXPECTED_MODULE_SET='20260817.6'
+    EXPECTED_MODULE_SET='20260817.7'
     EXPECTED_ENTRY_VERSION='8'
     EXPECTED_APP_MODULE_VERSION='23'
     REQUIRE_CLEAN='0'
@@ -314,6 +314,7 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
     if mode == "--settings-tabs-beta":
         required_versions = {
             "ch_03_database.js": ("ch_03_database", 5),
+            "ch_04_clipboard.js": ("ch_04_clipboard", 10),
             "ch_06_repository.js": ("ch_06_repository", 20),
             "ch_09_list.js": ("ch_09_list", 25),
             "ch_10_editor.js": ("ch_10_editor", 37),
@@ -322,7 +323,7 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
             "ch_15_app.js": ("ch_15_app", 23),
             "ch_12_translation.js": ("ch_12_translation", 21),
             "ch_16_ui_shell.js": ("ch_16_ui_shell", 7),
-            "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 23),
+            "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 24),
             "ch_18_tokenizer_core.js": ("ch_18_tokenizer_core", 2),
             "ch_19_tokenizer_service.js": ("ch_19_tokenizer_service", 6),
         }
@@ -423,6 +424,7 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         tokenizer_core_source = actual_sources["ch_18_tokenizer_core.js"]
         tokenizer_service_source = actual_sources["ch_19_tokenizer_service.js"]
         list_source = actual_sources["ch_09_list.js"]
+        clipboard_source = actual_sources["ch_04_clipboard.js"]
         assert 'MODULE_NAME: "ch_16_ui_shell"' in ui_shell_source
         assert "MODULE_VERSION: 7" in ui_shell_source
         assert 'migrationStage: "primary_window_settings_regex_translation_editor_tags_tokenizer_detail_filter_overlay_closed_runtime_diagnostics"' in ui_shell_source
@@ -474,6 +476,27 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         assert "mountPrimaryEditorPage" in editor_source
         assert "syncPrimaryEditorPage" in editor_source
         assert "panelOverlayHost" in editor_source
+        assert "tokenizer_selection_copy_ingest_v1" in clipboard_source
+        assert "function copyAndRecordText(value, options)" in clipboard_source
+        assert "function recordManualText(value, options)" in clipboard_source
+        assert "state.ownWrite.consumed !== true" in clipboard_source
+        assert "copyAndRecordText: copyAndRecordText" in clipboard_source
+        assert "processingLock.lock()" in clipboard_source
+        tokenizer_toolbar = re.search(r"function performToolbarClick\(action\).*?\n    function ", tokenizer_source, re.S)
+        assert tokenizer_toolbar is not None
+        assert "getSelectedOriginalText()" in tokenizer_toolbar.group(0)
+        assert "copyTokenizerSelectionToHome" in tokenizer_toolbar.group(0)
+        tokenizer_popup = re.search(r"function performPopupActionClick\(action\).*?\n    function ", tokenizer_source, re.S)
+        assert tokenizer_popup is not None
+        assert 'action === "copy"' in tokenizer_popup.group(0)
+        assert "getSelectedOriginalText()" in tokenizer_popup.group(0)
+        assert 'copyTokenizerSelectionToHome(text, "tokenizer_long_press_copy")' in tokenizer_popup.group(0)
+        tokenizer_copy_helper = re.search(r"function copyTokenizerSelectionToHome\(text, origin\).*?\n    function ", tokenizer_source, re.S)
+        assert tokenizer_copy_helper is not None
+        assert "ClipHub.Clipboard.copyAndRecordText" in tokenizer_copy_helper.group(0)
+        assert 'sourcePackage: "tokenizer"' in tokenizer_copy_helper.group(0)
+        assert 'sourceLabel: "分词"' in tokenizer_copy_helper.group(0)
+        assert "invalidateSelection" not in tokenizer_copy_helper.group(0)
         assert "bindEditorRoot" in tokenizer_source
         assert "editorEmbeddedInPrimary" in tokenizer_source
         assert "tokenizer_chrome_unified_v1" in tokenizer_source

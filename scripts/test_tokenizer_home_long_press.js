@@ -41,7 +41,7 @@ requireText(tokenizer, "ClipHub.Editor.openItem(id, { requestKeyboard: false })"
 requireText(tokenizer, "tokenizerLaunchOrigin = String(options.origin || \"editor\")");
 requireText(tokenizer, "ClipHub.Editor.requestExit(\"tokenizer_home_back\")");
 requireText(tokenizer, "openFromHomeItem: function (itemId, options)");
-requireText(tokenizer, "MODULE_VERSION: 23");
+requireText(tokenizer, "MODULE_VERSION: 24");
 if (tokenizer.indexOf("runOnMainSync(") >= 0) { throw new Error("foreign runOnMainSync reference remains"); }
 swipe = filter.match(/function bindSwipeGesture\([\s\S]*?function resultPreviewText/);
 if (!swipe || swipe[0].indexOf("if (!gesture.swiping) { return false; }") < 0) {

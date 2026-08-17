@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "moduleSetVersion": "20260817.6",
+  "moduleSetVersion": "20260817.7",
   "entryMinVersion": 8,
   "sourceRef": "docs/tokenizer-softcode-hardening-20260815",
   "modules": [
@@ -30,7 +30,7 @@
     {
       "name": "ch_04_clipboard.js",
       "path": "src/ch_04_clipboard.js",
-      "sha": "847f28b25e8aa6c27ab490d4f89fdd96169588d2",
+      "sha": "b7e9a8df43a9ba234bcd1eef723efc77038a430b",
       "export": "Clipboard",
       "runtimeRole": "managed",
       "lifecycleIndex": 6
@@ -132,7 +132,7 @@
     {
       "name": "ch_17_tokenizer_ui.js",
       "path": "src/ch_17_tokenizer_ui.js",
-      "sha": "31583ee06d104c54d0475be5ea7d45a390719d24",
+      "sha": "d81556c00cd286663a8256a354907e9bde961f57",
       "export": "TokenizerUI",
       "runtimeRole": "passive"
     },

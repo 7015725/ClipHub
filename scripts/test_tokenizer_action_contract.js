@@ -59,7 +59,8 @@ if (effective.indexOf("substring") < 0 || effective.indexOf("selectionStart") < 
         effective.indexOf("selectionEnd") < 0) {
     throw new Error("action text must use sourceText.substring range truth");
 }
-if (toolbar.indexOf("ClipHub.Clipboard.writeText") < 0 || toolbar.indexOf("List.copyRow") >= 0 ||
+if (toolbar.indexOf("copyTokenizerSelectionToHome") < 0 ||
+        toolbar.indexOf("getSelectedOriginalText()") < 0 || toolbar.indexOf("List.copyRow") >= 0 ||
         toolbar.indexOf("inputTextToFocusedTarget") < 0 ||
         toolbar.indexOf("beginTokenizerTransientEdit") < 0) {
     throw new Error("copy/input/edit action dispatch contract missing");
