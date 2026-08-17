@@ -19,7 +19,7 @@ class ContractError(RuntimeError):
 MODE_DEFAULTS = {
     "--settings-tabs-beta": {
         "sourceRef": "cleanup/tokenizer-no-regression-20260817",
-        "moduleSetVersion": "20260817.10",
+        "moduleSetVersion": "20260817.11",
         "entryVersion": 8,
         "appModuleVersion": 23,
     },

@@ -41,7 +41,7 @@ case "$MODE" in
     ;;
   --settings-tabs-beta)
     EXPECTED_REF='cleanup/tokenizer-no-regression-20260817'
-    EXPECTED_MODULE_SET='20260817.10'
+    EXPECTED_MODULE_SET='20260817.11'
     EXPECTED_ENTRY_VERSION='8'
     EXPECTED_APP_MODULE_VERSION='23'
     REQUIRE_CLEAN='0'
@@ -318,7 +318,7 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
             "ch_04_clipboard.js": ("ch_04_clipboard", 10),
             "ch_06_repository.js": ("ch_06_repository", 20),
             "ch_09_list.js": ("ch_09_list", 25),
-            "ch_10_editor.js": ("ch_10_editor", 38),
+            "ch_10_editor.js": ("ch_10_editor", 39),
             "ch_11_filter.js": ("ch_11_filter", 95),
             "ch_13_settings.js": ("ch_13_settings", 42),
             "ch_15_app.js": ("ch_15_app", 23),

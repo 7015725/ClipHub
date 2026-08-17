@@ -847,6 +847,29 @@ return view;
         return changed;
     }
 
+    function rearmSystemBackAfterImeHide() {
+        var navigation = null;
+        if (!state.attached || state.keyboardVisible ||
+                state.mode === "tags") {
+            return false;
+        }
+        try {
+            navigation = ClipHub.Navigation;
+        } catch (ignoredNavigationRead) {
+            navigation = null;
+        }
+        if (navigation === null || navigation === undefined ||
+                typeof navigation.refreshSystemBackCapture !== "function") {
+            return false;
+        }
+        try {
+            navigation.refreshSystemBackCapture();
+            return true;
+        } catch (ignoredBackRefresh) {
+            return false;
+        }
+    }
+
     function handoffEditorFocusAfterImeHide() {
         var focusRoot = panelWindowRoot !== null ?
             panelWindowRoot : panelRoot;
@@ -858,6 +881,12 @@ return view;
                 state.mode === "tags") {
             return false;
         }
+        postEditorDelayed(function () {
+            rearmSystemBackAfterImeHide();
+        }, 80, true);
+        postEditorDelayed(function () {
+            rearmSystemBackAfterImeHide();
+        }, 220, true);
         state.focusReleaseCount += 1;
         try {
             previousDescendantFocusability =
@@ -3128,7 +3157,7 @@ function bindTokenizerToEditor() {
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 38,
+        MODULE_VERSION: 39,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;

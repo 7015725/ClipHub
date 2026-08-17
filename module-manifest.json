@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "moduleSetVersion": "20260817.10",
+  "moduleSetVersion": "20260817.11",
   "entryMinVersion": 8,
   "sourceRef": "cleanup/tokenizer-no-regression-20260817",
   "modules": [
@@ -77,7 +77,7 @@
     {
       "name": "ch_10_editor.js",
       "path": "src/ch_10_editor.js",
-      "sha": "be0c2ce642bf8d8de7a4d64b8b11995ad959c595",
+      "sha": "d5cbd00b9873d410c98c6d4792210794e5543bf5",
       "export": "Editor",
       "runtimeRole": "managed",
       "lifecycleIndex": 9
