@@ -1,0 +1,235 @@
+name: Temp Fix Tokenizer Route Parent 20260817
+
+on:
+  push:
+    branches:
+      - cleanup/tokenizer-no-regression-20260817
+    paths:
+      - .github/workflows/tmp_fix_tokenizer_route_parent_20260817.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: cleanup/tokenizer-no-regression-20260817
+          fetch-depth: 0
+
+      - name: Apply logical parent fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64
+          import gzip
+          import hashlib
+          import json
+          import re
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise AssertionError('%s expected once, got %d' % (label, count))
+              return text.replace(old, new, 1)
+
+          # 1) UIShell: tokenizer may be logically parented by Editor or Home.
+          shell_path = Path('src/ch_16_ui_shell.js')
+          shell = shell_path.read_text(encoding='utf-8')
+          shell = replace_once(shell,
+              '            parentId: source.parentId === null ? null : String(source.parentId),\n            owner: String(source.owner || source.id),',
+              '            parentId: source.parentId === null ? null : String(source.parentId),\n            alternateParentIds: (source.alternateParentIds || []).slice(0),\n            owner: String(source.owner || source.id),',
+              'copyDescriptor alternate parents')
+          shell = replace_once(shell,
+              '        var page;\n        if (!id) { throw new Error("UI page id is required"); }',
+              '        var page;\n        var alternateParentIds = [];\n        var alternateInput = value.alternateParentIds || [];\n        var alternateIndex;\n        var alternateId;\n        if (!id) { throw new Error("UI page id is required"); }',
+              'registerPage alternate vars')
+          shell = replace_once(shell,
+              '        if (parentId !== null && !pages[parentId]) {\n            throw new Error("UI page parent is not registered: " + parentId);\n        }\n        page = {',
+              '        if (parentId !== null && !pages[parentId]) {\n            throw new Error("UI page parent is not registered: " + parentId);\n        }\n        for (alternateIndex = 0; alternateIndex < alternateInput.length;\n                alternateIndex += 1) {\n            alternateId = normalizeId(alternateInput[alternateIndex]);\n            if (!alternateId || !pages[alternateId]) {\n                throw new Error("UI page alternate parent is not registered: " +\n                    alternateId);\n            }\n            if (alternateId !== parentId) { alternateParentIds.push(alternateId); }\n        }\n        page = {',
+              'registerPage alternate validation')
+          shell = replace_once(shell,
+              '            id: id,\n            parentId: parentId,\n            owner: normalizeId(value.owner || id),',
+              '            id: id,\n            parentId: parentId,\n            alternateParentIds: alternateParentIds,\n            owner: normalizeId(value.owner || id),',
+              'registerPage alternate storage')
+          shell = replace_once(shell,
+              '        registerPage({ id: "tokenizer", parentId: "editor", owner: "tokenizer",\n            moduleName: "TokenizerUI", cachePolicy: "rebind",',
+              '        registerPage({ id: "tokenizer", parentId: "editor",\n            alternateParentIds: ["home"], owner: "tokenizer",\n            moduleName: "TokenizerUI", cachePolicy: "rebind",',
+              'tokenizer alternate home parent')
+          helper_anchor = '    function setStackPath(path, reason) {'
+          helper = '''    function pageAcceptsParent(page, parentId) {\n        var alternates = page && page.alternateParentIds ?\n            page.alternateParentIds : [];\n        var index;\n        if (page && page.parentId === parentId) { return true; }\n        for (index = 0; index < alternates.length; index += 1) {\n            if (String(alternates[index]) === String(parentId)) { return true; }\n        }\n        return false;\n    }\n\n'''
+          if helper_anchor not in shell:
+              raise AssertionError('setStackPath anchor missing')
+          shell = shell.replace(helper_anchor, helper + helper_anchor, 1)
+          shell = replace_once(shell,
+              '            if (page.parentId !== parent) {\n                throw new Error("UI shell path parent mismatch: " + page.id);\n            }',
+              '            if (!pageAcceptsParent(page, parent)) {\n                throw new Error("UI shell path parent mismatch: " + page.id);\n            }',
+              'setStackPath parent validator')
+          shell = replace_once(shell,
+              '        if (page.parentId !== null && currentId !== page.parentId) {\n            throw new Error("UI page parent mismatch: " + page.id +\n                " requires " + page.parentId + ", current=" + currentId);\n        }',
+              '        if (page.parentId !== null &&\n                !pageAcceptsParent(page, currentId)) {\n            throw new Error("UI page parent mismatch: " + page.id +\n                " requires " + page.parentId + ", current=" + currentId);\n        }',
+              'pushPage parent validator')
+          shell = replace_once(shell,
+              '        MODULE_VERSION: 9,',
+              '        MODULE_VERSION: 10,',
+              'UIShell module version')
+          shell_path.write_text(shell, encoding='utf-8')
+
+          # 2) Tokenizer packed source: Home launch records Home -> Tokenizer,
+          #    Editor launch records Home -> Editor -> Tokenizer.
+          tokenizer_path = Path('src/ch_17_tokenizer_ui.js')
+          loader = tokenizer_path.read_text(encoding='utf-8')
+          packed_match = re.search(r'\bvar\s+PACKED_B64\s*=\s*(.*?);', loader, re.S)
+          if packed_match is None:
+              raise AssertionError('Tokenizer PACKED_B64 missing')
+          chunks = re.findall(r'"(?:\\.|[^"\\])*"', packed_match.group(1))
+          packed = ''.join(json.loads(chunk) for chunk in chunks)
+          source = gzip.decompress(base64.b64decode(packed)).decode('utf-8')
+          source = replace_once(source,
+              '        MODULE_VERSION: 26,',
+              '        MODULE_VERSION: 27,',
+              'TokenizerUI module version')
+          source = replace_once(source,
+              '    function tokenizerPagePath(pageId) {\n        var id = String(pageId || "tokenizer");\n        if (id === "editor") { return ["editor"]; }\n        return ["editor", "tokenizer"];\n    }',
+              '    function tokenizerPagePath(pageId) {\n        var id = String(pageId || "tokenizer");\n        if (id === "editor") { return ["editor"]; }\n        if (id === "tokenizer" && tokenizerLaunchOrigin === "home") {\n            return ["tokenizer"];\n        }\n        return ["editor", "tokenizer"];\n    }',
+              'Tokenizer logical route path')
+          source_bytes = source.encode('utf-8')
+          source_sha = hashlib.sha256(source_bytes).hexdigest()
+          packed_new = base64.b64encode(gzip.compress(source_bytes, mtime=0)).decode('ascii')
+          width = 120
+          packed_chunks = [packed_new[i:i + width] for i in range(0, len(packed_new), width)]
+          packed_expr_lines = []
+          for index, chunk in enumerate(packed_chunks):
+              suffix = ' +' if index < len(packed_chunks) - 1 else ''
+              packed_expr_lines.append('        ' + json.dumps(chunk) + suffix)
+          packed_expr = '    var PACKED_B64 =\n' + '\n'.join(packed_expr_lines) + ';'
+          loader, count = re.subn(r'    var PACKED_B64\s*=\s*.*?;', packed_expr, loader,
+                                  count=1, flags=re.S)
+          if count != 1:
+              raise AssertionError('Tokenizer packed replacement failed')
+          loader, count = re.subn(r'var SOURCE_SHA256 = "[0-9a-f]+";',
+                                  'var SOURCE_SHA256 = "' + source_sha + '";',
+                                  loader, count=1)
+          if count != 1:
+              raise AssertionError('Tokenizer source digest replacement failed')
+          tokenizer_path.write_text(loader, encoding='utf-8')
+
+          # 3) Lock the two legitimate Tokenizer route shapes in tests.
+          child_test_path = Path('scripts/test_child_back_route_contract.js')
+          child = child_test_path.read_text(encoding='utf-8')
+          child = replace_once(child,
+              'var tokenizerSync = functionBody(tokenizer, "syncTokenizerShell");\nvar editorBack = functionBody(editor, "requestExit");',
+              'var tokenizerSync = functionBody(tokenizer, "syncTokenizerShell");\nvar tokenizerPath = functionBody(tokenizer, "tokenizerPagePath");\nvar editorBack = functionBody(editor, "requestExit");',
+              'child route tokenizerPath declaration')
+          child = replace_once(child,
+              'requireText(tokenizerSync,\n    \'showBack: tokenizerPage ? tokenizerLaunchOrigin !== "home" : true\',\n    "tokenizer header Back visibility");',
+              'requireText(tokenizerSync,\n    \'showBack: tokenizerPage ? tokenizerLaunchOrigin !== "home" : true\',\n    "tokenizer header Back visibility");\nrequireText(tokenizerPath,\n    \'tokenizerLaunchOrigin === "home"\',\n    "tokenizer home logical parent");\nrequireText(tokenizerPath, \'return ["tokenizer"]\',\n    "tokenizer home shell path");\nrequireText(tokenizerPath, \'return ["editor", "tokenizer"]\',\n    "tokenizer editor shell path");',
+              'child route tokenizer path assertions')
+          child_test_path.write_text(child, encoding='utf-8')
+
+          shell_test_path = Path('scripts/test_ui_shell_navigation.js')
+          shell_test = shell_test_path.read_text(encoding='utf-8')
+          anchor = '''    assertTrue(ui.unmountPage("editor", "test_editor_family_close") === true,\n        "editor family unmount");\n    equal(ui.getState().pageStack, ["home"], "editor family home");\n\n'''
+          insertion = anchor + '''    ui.mountPage("editor", { id: "editorHomeTokenizerHost" }, {\n        title: "编辑剪贴板",\n        showBack: true,\n        onBack: function () {\n            return ui.unmountPage("editor", "test_editor_home_tokenizer_back");\n        }\n    });\n    assertTrue(ui.syncEmbeddedPage({\n        pageId: "tokenizer",\n        path: ["tokenizer"],\n        title: "分词",\n        showBack: false,\n        view: { id: "tokenizerHomeView" },\n        onBack: function () {\n            return ui.unmountPage("editor", "test_tokenizer_home_back");\n        }\n    }) === true, "sync tokenizer with Home logical parent");\n    equal(ui.getState().pageStack,\n        ["home", "tokenizer"], "tokenizer Home-origin stack");\n    assertTrue(ui.dispatchBack("test_tokenizer_home") === true,\n        "tokenizer Home-origin back");\n    equal(ui.getState().pageStack, ["home"],\n        "tokenizer Home-origin back home");\n    assertTrue(ui.getState().backCascadeGuardCount === 0,\n        "tokenizer Home-origin Back must not collapse two logical levels");\n\n'''
+          shell_test = replace_once(shell_test, anchor, insertion,
+                                    'UIShell Home-origin tokenizer test')
+          shell_test_path.write_text(shell_test, encoding='utf-8')
+
+          # 4) Version gates.
+          replacements = {
+              'scripts/manifest_contract.py': [
+                  ('20260817.12', '20260817.13'),
+                  ('("ch_16_ui_shell", 9)', '("ch_16_ui_shell", 10)'),
+                  ('("ch_17_tokenizer_ui", 26)', '("ch_17_tokenizer_ui", 27)')
+              ],
+              'scripts/release_preflight.sh': [
+                  ('20260817.12', '20260817.13'),
+                  ('("ch_16_ui_shell", 9)', '("ch_16_ui_shell", 10)'),
+                  ('("ch_17_tokenizer_ui", 26)', '("ch_17_tokenizer_ui", 27)'),
+                  ('assert "MODULE_VERSION: 9" in ui_shell_source',
+                   'assert "MODULE_VERSION: 10" in ui_shell_source'),
+                  ("assert 'MODULE_VERSION: 9' in ui_shell_source",
+                   "assert 'MODULE_VERSION: 10' in ui_shell_source")
+              ],
+              'scripts/test_primary_window_system_back.py': [
+                  ('MODULE_VERSION: 9', 'MODULE_VERSION: 10')
+              ],
+              'scripts/test_system_back_gesture_contract.js': [
+                  ('MODULE_VERSION: 9', 'MODULE_VERSION: 10')
+              ],
+              'scripts/test_tokenizer_rule_drawer_contract.js': [
+                  ('MODULE_VERSION: 26', 'MODULE_VERSION: 27')
+              ],
+              'scripts/test_tokenizer_layout_contract.js': [
+                  ('MODULE_VERSION: 26', 'MODULE_VERSION: 27')
+              ]
+          }
+          for filename, pairs in replacements.items():
+              path = Path(filename)
+              text = path.read_text(encoding='utf-8')
+              for old, new in pairs:
+                  if old in text:
+                      text = text.replace(old, new)
+              path.write_text(text, encoding='utf-8')
+
+          suite_path = Path('scripts/run_tokenizer_regression_suite.sh')
+          suite = suite_path.read_text(encoding='utf-8')
+          suite = suite.replace('all 22 test scripts passed', 'all 23 test scripts passed')
+          suite_path.write_text(suite, encoding='utf-8')
+
+          # 5) Manifest hashes + module set.
+          def git_blob_sha(path):
+              data = Path(path).read_bytes()
+              header = ('blob %d\0' % len(data)).encode('ascii')
+              return hashlib.sha1(header + data).hexdigest()
+
+          manifest_path = Path('module-manifest.json')
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          if manifest.get('moduleSetVersion') != '20260817.12':
+              raise AssertionError('unexpected moduleSetVersion: ' +
+                                   str(manifest.get('moduleSetVersion')))
+          manifest['moduleSetVersion'] = '20260817.13'
+          for module in manifest.get('modules', []):
+              if module.get('name') == 'ch_16_ui_shell.js':
+                  module['sha'] = git_blob_sha('src/ch_16_ui_shell.js')
+              elif module.get('name') == 'ch_17_tokenizer_ui.js':
+                  module['sha'] = git_blob_sha('src/ch_17_tokenizer_ui.js')
+          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n',
+                                   encoding='utf-8')
+          PY
+
+      - name: Validate route fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/validate_es5.py .
+          node --check src/ch_16_ui_shell.js
+          node scripts/test_ui_shell_navigation.js
+          node scripts/test_child_back_route_contract.js
+          node scripts/test_system_back_gesture_contract.js
+          bash scripts/run_tokenizer_regression_suite.sh
+          bash scripts/release_preflight.sh --settings-tabs-beta
+          git diff --check
+
+      - name: Commit validated fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/ch_16_ui_shell.js src/ch_17_tokenizer_ui.js \
+            module-manifest.json scripts/manifest_contract.py \
+            scripts/release_preflight.sh scripts/run_tokenizer_regression_suite.sh \
+            scripts/test_primary_window_system_back.py \
+            scripts/test_system_back_gesture_contract.js \
+            scripts/test_tokenizer_rule_drawer_contract.js \
+            scripts/test_tokenizer_layout_contract.js \
+            scripts/test_child_back_route_contract.js \
+            scripts/test_ui_shell_navigation.js
+          git diff --cached --quiet && { echo 'No fix changes to commit'; exit 1; }
+          git commit -m 'fix: model tokenizer home route explicitly'
+          git push origin HEAD:cleanup/tokenizer-no-regression-20260817
