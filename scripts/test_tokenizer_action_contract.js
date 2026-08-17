@@ -42,6 +42,7 @@ var normalize = body(source, "normalizeToken");
 var range = body(source, "applySelectionTokenRange");
 var effective = body(source, "getEffectiveActionText");
 var toolbar = body(source, "performToolbarClick");
+var mount = body(source, "mountFromEditor");
 var request = body(source, "requestTokenizerRun");
 var modeSwitch = body(source, "switchMode");
 var service = fs.readFileSync("src/ch_19_tokenizer_service.js", "utf8");
@@ -77,5 +78,10 @@ if (configuredRules.indexOf("selectedRulesForTokenize()") < 0 ||
         asyncOptions.indexOf("configuredRulesJson") < 0 ||
         asyncOptions.indexOf("selectedRuleIdsJson") < 0) {
     throw new Error("regex async request must snapshot persisted selected rules");
+}
+if (mount.indexOf("tokenizer_open_autorun_normal_v1") < 0 ||
+        mount.indexOf('requestTokenizerRun("open")') < 0 ||
+        mount.indexOf('state.presentationState = "source"') >= 0) {
+    throw new Error("tokenizer open must immediately start normal tokenization");
 }
 console.log("Tokenizer action contract: passed");

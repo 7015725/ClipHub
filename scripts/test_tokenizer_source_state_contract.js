@@ -44,8 +44,10 @@ var request = body(source, "requestTokenizerRun");
 var apply = body(source, "applyTokenizerRuleSelection");
 var toggle = body(source, "toggleTokenizerRuleConfig");
 if (source.indexOf('presentationState: "source"') < 0) { throw new Error("source presentation state missing"); }
-if (mount.indexOf('requestTokenizerRun("open")') >= 0 || mount.indexOf('presentationState = "source"') < 0) {
-    throw new Error("initial mount must remain source-first without tokenize");
+if (mount.indexOf("tokenizer_open_autorun_normal_v1") < 0 ||
+        mount.indexOf('requestTokenizerRun("open")') < 0 ||
+        mount.indexOf('presentationState = "source"') >= 0) {
+    throw new Error("initial mount must immediately run normal tokenization");
 }
 if (mode.indexOf('mode === "regex"') < 0 ||
         mode.indexOf('requestTokenizerRun("mode_regex")') < 0 ||
