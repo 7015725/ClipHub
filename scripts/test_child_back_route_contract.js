@@ -69,6 +69,7 @@ var settingsPath = functionBody(settings, "settingsShellPath");
 var tokenizerBack = functionBody(tokenizer, "dispatchTokenizerBack");
 var tokenizerReturn = functionBody(tokenizer, "returnToEditor");
 var tokenizerSync = functionBody(tokenizer, "syncTokenizerShell");
+var tokenizerPath = functionBody(tokenizer, "tokenizerPagePath");
 var editorBack = functionBody(editor, "requestExit");
 var filterBack = functionBody(filter, "handleBack");
 
@@ -113,6 +114,13 @@ requireText(tokenizerReturn,
 requireText(tokenizerSync,
     'showBack: tokenizerPage ? tokenizerLaunchOrigin !== "home" : true',
     "tokenizer header Back visibility");
+requireText(tokenizerPath,
+    'tokenizerLaunchOrigin === "home"',
+    "tokenizer home logical parent");
+requireText(tokenizerPath, 'return ["tokenizer"]',
+    "tokenizer home shell path");
+requireText(tokenizerPath, 'return ["editor", "tokenizer"]',
+    "tokenizer editor shell path");
 
 requireOrder(editorBack, [
     "transientTextSession !== null",

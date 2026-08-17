@@ -48,7 +48,7 @@ var sharedCopy = body(tokenizer, "copyTokenizerSelectionToHome");
 var toolbar = body(tokenizer, "performToolbarClick");
 var popup = body(tokenizer, "performPopupActionClick");
 var popupView = body(tokenizer, "makePopupAction");
-if (clipboard.indexOf('MODULE_VERSION: 10') < 0 || tokenizer.indexOf('MODULE_VERSION: 26') < 0) {
+if (clipboard.indexOf('MODULE_VERSION: 10') < 0 || tokenizer.indexOf('MODULE_VERSION: 27') < 0) {
     throw new Error("copy ingest module versions missing");
 }
 if (writeText.indexOf("markOwnWrite(hash") < 0 ||

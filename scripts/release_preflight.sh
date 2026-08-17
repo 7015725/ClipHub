@@ -41,7 +41,7 @@ case "$MODE" in
     ;;
   --settings-tabs-beta)
     EXPECTED_REF='cleanup/tokenizer-no-regression-20260817'
-    EXPECTED_MODULE_SET='20260817.12'
+    EXPECTED_MODULE_SET='20260817.13'
     EXPECTED_ENTRY_VERSION='8'
     EXPECTED_APP_MODULE_VERSION='23'
     REQUIRE_CLEAN='0'
@@ -324,8 +324,8 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
             "ch_13_settings.js": ("ch_13_settings", 42),
             "ch_15_app.js": ("ch_15_app", 23),
             "ch_12_translation.js": ("ch_12_translation", 23),
-            "ch_16_ui_shell.js": ("ch_16_ui_shell", 9),
-            "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 26),
+            "ch_16_ui_shell.js": ("ch_16_ui_shell", 10),
+            "ch_17_tokenizer_ui.js": ("ch_17_tokenizer_ui", 27),
             "ch_18_tokenizer_core.js": ("ch_18_tokenizer_core", 2),
             "ch_19_tokenizer_service.js": ("ch_19_tokenizer_service", 6),
         }
@@ -428,10 +428,10 @@ if mode in ("--regex-beta", "--regex-rc", "--settings-tabs-beta"):
         list_source = actual_sources["ch_09_list.js"]
         clipboard_source = actual_sources["ch_04_clipboard.js"]
         assert 'MODULE_NAME: "ch_16_ui_shell"' in ui_shell_source
-        assert "MODULE_VERSION: 9" in ui_shell_source
+        assert "MODULE_VERSION: 10" in ui_shell_source
         assert 'migrationStage: "primary_window_settings_regex_translation_editor_tags_tokenizer_detail_filter_overlay_closed_runtime_diagnostics"' in ui_shell_source
         assert 'registerPage({ id: "filter"' not in ui_shell_source
-        assert 'MODULE_VERSION: 9' in ui_shell_source
+        assert 'MODULE_VERSION: 10' in ui_shell_source
         assert 'primaryWindowMode: true' in ui_shell_source
         assert 'legacyWindowBridge: true' in ui_shell_source
         assert "mountPrimaryChildPage" in filter_source

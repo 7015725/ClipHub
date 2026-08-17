@@ -142,6 +142,32 @@
         "editor family unmount");
     equal(ui.getState().pageStack, ["home"], "editor family home");
 
+    ui.mountPage("editor", { id: "editorHomeTokenizerHost" }, {
+        title: "编辑剪贴板",
+        showBack: true,
+        onBack: function () {
+            return ui.unmountPage("editor", "test_editor_home_tokenizer_back");
+        }
+    });
+    assertTrue(ui.syncEmbeddedPage({
+        pageId: "tokenizer",
+        path: ["tokenizer"],
+        title: "分词",
+        showBack: false,
+        view: { id: "tokenizerHomeView" },
+        onBack: function () {
+            return ui.unmountPage("editor", "test_tokenizer_home_back");
+        }
+    }) === true, "sync tokenizer with Home logical parent");
+    equal(ui.getState().pageStack,
+        ["home", "tokenizer"], "tokenizer Home-origin stack");
+    assertTrue(ui.dispatchBack("test_tokenizer_home") === true,
+        "tokenizer Home-origin back");
+    equal(ui.getState().pageStack, ["home"],
+        "tokenizer Home-origin back home");
+    assertTrue(ui.getState().backCascadeGuardCount === 0,
+        "tokenizer Home-origin Back must not collapse two logical levels");
+
     ui.mountPage("settings", { id: "settingsView" }, {
         title: "ClipHub 设置",
         showBack: false,

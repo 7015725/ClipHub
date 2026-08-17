@@ -47,6 +47,7 @@
         return {
             id: String(source.id),
             parentId: source.parentId === null ? null : String(source.parentId),
+            alternateParentIds: (source.alternateParentIds || []).slice(0),
             owner: String(source.owner || source.id),
             moduleName: String(source.moduleName || ""),
             cachePolicy: String(source.cachePolicy || "lazy"),
@@ -67,14 +68,28 @@
         var parentId = value.parentId === null || value.parentId === undefined ?
             null : normalizeId(value.parentId);
         var page;
+        var alternateParentIds = [];
+        var alternateInput = value.alternateParentIds || [];
+        var alternateIndex;
+        var alternateId;
         if (!id) { throw new Error("UI page id is required"); }
         if (pages[id]) { throw new Error("Duplicate UI page: " + id); }
         if (parentId !== null && !pages[parentId]) {
             throw new Error("UI page parent is not registered: " + parentId);
         }
+        for (alternateIndex = 0; alternateIndex < alternateInput.length;
+                alternateIndex += 1) {
+            alternateId = normalizeId(alternateInput[alternateIndex]);
+            if (!alternateId || !pages[alternateId]) {
+                throw new Error("UI page alternate parent is not registered: " +
+                    alternateId);
+            }
+            if (alternateId !== parentId) { alternateParentIds.push(alternateId); }
+        }
         page = {
             id: id,
             parentId: parentId,
+            alternateParentIds: alternateParentIds,
             owner: normalizeId(value.owner || id),
             moduleName: normalizeId(value.moduleName || ""),
             cachePolicy: normalizeId(value.cachePolicy || "lazy"),
@@ -116,7 +131,8 @@
             owner: "translation", moduleName: "Translation",
             cachePolicy: "rebind", legacySurface: "translation",
             shellReady: true });
-        registerPage({ id: "tokenizer", parentId: "editor", owner: "tokenizer",
+        registerPage({ id: "tokenizer", parentId: "editor",
+            alternateParentIds: ["home"], owner: "tokenizer",
             moduleName: "TokenizerUI", cachePolicy: "rebind",
             legacySurface: "tokenizer", shellReady: true });
         registerPage({ id: "tokenizer_rules", parentId: "tokenizer",
@@ -191,6 +207,17 @@
         return isSameShellFamily("settings");
     }
 
+    function pageAcceptsParent(page, parentId) {
+        var alternates = page && page.alternateParentIds ?
+            page.alternateParentIds : [];
+        var index;
+        if (page && page.parentId === parentId) { return true; }
+        for (index = 0; index < alternates.length; index += 1) {
+            if (String(alternates[index]) === String(parentId)) { return true; }
+        }
+        return false;
+    }
+
     function setStackPath(path, reason) {
         var ids = path || [];
         var next = [{ id: "home", params: {} }];
@@ -199,7 +226,7 @@
         var page;
         for (index = 0; index < ids.length; index += 1) {
             page = requirePage(ids[index]);
-            if (page.parentId !== parent) {
+            if (!pageAcceptsParent(page, parent)) {
                 throw new Error("UI shell path parent mismatch: " + page.id);
             }
             next.push({ id: page.id, params: {} });
@@ -366,7 +393,8 @@
     function pushPage(pageId, params, reason) {
         var page = requirePage(pageId);
         var currentId = currentPageId();
-        if (page.parentId !== null && currentId !== page.parentId) {
+        if (page.parentId !== null &&
+                !pageAcceptsParent(page, currentId)) {
             throw new Error("UI page parent mismatch: " + page.id +
                 " requires " + page.parentId + ", current=" + currentId);
         }
@@ -876,7 +904,7 @@
 
     ClipHub.UIShell = {
         MODULE_NAME: "ch_16_ui_shell",
-        MODULE_VERSION: 9,
+        MODULE_VERSION: 10,
         init: init,
         registerPage: registerPage,
         getPage: function (pageId) { return copyDescriptor(requirePage(pageId)); },
