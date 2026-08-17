@@ -17,30 +17,22 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: cleanup/tokenizer-no-regression-20260817
-      - name: Expand and print Back route functions
+      - name: Expand and print nested Back targets
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
           import base64, gzip, json, re
-
           def expand(path):
               text = Path(path).read_text(encoding='utf-8')
               m = re.search(r'\bvar\s+(?:PACKED_B64|encoded)\s*=\s*(.*?);', text, re.S)
-              if not m:
-                  return text
+              if not m: return text
               pieces = re.findall(r'"(?:\\.|[^"\\])*"', m.group(1))
               return gzip.decompress(base64.b64decode(''.join(json.loads(x) for x in pieces))).decode('utf-8')
-
-          def function_body(source, name):
-              marker = 'function ' + name + '('
-              start = source.find(marker)
-              if start < 0:
-                  return '<missing ' + name + '>'
-              brace = source.find('{', start)
-              depth = 0
-              quote = None
-              esc = False
+          def body(source, name):
+              start = source.find('function ' + name + '(')
+              if start < 0: return '<missing ' + name + '>'
+              brace = source.find('{', start); depth = 0; quote = None; esc = False
               for i in range(brace, len(source)):
                   c = source[i]
                   if quote:
@@ -48,37 +40,28 @@ jobs:
                       elif c == '\\': esc = True
                       elif c == quote: quote = None
                       continue
-                  if c in ('"', "'"):
-                      quote = c
-                      continue
+                  if c in ('"', "'"): quote = c; continue
                   if c == '{': depth += 1
                   elif c == '}':
                       depth -= 1
-                      if depth == 0:
-                          return source[start:i+1]
+                      if depth == 0: return source[start:i+1]
               return '<unterminated ' + name + '>'
-
-          targets = {
-              'SETTINGS': ('src/ch_13_settings.js', [
-                  'performSettingsBack', 'syncSettingsShellPage',
-                  'openEmbeddedSettingsPage', 'closePanel'
+          cases = [
+              ('SETTINGS', 'src/ch_13_settings.js', [
+                  'handleSettingsBack', 'settingsShellPath', 'settingsShellPageId',
+                  'setSettingsPage', 'openRegexRulesPage', 'openRegexRuleEditorPage',
+                  'openRegexTestPage'
               ]),
-              'TOKENIZER': ('src/ch_17_tokenizer_ui.js', [
-                  'dispatchTokenizerBack', 'syncTokenizerShell',
-                  'closeTokenizerRulesDrawer', 'closeTokenizerRuleEditorDrawer',
-                  'showTokenizerRulesDrawer', 'openTokenizerRuleEditorDrawer'
-              ]),
-              'EDITOR': ('src/ch_10_editor.js', [
-                  'requestExit', 'syncPrimaryEditorPage', 'restoreTextEditorOnMain'
-              ]),
-              'FILTER': ('src/ch_11_filter.js', [
-                  'handleBack', 'closeAdvancedDrawer', 'refreshPrimarySystemBack'
+              ('TOKENIZER', 'src/ch_17_tokenizer_ui.js', [
+                  'returnToEditor', 'returnToTokenizerRulesDrawer',
+                  'tokenizerPagePath', 'openTokenizerRulesDrawer',
+                  'openFromHomeItem', 'mountFromEditor'
               ])
-          }
-          for label, (path, names) in targets.items():
+          ]
+          for label, path, names in cases:
               source = expand(path)
               print('\n===== ' + label + ' =====')
               for name in names:
                   print('\n--- ' + name + ' ---')
-                  print(function_body(source, name)[:12000])
+                  print(body(source, name)[:16000])
           PY
