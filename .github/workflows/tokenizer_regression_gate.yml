@@ -82,8 +82,9 @@ jobs:
           print('ch12 sha=' + os.environ['CH12_SHA'])
           PY
 
-          git show HEAD^:.github/workflows/tokenizer_regression_gate.yml > .github/workflows/tokenizer_regression_gate.yml
+          git show a61131b243562c79e6436074b30a1d272403f166:.github/workflows/tokenizer_regression_gate.yml > .github/workflows/tokenizer_regression_gate.yml
           rm -f .github/workflows/apply_google_hide_after_launch.yml
+          rm -f .github/trigger_google_hide_once.txt
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -113,6 +114,6 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add src/ch_12_translation.js module-manifest.json .github/workflows/tokenizer_regression_gate.yml
-          git add -u .github/workflows/apply_google_hide_after_launch.yml
+          git add -u .github/workflows/apply_google_hide_after_launch.yml .github/trigger_google_hide_once.txt || true
           git commit -m 'fix: hide ClipHub after Google translation launch'
           git push origin HEAD:cleanup/tokenizer-no-regression-20260817
