@@ -1,0 +1,1191 @@
+SETTINGS_SOURCE_LINES=5102
+SETTINGS_SOURCE_SHA256=abc2369b79fcc44e4f4b5b069675b1035a349366990984cd136e7a2b61d1b98f
+
+=== ANCHOR translation.mode MATCHES [280, 1352, 1698, 2441, 4689] ===
+MATCH line=280 owner=<none>@0
+--- OWNER_SNIPPET <none> 260:310 ---
+00260:         lastError: null
+00261:     };
+00262: 
+00263:     var DEFAULTS = {
+00264:         historyLimit: 0,
+00265:         autoCleanupDays: 0,
+00266:         closeAfterCopy: false,
+00267:         themeMode: "system",
+00268:         sourceEnabled: true,
+00269:         sensitivePolicy: "skip",
+00270:         ignorePackages: [],
+00271:         windowPosition: null,
+00272:         windowGeometry: null,
+00273:         filterSearchHistory: [],
+00274:         searchHistoryEnabled: true,
+00275:         paginationMode: "ajax",
+00276:         paginationPageSize: 100,
+00277:         paginationPrefetchEnabled: true,
+00278:         filterRegexRuleIds: [],
+00279:         filterRegexMatchMode: "any",
+00280:         "translation.mode": "builtin",
+00281:         "translation.engine": "baidu",
+00282:         "translation.baidu.app_id": "",
+00283:         "translation.baidu.app_secret": "",
+00284:         "translation.youdao.app_key": "",
+00285:         "translation.youdao.app_secret": "",
+00286:         "translation.auto_direction": true,
+00287:         "translation.max_chars": 5000
+00288:     };
+00289: 
+00290:     function dp(value) {
+00291:         return Math.max(1, Math.floor(Number(value) * density + 0.5));
+00292:     }
+00293: 
+00294: 
+00295:     function pxToDp(value) {
+00296:         return density > 0 ? Number(value) / density : Number(value);
+00297:     }
+00298: 
+00299:     function displayMetrics() {
+00300:         var metrics = new DisplayMetrics();
+00301:         if (windowManager !== null) {
+00302:             try {
+00303:                 windowManager.getDefaultDisplay().getRealMetrics(metrics);
+00304:                 if (Number(metrics.widthPixels) > 0 &&
+00305:                         Number(metrics.heightPixels) > 0) {
+00306:                     return metrics;
+00307:                 }
+00308:             } catch (ignoredWindow) {}
+00309:         }
+00310:         if (appContext !== null) {
+--- END_OWNER_SNIPPET ---
+MATCH line=1352 owner=normalize@1326
+--- OWNER_SNIPPET normalize 1321:1466 ---
+01321:             throw new Error("分页数量必须是 5-1000 的整数");
+01322:         }
+01323:         return number;
+01324:     }
+01325: 
+01326:     function normalize(key, value) {
+01327:         if (key === "historyLimit") {
+01328:             return intRange(value, 0, 100000, DEFAULTS.historyLimit);
+01329:         }
+01330:         if (key === "autoCleanupDays") {
+01331:             return intRange(value, 0, 3650, DEFAULTS.autoCleanupDays);
+01332:         }
+01333:         if (key === "closeAfterCopy" || key === "sourceEnabled" ||
+01334:                 key === "searchHistoryEnabled" ||
+01335:                 key === "paginationPrefetchEnabled" ||
+01336:                 key === "translation.auto_direction") {
+01337:             return value === true;
+01338:         }
+01339:         if (key === "paginationMode") {
+01340:             value = String(value || "");
+01341:             if (value !== "ajax" && value !== "number") {
+01342:                 throw new Error("分页模式必须是 ajax 或 number");
+01343:             }
+01344:             return value;
+01345:         }
+01346:         if (key === "paginationPageSize") {
+01347:             return normalizePaginationPageSize(value);
+01348:         }
+01349:         if (key === "translation.max_chars") {
+01350:             return intRange(value, 1, 10000, DEFAULTS["translation.max_chars"]);
+01351:         }
+01352:         if (key === "translation.mode") {
+01353:             value = String(value || "builtin");
+01354:             return value === "google" ? "google" : "builtin";
+01355:         }
+01356:         if (key === "translation.engine") {
+01357:             value = String(value || "baidu");
+01358:             return value === "youdao" ? "youdao" : "baidu";
+01359:         }
+01360:         if (key === "translation.baidu.app_id" ||
+01361:                 key === "translation.baidu.app_secret" ||
+01362:                 key === "translation.youdao.app_key" ||
+01363:                 key === "translation.youdao.app_secret") {
+01364:             return normalizedSecret(value);
+01365:         }
+01366:         if (key === "themeMode") {
+01367:             value = String(value);
+01368:             return value === "light" || value === "dark" || value === "system"
+01369:                 ? value : DEFAULTS.themeMode;
+01370:         }
+01371:         if (key === "sensitivePolicy") {
+01372:             value = String(value);
+01373:             if (value !== "skip" && value !== "save") {
+01374:                 throw new Error("Invalid sensitive policy");
+01375:             }
+01376:             return value;
+01377:         }
+01378:         if (key === "ignorePackages") { return normalizePackages(value); }
+01379:         if (key === "windowPosition") { return normalizePosition(value); }
+01380:         if (key === "windowGeometry") {
+01381:             return normalizeWindowGeometry(value);
+01382:         }
+01383:         if (key === "filterSearchHistory") {
+01384:             return normalizeSearchHistory(value);
+01385:         }
+01386:         if (key === "filterRegexRuleIds") {
+01387:             return normalizeRegexRuleIdList(value);
+01388:         }
+01389:         if (key === "filterRegexMatchMode") {
+01390:             value = String(value || "any");
+01391:             return value === "all" ? "all" : "any";
+01392:         }
+01393:         throw new Error("Unknown setting: " + key);
+01394:     }
+01395: 
+01396:     function serialize(value) { return JSON.stringify(value); }
+01397: 
+01398:     function deserialize(key, text) {
+01399:         var parsed;
+01400:         try { parsed = JSON.parse(String(text)); }
+01401:         catch (ignored) { parsed = DEFAULTS[key]; }
+01402:         return normalize(key, parsed);
+01403:     }
+01404: 
+01405:     function requireReady() {
+01406:         if (!ready || !ClipHub.Database || !ClipHub.Database.isOpen()) {
+01407:             throw new Error("ClipHub settings are not ready");
+01408:         }
+01409:     }
+01410: 
+01411:     function persist(key, value) {
+01412:         return ClipHub.Database.executeInsert(
+01413:             "INSERT OR REPLACE INTO settings(key, value, updated_at) " +
+01414:             "VALUES (?, ?, ?)",
+01415:             [key, serialize(value), ClipHub.Base.now()]
+01416:         );
+01417:     }
+01418: 
+01419:     function load() {
+01420:         var rows = ClipHub.Database.queryAll("SELECT key, value FROM settings", []);
+01421:         var output = defaultsCopy();
+01422:         var index;
+01423:         var key;
+01424:         for (index = 0; index < rows.length; index += 1) {
+01425:             key = String(rows[index].key || "");
+01426:             if (DEFAULTS.hasOwnProperty(key)) {
+01427:                 output[key] = deserialize(key, rows[index].value);
+01428:             }
+01429:         }
+01430:         values = output;
+01431:         return getAll();
+01432:     }
+01433: 
+01434:     function applyClipboard() {
+01435:         if (ClipHub.Clipboard &&
+01436:                 typeof ClipHub.Clipboard.configure === "function") {
+01437:             ClipHub.Clipboard.configure({
+01438:                 sourceEnabled: values.sourceEnabled,
+01439:                 sensitivePolicy: values.sensitivePolicy,
+01440:                 ignorePackages: copyArray(values.ignorePackages)
+01441:             });
+01442:             return true;
+01443:         }
+01444:         return false;
+01445:     }
+01446: 
+01447:     function cleanup(referenceAt) {
+01448:         requireReady();
+01449:         if (!ClipHub.Repository ||
+01450:                 typeof ClipHub.Repository.cleanupHistory !== "function") {
+01451:             throw new Error("Repository cleanup is unavailable");
+01452:         }
+01453:         lastCleanup = ClipHub.Repository.cleanupHistory({
+01454:             historyLimit: values.historyLimit,
+01455:             autoCleanupDays: values.autoCleanupDays,
+01456:             referenceAt: referenceAt
+01457:         });
+01458:         lastCleanup.at = ClipHub.Base.now();
+01459:         return getLastCleanup();
+01460:     }
+01461: 
+01462:     function setValue(key, value, options) {
+01463:         var normalized;
+01464:         var shouldCleanup;
+01465:         options = options || {};
+01466:         requireReady();
+--- END_OWNER_SNIPPET ---
+MATCH line=1698 owner=translationDraftFromInputs@1696
+--- OWNER_SNIPPET translationDraftFromInputs 1691:1836 ---
+01691:             historyEnabledView.setText(values.searchHistoryEnabled ?
+01692:                 "搜索历史：开启" : "搜索历史：关闭");
+01693:         }
+01694:     }
+01695: 
+01696:     function translationDraftFromInputs() {
+01697:         return {
+01698:             "translation.mode": draftTranslationMode,
+01699:             "translation.engine": draftEngine,
+01700:             "translation.baidu.app_id": baiduIdInput === null ? "" :
+01701:                 String(baiduIdInput.getText()),
+01702:             "translation.baidu.app_secret": baiduSecretInput === null ? "" :
+01703:                 String(baiduSecretInput.getText()),
+01704:             "translation.youdao.app_key": youdaoKeyInput === null ? "" :
+01705:                 String(youdaoKeyInput.getText()),
+01706:             "translation.youdao.app_secret": youdaoSecretInput === null ? "" :
+01707:                 String(youdaoSecretInput.getText()),
+01708:             "translation.auto_direction": true,
+01709:             "translation.max_chars": 5000
+01710:         };
+01711:     }
+01712: 
+01713:     function googleTranslationInstalledFromSettings() {
+01714:         try {
+01715:             return ClipHub.Translation &&
+01716:                 typeof ClipHub.Translation.isGoogleTranslateInstalled ===
+01717:                     "function" &&
+01718:                 ClipHub.Translation.isGoogleTranslateInstalled() === true;
+01719:         } catch (ignored) {}
+01720:         return false;
+01721:     }
+01722: 
+01723:     function updateTranslationModeViews(colors) {
+01724:         var builtin = draftTranslationMode !== "google";
+01725:         var installed = googleTranslationInstalledFromSettings();
+01726:         if (translationModeBuiltinView !== null) {
+01727:             translationModeBuiltinView.setBackground(roundedBackground(
+01728:                 builtin ? colors.accentStrong : colors.accentSoft,
+01729:                 colors.accentBorder, 11));
+01730:             ClipHub.Theme.applyTextColor(translationModeBuiltinView,
+01731:                 builtin ? "#FFFFFFFF" : colors.accentStrong);
+01732:         }
+01733:         if (translationModeGoogleView !== null) {
+01734:             translationModeGoogleView.setBackground(roundedBackground(
+01735:                 builtin ? colors.accentSoft : colors.accentStrong,
+01736:                 colors.accentBorder, 11));
+01737:             ClipHub.Theme.applyTextColor(translationModeGoogleView,
+01738:                 builtin ? colors.accentStrong : "#FFFFFFFF");
+01739:         }
+01740:         if (translationEngineRowView !== null) {
+01741:             translationEngineRowView.setVisibility(
+01742:                 builtin ? View.VISIBLE : View.GONE);
+01743:         }
+01744:         if (translationStatusView !== null) {
+01745:             translationStatusView.setText(builtin ?
+01746:                 "配置存储于 ClipHub SQLite" :
+01747:                 (installed ? "Google 翻译：已安装" :
+01748:                     "Google 翻译：未安装"));
+01749:         }
+01750:         updateEngineViews(colors);
+01751:     }
+01752: 
+01753:     function updateEngineViews(colors) {
+01754:         var builtin = draftTranslationMode !== "google";
+01755:         var baidu = draftEngine === "baidu";
+01756:         if (baiduGroup !== null) {
+01757:             baiduGroup.setVisibility(builtin && baidu ?
+01758:                 View.VISIBLE : View.GONE);
+01759:         }
+01760:         if (youdaoGroup !== null) {
+01761:             youdaoGroup.setVisibility(builtin && !baidu ?
+01762:                 View.VISIBLE : View.GONE);
+01763:         }
+01764:         if (engineBaiduView !== null) {
+01765:             engineBaiduView.setBackground(roundedBackground(
+01766:                 baidu ? colors.accentStrong : colors.accentSoft,
+01767:                 colors.accentBorder, 11));
+01768:             ClipHub.Theme.applyTextColor(engineBaiduView, baidu ?
+01769:                 "#FFFFFFFF" : colors.accentStrong);
+01770:         }
+01771:         if (engineYoudaoView !== null) {
+01772:             engineYoudaoView.setBackground(roundedBackground(
+01773:                 baidu ? colors.accentSoft : colors.accentStrong,
+01774:                 colors.accentBorder, 11));
+01775:             ClipHub.Theme.applyTextColor(engineYoudaoView, baidu ?
+01776:                 colors.accentStrong : "#FFFFFFFF");
+01777:         }
+01778:     }
+01779: 
+01780:     function saveTranslationSettings() {
+01781:         try {
+01782:             setMany(translationDraftFromInputs(), { cleanup: false });
+01783:             uiState.saveTranslationCount += 1;
+01784:             if (translationStatusView !== null) {
+01785:                 translationStatusView.setText(
+01786:                     draftTranslationMode === "google" ?
+01787:                         (googleTranslationInstalledFromSettings() ?
+01788:                             "Google 翻译已启用 · 已安装" :
+01789:                             "Google 翻译已启用 · 未安装") :
+01790:                         "配置已保存到 SQLite");
+01791:             }
+01792:             return true;
+01793:         } catch (error) {
+01794:             uiState.lastError = String(error);
+01795:             if (translationStatusView !== null) {
+01796:                 translationStatusView.setText("保存失败：" + String(error));
+01797:             }
+01798:             return false;
+01799:         }
+01800:     }
+01801: 
+01802:     function testTranslationSettings() {
+01803:         if (!saveTranslationSettings()) { return false; }
+01804:         uiState.testTranslationCount += 1;
+01805:         if (translationStatusView !== null) {
+01806:             translationStatusView.setText("正在测试翻译…");
+01807:         }
+01808:         try {
+01809:             if (!ClipHub.Translation ||
+01810:                     typeof ClipHub.Translation.testConfigured !== "function") {
+01811:                 throw new Error("翻译模块尚未就绪");
+01812:             }
+01813:             ClipHub.Translation.testConfigured("ClipHub 翻译测试",
+01814:                 function (result) {
+01815:                     runOnMainSync(function () {
+01816:                         if (result && result.ok === true) {
+01817:                             uiState.testTranslationSuccessCount += 1;
+01818:                             uiState.lastTestResult = String(result.translatedText || "");
+01819:                             if (translationStatusView !== null) {
+01820:                                 translationStatusView.setText("测试成功：" +
+01821:                                     uiState.lastTestResult);
+01822:                             }
+01823:                         } else {
+01824:                             uiState.lastError = result ? String(result.error) :
+01825:                                 "翻译测试失败";
+01826:                             if (translationStatusView !== null) {
+01827:                                 translationStatusView.setText("测试失败：" +
+01828:                                     uiState.lastError);
+01829:                             }
+01830:                         }
+01831:                         return true;
+01832:                     }, 3000);
+01833:                 });
+01834:             return true;
+01835:         } catch (error) {
+01836:             uiState.lastError = String(error);
+--- END_OWNER_SNIPPET ---
+MATCH line=2441 owner=makeTranslationSection@2430
+--- OWNER_SNIPPET makeTranslationSection 2425:2570 ---
+02425:         uiState.paginationSectionPresent = true;
+02426:         updatePaginationViews(colors);
+02427:         return section;
+02428:     }
+02429: 
+02430:     function makeTranslationSection(colors) {
+02431:         var section = makeSection(colors);
+02432:         var modeRow = new LinearLayout(appContext);
+02433:         var engineRow = new LinearLayout(appContext);
+02434:         var actionRow = new LinearLayout(appContext);
+02435:         var saveButton;
+02436:         var testButton;
+02437:         var params;
+02438:         makeSectionTitle(section, "翻译",
+02439:             "选择内置翻译或 Google 翻译", colors);
+02440:         draftTranslationMode = String(
+02441:             values["translation.mode"] || "builtin");
+02442:         draftEngine = String(values["translation.engine"] || "baidu");
+02443:         modeRow.setOrientation(LinearLayout.HORIZONTAL);
+02444:         translationModeBuiltinView = makeButton(
+02445:             "内置翻译", colors, false, false);
+02446:         translationModeGoogleView = makeButton(
+02447:             "Google 翻译", colors, false, false);
+02448:         translationModeBuiltinView.setOnClickListener(new JavaAdapter(
+02449:             View.OnClickListener, { onClick: function () {
+02450:                 draftTranslationMode = "builtin";
+02451:                 updateTranslationModeViews(colors);
+02452:             }}));
+02453:         translationModeGoogleView.setOnClickListener(new JavaAdapter(
+02454:             View.OnClickListener, { onClick: function () {
+02455:                 draftTranslationMode = "google";
+02456:                 updateTranslationModeViews(colors);
+02457:             }}));
+02458:         params = new LinearLayout.LayoutParams(0, dp(40), 1);
+02459:         params.rightMargin = dp(6);
+02460:         modeRow.addView(translationModeBuiltinView, params);
+02461:         modeRow.addView(translationModeGoogleView,
+02462:             new LinearLayout.LayoutParams(0, dp(40), 1));
+02463:         section.addView(modeRow, new LinearLayout.LayoutParams(
+02464:             LinearLayout.LayoutParams.MATCH_PARENT, dp(40)));
+02465: 
+02466:         engineRow.setOrientation(LinearLayout.HORIZONTAL);
+02467:         translationEngineRowView = engineRow;
+02468:         engineBaiduView = makeButton("百度翻译", colors, false, false);
+02469:         engineYoudaoView = makeButton("有道翻译", colors, false, false);
+02470:         engineBaiduView.setOnClickListener(new JavaAdapter(
+02471:             View.OnClickListener, { onClick: function () {
+02472:                 draftEngine = "baidu";
+02473:                 updateEngineViews(colors);
+02474:             }}));
+02475:         engineYoudaoView.setOnClickListener(new JavaAdapter(
+02476:             View.OnClickListener, { onClick: function () {
+02477:                 draftEngine = "youdao";
+02478:                 updateEngineViews(colors);
+02479:             }}));
+02480:         params = new LinearLayout.LayoutParams(0, dp(40), 1);
+02481:         params.rightMargin = dp(6);
+02482:         engineRow.addView(engineBaiduView, params);
+02483:         engineRow.addView(engineYoudaoView,
+02484:             new LinearLayout.LayoutParams(0, dp(40), 1));
+02485:         params = new LinearLayout.LayoutParams(
+02486:             LinearLayout.LayoutParams.MATCH_PARENT, dp(40));
+02487:         params.topMargin = dp(6);
+02488:         section.addView(engineRow, params);
+02489: 
+02490:         baiduGroup = new LinearLayout(appContext);
+02491:         baiduGroup.setOrientation(LinearLayout.VERTICAL);
+02492:         baiduIdInput = makeInput("百度 APP ID",
+02493:             values["translation.baidu.app_id"], colors, false,
+02494:             "translation.baidu.app_id");
+02495:         baiduSecretInput = makeInput("百度密钥",
+02496:             values["translation.baidu.app_secret"], colors, true,
+02497:             "translation.baidu.app_secret");
+02498:         addField(baiduGroup, "百度 APP ID", baiduIdInput, colors);
+02499:         addField(baiduGroup, "百度密钥", baiduSecretInput, colors);
+02500:         params = new LinearLayout.LayoutParams(
+02501:             LinearLayout.LayoutParams.MATCH_PARENT,
+02502:             LinearLayout.LayoutParams.WRAP_CONTENT);
+02503:         params.topMargin = dp(8);
+02504:         section.addView(baiduGroup, params);
+02505: 
+02506:         youdaoGroup = new LinearLayout(appContext);
+02507:         youdaoGroup.setOrientation(LinearLayout.VERTICAL);
+02508:         youdaoKeyInput = makeInput("有道 App Key",
+02509:             values["translation.youdao.app_key"], colors, false,
+02510:             "translation.youdao.app_key");
+02511:         youdaoSecretInput = makeInput("有道应用密钥",
+02512:             values["translation.youdao.app_secret"], colors, true,
+02513:             "translation.youdao.app_secret");
+02514:         addField(youdaoGroup, "有道 App Key", youdaoKeyInput, colors);
+02515:         addField(youdaoGroup, "有道应用密钥", youdaoSecretInput, colors);
+02516:         section.addView(youdaoGroup, params);
+02517: 
+02518:         translationStatusView = makeText("配置存储于 ClipHub SQLite",
+02519:             9, colors.textSecondary, false);
+02520:         params = new LinearLayout.LayoutParams(
+02521:             LinearLayout.LayoutParams.MATCH_PARENT,
+02522:             LinearLayout.LayoutParams.WRAP_CONTENT);
+02523:         params.bottomMargin = dp(6);
+02524:         section.addView(translationStatusView, params);
+02525:         actionRow.setOrientation(LinearLayout.HORIZONTAL);
+02526:         saveButton = makeButton("保存配置", colors, true, false);
+02527:         testButton = makeButton("测试翻译", colors, false, false);
+02528:         saveButton.setOnClickListener(new JavaAdapter(
+02529:             View.OnClickListener, { onClick: saveTranslationSettings }));
+02530:         testButton.setOnClickListener(new JavaAdapter(
+02531:             View.OnClickListener, { onClick: testTranslationSettings }));
+02532:         params = new LinearLayout.LayoutParams(0, dp(40), 1);
+02533:         params.rightMargin = dp(6);
+02534:         actionRow.addView(saveButton, params);
+02535:         actionRow.addView(testButton,
+02536:             new LinearLayout.LayoutParams(0, dp(40), 1));
+02537:         section.addView(actionRow, new LinearLayout.LayoutParams(
+02538:             LinearLayout.LayoutParams.MATCH_PARENT, dp(40)));
+02539:         updateTranslationModeViews(colors);
+02540:         return section;
+02541:     }
+02542: 
+02543:     function makeTagRow(tag, index, total, colors) {
+02544:         var root = new LinearLayout(appContext);
+02545:         var first = new LinearLayout(appContext);
+02546:         var actions = new LinearLayout(appContext);
+02547:         var handle = makeText("≡", 18, colors.textTertiary, true);
+02548:         var swatch = makeColorSwatch(tag.color_value, colors);
+02549:         var nameInput = makeInput("标签名称", String(tag.name), colors, false);
+02550:         var colorInput = makeInput("#RRGGBB", colorText(tag.color_value),
+02551:             colors, false);
+02552:         var count = makeText(String(Number(tag.item_count || 0)) + " 条记录",
+02553:             9, colors.textSecondary, false);
+02554:         var save = makeButton("保存", colors, false, false);
+02555:         var clearItems = makeButton("清理记录", colors, false, true);
+02556:         var del = makeButton("删标签", colors, false, true);
+02557:         var params;
+02558:         if (Number(tag.item_count || 0) < 1) {
+02559:             clearItems.setEnabled(false);
+02560:             clearItems.setClickable(false);
+02561:             clearItems.setAlpha(0.42);
+02562:         }
+02563:         root.setOrientation(LinearLayout.VERTICAL);
+02564:         root.setPadding(dp(8), dp(8), dp(8), dp(8));
+02565:         root.setBackground(roundedBackground(colors.surfaceMuted,
+02566:             colors.stroke, 12));
+02567:         first.setOrientation(LinearLayout.HORIZONTAL);
+02568:         first.setGravity(Gravity.CENTER_VERTICAL);
+02569:         handle.setGravity(Gravity.CENTER);
+02570:         handle.setContentDescription("拖动排序标签 " + String(tag.name));
+--- END_OWNER_SNIPPET ---
+MATCH line=4689 owner=getState@4610
+--- OWNER_SNIPPET getState 4605:4750 ---
+04605:             }
+04606:             return applySectionScroll(name, scrollRoot);
+04607:         }, 3000);
+04608:     }
+04609: 
+04610:     function getState() {
+04611:         var rootTabsActive = settingsRootTabsActive();
+04612:         var attachedToWindow = false;
+04613:         try {
+04614:             attachedToWindow = panelRoot !== null &&
+04615:                 panelRoot.isAttachedToWindow();
+04616:         } catch (ignored) {}
+04617:         return {
+04618:             ready: ready,
+04619:             attached: uiState.attached,
+04620:             embeddedInPrimary: embeddedInPrimary === true,
+04621:             attachedToWindow: attachedToWindow,
+04622:             closing: settingsClosing === true,
+04623:             removalPending: settingsRemovalPending === true,
+04624:             open: uiState.attached,
+04625:             openCount: Number(uiState.openCount),
+04626:             closeCount: Number(uiState.closeCount),
+04627:             renderCount: Number(uiState.renderCount),
+04628:             saveTranslationCount: Number(uiState.saveTranslationCount),
+04629:             testTranslationCount: Number(uiState.testTranslationCount),
+04630:             testTranslationSuccessCount:
+04631:                 Number(uiState.testTranslationSuccessCount),
+04632:             tagCreateCount: Number(uiState.tagCreateCount),
+04633:             tagUpdateCount: Number(uiState.tagUpdateCount),
+04634:             tagDeleteCount: Number(uiState.tagDeleteCount),
+04635:             tagReorderCount: Number(uiState.tagReorderCount),
+04636:             tagDragStartCount: Number(uiState.tagDragStartCount),
+04637:             tagDragCommitCount: Number(uiState.tagDragCommitCount),
+04638:             tagColorPreviewCount: Number(uiState.tagColorPreviewCount),
+04639:             tagDeleteConfirmCount: Number(uiState.tagDeleteConfirmCount),
+04640:             tagItemsClearConfirmCount:
+04641:                 Number(uiState.tagItemsClearConfirmCount),
+04642:             tagItemsClearCount: Number(uiState.tagItemsClearCount),
+04643:             clearAllConfirmCount: Number(uiState.clearAllConfirmCount),
+04644:             clearAllCount: Number(uiState.clearAllCount),
+04645:             lastDraggedTagId: uiState.lastDraggedTagId,
+04646:             lastClearedTagId: uiState.lastClearedTagId,
+04647:             lastClearedItemCount: Number(uiState.lastClearedItemCount),
+04648:             lastClearAllCount: Number(uiState.lastClearAllCount),
+04649:             pendingDeleteTagId: uiState.pendingDeleteTagId,
+04650:             pendingClearTagId: uiState.pendingClearTagId,
+04651:             pendingClearAll: uiState.pendingClearAll === true,
+04652:             dragReorderEnabled: true,
+04653:             deleteRequiresConfirmation: true,
+04654:             bulkClearRequiresConfirmation: true,
+04655:             clearHistoryCount: Number(uiState.clearHistoryCount),
+04656:             settingsStyle: uiState.settingsStyle,
+04657:             settingsPage: String(settingsPage),
+04658:             settingsTab: String(settingsTab),
+04659:             lastSettingsTab: String(uiState.lastSettingsTab),
+04660:             settingsTabSwitchCount: Number(uiState.settingsTabSwitchCount),
+04661:             settingsTabBarPresent: rootTabsActive,
+04662:             settingsGeneralTabVisible: rootTabsActive &&
+04663:                 isSettingsTabViewVisible(settingsGeneralTabView),
+04664:             settingsHomeTabVisible: rootTabsActive &&
+04665:                 isSettingsTabViewVisible(settingsHomeTabView),
+04666:             settingsTranslationTabVisible: rootTabsActive &&
+04667:                 isSettingsTabViewVisible(settingsTranslationTabView),
+04668:             settingsFilterTabVisible: rootTabsActive &&
+04669:                 isSettingsTabViewVisible(settingsFilterTabView),
+04670:             regexRuleRowCount: Number(uiState.regexRuleRowCount),
+04671:             regexEditorOpen: uiState.regexEditorOpen === true,
+04672:             regexEditorRuleId: uiState.regexEditorRuleId,
+04673:             regexDeleteConfirmCount: Number(uiState.regexDeleteConfirmCount),
+04674:             regexCreateCount: Number(uiState.regexCreateCount),
+04675:             regexUpdateCount: Number(uiState.regexUpdateCount),
+04676:             regexDeleteCount: Number(uiState.regexDeleteCount),
+04677:             regexDuplicateCount: Number(uiState.regexDuplicateCount),
+04678:             regexReorderCount: Number(uiState.regexReorderCount),
+04679:             regexEnableToggleCount: Number(uiState.regexEnableToggleCount),
+04680:             regexTestRunning: uiState.regexTestRunning === true,
+04681:             regexTestMatchCount: Number(uiState.regexTestMatchCount),
+04682:             regexTestTruncated: uiState.regexTestTruncated === true,
+04683:             lastRegexValidationError: uiState.lastRegexValidationError,
+04684:             sectionCount: Number(uiState.sectionCount),
+04685:             translationFieldCount: Number(uiState.translationFieldCount),
+04686:             tagRowCount: Number(uiState.tagRowCount),
+04687:             selectedTranslationMode: String(draftTranslationMode),
+04688:             configuredTranslationMode:
+04689:                 String(values["translation.mode"] || "builtin"),
+04690:             googleTranslationInstalled:
+04691:                 googleTranslationInstalledFromSettings(),
+04692:             selectedEngine: String(draftEngine),
+04693:             configuredEngine: String(values["translation.engine"] || "baidu"),
+04694:             baiduAppIdStored:
+04695:                 String(values["translation.baidu.app_id"] || "").length > 0,
+04696:             baiduSecretStored:
+04697:                 String(values["translation.baidu.app_secret"] || "").length > 0,
+04698:             youdaoAppKeyStored:
+04699:                 String(values["translation.youdao.app_key"] || "").length > 0,
+04700:             youdaoSecretStored:
+04701:                 String(values["translation.youdao.app_secret"] || "").length > 0,
+04702:             contentTypeSettingsPresent: false,
+04703:             paginationSectionPresent:
+04704:                 uiState.paginationSectionPresent === true,
+04705:             paginationPageSizeInputBound:
+04706:                 uiState.paginationPageSizeInputBound === true,
+04707:             paginationMode: String(values.paginationMode || "ajax"),
+04708:             paginationPageSize:
+04709:                 Number(values.paginationPageSize || 100),
+04710:             paginationPrefetchEnabled:
+04711:                 values.paginationPrefetchEnabled === true,
+04712:             paginationDraftMode: String(draftPaginationMode || "ajax"),
+04713:             paginationDraftPrefetchEnabled:
+04714:                 draftPaginationPrefetchEnabled === true,
+04715:             paginationSaveCount:
+04716:                 Number(uiState.paginationSaveCount),
+04717:             paginationValidationFailureCount:
+04718:                 Number(uiState.paginationValidationFailureCount),
+04719:             paginationChangeEventCount:
+04720:                 Number(uiState.paginationChangeEventCount),
+04721:             paginationLastError: uiState.paginationLastError,
+04722:             panelWidthDp: Number(uiState.panelWidthDp),
+04723:             panelHeightDp: Number(uiState.panelHeightDp),
+04724:             panelClipToOutline: uiState.panelClipToOutline === true,
+04725:             scrollResetCount: Number(uiState.scrollResetCount),
+04726:             sectionScrollRequestCount:
+04727:                 Number(uiState.sectionScrollRequestCount),
+04728:             sectionScrollAppliedCount:
+04729:                 Number(uiState.sectionScrollAppliedCount),
+04730:             sectionScrollCancelCount:
+04731:                 Number(uiState.sectionScrollCancelCount),
+04732:             currentScrollYDp: Number(uiState.currentScrollYDp),
+04733:             lastScrollSection: uiState.lastScrollSection,
+04734:             lastSectionViewportTopDp:
+04735:                 uiState.lastSectionViewportTopDp === null ? null :
+04736:                     Number(uiState.lastSectionViewportTopDp),
+04737:             sectionAnchorAdjustmentCount:
+04738:                 Number(uiState.sectionAnchorAdjustmentCount),
+04739:             sectionAnchorSpacerHeightDp:
+04740:                 Number(uiState.sectionAnchorSpacerHeightDp),
+04741:             lastRequestedScrollYDp:
+04742:                 Number(uiState.lastRequestedScrollYDp),
+04743:             lastMaxScrollYDp: Number(uiState.lastMaxScrollYDp),
+04744:             softInputMode: Number(uiState.softInputMode),
+04745:             softInputAdjustResize: uiState.softInputAdjustResize === true,
+04746:             normalPanelHeightDp: Number(uiState.normalPanelHeightDp),
+04747:             currentPanelHeightDp: Number(uiState.currentPanelHeightDp),
+04748:             currentPanelTopDp: Number(uiState.currentPanelTopDp),
+04749:             panelGravity: uiState.panelGravity,
+04750:             panelBottomMarginDp: Number(uiState.panelBottomMarginDp),
+--- END_OWNER_SNIPPET ---
+
+=== ANCHOR translation.engine MATCHES [281, 1356, 1699, 2442, 4693] ===
+MATCH line=281 owner=<none>@0
+MATCH line=1356 owner=normalize@1326
+MATCH line=1699 owner=translationDraftFromInputs@1696
+MATCH line=2442 owner=makeTranslationSection@2430
+MATCH line=4693 owner=getState@4610
+
+=== ANCHOR 内置翻译 MATCHES [2439, 2445] ===
+MATCH line=2439 owner=makeTranslationSection@2430
+MATCH line=2445 owner=makeTranslationSection@2430
+
+=== ANCHOR Google 翻译 MATCHES [1747, 1748, 1788, 1789, 2439, 2447] ===
+MATCH line=1747 owner=updateTranslationModeViews@1723
+--- OWNER_SNIPPET updateTranslationModeViews 1718:1863 ---
+01718:                 ClipHub.Translation.isGoogleTranslateInstalled() === true;
+01719:         } catch (ignored) {}
+01720:         return false;
+01721:     }
+01722: 
+01723:     function updateTranslationModeViews(colors) {
+01724:         var builtin = draftTranslationMode !== "google";
+01725:         var installed = googleTranslationInstalledFromSettings();
+01726:         if (translationModeBuiltinView !== null) {
+01727:             translationModeBuiltinView.setBackground(roundedBackground(
+01728:                 builtin ? colors.accentStrong : colors.accentSoft,
+01729:                 colors.accentBorder, 11));
+01730:             ClipHub.Theme.applyTextColor(translationModeBuiltinView,
+01731:                 builtin ? "#FFFFFFFF" : colors.accentStrong);
+01732:         }
+01733:         if (translationModeGoogleView !== null) {
+01734:             translationModeGoogleView.setBackground(roundedBackground(
+01735:                 builtin ? colors.accentSoft : colors.accentStrong,
+01736:                 colors.accentBorder, 11));
+01737:             ClipHub.Theme.applyTextColor(translationModeGoogleView,
+01738:                 builtin ? colors.accentStrong : "#FFFFFFFF");
+01739:         }
+01740:         if (translationEngineRowView !== null) {
+01741:             translationEngineRowView.setVisibility(
+01742:                 builtin ? View.VISIBLE : View.GONE);
+01743:         }
+01744:         if (translationStatusView !== null) {
+01745:             translationStatusView.setText(builtin ?
+01746:                 "配置存储于 ClipHub SQLite" :
+01747:                 (installed ? "Google 翻译：已安装" :
+01748:                     "Google 翻译：未安装"));
+01749:         }
+01750:         updateEngineViews(colors);
+01751:     }
+01752: 
+01753:     function updateEngineViews(colors) {
+01754:         var builtin = draftTranslationMode !== "google";
+01755:         var baidu = draftEngine === "baidu";
+01756:         if (baiduGroup !== null) {
+01757:             baiduGroup.setVisibility(builtin && baidu ?
+01758:                 View.VISIBLE : View.GONE);
+01759:         }
+01760:         if (youdaoGroup !== null) {
+01761:             youdaoGroup.setVisibility(builtin && !baidu ?
+01762:                 View.VISIBLE : View.GONE);
+01763:         }
+01764:         if (engineBaiduView !== null) {
+01765:             engineBaiduView.setBackground(roundedBackground(
+01766:                 baidu ? colors.accentStrong : colors.accentSoft,
+01767:                 colors.accentBorder, 11));
+01768:             ClipHub.Theme.applyTextColor(engineBaiduView, baidu ?
+01769:                 "#FFFFFFFF" : colors.accentStrong);
+01770:         }
+01771:         if (engineYoudaoView !== null) {
+01772:             engineYoudaoView.setBackground(roundedBackground(
+01773:                 baidu ? colors.accentSoft : colors.accentStrong,
+01774:                 colors.accentBorder, 11));
+01775:             ClipHub.Theme.applyTextColor(engineYoudaoView, baidu ?
+01776:                 colors.accentStrong : "#FFFFFFFF");
+01777:         }
+01778:     }
+01779: 
+01780:     function saveTranslationSettings() {
+01781:         try {
+01782:             setMany(translationDraftFromInputs(), { cleanup: false });
+01783:             uiState.saveTranslationCount += 1;
+01784:             if (translationStatusView !== null) {
+01785:                 translationStatusView.setText(
+01786:                     draftTranslationMode === "google" ?
+01787:                         (googleTranslationInstalledFromSettings() ?
+01788:                             "Google 翻译已启用 · 已安装" :
+01789:                             "Google 翻译已启用 · 未安装") :
+01790:                         "配置已保存到 SQLite");
+01791:             }
+01792:             return true;
+01793:         } catch (error) {
+01794:             uiState.lastError = String(error);
+01795:             if (translationStatusView !== null) {
+01796:                 translationStatusView.setText("保存失败：" + String(error));
+01797:             }
+01798:             return false;
+01799:         }
+01800:     }
+01801: 
+01802:     function testTranslationSettings() {
+01803:         if (!saveTranslationSettings()) { return false; }
+01804:         uiState.testTranslationCount += 1;
+01805:         if (translationStatusView !== null) {
+01806:             translationStatusView.setText("正在测试翻译…");
+01807:         }
+01808:         try {
+01809:             if (!ClipHub.Translation ||
+01810:                     typeof ClipHub.Translation.testConfigured !== "function") {
+01811:                 throw new Error("翻译模块尚未就绪");
+01812:             }
+01813:             ClipHub.Translation.testConfigured("ClipHub 翻译测试",
+01814:                 function (result) {
+01815:                     runOnMainSync(function () {
+01816:                         if (result && result.ok === true) {
+01817:                             uiState.testTranslationSuccessCount += 1;
+01818:                             uiState.lastTestResult = String(result.translatedText || "");
+01819:                             if (translationStatusView !== null) {
+01820:                                 translationStatusView.setText("测试成功：" +
+01821:                                     uiState.lastTestResult);
+01822:                             }
+01823:                         } else {
+01824:                             uiState.lastError = result ? String(result.error) :
+01825:                                 "翻译测试失败";
+01826:                             if (translationStatusView !== null) {
+01827:                                 translationStatusView.setText("测试失败：" +
+01828:                                     uiState.lastError);
+01829:                             }
+01830:                         }
+01831:                         return true;
+01832:                     }, 3000);
+01833:                 });
+01834:             return true;
+01835:         } catch (error) {
+01836:             uiState.lastError = String(error);
+01837:             if (translationStatusView !== null) {
+01838:                 translationStatusView.setText("测试失败：" + String(error));
+01839:             }
+01840:             return false;
+01841:         }
+01842:     }
+01843: 
+01844:     function parseColorValue(text, fallback) {
+01845:         try { return Number(Color.parseColor(String(text || ""))); }
+01846:         catch (ignored) { return fallback; }
+01847:     }
+01848: 
+01849:     function colorText(value) {
+01850:         var number;
+01851:         var hex;
+01852:         if (value === null || value === undefined) { return "#7C5CFC"; }
+01853:         number = Number(value) >>> 0;
+01854:         hex = number.toString(16).toUpperCase();
+01855:         while (hex.length < 8) { hex = "0" + hex; }
+01856:         return "#" + hex.substring(2);
+01857:     }
+01858: 
+01859:     function colorValueText(value, fallback) {
+01860:         var number;
+01861:         var hex;
+01862:         if (value === null || value === undefined) {
+01863:             return String(fallback || "#7C5CFC");
+--- END_OWNER_SNIPPET ---
+MATCH line=1748 owner=updateTranslationModeViews@1723
+MATCH line=1788 owner=saveTranslationSettings@1780
+--- OWNER_SNIPPET saveTranslationSettings 1775:1920 ---
+01775:             ClipHub.Theme.applyTextColor(engineYoudaoView, baidu ?
+01776:                 colors.accentStrong : "#FFFFFFFF");
+01777:         }
+01778:     }
+01779: 
+01780:     function saveTranslationSettings() {
+01781:         try {
+01782:             setMany(translationDraftFromInputs(), { cleanup: false });
+01783:             uiState.saveTranslationCount += 1;
+01784:             if (translationStatusView !== null) {
+01785:                 translationStatusView.setText(
+01786:                     draftTranslationMode === "google" ?
+01787:                         (googleTranslationInstalledFromSettings() ?
+01788:                             "Google 翻译已启用 · 已安装" :
+01789:                             "Google 翻译已启用 · 未安装") :
+01790:                         "配置已保存到 SQLite");
+01791:             }
+01792:             return true;
+01793:         } catch (error) {
+01794:             uiState.lastError = String(error);
+01795:             if (translationStatusView !== null) {
+01796:                 translationStatusView.setText("保存失败：" + String(error));
+01797:             }
+01798:             return false;
+01799:         }
+01800:     }
+01801: 
+01802:     function testTranslationSettings() {
+01803:         if (!saveTranslationSettings()) { return false; }
+01804:         uiState.testTranslationCount += 1;
+01805:         if (translationStatusView !== null) {
+01806:             translationStatusView.setText("正在测试翻译…");
+01807:         }
+01808:         try {
+01809:             if (!ClipHub.Translation ||
+01810:                     typeof ClipHub.Translation.testConfigured !== "function") {
+01811:                 throw new Error("翻译模块尚未就绪");
+01812:             }
+01813:             ClipHub.Translation.testConfigured("ClipHub 翻译测试",
+01814:                 function (result) {
+01815:                     runOnMainSync(function () {
+01816:                         if (result && result.ok === true) {
+01817:                             uiState.testTranslationSuccessCount += 1;
+01818:                             uiState.lastTestResult = String(result.translatedText || "");
+01819:                             if (translationStatusView !== null) {
+01820:                                 translationStatusView.setText("测试成功：" +
+01821:                                     uiState.lastTestResult);
+01822:                             }
+01823:                         } else {
+01824:                             uiState.lastError = result ? String(result.error) :
+01825:                                 "翻译测试失败";
+01826:                             if (translationStatusView !== null) {
+01827:                                 translationStatusView.setText("测试失败：" +
+01828:                                     uiState.lastError);
+01829:                             }
+01830:                         }
+01831:                         return true;
+01832:                     }, 3000);
+01833:                 });
+01834:             return true;
+01835:         } catch (error) {
+01836:             uiState.lastError = String(error);
+01837:             if (translationStatusView !== null) {
+01838:                 translationStatusView.setText("测试失败：" + String(error));
+01839:             }
+01840:             return false;
+01841:         }
+01842:     }
+01843: 
+01844:     function parseColorValue(text, fallback) {
+01845:         try { return Number(Color.parseColor(String(text || ""))); }
+01846:         catch (ignored) { return fallback; }
+01847:     }
+01848: 
+01849:     function colorText(value) {
+01850:         var number;
+01851:         var hex;
+01852:         if (value === null || value === undefined) { return "#7C5CFC"; }
+01853:         number = Number(value) >>> 0;
+01854:         hex = number.toString(16).toUpperCase();
+01855:         while (hex.length < 8) { hex = "0" + hex; }
+01856:         return "#" + hex.substring(2);
+01857:     }
+01858: 
+01859:     function colorValueText(value, fallback) {
+01860:         var number;
+01861:         var hex;
+01862:         if (value === null || value === undefined) {
+01863:             return String(fallback || "#7C5CFC");
+01864:         }
+01865:         number = Number(value) >>> 0;
+01866:         hex = number.toString(16).toUpperCase();
+01867:         while (hex.length < 8) { hex = "0" + hex; }
+01868:         return "#" + hex;
+01869:     }
+01870: 
+01871:     function makeColorSwatch(value, colors) {
+01872:         var swatch = new View(appContext);
+01873:         swatch.setBackground(roundedBackground(
+01874:             colorValueText(value, colors.accentStrong), colors.stroke, 99));
+01875:         uiState.tagColorPreviewCount += 1;
+01876:         return swatch;
+01877:     }
+01878: 
+01879:     function bindColorPreview(input, swatch, fallback, colors) {
+01880:         input.addTextChangedListener(new JavaAdapter(TextWatcher, {
+01881:             beforeTextChanged: function () {},
+01882:             onTextChanged: function () {
+01883:                 var value = parseColorValue(String(input.getText()), fallback);
+01884:                 swatch.setBackground(roundedBackground(
+01885:                     colorValueText(value, colors.accentStrong),
+01886:                     colors.stroke, 99));
+01887:             },
+01888:             afterTextChanged: function () {}
+01889:         }));
+01890:     }
+01891: 
+01892:     function rebuildTagPage() {
+01893:         buildPage();
+01894:         postScrollToSection("tags");
+01895:         return true;
+01896:     }
+01897: 
+01898:     function requestDeleteTag(tagId, itemCount, deleteView) {
+01899:         tagId = Number(tagId);
+01900:         pendingClearTagId = null;
+01901:         uiState.pendingClearTagId = null;
+01902:         pendingClearAll = false;
+01903:         uiState.pendingClearAll = false;
+01904:         if (pendingDeleteTagId !== tagId) {
+01905:             pendingDeleteTagId = tagId;
+01906:             uiState.pendingDeleteTagId = tagId;
+01907:             uiState.tagDeleteConfirmCount += 1;
+01908:             deleteView.setText("确认删除");
+01909:             deleteView.setContentDescription("再次点击删除标签，当前关联 " +
+01910:                 String(Number(itemCount || 0)) + " 条记录");
+01911:             return false;
+01912:         }
+01913:         pendingDeleteTagId = null;
+01914:         uiState.pendingDeleteTagId = null;
+01915:         return deleteTagRow(tagId);
+01916:     }
+01917: 
+01918:     function bindTagDrag(handle, rowRoot, tagId) {
+01919:         var startY = 0;
+01920:         var dragging = false;
+--- END_OWNER_SNIPPET ---
+MATCH line=1789 owner=saveTranslationSettings@1780
+MATCH line=2439 owner=makeTranslationSection@2430
+MATCH line=2447 owner=makeTranslationSection@2430
+
+=== ANCHOR 百度翻译 MATCHES [2468] ===
+MATCH line=2468 owner=makeTranslationSection@2430
+
+=== ANCHOR 有道翻译 MATCHES [2469] ===
+MATCH line=2469 owner=makeTranslationSection@2430
+
+=== ANCHOR translation.baidu.app_id MATCHES [282, 1020, 1360, 1700, 2493, 2494, 4695] ===
+MATCH line=282 owner=<none>@0
+MATCH line=1020 owner=namedSettingsInput@1018
+--- OWNER_SNIPPET namedSettingsInput 1013:1158 ---
+01013:                 }
+01014:             }));
+01015:         return input;
+01016:     }
+01017: 
+01018:     function namedSettingsInput(name) {
+01019:         name = String(name || "");
+01020:         if (name === "translation.baidu.app_id") { return baiduIdInput; }
+01021:         if (name === "translation.baidu.app_secret") { return baiduSecretInput; }
+01022:         if (name === "translation.youdao.app_key") { return youdaoKeyInput; }
+01023:         if (name === "translation.youdao.app_secret") { return youdaoSecretInput; }
+01024:         if (name === "tag.new.name") { return newTagNameInput; }
+01025:         if (name === "tag.new.color") { return newTagColorInput; }
+01026:         if (name === "paginationPageSize") {
+01027:             return paginationPageSizeInput;
+01028:         }
+01029:         if (name === "regex.title") { return regexTitleInput; }
+01030:         if (name === "regex.note") { return regexNoteInput; }
+01031:         if (name === "regex.pattern") { return regexPatternInput; }
+01032:         if (name === "regex.test.text") { return regexTestTextInput; }
+01033:         return null;
+01034:     }
+01035: 
+01036:     function focusSettingsInput(name) {
+01037:         var inputTab = settingsTabForInput(name);
+01038:         var target;
+01039:         if (settingsPage === "root" && inputTab !== settingsTab) {
+01040:             setSettingsTab(inputTab, "focus_input");
+01041:         }
+01042:         target = namedSettingsInput(name);
+01043:         if (target === null || inputMethodManager === null) { return false; }
+01044:         focusedInput = target;
+01045:         focusedInputName = String(name);
+01046:         uiState.focusedInputName = focusedInputName;
+01047:         target.requestFocus();
+01048:         uiState.keyboardRequestCount += 1;
+01049:         postSettingsDelayed(function () {
+01050:             if (target === focusedInput && target.hasFocus() &&
+01051:                     inputMethodManager !== null) {
+01052:                 inputMethodManager.showSoftInput(
+01053:                     target, InputMethodManager.SHOW_IMPLICIT);
+01054:                 scheduleFocusedInputVisibility();
+01055:             }
+01056:         }, 100, true);
+01057:         return target.hasFocus();
+01058:     }
+01059: 
+01060:     function hideSettingsKeyboardOnMain() {
+01061:         var token = panelRoot === null ? null : panelRoot.getWindowToken();
+01062:         try {
+01063:             if (focusedInput !== null) { token = focusedInput.getWindowToken(); }
+01064:             if (token !== null && inputMethodManager !== null) {
+01065:                 inputMethodManager.hideSoftInputFromWindow(token, 0);
+01066:             }
+01067:             if (focusedInput !== null) { focusedInput.clearFocus(); }
+01068:             return true;
+01069:         } catch (error) {
+01070:             uiState.lastError = String(error);
+01071:             return false;
+01072:         }
+01073:     }
+01074: 
+01075:     function releaseSettingsInputFocus(reason) {
+01076:         var target = focusedInput;
+01077:         var hadFocus = false;
+01078:         if (target === null) { return false; }
+01079:         try { hadFocus = target.hasFocus() === true; }
+01080:         catch (ignoredFocusRead) { hadFocus = true; }
+01081:         if (hadFocus) {
+01082:             try { target.clearFocus(); }
+01083:             catch (error) {
+01084:                 uiState.lastError = String(error);
+01085:                 return false;
+01086:             }
+01087:         }
+01088:         if (focusedInput === target) {
+01089:             focusedInput = null;
+01090:             focusedInputName = null;
+01091:             uiState.focusedInputName = null;
+01092:             uiState.focusedInputVisible = false;
+01093:         }
+01094:         focusedVisibilityScheduled = false;
+01095:         resetImeAnchorSpacer();
+01096:         if (hadFocus) {
+01097:             uiState.imeFocusReleaseCount += 1;
+01098:             uiState.lastImeFocusReleaseReason = String(reason || "ime_hidden");
+01099:         }
+01100:         return hadFocus;
+01101:     }
+01102: 
+01103:     function releaseFocusedInputAfterImeHide(ime, reason) {
+01104:         if (uiState.keyboardVisible !== true || !ime ||
+01105:                 ime.visible === true || focusedInput === null) {
+01106:             return false;
+01107:         }
+01108:         return releaseSettingsInputFocus(reason || "ime_hidden");
+01109:     }
+01110: 
+01111: 
+01112:     function isMainThread() {
+01113:         var mainLooper;
+01114:         var mainThread;
+01115:         try {
+01116:             if (ClipHub.Window &&
+01117:                     typeof ClipHub.Window.isMainThread === "function") {
+01118:                 return ClipHub.Window.isMainThread();
+01119:             }
+01120:         } catch (ignoredWindow) {}
+01121:         mainLooper = Looper.getMainLooper();
+01122:         if (mainLooper === null) { return false; }
+01123:         try {
+01124:             if (Build.VERSION.SDK_INT >= 23) {
+01125:                 return mainLooper.isCurrentThread();
+01126:             }
+01127:         } catch (ignoredCurrentThread) {}
+01128:         try {
+01129:             mainThread = mainLooper.getThread();
+01130:             return mainThread !== null &&
+01131:                 Number(Thread.currentThread().getId()) ===
+01132:                 Number(mainThread.getId());
+01133:         } catch (ignoredThread) { return false; }
+01134:     }
+01135: 
+01136:     function runOnMainSync(callback, timeoutMs) {
+01137:         var box;
+01138:         var latch;
+01139:         var runnable;
+01140:         var posted;
+01141:         var completed;
+01142:         if (isMainThread()) { return callback(); }
+01143:         box = { value: null, error: null };
+01144:         latch = new CountDownLatch(1);
+01145:         runnable = new Packages.java.lang.Runnable({
+01146:             run: function () {
+01147:                 try { box.value = callback(); }
+01148:                 catch (error) { box.error = error; }
+01149:                 finally { latch.countDown(); }
+01150:             }
+01151:         });
+01152:         posted = mainHandler.post(runnable);
+01153:         if (!posted) { throw new Error("Settings main handler post failed"); }
+01154:         completed = latch.await(Number(timeoutMs || 3000), TimeUnit.MILLISECONDS);
+01155:         if (!completed) {
+01156:             try { mainHandler.removeCallbacks(runnable); } catch (ignored) {}
+01157:             throw new Error("Settings main handler timeout");
+01158:         }
+--- END_OWNER_SNIPPET ---
+MATCH line=1360 owner=normalize@1326
+MATCH line=1700 owner=translationDraftFromInputs@1696
+MATCH line=2493 owner=makeTranslationSection@2430
+MATCH line=2494 owner=makeTranslationSection@2430
+MATCH line=4695 owner=getState@4610
+
+=== ANCHOR translation.baidu.app_secret MATCHES [283, 1021, 1361, 1702, 2496, 2497, 4697] ===
+MATCH line=283 owner=<none>@0
+MATCH line=1021 owner=namedSettingsInput@1018
+MATCH line=1361 owner=normalize@1326
+MATCH line=1702 owner=translationDraftFromInputs@1696
+MATCH line=2496 owner=makeTranslationSection@2430
+MATCH line=2497 owner=makeTranslationSection@2430
+MATCH line=4697 owner=getState@4610
+
+=== ANCHOR translation.youdao.app_key MATCHES [284, 1022, 1362, 1704, 2509, 2510, 4699] ===
+MATCH line=284 owner=<none>@0
+MATCH line=1022 owner=namedSettingsInput@1018
+MATCH line=1362 owner=normalize@1326
+MATCH line=1704 owner=translationDraftFromInputs@1696
+MATCH line=2509 owner=makeTranslationSection@2430
+MATCH line=2510 owner=makeTranslationSection@2430
+MATCH line=4699 owner=getState@4610
+
+=== ANCHOR translation.youdao.app_secret MATCHES [285, 1023, 1363, 1706, 2512, 2513, 4701] ===
+MATCH line=285 owner=<none>@0
+MATCH line=1023 owner=namedSettingsInput@1018
+MATCH line=1363 owner=normalize@1326
+MATCH line=1706 owner=translationDraftFromInputs@1696
+MATCH line=2512 owner=makeTranslationSection@2430
+MATCH line=2513 owner=makeTranslationSection@2430
+MATCH line=4701 owner=getState@4610
+
+=== SETTINGS GET/SET CANDIDATES ===
+00698:     function resetImeAnchorSpacer() {
+01462:     function setValue(key, value, options) {
+01485:     function setMany(patch, options) {
+01531:     function getAll() {
+01542:     function getLastCleanup() {
+01696:     function translationDraftFromInputs() {
+01713:     function googleTranslationInstalledFromSettings() {
+01723:     function updateTranslationModeViews(colors) {
+01780:     function saveTranslationSettings() {
+01802:     function testTranslationSettings() {
+02094:     function saveTagRow(tagId, nameInput, colorInput) {
+02222:     function getPaginationSettings() {
+02274:     function savePaginationSettings() {
+02314:     function setPaginationDraft(mode, pageSize, prefetchEnabled) {
+02430:     function makeTranslationSection(colors) {
+02931:     function settingsRootTabsActive() {
+02975:     function setSettingsTab(tab, origin) {
+02999:     function settingsLayoutMetrics() {
+03065:     function settingsTabForInput(name) {
+03073:     function settingsTabForSection(name) {
+03091:     function setSettingsContentPadding(content) {
+03100:     function settingsShellPageId() {
+03107:     function settingsShellTitle() {
+03116:     function settingsShellPath() {
+03385:     function resetRegexEditorViews() {
+03581:     function setRegexRuleDragParentIntercept(view, disallow) {
+03592: function resetRegexRuleDragVisual(rowRoot) {
+03755:     function saveRegexEditor() {
+04134:             onClick: function () { saveRegexEditor(); }
+04610:     function getState() {
