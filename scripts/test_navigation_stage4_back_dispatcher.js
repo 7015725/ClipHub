@@ -8,7 +8,10 @@ need(shell, "ClipHub.BackDispatcher = {", "BackDispatcher owner missing");
 need(shell, "dispatch: backDispatcherDispatch", "BackDispatcher dispatch API missing");
 need(shell, "function backDispatcherDispatch(reason, request)", "BackDispatcher state machine missing");
 need(shell, "return backDispatcherDispatch(reason, request);", "UIShell Back does not delegate to BackDispatcher");
-need(shell, "if (typeof activeBack === \"function\")", "page Back hook phase missing");
+if (shell.indexOf('if (typeof activeBack === "function")') < 0 &&
+        shell.indexOf('if (typeof pageBackHook === "function")') < 0) {
+    throw new Error("page Back hook phase missing");
+}
 need(shell, "hookChangedNavigation", "legacy hook navigation bridge missing");
 need(shell, "if (navigatorCanPop())", "BackDispatcher canPop phase missing");
 need(shell, "handled = navigatorPop(reason || \"back_dispatcher_pop\") === true", "BackDispatcher final pop missing");
