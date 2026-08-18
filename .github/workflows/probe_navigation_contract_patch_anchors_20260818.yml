@@ -1,0 +1,59 @@
+name: Probe Navigation Contract Patch Anchors
+
+on:
+  push:
+    branches:
+      - fix/editor-embedded-back-capture-20260818
+    paths:
+      - .github/workflows/probe_navigation_contract_patch_anchors_20260818.yml
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/editor-embedded-back-capture-20260818
+          fetch-depth: 0
+      - name: Count anchors
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          nav = Path('src/ch_12_translation.js').read_text(encoding='utf-8')
+          editor = Path('src/ch_10_editor.js').read_text(encoding='utf-8')
+          anchors = [
+              ('nav_view', nav.count('    var View = Packages.android.view.View;\n')),
+              ('nav_state', nav.count('        callbackMode: "none",\n        baselinePackage: "",\n')),
+              ('nav_priority', nav.count('    function backCallbackPriority() {\n')),
+              ('nav_refresh_guard', nav.count('        if (!entry || entry.removed || Build.VERSION.SDK_INT < 33) {\n            return true;\n        }\n')),
+              ('nav_callback', nav.count('    function callbackFor(entry) {\n        var callback = null;\n')),
+              ('nav_register_gate', nav.count('        if (Build.VERSION.SDK_INT >= 33) {\n            try { dispatcher = view.findOnBackInvokedDispatcher(); }\n')),
+              ('nav_push', nav.count('        entries.push(entry);\n        navState.registerCount += 1;\n')),
+              ('nav_retry', nav.count('        if (!entry.dispatcher && Build.VERSION.SDK_INT >= 33 &&\n                entry.retryCount < 3) {\n')),
+              ('nav_refresh_fn', nav.count('    function refreshSystemBackCapture(reason) {\n')),
+              ('nav_state_export', nav.count('            callbackMode: navState.callbackMode,\n            mainFocusableUpgradeCount:\n')),
+              ('nav_init', nav.count('    function navigationInit(context) {\n        if (initialized) { return navigationState(); }\n')),
+              ('nav_density', nav.count('        density = Number(appContext.getResources()\n            .getDisplayMetrics().density || 1);\n        initialized = true;\n')),
+              ('nav_log', nav.count('        log("I", "navigation initialized sdk=" +\n            String(Build.VERSION.SDK_INT));\n')),
+              ('nav_version', nav.count('        MODULE_VERSION: 9,\n')),
+              ('nav_exports', nav.count('        registerWindow: registerManagedWindow,\n        refreshSystemBackCapture: refreshSystemBackCapture,\n        getState: navigationState,\n')),
+              ('editor_rearm_marker', editor.count('    function rearmSystemBackAfterImeHide() {\n')),
+              ('editor_refresh', editor.count('            navigation.refreshSystemBackCapture();\n')),
+              ('editor_focus_root', editor.count('        var focusRoot = panelWindowRoot !== null ?\n            panelWindowRoot : panelRoot;\n')),
+              ('editor_delayed_root', editor.count('                var currentRoot = panelWindowRoot !== null ?\n                    panelWindowRoot : panelRoot;\n')),
+              ('editor_version', editor.count('        MODULE_VERSION: 39,\n')),
+          ]
+          out = '\n'.join('%s=%s' % x for x in anchors) + '\n'
+          Path('probes/nav_contract_patch_anchor_counts.txt').write_text(out, encoding='utf-8')
+          print(out)
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add probes/nav_contract_patch_anchor_counts.txt
+          git commit -m "chore: record navigation patch anchor counts"
+          git push origin HEAD:fix/editor-embedded-back-capture-20260818
