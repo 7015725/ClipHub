@@ -32,8 +32,8 @@ jobs:
           fi
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add .github/workflows/tokenizer_regression_gate.yml scripts/release_preflight.sh
-          git commit -m "ci: make release preflight branch-aware"
+          git add scripts/release_preflight.sh
+          git commit -m "ci: make current release preflight branch-agnostic"
           git push origin HEAD:refactor/navigation-contract-v2-20260818
       - name: Validate current mode
         shell: bash
