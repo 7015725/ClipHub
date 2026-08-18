@@ -1,0 +1,577 @@
+name: Apply Navigation Contract V1
+
+on:
+  push:
+    branches:
+      - fix/editor-embedded-back-capture-20260818
+    paths:
+      - .github/workflows/apply_navigation_contract_v1_20260818.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/editor-embedded-back-capture-20260818
+          fetch-depth: 0
+
+      - name: Apply minimal navigation contract patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json, subprocess
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly 1 match, got {count}")
+              return text.replace(old, new, 1)
+
+          nav_path = Path('src/ch_12_translation.js')
+          nav = nav_path.read_text(encoding='utf-8')
+
+          nav = replace_once(nav,
+              '    var View = Packages.android.view.View;\n',
+              '    var View = Packages.android.view.View;\n    var ViewGroup = Packages.android.view.ViewGroup;\n',
+              'nav ViewGroup import')
+
+          nav = replace_once(nav,
+              '        callbackMode: "none",\n        baselinePackage: "",\n',
+              '        callbackMode: "none",\n        backMode: "uninitialized",\n        predictiveBackSupported: Build.VERSION.SDK_INT >= 33,\n        predictiveBackEnabled: false,\n        predictiveBackCapabilitySource: "uninitialized",\n        predictiveBackContextPackage: "",\n        predictiveBackTargetSdk: 0,\n        legacyBackRefreshCount: 0,\n        baselinePackage: "",\n',
+              'nav state capability fields')
+
+          marker = '    function backCallbackPriority() {\n'
+          helpers = r'''    function detectBackCapability(context) {
+        var result = {
+            supported: Build.VERSION.SDK_INT >= 33,
+            enabled: false,
+            source: Build.VERSION.SDK_INT >= 33 ? "unavailable" : "sdk_lt_33",
+            packageName: "",
+            targetSdkVersion: 0
+        };
+        var info = null;
+        if (!context) { return result; }
+        try { result.packageName = String(context.getPackageName()); }
+        catch (ignoredPackage) {}
+        try {
+            info = context.getApplicationInfo();
+            if (info) {
+                result.targetSdkVersion = Number(info.targetSdkVersion || 0);
+            }
+        } catch (ignoredInfo) { info = null; }
+        if (!result.supported) { return result; }
+        try {
+            result.enabled =
+                Packages.android.window.WindowOnBackInvokedDispatcher
+                    .isOnBackInvokedCallbackEnabled(context) === true;
+            result.source = "WindowOnBackInvokedDispatcher";
+            return result;
+        } catch (ignoredWindowCapability) {}
+        try {
+            if (info && typeof info.isOnBackInvokedCallbackEnabled ===
+                    "function") {
+                result.enabled =
+                    info.isOnBackInvokedCallbackEnabled() === true;
+                result.source = "ApplicationInfo";
+                return result;
+            }
+        } catch (ignoredApplicationCapability) {}
+        return result;
+    }
+
+    function resolveBackFocusRoot(pageRoot, windowRoot, fallbackRoot) {
+        var root = null;
+        if (pageRoot !== null && pageRoot !== undefined) {
+            try {
+                root = pageRoot.getRootView();
+                if (root !== null && root !== undefined &&
+                        root.isAttachedToWindow()) {
+                    return root;
+                }
+            } catch (ignoredPageRoot) { root = null; }
+        }
+        if (windowRoot !== null && windowRoot !== undefined) {
+            try {
+                if (windowRoot.isAttachedToWindow()) { return windowRoot; }
+            } catch (ignoredWindowRootAttached) { return windowRoot; }
+        }
+        if (fallbackRoot !== null && fallbackRoot !== undefined) {
+            return fallbackRoot;
+        }
+        return pageRoot || windowRoot || null;
+    }
+
+    function handoffBackFocus(options) {
+        options = options || {};
+        if (!initialized) {
+            return { ok: false, reason: "navigation_not_initialized" };
+        }
+        return runOnMainSync(function () {
+            var root = resolveBackFocusRoot(options.pageRoot || null,
+                options.windowRoot || null, options.fallbackRoot || null);
+            var input = options.inputView || null;
+            var previous = -1;
+            var released = input === null;
+            var requested = false;
+            var focused = false;
+            if (root === null) {
+                return { ok: false, reason: "back_focus_root_missing" };
+            }
+            try {
+                previous = Number(root.getDescendantFocusability());
+            } catch (ignoredPrevious) {}
+            try {
+                root.setFocusable(true);
+                root.setFocusableInTouchMode(true);
+                if (typeof root.setDescendantFocusability === "function") {
+                    root.setDescendantFocusability(
+                        ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+                }
+                if (input !== null) {
+                    input.clearFocus();
+                    released = !input.hasFocus();
+                }
+                requested = root.requestFocus();
+                focused = root.isFocused();
+            } finally {
+                if (previous >= 0 &&
+                        typeof root.setDescendantFocusability === "function") {
+                    try { root.setDescendantFocusability(previous); }
+                    catch (ignoredRestore) {}
+                }
+            }
+            return {
+                ok: released && (requested || focused),
+                inputReleased: released,
+                rootFocusRequested: requested || focused,
+                rootFocused: focused,
+                rootAttached: (function () {
+                    try { return root.isAttachedToWindow() === true; }
+                    catch (ignoredAttached) { return false; }
+                }())
+            };
+        }, 2500);
+    }
+
+    function getBackCapability() {
+        return {
+            sdkInt: Number(Build.VERSION.SDK_INT),
+            supported: navState.predictiveBackSupported === true,
+            predictiveBackEnabled: navState.predictiveBackEnabled === true,
+            mode: String(navState.backMode || "legacy_key"),
+            source: String(navState.predictiveBackCapabilitySource || ""),
+            contextPackage: String(navState.predictiveBackContextPackage || ""),
+            targetSdkVersion: Number(navState.predictiveBackTargetSdk || 0)
+        };
+    }
+
+'''
+          if marker not in nav:
+              raise SystemExit('nav helper insertion marker missing')
+          nav = nav.replace(marker, helpers + marker, 1)
+
+          nav = replace_once(nav,
+              '        if (!entry || entry.removed || Build.VERSION.SDK_INT < 33) {\n            return true;\n        }\n',
+              '        if (!entry || entry.removed || Build.VERSION.SDK_INT < 33) {\n            return true;\n        }\n        if (!navState.predictiveBackEnabled) {\n            makeFocusable(entry);\n            entry.callbackMode = "legacy_key";\n            navState.callbackMode = "legacy_key";\n            navState.legacyBackRefreshCount += 1;\n            return true;\n        }\n',
+              'nav refresh legacy gate')
+
+          nav = replace_once(nav,
+              '    function callbackFor(entry) {\n        var callback = null;\n',
+              '    function callbackFor(entry) {\n        var callback = null;\n        if (!navState.predictiveBackEnabled) { return null; }\n',
+              'nav callback capability gate')
+
+          nav = replace_once(nav,
+              '        if (Build.VERSION.SDK_INT >= 33) {\n            try { dispatcher = view.findOnBackInvokedDispatcher(); }\n',
+              '        if (Build.VERSION.SDK_INT >= 33 &&\n                navState.predictiveBackEnabled) {\n            try { dispatcher = view.findOnBackInvokedDispatcher(); }\n',
+              'nav register predictive gate')
+
+          nav = replace_once(nav,
+              '        entries.push(entry);\n        navState.registerCount += 1;\n',
+              '        entries.push(entry);\n        navState.registerCount += 1;\n        if (!navState.predictiveBackEnabled) {\n            entry.callbackMode = "legacy_key";\n            navState.callbackMode = "legacy_key";\n        }\n',
+              'nav legacy callback mode')
+
+          nav = replace_once(nav,
+              '        if (!entry.dispatcher && Build.VERSION.SDK_INT >= 33 &&\n                entry.retryCount < 3) {\n',
+              '        if (!entry.dispatcher && Build.VERSION.SDK_INT >= 33 &&\n                navState.predictiveBackEnabled && entry.retryCount < 3) {\n',
+              'nav retry predictive gate')
+
+          old_refresh = r'''    function refreshSystemBackCapture(reason) {
+        if (!initialized) { return false; }
+        if (Build.VERSION.SDK_INT < 33) { return true; }
+        return runOnMainSync(function () {
+            var index;
+            var entry;
+            var targetCount = 0;
+            var refreshedCount = 0;
+            pruneEntries();
+            for (index = 0; index < entries.length; index += 1) {
+                entry = entries[index];
+                if (!entry || entry.removed) { continue; }
+                targetCount += 1;
+                if (refreshEntryBackCallback(entry, reason)) {
+                    refreshedCount += 1;
+                }
+            }
+            if (targetCount <= 0) {
+                scheduleScan(null);
+                return false;
+            }
+            return refreshedCount === targetCount;
+        }, 2500) === true;
+    }
+'''
+          new_refresh = r'''    function refreshSystemBackCapture(reason) {
+        if (!initialized) { return false; }
+        if (!navState.predictiveBackEnabled) {
+            return runOnMainSync(function () {
+                var index;
+                var entry;
+                var targetCount = 0;
+                pruneEntries();
+                for (index = 0; index < entries.length; index += 1) {
+                    entry = entries[index];
+                    if (!entry || entry.removed) { continue; }
+                    makeFocusable(entry);
+                    entry.callbackMode = "legacy_key";
+                    targetCount += 1;
+                }
+                navState.callbackMode = "legacy_key";
+                navState.legacyBackRefreshCount += targetCount;
+                if (targetCount <= 0) {
+                    scheduleScan(null);
+                    return false;
+                }
+                return true;
+            }, 2500) === true;
+        }
+        if (Build.VERSION.SDK_INT < 33) { return true; }
+        return runOnMainSync(function () {
+            var index;
+            var entry;
+            var targetCount = 0;
+            var refreshedCount = 0;
+            pruneEntries();
+            for (index = 0; index < entries.length; index += 1) {
+                entry = entries[index];
+                if (!entry || entry.removed) { continue; }
+                targetCount += 1;
+                if (refreshEntryBackCallback(entry, reason)) {
+                    refreshedCount += 1;
+                }
+            }
+            if (targetCount <= 0) {
+                scheduleScan(null);
+                return false;
+            }
+            return refreshedCount === targetCount;
+        }, 2500) === true;
+    }
+'''
+          nav = replace_once(nav, old_refresh, new_refresh,
+              'nav refreshSystemBackCapture')
+
+          nav = replace_once(nav,
+              '            callbackMode: navState.callbackMode,\n            mainFocusableUpgradeCount:\n',
+              '            callbackMode: navState.callbackMode,\n            backMode: navState.backMode,\n            predictiveBackSupported:\n                navState.predictiveBackSupported === true,\n            predictiveBackEnabled:\n                navState.predictiveBackEnabled === true,\n            predictiveBackCapabilitySource:\n                navState.predictiveBackCapabilitySource,\n            predictiveBackContextPackage:\n                navState.predictiveBackContextPackage,\n            predictiveBackTargetSdk:\n                Number(navState.predictiveBackTargetSdk),\n            legacyBackRefreshCount:\n                Number(navState.legacyBackRefreshCount),\n            mainFocusableUpgradeCount:\n',
+              'nav state export capability')
+
+          nav = replace_once(nav,
+              '    function navigationInit(context) {\n        if (initialized) { return navigationState(); }\n',
+              '    function navigationInit(context) {\n        var backCapability;\n        if (initialized) { return navigationState(); }\n',
+              'nav init capability var')
+
+          nav = replace_once(nav,
+              '        density = Number(appContext.getResources()\n            .getDisplayMetrics().density || 1);\n        initialized = true;\n',
+              '        density = Number(appContext.getResources()\n            .getDisplayMetrics().density || 1);\n        backCapability = detectBackCapability(appContext);\n        navState.predictiveBackSupported =\n            backCapability.supported === true;\n        navState.predictiveBackEnabled =\n            backCapability.enabled === true;\n        navState.predictiveBackCapabilitySource =\n            String(backCapability.source || "unavailable");\n        navState.predictiveBackContextPackage =\n            String(backCapability.packageName || "");\n        navState.predictiveBackTargetSdk =\n            Number(backCapability.targetSdkVersion || 0);\n        navState.backMode = navState.predictiveBackEnabled ?\n            "predictive" : "legacy_key";\n        navState.callbackMode = navState.predictiveBackEnabled ?\n            "predictive_pending" : "legacy_key";\n        initialized = true;\n',
+              'nav init capability detection')
+
+          nav = replace_once(nav,
+              '        log("I", "navigation initialized sdk=" +\n            String(Build.VERSION.SDK_INT));\n',
+              '        log("I", "navigation initialized sdk=" +\n            String(Build.VERSION.SDK_INT) + " backMode=" +\n            navState.backMode + " capability=" +\n            navState.predictiveBackCapabilitySource);\n',
+              'nav init logging')
+
+          nav = replace_once(nav,
+              '        MODULE_VERSION: 9,\n',
+              '        MODULE_VERSION: 10,\n',
+              'nav module version')
+
+          nav = replace_once(nav,
+              '        registerWindow: registerManagedWindow,\n        refreshSystemBackCapture: refreshSystemBackCapture,\n        getState: navigationState,\n',
+              '        registerWindow: registerManagedWindow,\n        refreshSystemBackCapture: refreshSystemBackCapture,\n        getBackCapability: getBackCapability,\n        resolveBackFocusRoot: resolveBackFocusRoot,\n        handoffBackFocus: handoffBackFocus,\n        getState: navigationState,\n',
+              'nav contract exports')
+
+          nav_path.write_text(nav, encoding='utf-8')
+
+          editor_path = Path('src/ch_10_editor.js')
+          editor = editor_path.read_text(encoding='utf-8')
+
+          editor_helper = r'''    function editorBackFocusRoot() {
+        var navigation = null;
+        var root = null;
+        try { navigation = ClipHub.Navigation; }
+        catch (ignoredNavigation) { navigation = null; }
+        if (navigation &&
+                typeof navigation.resolveBackFocusRoot === "function") {
+            try {
+                return navigation.resolveBackFocusRoot(
+                    panelPageRoot, panelWindowRoot, panelRoot);
+            } catch (ignoredResolve) {}
+        }
+        if (embeddedInPrimary && panelPageRoot !== null) {
+            try {
+                root = panelPageRoot.getRootView();
+                if (root !== null && root.isAttachedToWindow()) {
+                    return root;
+                }
+            } catch (ignoredPrimaryRoot) { root = null; }
+        }
+        if (panelWindowRoot !== null) { return panelWindowRoot; }
+        return panelRoot;
+    }
+
+'''
+          marker_editor = '    function rearmSystemBackAfterImeHide() {\n'
+          if marker_editor not in editor:
+              raise SystemExit('editor helper insertion marker missing')
+          editor = editor.replace(marker_editor,
+              editor_helper + marker_editor, 1)
+
+          editor = replace_once(editor,
+              '            navigation.refreshSystemBackCapture();\n',
+              '            navigation.refreshSystemBackCapture(\n                "editor_ime_hidden");\n',
+              'editor rearm reason')
+
+          editor = replace_once(editor,
+              '        var focusRoot = panelWindowRoot !== null ?\n            panelWindowRoot : panelRoot;\n',
+              '        var focusRoot = editorBackFocusRoot();\n',
+              'editor immediate back focus root')
+
+          editor = replace_once(editor,
+              '                var currentRoot = panelWindowRoot !== null ?\n                    panelWindowRoot : panelRoot;\n',
+              '                var currentRoot = editorBackFocusRoot();\n',
+              'editor delayed back focus root')
+
+          editor = replace_once(editor,
+              '            if (!ime.visible && state.focusReleasedAfterImeHide === true &&\n                    (panelWindowRoot !== null || panelRoot !== null)) {\n                try {\n                    state.rootFocusedAfterImeHide =\n                        (panelWindowRoot !== null ?\n                            panelWindowRoot : panelRoot).isFocused();\n                } catch (ignoredRootFocus) {}\n            }\n',
+              '            if (!ime.visible && state.focusReleasedAfterImeHide === true &&\n                    editorBackFocusRoot() !== null) {\n                try {\n                    state.rootFocusedAfterImeHide =\n                        editorBackFocusRoot().isFocused();\n                } catch (ignoredRootFocus) {}\n            }\n',
+              'editor measured back focus root')
+
+          editor = replace_once(editor,
+              '        MODULE_VERSION: 39,\n',
+              '        MODULE_VERSION: 40,\n',
+              'editor module version')
+          editor_path.write_text(editor, encoding='utf-8')
+
+          docs = r'''# ShortX UI Navigation Contract v1
+
+## 目标
+
+固定 ShortX / Rhino ES5 单窗口多页面项目的返回交互。页面只声明“收到 Back 后做什么”；系统 Back 来源、运行时能力探测、IME 焦点交接、页面栈和统一分发由 Navigation + UIShell Owner 负责。
+
+## Owner
+
+- `Navigation`：系统 Back 唯一 Owner。负责 Predictive Back capability、Legacy `KEYCODE_BACK`、窗口根注册、焦点根解析、统一 `dispatchBack()`。
+- `UIShell`：页面栈唯一 Owner。负责 `pageStack`、`activePageId`、`mountPage()`、`dispatchBack()`。
+- Page：只拥有页面内部状态与 `requestExit(reason)`；禁止直接注册 Android Back callback。
+
+## 固定返回链
+
+```text
+System side-swipe / KEYCODE_BACK / header back
+                    |
+                    v
+              Navigation
+                    |
+                    v
+               UIShell
+                    |
+                    v
+           active Page.onBack()
+                    |
+                    v
+            Page.requestExit()
+```
+
+## Capability SSOT
+
+不得用 `SDK_INT >= 33/34` 直接推断 Predictive Back 可用。初始化时必须运行时检测：
+
+1. 优先 `WindowOnBackInvokedDispatcher.isOnBackInvokedCallbackEnabled(context)`；
+2. 退化到 `ApplicationInfo.isOnBackInvokedCallbackEnabled()`；
+3. 检测失败或返回 false 时进入 `legacy_key`；
+4. 两种输入最后都必须进入同一个 `Navigation.dispatchBack()`。
+
+当前 ClipHub 真机事实：系统 Predictive Back 总开关开启，但 ShortX 脚本 Context=`android` 且 callback capability=false，因此必须走 `legacy_key`。
+
+## 页面合同
+
+页面挂载：
+
+```javascript
+ClipHub.UIShell.mountPage(PAGE_ID, pageRoot, {
+    title: PAGE_TITLE,
+    showBack: true,
+    onBack: function () {
+        return requestExit("navigation_back");
+    },
+    onClose: function () {
+        return requestExit("navigation_close");
+    }
+});
+```
+
+页面禁止：
+
+- 直接创建 `OnBackInvokedCallback` / `OnBackAnimationCallback`；
+- 自己维护系统 Back 去重；
+- 绕过 UIShell 自建 page stack；
+- 将 EditText focus 当成 Window Back focus；
+- 为解决返回问题新增第二个透明 Window。
+
+## IME / Focus 合同
+
+输入页在 IME 隐藏后：
+
+```text
+EditText.clearFocus()
+        |
+        v
+Navigation.resolveBackFocusRoot(pageRoot, windowRoot, fallbackRoot)
+        |
+        v
+实际 Primary Window Root.requestFocus()
+```
+
+根解析固定优先级：
+
+1. embedded page `pageRoot.getRootView()` 且已 attach；
+2. standalone `windowRoot`；
+3. `fallbackRoot`。
+
+公共接口：
+
+```javascript
+ClipHub.Navigation.getBackCapability();
+ClipHub.Navigation.resolveBackFocusRoot(pageRoot, windowRoot, fallbackRoot);
+ClipHub.Navigation.handoffBackFocus({
+    pageRoot: pageRoot,
+    windowRoot: windowRoot,
+    fallbackRoot: fallbackRoot,
+    inputView: editText
+});
+ClipHub.Navigation.refreshSystemBackCapture(reason);
+```
+
+## Page.requestExit 优先级
+
+1. IME 可见：系统第一次 Back 只允许 IME 消费；
+2. 临时层 / Dialog / Drawer / 搜索层；
+3. 未保存确认；
+4. 页面自身子状态回退；
+5. 当前页面退出；
+6. UIShell 回到上一页；
+7. 首页 Back 才关闭整个浮窗。
+
+## 新页面接入清单
+
+- 在 UIShell 注册 page descriptor；
+- 使用 `mountPage()`，只提供 `onBack/onClose`；
+- 页面实现唯一 `requestExit(reason)`；
+- 含输入框时使用 Navigation 的 focus-root contract；
+- 不新增任何 Android Back callback；
+- 通过统一测试矩阵后才合入。
+
+## 必测矩阵
+
+| 场景 | 预期 |
+|---|---|
+| 首页 -> 页面 -> 侧滑 | 回到上一页 |
+| 页面 + IME | 第一次收 IME，第二次退页 |
+| dirty editor | Back 显示未保存确认 |
+| 顶部返回 | 与系统 Back 相同业务路径 |
+| tags / tokenizer 子页 | 严格按 pageStack 回退 |
+| Predictive capability=false | `legacy_key` |
+| capability=true | Predictive callback -> 同一 dispatch |
+| 首页 Back | 关闭浮窗，不残留 Window |
+
+## 回归边界
+
+Navigation 不拥有编辑、设置、分词、翻译业务；UIShell 不直接处理业务保存；页面不拥有系统 Back。一个能力一个 Owner，一个页面栈一个 SSOT。
+'''
+          Path('docs/ShortX_UI_Navigation_Contract_v1.md').write_text(
+              docs, encoding='utf-8')
+
+          test = r'''var fs = require("fs");
+var nav = fs.readFileSync("src/ch_12_translation.js", "utf8");
+var editor = fs.readFileSync("src/ch_10_editor.js", "utf8");
+var shell = fs.readFileSync("src/ch_16_ui_shell.js", "utf8");
+function need(source, token, message) {
+    if (source.indexOf(token) < 0) { throw new Error(message + ": " + token); }
+}
+need(nav, "function detectBackCapability(context)", "capability owner missing");
+need(nav, "WindowOnBackInvokedDispatcher", "runtime predictive detection missing");
+need(nav, 'backMode: "uninitialized"', "back mode SSOT missing");
+need(nav, '"legacy_key"', "legacy fallback missing");
+need(nav, "navState.predictiveBackEnabled", "predictive gate missing");
+need(nav, "resolveBackFocusRoot", "back focus root contract missing");
+need(nav, "handoffBackFocus", "focus handoff API missing");
+need(nav, "getBackCapability", "capability API missing");
+need(editor, "function editorBackFocusRoot()", "editor focus adapter missing");
+need(editor, "panelPageRoot.getRootView()", "embedded primary root fallback missing");
+need(editor, "editorBackFocusRoot();", "editor handoff does not use contract root");
+if (editor.indexOf("OnBackInvokedCallback") >= 0 ||
+        editor.indexOf("OnBackAnimationCallback") >= 0) {
+    throw new Error("page must not own Android Back callbacks");
+}
+need(shell, "function mountPage(pageId, view, options)", "UIShell mount owner missing");
+need(shell, "function dispatchBack(reason, request)", "UIShell back owner missing");
+console.log("ShortX Navigation Contract v1: passed");
+'''
+          Path('scripts/test_navigation_contract_v1.js').write_text(
+              test, encoding='utf-8')
+
+          manifest_path = Path('module-manifest.json')
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          if manifest.get('moduleSetVersion') != '20260818.01':
+              raise SystemExit('unexpected module set version: ' +
+                  str(manifest.get('moduleSetVersion')))
+          manifest['moduleSetVersion'] = '20260818.02'
+          manifest['sourceRef'] = 'fix/editor-embedded-back-capture-20260818'
+
+          def blob_sha(path):
+              return subprocess.check_output(
+                  ['git', 'hash-object', str(path)], text=True).strip()
+
+          for module in manifest['modules']:
+              if module['path'] in ('src/ch_10_editor.js',
+                                    'src/ch_12_translation.js'):
+                  module['sha'] = blob_sha(Path(module['path']))
+          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False,
+              indent=2) + '\n', encoding='utf-8')
+          PY
+
+      - name: Run navigation contract gates
+        shell: bash
+        run: |
+          node --check src/ch_10_editor.js
+          node --check src/ch_12_translation.js
+          node scripts/test_editor_ime_back_rearm.js
+          node scripts/test_child_back_route_contract.js
+          node scripts/test_navigation_contract_v1.js
+
+      - name: Commit navigation contract
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src/ch_10_editor.js src/ch_12_translation.js module-manifest.json \
+            docs/ShortX_UI_Navigation_Contract_v1.md \
+            scripts/test_navigation_contract_v1.js
+          git diff --cached --check
+          git commit -m "fix: establish reusable navigation contract v1"
+          git push origin HEAD:fix/editor-embedded-back-capture-20260818
