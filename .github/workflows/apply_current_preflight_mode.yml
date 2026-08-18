@@ -1,15 +1,16 @@
 name: Apply Current Preflight Mode
 
 on:
-  push:
+  pull_request:
     branches:
-      - refactor/navigation-contract-v2-20260818
+      - fix/editor-embedded-back-capture-20260818
 
 permissions:
   contents: write
 
 jobs:
   apply-current-preflight:
+    if: github.head_ref == 'refactor/navigation-contract-v2-20260818'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
