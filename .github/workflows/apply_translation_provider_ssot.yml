@@ -44,6 +44,20 @@ jobs:
           }
           trap on_exit EXIT
 
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/apply_translation_provider_ssot.py')
+          text = path.read_text(encoding='utf-8')
+          start = text.index("ch12 = replace_once(\n    ch12,\n    '        MODULE_VERSION: 23,\\n',")
+          end = text.index("\n\nif 'settings.get", start)
+          text = text[:start] + text[end:]
+          start = text.index("version_matches = list(re.finditer(r'(MODULE_VERSION:\\s*)(\\d+)', source))")
+          end_marker = "print('settings module version %d -> %d' % (old_version, old_version + 1))"
+          end = text.index(end_marker, start) + len(end_marker)
+          text = text[:start] + text[end:]
+          path.write_text(text, encoding='utf-8')
+          PY
+
           python3 scripts/apply_translation_provider_ssot.py
 
           node --check src/ch_12_translation.js
