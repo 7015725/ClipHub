@@ -22,6 +22,7 @@ jobs:
           node --check src/ch_12_translation.js
           node --check src/ch_16_ui_shell.js
           node --check probes/navigation_architecture_test_page.js
+          node --check probes/cliphub_navigation_contract_probe_065.js
           node scripts/test_navigation_contract_v1.js
           node scripts/test_navigation_stage2_3_contract.js
           node scripts/test_navigation_stage4_back_dispatcher.js
@@ -34,6 +35,7 @@ jobs:
           node scripts/test_navigation_stage9_runtime_simulation.js
           node scripts/test_navigation_stage10_source_root.js
           node scripts/test_navigation_stage10_legacy_hook_bridge.js
+          node scripts/test_system_back_gesture_contract.js
           node scripts/test_editor_ime_back_rearm.js
           node scripts/test_child_back_route_contract.js
           node scripts/test_runtime_diagnostics.js
