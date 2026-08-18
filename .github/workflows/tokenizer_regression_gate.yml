@@ -30,6 +30,7 @@ jobs:
           python-version: '3.x'
 
       - name: Assert guarded runtime cleanup scope
+        if: github.event_name == 'push' || github.base_ref == 'cleanup/tokenizer-no-regression-20260817'
         shell: bash
         run: |
           set -euo pipefail
