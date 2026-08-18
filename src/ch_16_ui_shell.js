@@ -218,28 +218,207 @@
         return false;
     }
 
-    function setStackPath(path, reason) {
-        var ids = path || [];
-        var next = [{ id: "home", params: {} }];
-        var parent = "home";
+    function rootPageId() {
+        var root = null;
         var index;
         var page;
-        for (index = 0; index < ids.length; index += 1) {
-            page = requirePage(ids[index]);
-            if (!pageAcceptsParent(page, parent)) {
-                throw new Error("UI shell path parent mismatch: " + page.id);
+        for (index = 0; index < pageOrder.length; index += 1) {
+            page = pages[pageOrder[index]];
+            if (page && page.parentId === null) {
+                if (root !== null && root !== page.id) {
+                    throw new Error("Multiple UI root pages registered");
+                }
+                root = String(page.id);
             }
-            next.push({ id: page.id, params: {} });
-            parent = page.id;
         }
-        stack = next;
+        if (root === null) { throw new Error("UI root page is not registered"); }
+        return root;
+    }
+
+    function copyStackEntry(entry) {
+        if (!entry) { return null; }
+        return { id: String(entry.id), params: copyObject(entry.params) };
+    }
+
+    function stackSnapshot() {
+        var output = [];
+        var index;
+        for (index = 0; index < stack.length; index += 1) {
+            output.push(copyStackEntry(stack[index]));
+        }
+        return output;
+    }
+
+    function commitStackState(nextEntries, action, reason) {
+        var next = nextEntries || [];
+        var normalized = [];
+        var index;
+        var page;
+        var previousId = null;
+        if (next.length < 1) {
+            throw new Error("PageStack cannot commit an empty stack");
+        }
+        for (index = 0; index < next.length; index += 1) {
+            page = requirePage(next[index].id);
+            if (index === 0) {
+                if (page.parentId !== null) {
+                    throw new Error("PageStack root must be a root page: " + page.id);
+                }
+            } else if (!pageAcceptsParent(page, previousId)) {
+                throw new Error("PageStack parent mismatch: " + page.id +
+                    ", previous=" + String(previousId || ""));
+            }
+            normalized.push({
+                id: page.id,
+                params: copyObject(next[index].params)
+            });
+            previousId = page.id;
+        }
+        stack = normalized;
         visible = true;
         generation += 1;
         mutationCount += 1;
-        syncCount += 1;
-        lastAction = "sync_path";
+        lastAction = String(action || "stack_commit");
         lastReason = String(reason || "");
         return getState();
+    }
+
+    function clearStackState(action, reason) {
+        stack = [];
+        generation += 1;
+        mutationCount += 1;
+        lastAction = String(action || "stack_clear");
+        lastReason = String(reason || "");
+        return true;
+    }
+
+    function pageStackSetPath(path, reason) {
+        var ids = path || [];
+        var rootId = rootPageId();
+        var next = [{ id: rootId, params: {} }];
+        var index = 0;
+        if (ids.length > 0 && normalizeId(ids[0]) === rootId) {
+            index = 1;
+        }
+        for (; index < ids.length; index += 1) {
+            next.push({ id: normalizeId(ids[index]), params: {} });
+        }
+        syncCount += 1;
+        return commitStackState(next, "sync_path", reason);
+    }
+
+    function pageStackResetRoot(pageId, params, reason) {
+        var page = requirePage(pageId);
+        if (page.parentId !== null) {
+            throw new Error("UI root page must not have a parent: " + page.id);
+        }
+        return commitStackState([
+            { id: page.id, params: copyObject(params) }
+        ], "enter_root", reason);
+    }
+
+    function pageStackPush(pageId, params, reason) {
+        var page = requirePage(pageId);
+        var currentId = currentPageId();
+        var next = stackSnapshot();
+        if (page.parentId !== null && !pageAcceptsParent(page, currentId)) {
+            throw new Error("UI page parent mismatch: " + page.id +
+                " requires " + page.parentId + ", current=" + currentId);
+        }
+        next.push({ id: page.id, params: copyObject(params) });
+        return commitStackState(next, "push", reason);
+    }
+
+    function pageStackPop(reason) {
+        var next;
+        if (stack.length <= 1) { return false; }
+        next = stackSnapshot();
+        next.pop();
+        commitStackState(next, "pop", reason);
+        return true;
+    }
+
+    function pageStackReplace(pageId, params, reason) {
+        var page = requirePage(pageId);
+        var next = stackSnapshot();
+        var parentId = next.length > 1 ? String(next[next.length - 2].id) : null;
+        if (next.length === 0) {
+            return pageStackResetRoot(page.id, params, reason);
+        }
+        if (next.length === 1) {
+            if (page.parentId !== null) {
+                throw new Error("Root replace requires a root page: " + page.id);
+            }
+        } else if (!pageAcceptsParent(page, parentId)) {
+            throw new Error("UI replace parent mismatch: " + page.id +
+                ", parent=" + String(parentId || ""));
+        }
+        next[next.length - 1] = { id: page.id, params: copyObject(params) };
+        return commitStackState(next, "replace", reason);
+    }
+
+    function pageStackCurrent() {
+        return stack.length > 0 ? copyStackEntry(stack[stack.length - 1]) : null;
+    }
+
+    function pageStackCanPop() { return stack.length > 1; }
+
+    function pageStackSize() { return Number(stack.length); }
+
+    function pageStackPopTo(pageId, reason) {
+        var id = normalizeId(pageId);
+        var next = stackSnapshot();
+        var index = next.length - 1;
+        for (; index >= 0; index -= 1) {
+            if (String(next[index].id) === id) {
+                next = next.slice(0, index + 1);
+                commitStackState(next, "pop_to", reason);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function pageStackPopToRoot(reason) {
+        return pageStackPopTo(rootPageId(), reason);
+    }
+
+    function navigatorPush(pageId, params, reason) {
+        return pageStackPush(pageId, params, reason || "navigator_push");
+    }
+
+    function navigatorPop(reason) {
+        return pageStackPop(reason || "navigator_pop");
+    }
+
+    function navigatorReplace(pageId, params, reason) {
+        return pageStackReplace(pageId, params, reason || "navigator_replace");
+    }
+
+    function navigatorCurrent() { return pageStackCurrent(); }
+
+    function navigatorCanPop() { return pageStackCanPop(); }
+
+    function navigatorStackSize() { return pageStackSize(); }
+
+    function navigatorPopTo(pageId, reason) {
+        return pageStackPopTo(pageId, reason || "navigator_pop_to");
+    }
+
+    function navigatorPopToRoot(reason) {
+        return pageStackPopToRoot(reason || "navigator_pop_to_root");
+    }
+
+    function navigatorReset(pageId, params, reason) {
+        return pageStackResetRoot(pageId, params, reason || "navigator_reset");
+    }
+
+    function navigatorSyncPath(path, reason) {
+        return pageStackSetPath(path, reason || "navigator_sync_path");
+    }
+
+    function setStackPath(path, reason) {
+        return navigatorSyncPath(path, reason || "legacy_set_stack_path");
     }
 
     function applyActivePage(spec, reason) {
@@ -298,7 +477,10 @@
 
     function unmountPage(pageId, reason) {
         var id = normalizeId(pageId);
-        if (activePageId === null) { return true; }
+        if (activePageId === null) {
+            navigatorPopToRoot(reason || "unmount_without_active");
+            return true;
+        }
         if (id && id !== activePageId &&
                 !(id === "settings" && (activePageId === "regex_rules" ||
                     activePageId === "regex_editor" || activePageId === "regex_test")) &&
@@ -317,10 +499,7 @@
         activeBack = null;
         activeClose = null;
         unmountCount += 1;
-        stack = [{ id: "home", params: {} }];
-        visible = true;
-        generation += 1;
-        mutationCount += 1;
+        navigatorPopToRoot(reason || "unmount");
         lastAction = "unmount";
         lastReason = String(reason || "");
         return true;
@@ -377,54 +556,22 @@
     }
 
     function enterRoot(pageId, params, reason) {
-        var page = requirePage(pageId);
-        if (page.parentId !== null) {
-            throw new Error("UI root page must not have a parent: " + page.id);
-        }
-        stack = [{ id: page.id, params: copyObject(params) }];
-        visible = true;
-        generation += 1;
-        mutationCount += 1;
-        lastAction = "enter_root";
-        lastReason = String(reason || "");
-        return getState();
+        return navigatorReset(pageId, params, reason || "legacy_enter_root");
     }
 
     function pushPage(pageId, params, reason) {
-        var page = requirePage(pageId);
-        var currentId = currentPageId();
-        if (page.parentId !== null &&
-                !pageAcceptsParent(page, currentId)) {
-            throw new Error("UI page parent mismatch: " + page.id +
-                " requires " + page.parentId + ", current=" + currentId);
-        }
-        stack.push({ id: page.id, params: copyObject(params) });
-        visible = true;
-        generation += 1;
-        mutationCount += 1;
-        lastAction = "push";
-        lastReason = String(reason || "");
-        return getState();
+        return navigatorPush(pageId, params, reason || "legacy_push_page");
     }
 
     function popPage(reason) {
-        if (stack.length <= 1) { return false; }
-        stack.pop();
-        generation += 1;
-        mutationCount += 1;
-        lastAction = "pop";
-        lastReason = String(reason || "");
-        return true;
+        return navigatorPop(reason || "legacy_pop_page");
     }
 
     function clearToRoot(reason) {
-        if (activePageId !== null) { unmountPage(activePageId, reason); }
-        if (stack.length < 1) { stack = [{ id: "home", params: {} }]; }
-        else if (stack.length > 1) { stack = [stack[0]]; }
-        generation += 1;
-        mutationCount += 1;
-        lastAction = "clear_to_root";
-        lastReason = String(reason || "");
+        if (activePageId !== null) {
+            return unmountPage(activePageId, reason || "legacy_clear_to_root");
+        }
+        navigatorPopToRoot(reason || "legacy_clear_to_root");
         return getState();
     }
 
@@ -809,7 +956,7 @@
         var host = primaryHostState();
         return {
             initialized: initialized === true,
-            migrationStage: "primary_window_settings_regex_translation_editor_tags_tokenizer_detail_filter_overlay_closed_runtime_diagnostics",
+            migrationStage: "primary_window_settings_regex_translation_editor_tags_tokenizer_detail_filter_overlay_closed_runtime_diagnostics_navigation_stage2_3",
             primaryWindowMode: true,
             legacyWindowBridge: true,
             hostAttached: host.ready === true,
@@ -821,6 +968,10 @@
             currentPageId: currentPageId(),
             stackDepth: Number(stack.length),
             pageStack: stackIds(),
+            pageStackOwner: "ClipHub.PageStack",
+            navigationManagerOwner: "ClipHub.Navigator",
+            navigationApiVersion: 2,
+            canPop: navigatorCanPop(),
             pageCount: Number(pageOrder.length),
             registeredPageIds: pageIds(),
             generation: Number(generation),
@@ -850,7 +1001,7 @@
         runtimeContext = context || {};
         pages = {};
         pageOrder = [];
-        stack = [];
+        clearStackState("init_clear", "init");
         visible = false;
         activePageId = null;
         activeView = null;
@@ -869,13 +1020,12 @@
         lastBackToPageId = "";
         lastBackDepthBefore = 0;
         lastBackDepthAfter = 0;
-        generation += 1;
         mutationCount = 0;
         lastAction = "init";
         lastReason = "";
         initialized = true;
         installDefaultPages();
-        stack = [{ id: "home", params: {} }];
+        navigatorReset(rootPageId(), {}, "init_root");
         return getState();
     }
 
@@ -887,7 +1037,7 @@
         runtimeContext = null;
         pages = {};
         pageOrder = [];
-        stack = [];
+        clearStackState("shutdown_clear", "shutdown");
         visible = false;
         activePageId = null;
         activeView = null;
@@ -896,15 +1046,41 @@
         backDispatchInProgress = false;
         lastBackRequestId = "";
         lastBackRequestGeneration = -1;
-        generation += 1;
         lastAction = "shutdown";
         lastReason = "";
         return true;
     }
 
+    ClipHub.PageStack = {
+        API_VERSION: 1,
+        push: pageStackPush,
+        pop: pageStackPop,
+        replace: pageStackReplace,
+        current: pageStackCurrent,
+        canPop: pageStackCanPop,
+        size: pageStackSize,
+        popTo: pageStackPopTo,
+        popToRoot: pageStackPopToRoot,
+        resetRoot: pageStackResetRoot,
+        snapshot: stackSnapshot
+    };
+
+    ClipHub.Navigator = {
+        API_VERSION: 1,
+        push: navigatorPush,
+        pop: navigatorPop,
+        replace: navigatorReplace,
+        current: navigatorCurrent,
+        canPop: navigatorCanPop,
+        stackSize: navigatorStackSize,
+        popTo: navigatorPopTo,
+        popToRoot: navigatorPopToRoot,
+        reset: navigatorReset
+    };
+
     ClipHub.UIShell = {
         MODULE_NAME: "ch_16_ui_shell",
-        MODULE_VERSION: 10,
+        MODULE_VERSION: 11,
         init: init,
         registerPage: registerPage,
         getPage: function (pageId) { return copyDescriptor(requirePage(pageId)); },
