@@ -19,6 +19,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          node --check src/ch_12_translation.js
           node --check src/ch_16_ui_shell.js
           node --check probes/navigation_architecture_test_page.js
           node scripts/test_navigation_contract_v1.js
@@ -30,6 +31,7 @@ jobs:
           node scripts/test_navigation_stage8_no_page_hardcoding.js
           node scripts/test_navigation_stage9_factory_core.js
           node scripts/test_navigation_stage9_zero_core_page.js
+          node scripts/test_navigation_stage10_source_root.js
           node scripts/test_editor_ime_back_rearm.js
           node scripts/test_child_back_route_contract.js
           node scripts/test_runtime_diagnostics.js
