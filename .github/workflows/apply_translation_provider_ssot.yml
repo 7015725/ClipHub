@@ -67,6 +67,7 @@ jobs:
             scripts/test_translation_provider_contract.py \
             src/ch_12_translation.js \
             src/ch_13_settings.js \
+            stage_translation_provider_apply_failure.txt \
             stage_translation_provider_stage1.txt | sort)"
           actual="$(git status --short | sed -E 's/^.. //' | sort)"
           printf 'Expected final scope:\n%s\n' "$expected"
@@ -78,6 +79,7 @@ jobs:
           git add src/ch_12_translation.js src/ch_13_settings.js module-manifest.json
           git add scripts/test_translation_provider_contract.py
           git add -u stage_translation_provider_stage1.txt
+          git add -u stage_translation_provider_apply_failure.txt
           git add -u .github/workflows/apply_translation_provider_ssot.yml
           git add -u scripts/apply_translation_provider_ssot.py
           git commit -m 'refactor: unify translation provider selection'
