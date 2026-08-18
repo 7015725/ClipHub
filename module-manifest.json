@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
-  "moduleSetVersion": "20260818.02",
+  "moduleSetVersion": "20260818.03",
   "entryMinVersion": 8,
-  "sourceRef": "fix/editor-embedded-back-capture-20260818",
+  "sourceRef": "refactor/navigation-contract-v2-20260818",
   "modules": [
     {
       "name": "ch_01_base.js",
@@ -124,7 +124,7 @@
     {
       "name": "ch_16_ui_shell.js",
       "path": "src/ch_16_ui_shell.js",
-      "sha": "e52951fd4b0e86aa280424fe6d7cb7928f77c10f",
+      "sha": "60214072eca70c6dd03ebf6019c4197a317abf4f",
       "export": "UIShell",
       "runtimeRole": "managed",
       "lifecycleIndex": 13
