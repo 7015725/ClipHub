@@ -65,10 +65,15 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm .github/workflows/apply_navigation_v2_finalization.yml
-          git rm .github/workflows/apply_navigation_v2_finalization_pr.yml
-          git rm .github/workflows/apply_navigation_v2_finalization_runner.yml
+          git restore .github/workflows/navigation_stage1_3_gate.yml
           git rm -f scripts/apply_navigation_v2_finalization.py
-          git add -A
+          git add src/ch_12_translation.js src/ch_16_ui_shell.js \
+            scripts/audit_navigation_page_id_hardcoding.js \
+            scripts/test_navigation_stage8_no_page_hardcoding.js \
+            scripts/test_navigation_stage4_back_dispatcher.js \
+            scripts/test_navigation_predictive_snapshot_contract.js \
+            probes/cliphub_navigation_contract_probe_065.js \
+            probes/navigation_architecture_test_page.js \
+            module-manifest.json
           git commit -m "refactor: finalize Navigation Contract v2 predictive transaction"
           git push origin HEAD:refactor/navigation-contract-v2-20260818
