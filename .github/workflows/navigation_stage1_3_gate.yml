@@ -1,4 +1,4 @@
-name: Navigation Stage 1-3 Gate
+name: Navigation Contract Gate
 
 on:
   pull_request:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  navigation-stage1-3:
+  navigation-contract:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,6 +22,7 @@ jobs:
           node --check src/ch_16_ui_shell.js
           node scripts/test_navigation_contract_v1.js
           node scripts/test_navigation_stage2_3_contract.js
+          node scripts/test_navigation_stage4_back_dispatcher.js
           node scripts/test_child_back_route_contract.js
           node scripts/test_runtime_diagnostics.js
           node scripts/audit_navigation_page_id_hardcoding.js
