@@ -256,42 +256,26 @@
     }
 
     function isSameShellFamily(pageId) {
-        var current = currentPageId();
-        if (current === "home") { return true; }
-        if (pageId === "detail") { return current === "detail"; }
-        if (pageId === "translation") { return current === "translation"; }
-        if (pageId === "settings") {
-            return current === "settings" || current === "regex_rules" ||
-                current === "regex_editor" || current === "regex_test";
-        }
-        if (pageId === "editor" || pageId === "tags" ||
-                pageId === "tokenizer" || pageId === "tokenizer_rules" ||
-                pageId === "tokenizer_rule_editor") {
-            return current === "editor" || current === "tags" ||
-                current === "tokenizer" || current === "tokenizer_rules" ||
-                current === "tokenizer_rule_editor";
-        }
-        return false;
+        var target = requirePage(pageId);
+        var currentId = currentPageId();
+        var current;
+        if (!currentId || !hasPage(currentId)) { return false; }
+        current = requirePage(currentId);
+        if (current.parentId === null) { return true; }
+        return String(current.family || "") === String(target.family || "");
     }
 
     function canEmbed(pageId) {
         var id = normalizeId(pageId);
         var host = primaryHostState();
-        if (!initialized || host.ready !== true) { return false; }
-        if (id !== "settings" && id !== "translation" && id !== "detail" &&
-                id !== "regex_rules" && id !== "regex_editor" &&
-                id !== "regex_test" && id !== "editor" &&
-                id !== "tags" && id !== "tokenizer" &&
-                id !== "tokenizer_rules" &&
-                id !== "tokenizer_rule_editor") { return false; }
-        if (id === "detail") { return isSameShellFamily("detail"); }
-        if (id === "translation") { return isSameShellFamily("translation"); }
-        if (id === "editor" || id === "tags" || id === "tokenizer" ||
-                id === "tokenizer_rules" ||
-                id === "tokenizer_rule_editor") {
-            return isSameShellFamily(id);
+        var page;
+        if (!initialized || host.ready !== true || !hasPage(id)) { return false; }
+        page = requirePage(id);
+        if (page.shellReady !== true ||
+                String(page.contract.host || "") !== "primary") {
+            return false;
         }
-        return isSameShellFamily("settings");
+        return isSameShellFamily(id);
     }
 
     function pageAcceptsParent(page, parentId) {
@@ -538,8 +522,8 @@
         var opts = options || {};
         if (!view) { throw new Error("UI shell page view is required: " + id); }
         if (!canEmbed(id)) { throw new Error("UI shell embed unavailable: " + id); }
-        if (page.parentId !== "home") {
-            throw new Error("mountPage only accepts direct home children: " + id);
+        if (page.parentId !== rootPageId()) {
+            throw new Error("mountPage only accepts direct root children: " + id);
         }
         setStackPath([id], "mount:" + id);
         activeView = view;
@@ -579,14 +563,12 @@
             navigatorPopToRoot(reason || "unmount_without_active");
             return true;
         }
-        if (id && id !== activePageId &&
-                !(id === "settings" && (activePageId === "regex_rules" ||
-                    activePageId === "regex_editor" || activePageId === "regex_test")) &&
-                !(id === "editor" && (activePageId === "tags" ||
-                    activePageId === "tokenizer" ||
-                    activePageId === "tokenizer_rules" ||
-                    activePageId === "tokenizer_rule_editor"))) {
-            return false;
+        if (id && id !== activePageId) {
+            if (!hasPage(id) || !hasPage(activePageId) ||
+                    String(requirePage(id).family || "") !==
+                    String(requirePage(activePageId).family || "")) {
+                return false;
+            }
         }
         if (ClipHub.Filter &&
                 typeof ClipHub.Filter.unmountPrimaryChildPage === "function") {
@@ -876,15 +858,31 @@
         issues.push({ code: String(code), detail: String(detail || "") });
     }
 
-    function runtimeEditorFamily(pageId) {
-        return pageId === "editor" || pageId === "tags" ||
-            pageId === "tokenizer" || pageId === "tokenizer_rules" ||
-            pageId === "tokenizer_rule_editor";
+    function runtimePageUsesModule(pageId, moduleName) {
+        var id = normalizeId(pageId);
+        if (!id || !hasPage(id)) { return false; }
+        return String(requirePage(id).moduleName || "") === String(moduleName || "");
     }
 
-    function runtimeSettingsFamily(pageId) {
-        return pageId === "settings" || pageId === "regex_rules" ||
-            pageId === "regex_editor" || pageId === "regex_test";
+    function runtimeModuleFamily(moduleName) {
+        var index;
+        var page;
+        var family = "";
+        for (index = 0; index < pageOrder.length; index += 1) {
+            page = pages[pageOrder[index]];
+            if (!page || String(page.moduleName || "") !== String(moduleName || "")) {
+                continue;
+            }
+            if (!family) { family = String(page.family || ""); }
+        }
+        return family;
+    }
+
+    function runtimePageInModuleFamily(pageId, moduleName) {
+        var id = normalizeId(pageId);
+        var family = runtimeModuleFamily(moduleName);
+        return !!(id && family && hasPage(id) &&
+            String(requirePage(id).family || "") === family);
     }
 
     function runtimeSizeMismatch(actual, expected) {
@@ -982,7 +980,7 @@
                 runtimeAddIssue(issues, "SHELL_CHILD_WITHOUT_ACTIVE",
                     childPage || "unknown");
             }
-            if (current && current !== "home") {
+            if (current && current !== rootPageId()) {
                 runtimeAddIssue(issues, "HOME_STACK_MISMATCH", current);
             }
         }
@@ -993,39 +991,38 @@
         }
 
         if (detailAttached && detail.embeddedInPrimary === true &&
-                active !== "detail") {
+                !runtimePageUsesModule(active, "List")) {
             runtimeAddIssue(issues, "STALE_DETAIL_STATE", active || "home");
         }
         if (editorAttached && editor.embeddedInPrimary === true &&
-                !runtimeEditorFamily(active)) {
+                !runtimePageInModuleFamily(active, "Editor")) {
             runtimeAddIssue(issues, "STALE_EDITOR_STATE", active || "home");
         }
         if (settingsAttached && settings.embeddedInPrimary === true &&
-                !runtimeSettingsFamily(active)) {
+                !runtimePageInModuleFamily(active, "Settings")) {
             runtimeAddIssue(issues, "STALE_SETTINGS_STATE", active || "home");
         }
         if (translationAttached && translation.embeddedInPrimary === true &&
-                active !== "translation") {
+                !runtimePageUsesModule(active, "Translation")) {
             runtimeAddIssue(issues, "STALE_TRANSLATION_STATE",
                 active || "home");
         }
 
-        if (active === "detail" && !detailAttached) {
+        if (runtimePageUsesModule(active, "List") && !detailAttached) {
             runtimeAddIssue(issues, "ACTIVE_DETAIL_NOT_ATTACHED", "detail");
         }
-        if (runtimeEditorFamily(active) && !editorAttached) {
+        if (runtimePageInModuleFamily(active, "Editor") && !editorAttached) {
             runtimeAddIssue(issues, "ACTIVE_EDITOR_FAMILY_NOT_ATTACHED", active);
         }
-        if (runtimeSettingsFamily(active) && !settingsAttached) {
+        if (runtimePageInModuleFamily(active, "Settings") && !settingsAttached) {
             runtimeAddIssue(issues, "ACTIVE_SETTINGS_FAMILY_NOT_ATTACHED", active);
         }
-        if (active === "translation" && !translationAttached) {
+        if (runtimePageUsesModule(active, "Translation") && !translationAttached) {
             runtimeAddIssue(issues, "ACTIVE_TRANSLATION_NOT_ATTACHED",
                 "translation");
         }
-        if (tokenizer.mounted === true && active !== "tokenizer" &&
-                active !== "tokenizer_rules" &&
-                active !== "tokenizer_rule_editor") {
+        if (tokenizer.mounted === true &&
+                !runtimePageUsesModule(active, "TokenizerUI")) {
             runtimeAddIssue(issues, "TOKENIZER_STACK_MISMATCH",
                 active || "home");
         }
@@ -1386,7 +1383,7 @@
 
     ClipHub.UIShell = {
         MODULE_NAME: "ch_16_ui_shell",
-        MODULE_VERSION: 15,
+        MODULE_VERSION: 16,
         init: init,
         registerPage: registerPage,
         getPage: function (pageId) { return copyDescriptor(requirePage(pageId)); },
