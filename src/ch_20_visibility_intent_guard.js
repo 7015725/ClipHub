@@ -209,7 +209,7 @@
         state.wrappedAttachWindow = function (options) {
             var generation = Number(state.intentGeneration);
             var role = String(options && options.role || "shared");
-            if (state.started && state.desiredVisible !== true) {
+            if (state.desiredVisible !== true) {
                 state.staleAttachDropCount += 1;
                 state.lastDroppedRole = role;
                 state.lastDroppedGeneration = generation;
@@ -250,7 +250,7 @@
 
     ClipHub.VisibilityIntentGuard = {
         MODULE_NAME: "ch_20_visibility_intent_guard",
-        MODULE_VERSION: 1,
+        MODULE_VERSION: 2,
         init: function () {
             var windowState;
             state.filter = ClipHub.Filter || null;
