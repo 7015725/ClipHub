@@ -1,8 +1,7 @@
 settings source sha before=abc2369b79fcc44e4f4b5b069675b1035a349366990984cd136e7a2b61d1b98f
-settings module version 42 -> 43
-settings source sha after=2f183a77969ea266a913849af7bf4d5785bc7830100f5d9c7d831ad7a5361558
-ch12 blob sha=b668393ba90c4f99a906dac024c326472becf77f
-ch13 blob sha=089bde89716d835b6ea2d22cda7a3a72545f5d7a
+settings source sha after=7cc236bead66b05f07223b3716281f86f1d320fc9619e6e583327b30392d5c17
+ch12 blob sha=6da6eda4c1fe28b829ce9890c821b56186e9544a
+ch13 blob sha=72acf7753215010a67bd4ce4319231240ee00c92
 Rhino ES5 validation passed: /home/runner/work/ClipHub/ClipHub
 translation provider contract: PASS
 Manifest contract verification: passed
@@ -91,7 +90,7 @@ HIGH=0 WARN=0 SAFE=10
 
 未发现需要报告的颜色接口调用。
 
-JSON: /tmp/cliphub-release-preflight.HBaICF/color-findings.json
+JSON: /tmp/cliphub-release-preflight.wtCGL7/color-findings.json
 HIGH=0 WARN=0 SAFE=10
 Manifest SHA verification: passed
 Formal task structure: background + toggle
@@ -100,8 +99,16 @@ endpointSchemaVersion: 3
 moduleSetVersion: 20260817.13
 sourceRef: cleanup/tokenizer-no-regression-20260817
 Theme: 11
-Traceback (most recent call last):
-  File "<stdin>", line 192, in <module>
-AssertionError: ('ch_13_settings.js', 42)
+Bootstrap dual transport contracts: passed
+UI shell stage7 contracts: passed
+Settings tabs safety contracts: passed
+Regex beta safety contracts: passed
+
+Formal release preflight passed.
+Mode: --settings-tabs-beta
+rm '.github/workflows/apply_translation_provider_ssot.yml'
+error: the following file has local modifications:
+    scripts/apply_translation_provider_ssot.py
+(use --cached to keep the file, or -f to force removal)
 translation provider SSOT apply failed rc=1
-HEAD is now at 0ee778b chore: retrigger translation provider guarded workflow
+HEAD is now at 70273ce chore: preserve branch module versions in provider gate
