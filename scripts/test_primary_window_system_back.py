@@ -31,7 +31,7 @@ flt = expanded('src/ch_11_filter.js')
 shell = expanded('src/ch_16_ui_shell.js')
 
 assert 'MODULE_NAME: "ch_14_navigation_embedded"' in nav
-assert 'MODULE_VERSION: 9' in nav
+assert 'MODULE_VERSION: 10' in nav
 assert 'PRIORITY_OVERLAY' in nav
 assert 'PRIORITY_DEFAULT' in nav
 assert 'OnBackInvokedCallback' in nav
