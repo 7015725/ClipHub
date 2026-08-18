@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "moduleSetVersion": "20260819.02",
+  "moduleSetVersion": "20260819.03",
   "entryMinVersion": 8,
   "sourceRef": "refactor/navigation-contract-v2-20260818",
   "modules": [
@@ -154,7 +154,7 @@
     {
       "name": "ch_20_visibility_intent_guard.js",
       "path": "src/ch_20_visibility_intent_guard.js",
-      "sha": "3e86b4ad0075ae032070c82507279dd8e8b22f52",
+      "sha": "3e10b9ba7b8068e0cb456c273cd1826100c850d0",
       "export": "VisibilityIntentGuard",
       "runtimeRole": "managed",
       "lifecycleIndex": 15
