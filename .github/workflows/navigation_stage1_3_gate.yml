@@ -23,6 +23,8 @@ jobs:
           node scripts/test_navigation_contract_v1.js
           node scripts/test_navigation_stage2_3_contract.js
           node scripts/test_navigation_stage4_back_dispatcher.js
+          node scripts/test_navigation_stage5_ime_priority.js
+          node scripts/test_editor_ime_back_rearm.js
           node scripts/test_child_back_route_contract.js
           node scripts/test_runtime_diagnostics.js
           node scripts/audit_navigation_page_id_hardcoding.js
