@@ -72,7 +72,7 @@ jobs:
           rm -f stage_translation_provider_stage1.txt
           rm -f stage_translation_provider_apply_failure.txt
           git rm .github/workflows/apply_translation_provider_ssot.yml
-          git rm scripts/apply_translation_provider_ssot.py
+          git rm -f scripts/apply_translation_provider_ssot.py
 
           expected="$(printf '%s\n' \
             .github/workflows/apply_translation_provider_ssot.yml \
