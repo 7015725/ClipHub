@@ -24,6 +24,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          sed -i 's/module\["sha"\] = updates\[module\["path"\]/module["sha"] = updates[module["path"]]/' scripts/apply_navigation_v2_finalization.py
+          python3 -m py_compile scripts/apply_navigation_v2_finalization.py
           python3 scripts/apply_navigation_v2_finalization.py
 
       - name: Run focused and release gates
