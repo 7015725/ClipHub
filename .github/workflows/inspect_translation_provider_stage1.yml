@@ -1,0 +1,94 @@
+name: Inspect Translation Provider Stage 1
+
+on:
+  push:
+    branches:
+      - cleanup/tokenizer-no-regression-20260817
+    paths:
+      - .github/workflows/inspect_translation_provider_stage1.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@v4
+        with:
+          ref: cleanup/tokenizer-no-regression-20260817
+          fetch-depth: 0
+
+      - name: Expand Settings and locate translation owners
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          import gzip
+          import json
+          import re
+          from pathlib import Path
+
+          path = Path('src/ch_13_settings.js')
+          text = path.read_text(encoding='utf-8')
+          match = re.search(r'\bvar\s+PACKED_B64\s*=\s*(.*?);\s*\n', text, re.S)
+          if match is None:
+              raise SystemExit('PACKED_B64 assignment not found')
+          pieces = re.findall(r'"(?:\\.|[^"\\])*"', match.group(1))
+          encoded = ''.join(json.loads(piece) for piece in pieces)
+          source = gzip.decompress(base64.b64decode(encoded)).decode('utf-8')
+          lines = source.splitlines()
+          print('SETTINGS_SOURCE_LINES=' + str(len(lines)))
+          print('SETTINGS_SOURCE_SHA256=' + __import__('hashlib').sha256(source.encode('utf-8')).hexdigest())
+
+          function_lines = []
+          for i, line in enumerate(lines, 1):
+              m = re.search(r'\bfunction\s+([A-Za-z0-9_$]+)\s*\(', line)
+              if m:
+                  function_lines.append((i, m.group(1)))
+
+          anchors = [
+              'translation.mode',
+              'translation.engine',
+              '内置翻译',
+              'Google 翻译',
+              '百度翻译',
+              '有道翻译',
+              'translation.baidu.app_id',
+              'translation.baidu.app_secret',
+              'translation.youdao.app_key',
+              'translation.youdao.app_secret'
+          ]
+
+          seen = set()
+          for anchor in anchors:
+              matches = [i for i, line in enumerate(lines, 1) if anchor in line]
+              print('\n=== ANCHOR ' + anchor + ' MATCHES ' + str(matches) + ' ===')
+              for line_no in matches:
+                  owner = '<none>'
+                  owner_line = 0
+                  for fn_line, fn_name in function_lines:
+                      if fn_line <= line_no:
+                          owner_line, owner = fn_line, fn_name
+                      else:
+                          break
+                  key = (owner_line, owner)
+                  print('MATCH line=' + str(line_no) + ' owner=' + owner + '@' + str(owner_line))
+                  if key in seen:
+                      continue
+                  seen.add(key)
+                  start = max(1, owner_line - 5 if owner_line else line_no - 20)
+                  end = min(len(lines), max(line_no + 30, owner_line + 120 if owner_line else line_no + 30))
+                  print('--- OWNER_SNIPPET ' + owner + ' ' + str(start) + ':' + str(end) + ' ---')
+                  for n in range(start, end + 1):
+                      print('%05d: %s' % (n, lines[n - 1]))
+                  print('--- END_OWNER_SNIPPET ---')
+
+          print('\n=== SETTINGS GET/SET CANDIDATES ===')
+          for i, line in enumerate(lines, 1):
+              if re.search(r'\bfunction\s+.*(?:get|set|save|translation|Translation).*\(', line):
+                  print('%05d: %s' % (i, line))
+          PY
