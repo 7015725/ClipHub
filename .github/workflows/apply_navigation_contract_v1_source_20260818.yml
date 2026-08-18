@@ -1,0 +1,378 @@
+name: Apply Navigation Contract V1 Source
+
+on:
+  push:
+    branches:
+      - fix/editor-embedded-back-capture-20260818
+    paths:
+      - .github/workflows/apply_navigation_contract_v1_source_20260818.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/editor-embedded-back-capture-20260818
+          fetch-depth: 0
+
+      - name: Patch Navigation and Editor
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          import subprocess
+
+          def one(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit('%s count=%s' % (label, count))
+              return text.replace(old, new, 1)
+
+          nav_path = Path('src/ch_12_translation.js')
+          nav = nav_path.read_text(encoding='utf-8')
+
+          nav = one(nav,
+              '    var View = Packages.android.view.View;\n',
+              '    var View = Packages.android.view.View;\n'
+              '    var ViewGroup = Packages.android.view.ViewGroup;\n',
+              'viewgroup')
+
+          nav = one(nav,
+              '        callbackMode: "none",\n'
+              '        baselinePackage: "",\n',
+              '        callbackMode: "none",\n'
+              '        backMode: "uninitialized",\n'
+              '        predictiveBackSupported: Build.VERSION.SDK_INT >= 33,\n'
+              '        predictiveBackEnabled: false,\n'
+              '        predictiveBackCapabilitySource: "uninitialized",\n'
+              '        predictiveBackContextPackage: "",\n'
+              '        predictiveBackTargetSdk: 0,\n'
+              '        legacyBackRefreshCount: 0,\n'
+              '        baselinePackage: "",\n',
+              'state')
+
+          helpers = '''    function detectBackCapability(context) {\n'''
+          helpers += '''        var result = { supported: Build.VERSION.SDK_INT >= 33, enabled: false,\n'''
+          helpers += '''            source: Build.VERSION.SDK_INT >= 33 ? "unavailable" : "sdk_lt_33",\n'''
+          helpers += '''            packageName: "", targetSdkVersion: 0 };\n'''
+          helpers += '''        var info = null;\n'''
+          helpers += '''        if (!context) { return result; }\n'''
+          helpers += '''        try { result.packageName = String(context.getPackageName()); }\n'''
+          helpers += '''        catch (ignoredPackage) {}\n'''
+          helpers += '''        try { info = context.getApplicationInfo();\n'''
+          helpers += '''            if (info) { result.targetSdkVersion = Number(info.targetSdkVersion || 0); }\n'''
+          helpers += '''        } catch (ignoredInfo) { info = null; }\n'''
+          helpers += '''        if (!result.supported) { return result; }\n'''
+          helpers += '''        try {\n'''
+          helpers += '''            result.enabled = Packages.android.window.WindowOnBackInvokedDispatcher\n'''
+          helpers += '''                .isOnBackInvokedCallbackEnabled(context) === true;\n'''
+          helpers += '''            result.source = "WindowOnBackInvokedDispatcher";\n'''
+          helpers += '''            return result;\n'''
+          helpers += '''        } catch (ignoredWindowCapability) {}\n'''
+          helpers += '''        try {\n'''
+          helpers += '''            if (info && typeof info.isOnBackInvokedCallbackEnabled === "function") {\n'''
+          helpers += '''                result.enabled = info.isOnBackInvokedCallbackEnabled() === true;\n'''
+          helpers += '''                result.source = "ApplicationInfo";\n'''
+          helpers += '''                return result;\n'''
+          helpers += '''            }\n'''
+          helpers += '''        } catch (ignoredApplicationCapability) {}\n'''
+          helpers += '''        return result;\n'''
+          helpers += '''    }\n\n'''
+          helpers += '''    function resolveBackFocusRoot(pageRoot, windowRoot, fallbackRoot) {\n'''
+          helpers += '''        var root = null;\n'''
+          helpers += '''        if (pageRoot !== null && pageRoot !== undefined) {\n'''
+          helpers += '''            try { root = pageRoot.getRootView();\n'''
+          helpers += '''                if (root !== null && root !== undefined && root.isAttachedToWindow()) { return root; }\n'''
+          helpers += '''            } catch (ignoredPageRoot) { root = null; }\n'''
+          helpers += '''        }\n'''
+          helpers += '''        if (windowRoot !== null && windowRoot !== undefined) {\n'''
+          helpers += '''            try { if (windowRoot.isAttachedToWindow()) { return windowRoot; } }\n'''
+          helpers += '''            catch (ignoredWindowRootAttached) { return windowRoot; }\n'''
+          helpers += '''        }\n'''
+          helpers += '''        if (fallbackRoot !== null && fallbackRoot !== undefined) { return fallbackRoot; }\n'''
+          helpers += '''        return pageRoot || windowRoot || null;\n'''
+          helpers += '''    }\n\n'''
+          helpers += '''    function handoffBackFocus(options) {\n'''
+          helpers += '''        options = options || {};\n'''
+          helpers += '''        if (!initialized) { return { ok: false, reason: "navigation_not_initialized" }; }\n'''
+          helpers += '''        return runOnMainSync(function () {\n'''
+          helpers += '''            var root = resolveBackFocusRoot(options.pageRoot || null, options.windowRoot || null, options.fallbackRoot || null);\n'''
+          helpers += '''            var input = options.inputView || null;\n'''
+          helpers += '''            var previous = -1;\n'''
+          helpers += '''            var released = input === null;\n'''
+          helpers += '''            var requested = false;\n'''
+          helpers += '''            var focused = false;\n'''
+          helpers += '''            if (root === null) { return { ok: false, reason: "back_focus_root_missing" }; }\n'''
+          helpers += '''            try { previous = Number(root.getDescendantFocusability()); } catch (ignoredPrevious) {}\n'''
+          helpers += '''            try {\n'''
+          helpers += '''                root.setFocusable(true);\n'''
+          helpers += '''                root.setFocusableInTouchMode(true);\n'''
+          helpers += '''                if (typeof root.setDescendantFocusability === "function") { root.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS); }\n'''
+          helpers += '''                if (input !== null) { input.clearFocus(); released = !input.hasFocus(); }\n'''
+          helpers += '''                requested = root.requestFocus();\n'''
+          helpers += '''                focused = root.isFocused();\n'''
+          helpers += '''            } finally {\n'''
+          helpers += '''                if (previous >= 0 && typeof root.setDescendantFocusability === "function") {\n'''
+          helpers += '''                    try { root.setDescendantFocusability(previous); } catch (ignoredRestore) {}\n'''
+          helpers += '''                }\n'''
+          helpers += '''            }\n'''
+          helpers += '''            return { ok: released && (requested || focused), inputReleased: released,\n'''
+          helpers += '''                rootFocusRequested: requested || focused, rootFocused: focused };\n'''
+          helpers += '''        }, 2500);\n'''
+          helpers += '''    }\n\n'''
+          helpers += '''    function getBackCapability() {\n'''
+          helpers += '''        return { sdkInt: Number(Build.VERSION.SDK_INT),\n'''
+          helpers += '''            supported: navState.predictiveBackSupported === true,\n'''
+          helpers += '''            predictiveBackEnabled: navState.predictiveBackEnabled === true,\n'''
+          helpers += '''            mode: String(navState.backMode || "legacy_key"),\n'''
+          helpers += '''            source: String(navState.predictiveBackCapabilitySource || ""),\n'''
+          helpers += '''            contextPackage: String(navState.predictiveBackContextPackage || ""),\n'''
+          helpers += '''            targetSdkVersion: Number(navState.predictiveBackTargetSdk || 0) };\n'''
+          helpers += '''    }\n\n'''
+
+          nav = one(nav,
+              '    function backCallbackPriority() {\n',
+              helpers + '    function backCallbackPriority() {\n',
+              'helpers')
+
+          nav = one(nav,
+              '        if (!entry || entry.removed || Build.VERSION.SDK_INT < 33) {\n'
+              '            return true;\n'
+              '        }\n',
+              '        if (!entry || entry.removed || Build.VERSION.SDK_INT < 33) {\n'
+              '            return true;\n'
+              '        }\n'
+              '        if (!navState.predictiveBackEnabled) {\n'
+              '            makeFocusable(entry);\n'
+              '            entry.callbackMode = "legacy_key";\n'
+              '            navState.callbackMode = "legacy_key";\n'
+              '            navState.legacyBackRefreshCount += 1;\n'
+              '            return true;\n'
+              '        }\n',
+              'refresh-entry-gate')
+
+          nav = one(nav,
+              '    function callbackFor(entry) {\n'
+              '        var callback = null;\n',
+              '    function callbackFor(entry) {\n'
+              '        var callback = null;\n'
+              '        if (!navState.predictiveBackEnabled) { return null; }\n',
+              'callback-gate')
+
+          nav = one(nav,
+              '        if (Build.VERSION.SDK_INT >= 33) {\n'
+              '            try { dispatcher = view.findOnBackInvokedDispatcher(); }\n',
+              '        if (Build.VERSION.SDK_INT >= 33 &&\n'
+              '                navState.predictiveBackEnabled) {\n'
+              '            try { dispatcher = view.findOnBackInvokedDispatcher(); }\n',
+              'register-gate')
+
+          nav = one(nav,
+              '        entries.push(entry);\n'
+              '        navState.registerCount += 1;\n',
+              '        entries.push(entry);\n'
+              '        navState.registerCount += 1;\n'
+              '        if (!navState.predictiveBackEnabled) {\n'
+              '            entry.callbackMode = "legacy_key";\n'
+              '            navState.callbackMode = "legacy_key";\n'
+              '        }\n',
+              'legacy-mode')
+
+          nav = one(nav,
+              '        if (!entry.dispatcher && Build.VERSION.SDK_INT >= 33 &&\n'
+              '                entry.retryCount < 3) {\n',
+              '        if (!entry.dispatcher && Build.VERSION.SDK_INT >= 33 &&\n'
+              '                navState.predictiveBackEnabled && entry.retryCount < 3) {\n',
+              'retry-gate')
+
+          nav = one(nav,
+              '        if (Build.VERSION.SDK_INT < 33) { return true; }\n'
+              '        return runOnMainSync(function () {\n',
+              '        if (Build.VERSION.SDK_INT < 33) { return true; }\n'
+              '        if (!navState.predictiveBackEnabled) {\n'
+              '            return runOnMainSync(function () {\n'
+              '                var index;\n'
+              '                var entry;\n'
+              '                var targetCount = 0;\n'
+              '                pruneEntries();\n'
+              '                for (index = 0; index < entries.length; index += 1) {\n'
+              '                    entry = entries[index];\n'
+              '                    if (!entry || entry.removed) { continue; }\n'
+              '                    makeFocusable(entry);\n'
+              '                    entry.callbackMode = "legacy_key";\n'
+              '                    targetCount += 1;\n'
+              '                }\n'
+              '                navState.callbackMode = "legacy_key";\n'
+              '                navState.legacyBackRefreshCount += targetCount;\n'
+              '                if (targetCount <= 0) { scheduleScan(null); return false; }\n'
+              '                return true;\n'
+              '            }, 2500) === true;\n'
+              '        }\n'
+              '        return runOnMainSync(function () {\n',
+              'refresh-legacy')
+
+          nav = one(nav,
+              '            callbackMode: navState.callbackMode,\n'
+              '            mainFocusableUpgradeCount:\n',
+              '            callbackMode: navState.callbackMode,\n'
+              '            backMode: navState.backMode,\n'
+              '            predictiveBackSupported: navState.predictiveBackSupported === true,\n'
+              '            predictiveBackEnabled: navState.predictiveBackEnabled === true,\n'
+              '            predictiveBackCapabilitySource: navState.predictiveBackCapabilitySource,\n'
+              '            predictiveBackContextPackage: navState.predictiveBackContextPackage,\n'
+              '            predictiveBackTargetSdk: Number(navState.predictiveBackTargetSdk),\n'
+              '            legacyBackRefreshCount: Number(navState.legacyBackRefreshCount),\n'
+              '            mainFocusableUpgradeCount:\n',
+              'state-export')
+
+          nav = one(nav,
+              '    function navigationInit(context) {\n'
+              '        if (initialized) { return navigationState(); }\n',
+              '    function navigationInit(context) {\n'
+              '        var backCapability;\n'
+              '        if (initialized) { return navigationState(); }\n',
+              'init-var')
+
+          nav = one(nav,
+              '        density = Number(appContext.getResources()\n'
+              '            .getDisplayMetrics().density || 1);\n'
+              '        initialized = true;\n',
+              '        density = Number(appContext.getResources()\n'
+              '            .getDisplayMetrics().density || 1);\n'
+              '        backCapability = detectBackCapability(appContext);\n'
+              '        navState.predictiveBackSupported = backCapability.supported === true;\n'
+              '        navState.predictiveBackEnabled = backCapability.enabled === true;\n'
+              '        navState.predictiveBackCapabilitySource = String(backCapability.source || "unavailable");\n'
+              '        navState.predictiveBackContextPackage = String(backCapability.packageName || "");\n'
+              '        navState.predictiveBackTargetSdk = Number(backCapability.targetSdkVersion || 0);\n'
+              '        navState.backMode = navState.predictiveBackEnabled ? "predictive" : "legacy_key";\n'
+              '        navState.callbackMode = navState.predictiveBackEnabled ? "predictive_pending" : "legacy_key";\n'
+              '        initialized = true;\n',
+              'init-detect')
+
+          nav = one(nav,
+              '        log("I", "navigation initialized sdk=" +\n'
+              '            String(Build.VERSION.SDK_INT));\n',
+              '        log("I", "navigation initialized sdk=" +\n'
+              '            String(Build.VERSION.SDK_INT) + " backMode=" + navState.backMode +\n'
+              '            " capability=" + navState.predictiveBackCapabilitySource);\n',
+              'init-log')
+
+          nav = one(nav,
+              '        MODULE_VERSION: 9,\n',
+              '        MODULE_VERSION: 10,\n',
+              'nav-version')
+
+          nav = one(nav,
+              '        registerWindow: registerManagedWindow,\n'
+              '        refreshSystemBackCapture: refreshSystemBackCapture,\n'
+              '        getState: navigationState,\n',
+              '        registerWindow: registerManagedWindow,\n'
+              '        refreshSystemBackCapture: refreshSystemBackCapture,\n'
+              '        getBackCapability: getBackCapability,\n'
+              '        resolveBackFocusRoot: resolveBackFocusRoot,\n'
+              '        handoffBackFocus: handoffBackFocus,\n'
+              '        getState: navigationState,\n',
+              'exports')
+
+          nav_path.write_text(nav, encoding='utf-8')
+
+          editor_path = Path('src/ch_10_editor.js')
+          editor = editor_path.read_text(encoding='utf-8')
+
+          editor_helper = '''    function editorBackFocusRoot() {\n'''
+          editor_helper += '''        var navigation = null;\n'''
+          editor_helper += '''        var root = null;\n'''
+          editor_helper += '''        try { navigation = ClipHub.Navigation; } catch (ignoredNavigation) { navigation = null; }\n'''
+          editor_helper += '''        if (navigation && typeof navigation.resolveBackFocusRoot === "function") {\n'''
+          editor_helper += '''            try { return navigation.resolveBackFocusRoot(panelPageRoot, panelWindowRoot, panelRoot); }\n'''
+          editor_helper += '''            catch (ignoredResolve) {}\n'''
+          editor_helper += '''        }\n'''
+          editor_helper += '''        if (embeddedInPrimary && panelPageRoot !== null) {\n'''
+          editor_helper += '''            try { root = panelPageRoot.getRootView();\n'''
+          editor_helper += '''                if (root !== null && root.isAttachedToWindow()) { return root; }\n'''
+          editor_helper += '''            } catch (ignoredPrimaryRoot) { root = null; }\n'''
+          editor_helper += '''        }\n'''
+          editor_helper += '''        if (panelWindowRoot !== null) { return panelWindowRoot; }\n'''
+          editor_helper += '''        return panelRoot;\n'''
+          editor_helper += '''    }\n\n'''
+
+          editor = one(editor,
+              '    function rearmSystemBackAfterImeHide() {\n',
+              editor_helper + '    function rearmSystemBackAfterImeHide() {\n',
+              'editor-helper')
+
+          editor = one(editor,
+              '            navigation.refreshSystemBackCapture();\n',
+              '            navigation.refreshSystemBackCapture("editor_ime_hidden");\n',
+              'editor-refresh')
+
+          editor = one(editor,
+              '        var focusRoot = panelWindowRoot !== null ?\n'
+              '            panelWindowRoot : panelRoot;\n',
+              '        var focusRoot = editorBackFocusRoot();\n',
+              'editor-root')
+
+          editor = one(editor,
+              '                var currentRoot = panelWindowRoot !== null ?\n'
+              '                    panelWindowRoot : panelRoot;\n',
+              '                var currentRoot = editorBackFocusRoot();\n',
+              'editor-retry-root')
+
+          editor = one(editor,
+              '                    (panelWindowRoot !== null || panelRoot !== null)) {\n',
+              '                    editorBackFocusRoot() !== null) {\n',
+              'editor-measure-condition')
+
+          editor = one(editor,
+              '                        (panelWindowRoot !== null ?\n'
+              '                            panelWindowRoot : panelRoot).isFocused();\n',
+              '                        editorBackFocusRoot().isFocused();\n',
+              'editor-measure-root')
+
+          editor = one(editor,
+              '        MODULE_VERSION: 39,\n',
+              '        MODULE_VERSION: 40,\n',
+              'editor-version')
+
+          editor_path.write_text(editor, encoding='utf-8')
+
+          manifest_path = Path('module-manifest.json')
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          if manifest.get('moduleSetVersion') != '20260818.01':
+              raise SystemExit('module set changed unexpectedly')
+          manifest['moduleSetVersion'] = '20260818.02'
+          for item in manifest.get('modules', []):
+              if item.get('path') in ('src/ch_10_editor.js', 'src/ch_12_translation.js'):
+                  item['sha'] = subprocess.check_output(
+                      ['git', 'hash-object', item['path']], text=True).strip()
+          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          PY
+
+      - name: Validate contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check src/ch_10_editor.js
+          node --check src/ch_12_translation.js
+          node scripts/test_editor_ime_back_rearm.js
+          node scripts/test_child_back_route_contract.js
+          node scripts/test_navigation_contract_v1.js
+          grep -F '"moduleSetVersion": "20260818.02"' module-manifest.json
+          git diff --check
+
+      - name: Commit source patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/ch_10_editor.js src/ch_12_translation.js module-manifest.json
+          git commit -m "fix: establish navigation contract v1 runtime"
+          git push origin HEAD:fix/editor-embedded-back-capture-20260818
