@@ -59,10 +59,13 @@
             parentId: source.parentId === null ? null : String(source.parentId),
             alternateParentIds: (source.alternateParentIds || []).slice(0),
             owner: String(source.owner || source.id),
+            family: String(source.family || source.owner || source.id),
             moduleName: String(source.moduleName || ""),
             cachePolicy: String(source.cachePolicy || "lazy"),
             legacySurface: String(source.legacySurface || ""),
-            shellReady: source.shellReady === true
+            shellReady: source.shellReady === true,
+            hasFactory: typeof source.factory === "function",
+            metadata: copyObject(source.metadata)
         };
     }
 
@@ -101,10 +104,13 @@
             parentId: parentId,
             alternateParentIds: alternateParentIds,
             owner: normalizeId(value.owner || id),
+            family: normalizeId(value.family || value.owner || id),
             moduleName: normalizeId(value.moduleName || ""),
             cachePolicy: normalizeId(value.cachePolicy || "lazy"),
             legacySurface: normalizeId(value.legacySurface || ""),
-            shellReady: value.shellReady === true
+            shellReady: value.shellReady === true,
+            factory: typeof value.factory === "function" ? value.factory : null,
+            metadata: copyObject(value.metadata)
         };
         pages[id] = page;
         pageOrder.push(id);
@@ -113,44 +119,63 @@
     }
 
     function installDefaultPages() {
-        registerPage({ id: "home", parentId: null, owner: "home",
+        registerPage({ id: "home", parentId: null, owner: "home", family: "root",
             moduleName: "Filter", cachePolicy: "keep",
             legacySurface: "filter_root", shellReady: true });
-        registerPage({ id: "detail", parentId: "home", owner: "detail",
+        registerPage({ id: "detail", parentId: "home", owner: "detail", family: "detail",
             moduleName: "List", cachePolicy: "rebind",
             legacySurface: "detail", shellReady: true });
-        registerPage({ id: "editor", parentId: "home", owner: "editor",
+        registerPage({ id: "editor", parentId: "home", owner: "editor", family: "editor",
             moduleName: "Editor", cachePolicy: "rebind",
             legacySurface: "editor", shellReady: true });
-        registerPage({ id: "tags", parentId: "editor", owner: "tags",
+        registerPage({ id: "tags", parentId: "editor", owner: "tags", family: "editor",
             moduleName: "Editor", cachePolicy: "lazy",
             legacySurface: "tags", shellReady: true });
-        registerPage({ id: "settings", parentId: "home", owner: "settings",
+        registerPage({ id: "settings", parentId: "home", owner: "settings", family: "settings",
             moduleName: "Settings", cachePolicy: "lazy",
             legacySurface: "settings", shellReady: true });
         registerPage({ id: "regex_rules", parentId: "settings",
-            owner: "settings", moduleName: "Settings", cachePolicy: "lazy",
+            owner: "settings", family: "settings", moduleName: "Settings", cachePolicy: "lazy",
             legacySurface: "settings", shellReady: true });
         registerPage({ id: "regex_editor", parentId: "regex_rules",
-            owner: "settings", moduleName: "Settings", cachePolicy: "rebind",
+            owner: "settings", family: "settings", moduleName: "Settings", cachePolicy: "rebind",
             legacySurface: "settings", shellReady: true });
         registerPage({ id: "regex_test", parentId: "regex_editor",
-            owner: "settings", moduleName: "Settings", cachePolicy: "transient",
+            owner: "settings", family: "settings", moduleName: "Settings", cachePolicy: "transient",
             legacySurface: "settings", shellReady: true });
         registerPage({ id: "translation", parentId: "home",
-            owner: "translation", moduleName: "Translation",
+            owner: "translation", family: "translation", moduleName: "Translation",
             cachePolicy: "rebind", legacySurface: "translation",
             shellReady: true });
         registerPage({ id: "tokenizer", parentId: "editor",
-            alternateParentIds: ["home"], owner: "tokenizer",
+            alternateParentIds: ["home"], owner: "tokenizer", family: "editor",
             moduleName: "TokenizerUI", cachePolicy: "rebind",
             legacySurface: "tokenizer", shellReady: true });
         registerPage({ id: "tokenizer_rules", parentId: "tokenizer",
-            owner: "tokenizer", moduleName: "TokenizerUI", cachePolicy: "lazy",
+            owner: "tokenizer", family: "editor", moduleName: "TokenizerUI", cachePolicy: "lazy",
             legacySurface: "tokenizer", shellReady: true });
         registerPage({ id: "tokenizer_rule_editor", parentId: "tokenizer_rules",
-            owner: "tokenizer", moduleName: "TokenizerUI", cachePolicy: "rebind",
+            owner: "tokenizer", family: "editor", moduleName: "TokenizerUI", cachePolicy: "rebind",
             legacySurface: "tokenizer", shellReady: true });
+    }
+
+    function hasPage(pageId) {
+        var id = normalizeId(pageId);
+        return !!(id && pages[id]);
+    }
+
+    function getPageFactory(pageId) {
+        var page = requirePage(pageId);
+        return typeof page.factory === "function" ? page.factory : null;
+    }
+
+    function pageRegistryState() {
+        return {
+            apiVersion: 1,
+            pageCount: Number(pageOrder.length),
+            pageIds: pageIds(),
+            rootPageId: pageOrder.length > 0 ? rootPageId() : null
+        };
     }
 
     function stackIds() {
@@ -1129,6 +1154,7 @@
             currentPageId: currentPageId(),
             stackDepth: Number(stack.length),
             pageStack: stackIds(),
+            pageRegistryOwner: "ClipHub.PageRegistry",
             pageStackOwner: "ClipHub.PageStack",
             navigationManagerOwner: "ClipHub.Navigator",
             navigationApiVersion: 2,
@@ -1232,6 +1258,16 @@
         return true;
     }
 
+    ClipHub.PageRegistry = {
+        API_VERSION: 1,
+        register: registerPage,
+        get: function (pageId) { return copyDescriptor(requirePage(pageId)); },
+        has: hasPage,
+        list: pageIds,
+        getFactory: getPageFactory,
+        getState: pageRegistryState
+    };
+
     ClipHub.BackDispatcher = {
         API_VERSION: 1,
         dispatch: backDispatcherDispatch,
@@ -1267,7 +1303,7 @@
 
     ClipHub.UIShell = {
         MODULE_NAME: "ch_16_ui_shell",
-        MODULE_VERSION: 13,
+        MODULE_VERSION: 14,
         init: init,
         registerPage: registerPage,
         getPage: function (pageId) { return copyDescriptor(requirePage(pageId)); },
