@@ -1662,16 +1662,16 @@ return view;
 
     function translationSettings() {
         var settings = ClipHub.Settings;
-        var engine;
-        var mode;
+        var provider;
         if (!settings || typeof settings.get !== "function") {
             throw new Error("翻译设置尚未初始化");
         }
-        engine = String(settings.get("translation.engine", "baidu"));
-        mode = String(settings.get("translation.mode", "builtin"));
+        provider = String(settings.get("translation.provider", "baidu"));
+        if (provider !== "google" && provider !== "youdao") {
+            provider = "baidu";
+        }
         return {
-            mode: mode === "google" ? "google" : "builtin",
-            engine: engine === "youdao" ? "youdao" : "baidu",
+            provider: provider,
             baiduAppId: String(settings.get("translation.baidu.app_id", "")),
             baiduSecret: String(settings.get("translation.baidu.app_secret", "")),
             youdaoAppKey: String(settings.get("translation.youdao.app_key", "")),
@@ -1874,14 +1874,8 @@ return view;
         }
         translationState.errorCount += 1;
         translationState.lastError = String(result.error || "Google 翻译启动失败");
-        if (result.notInstalled === true || result.blank === true) {
-            showClipHubTranslationFeedback(translationState.lastError);
-            return { handled: true, result: result, fallbackBuiltin: false };
-        }
-        googleLaunchFallbackCount += 1;
-        showClipHubTranslationFeedback(
-            "Google 翻译启动失败，已切换内置翻译");
-        return { handled: false, result: result, fallbackBuiltin: true };
+        showClipHubTranslationFeedback(translationState.lastError);
+        return { handled: true, result: result, fallbackBuiltin: false };
     }
 
     function translateBaidu(text, config) {
@@ -1972,13 +1966,17 @@ return view;
 
     function translateConfiguredSync(text, providerOverride) {
         var config = translationSettings();
-        var provider = providerOverride ? String(providerOverride) : config.engine;
+        var provider = providerOverride ? String(providerOverride) :
+            config.provider;
         text = String(text === null || text === undefined ? "" : text);
         if (text.replace(/^\s+|\s+$/g, "").length === 0) {
             throw new Error("翻译内容不能为空");
         }
         if (text.length > config.maxChars) {
             throw new Error("翻译内容超过 " + config.maxChars + " 字符");
+        }
+        if (provider !== "baidu" && provider !== "youdao") {
+            throw new Error("内置翻译仅支持百度或有道");
         }
         return provider === "youdao" ?
             translateYoudao(text, config) : translateBaidu(text, config);
@@ -2456,14 +2454,11 @@ return view;
 
     function openTranslationForItem(itemId) {
         var config;
-        var googleResult;
         if (!initialized) { throw new Error("翻译模块尚未初始化"); }
         config = translationSettings();
-        if (config.mode === "google") {
-            googleResult = openGoogleTranslationForItem(itemId);
-            if (googleResult.fallbackBuiltin !== true) {
-                return getTranslationState();
-            }
+        if (config.provider === "google") {
+            openGoogleTranslationForItem(itemId);
+            return getTranslationState();
         }
         return openBuiltinTranslationForItem(itemId);
     }
@@ -2563,10 +2558,13 @@ return view;
 
     function getTranslationState() {
         var attachedToWindow = false;
+        var config;
         try {
             attachedToWindow = translationRoot !== null &&
                 translationRoot.isAttachedToWindow();
         } catch (ignored) {}
+        try { config = translationSettings(); }
+        catch (ignoredConfig) { config = { provider: "baidu" }; }
         return {
             ready: initialized,
             attached: translationState.attached,
@@ -2577,10 +2575,9 @@ return view;
             open: translationState.attached,
             itemId: translationState.itemId,
             provider: translationState.provider,
-            mode: (function () {
-                try { return translationSettings().mode; }
-                catch (ignoredMode) { return "builtin"; }
-            }()),
+            configuredProvider: String(config.provider || "baidu"),
+            mode: config.provider === "google" ? "google" : "builtin",
+            engine: config.provider === "youdao" ? "youdao" : "baidu",
             googleInstalled: isGoogleTranslateInstalled(),
             googleLaunchCount: Number(googleLaunchCount),
             googleLaunchSuccessCount: Number(googleLaunchSuccessCount),
@@ -2648,17 +2645,19 @@ return view;
             }
             return translateConfiguredSync(text, provider);
         },
-        testConfigured: function (text, callback) {
+        testConfigured: function (text, callback, providerOverride) {
             var config = translationSettings();
+            var provider = providerOverride ? String(providerOverride) :
+                config.provider;
             var result;
-            if (config.mode === "google") {
+            if (provider === "google") {
                 result = launchGoogleTranslateText(
                     text || "ClipHub 翻译测试");
                 postTranslationCallback(callback, result);
                 return result;
             }
             return translateConfiguredAsync(text || "ClipHub 翻译测试",
-                callback);
+                callback, provider);
         },
         openForItem: openTranslationForItem,
         isGoogleTranslateInstalled: isGoogleTranslateInstalled,

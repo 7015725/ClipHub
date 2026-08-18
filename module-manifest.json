@@ -93,7 +93,7 @@
     {
       "name": "ch_12_translation.js",
       "path": "src/ch_12_translation.js",
-      "sha": "f03eee0c70ef2479b627fa6c57ca6ded3d3a8a3e",
+      "sha": "6da6eda4c1fe28b829ce9890c821b56186e9544a",
       "export": "Translation",
       "runtimeRole": "managed",
       "lifecycleIndex": 12
@@ -101,7 +101,7 @@
     {
       "name": "ch_13_settings.js",
       "path": "src/ch_13_settings.js",
-      "sha": "94aff043f52264f5c567886cf65e7c5ed7140dfd",
+      "sha": "72acf7753215010a67bd4ce4319231240ee00c92",
       "export": "Settings",
       "runtimeRole": "managed",
       "lifecycleIndex": 11
