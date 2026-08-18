@@ -8,9 +8,12 @@ function requireText(source, text) {
 requireText(nav, "function beginSystemBackGesture(reason)");
 requireText(nav, "function resolveSystemBackGesture(reason)");
 requireText(nav, "function consumeSystemBackGesture(gestureId)");
+requireText(nav, "function systemBackInputFamily(reason)");
 requireText(nav, 'requestId: "back:" + gestureId');
+requireText(nav, "sourceFamily: systemBackInputFamily(reason)");
+requireText(nav, 'sourceReason: String(reason || "system_back")');
 requireText(nav, "ClipHub.UIShell.dispatchBack(");
-requireText(nav, "\"navigation_system_back\", request");
+requireText(nav, "navState.lastBackReason, request");
 var navDispatchStart = nav.indexOf("function dispatchBack(owner, reason)");
 var navDispatchEnd = nav.indexOf("function anyFocused()", navDispatchStart);
 var navDispatch = nav.substring(navDispatchStart, navDispatchEnd);
