@@ -21,6 +21,14 @@
     var backDispatchCount = 0;
     var duplicateBackRequestCount = 0;
     var backCascadeGuardCount = 0;
+    var backDispatcherCount = 0;
+    var backHookDispatchCount = 0;
+    var backHookConsumedCount = 0;
+    var backHookNavigationCount = 0;
+    var navigatorBackPopCount = 0;
+    var rootBackCount = 0;
+    var lastBackSourceFamily = "";
+    var lastBackOutcome = "none";
     var lastBackRequestId = "";
     var lastBackRequestGeneration = -1;
     var lastBackFromPageId = "";
@@ -505,47 +513,131 @@
         return true;
     }
 
+    function backSourceFamily(reason) {
+        var value = String(reason || "").toLowerCase();
+        if (value.indexOf("predictive") >= 0) { return "predictive"; }
+        if (value === "on_back_invoked") { return "system"; }
+        if (value === "back_key" || value === "escape_key") {
+            return "legacy_key";
+        }
+        if (value.indexOf("gesture") >= 0 || value.indexOf("swipe") >= 0) {
+            return "gesture";
+        }
+        if (value.indexOf("toolbar") >= 0 || value.indexOf("header") >= 0) {
+            return "toolbar";
+        }
+        return "page";
+    }
+
+    function detachActivePageForNavigator(reason) {
+        if (activePageId === null) { return true; }
+        if (ClipHub.Filter &&
+                typeof ClipHub.Filter.unmountPrimaryChildPage === "function") {
+            ClipHub.Filter.unmountPrimaryChildPage(reason || "navigator_back");
+        }
+        activePageId = null;
+        activeView = null;
+        activeBack = null;
+        activeClose = null;
+        unmountCount += 1;
+        return true;
+    }
+
+    function backDispatcherState() {
+        return {
+            apiVersion: 1,
+            dispatching: backDispatchInProgress === true,
+            dispatchCount: Number(backDispatcherCount),
+            pageHookDispatchCount: Number(backHookDispatchCount),
+            pageHookConsumedCount: Number(backHookConsumedCount),
+            legacyHookNavigationCount: Number(backHookNavigationCount),
+            navigatorPopCount: Number(navigatorBackPopCount),
+            rootBackCount: Number(rootBackCount),
+            duplicateCount: Number(duplicateBackRequestCount),
+            lastSourceFamily: String(lastBackSourceFamily || ""),
+            lastOutcome: String(lastBackOutcome || "none"),
+            lastRequestId: String(lastBackRequestId || ""),
+            lastFromPageId: String(lastBackFromPageId || ""),
+            lastToPageId: String(lastBackToPageId || "")
+        };
+    }
+
+    function backDispatcherDispatch(reason, request) {
+        var value = request || {};
+        var requestId = normalizeId(value.requestId || "");
+        var beforeDepth = Number(stack.length);
+        var beforePageId = currentPageId();
+        var beforeGeneration = Number(generation);
+        var handled = false;
+        var hookChangedNavigation = false;
+        lastAction = "dispatch_back";
+        lastReason = String(reason || "");
+        lastBackSourceFamily = backSourceFamily(reason);
+        if (requestId && requestId === lastBackRequestId) {
+            duplicateBackRequestCount += 1;
+            lastBackOutcome = "duplicate_request";
+            return true;
+        }
+        if (backDispatchInProgress) {
+            duplicateBackRequestCount += 1;
+            lastBackOutcome = "navigation_busy";
+            return true;
+        }
+        if (requestId) { lastBackRequestId = requestId; }
+        lastBackRequestGeneration = value.generation === undefined ? -1 :
+            Number(value.generation);
+        lastBackFromPageId = beforePageId === null ? "" :
+            String(beforePageId);
+        lastBackDepthBefore = beforeDepth;
+        backDispatchInProgress = true;
+        backDispatchCount += 1;
+        backDispatcherCount += 1;
+        try {
+            if (typeof activeBack === "function") {
+                backHookDispatchCount += 1;
+                handled = activeBack() === true;
+                hookChangedNavigation = Number(generation) !== beforeGeneration ||
+                    Number(stack.length) !== beforeDepth ||
+                    currentPageId() !== beforePageId;
+                if (hookChangedNavigation) {
+                    backHookNavigationCount += 1;
+                    lastBackOutcome = "legacy_hook_navigation";
+                    return true;
+                }
+                if (handled) {
+                    backHookConsumedCount += 1;
+                    lastBackOutcome = "page_hook_consumed";
+                    return true;
+                }
+            }
+            if (navigatorCanPop()) {
+                if (activePageId !== null) {
+                    detachActivePageForNavigator(reason || "back_dispatcher_pop");
+                }
+                handled = navigatorPop(reason || "back_dispatcher_pop") === true;
+                if (handled) {
+                    navigatorBackPopCount += 1;
+                    lastBackOutcome = "navigator_pop";
+                    return true;
+                }
+            }
+            rootBackCount += 1;
+            lastBackOutcome = "root_unhandled";
+            return false;
+        } finally {
+            lastBackToPageId = currentPageId() === null ? "" :
+                String(currentPageId());
+            lastBackDepthAfter = Number(stack.length);
+            if (lastBackDepthBefore - lastBackDepthAfter > 1) {
+                backCascadeGuardCount += 1;
+            }
+            backDispatchInProgress = false;
+        }
+    }
+
     function dispatchBack(reason, request) {
-    var value = request || {};
-    var requestId = normalizeId(value.requestId || "");
-    var beforeDepth = Number(stack.length);
-    var beforePageId = currentPageId();
-    var handled = false;
-    lastAction = "dispatch_back";
-    lastReason = String(reason || "");
-    if (requestId && requestId === lastBackRequestId) {
-        duplicateBackRequestCount += 1;
-        return true;
+        return backDispatcherDispatch(reason, request);
     }
-    if (backDispatchInProgress) {
-        duplicateBackRequestCount += 1;
-        return true;
-    }
-    if (requestId) { lastBackRequestId = requestId; }
-    lastBackRequestGeneration = value.generation === undefined ? -1 :
-        Number(value.generation);
-    lastBackFromPageId = beforePageId === null ? "" :
-        String(beforePageId);
-    lastBackDepthBefore = beforeDepth;
-    backDispatchInProgress = true;
-    backDispatchCount += 1;
-    try {
-        if (typeof activeBack === "function") {
-            handled = activeBack() === true;
-        } else if (activePageId !== null) {
-            handled = unmountPage(activePageId, reason) === true;
-        }
-        return handled;
-    } finally {
-        lastBackToPageId = currentPageId() === null ? "" :
-            String(currentPageId());
-        lastBackDepthAfter = Number(stack.length);
-        if (lastBackDepthBefore - lastBackDepthAfter > 1) {
-            backCascadeGuardCount += 1;
-        }
-        backDispatchInProgress = false;
-    }
-}
 
     function dispatchClose(reason) {
         lastAction = "dispatch_close";
@@ -956,7 +1048,7 @@
         var host = primaryHostState();
         return {
             initialized: initialized === true,
-            migrationStage: "primary_window_settings_regex_translation_editor_tags_tokenizer_detail_filter_overlay_closed_runtime_diagnostics_navigation_stage2_3",
+            migrationStage: "primary_window_settings_regex_translation_editor_tags_tokenizer_detail_filter_overlay_closed_runtime_diagnostics_navigation_stage2_3_back_dispatcher",
             primaryWindowMode: true,
             legacyWindowBridge: true,
             hostAttached: host.ready === true,
@@ -984,6 +1076,14 @@
                 Number(duplicateBackRequestCount),
             backCascadeGuardCount:
                 Number(backCascadeGuardCount),
+            backDispatcherCount: Number(backDispatcherCount),
+            backHookDispatchCount: Number(backHookDispatchCount),
+            backHookConsumedCount: Number(backHookConsumedCount),
+            legacyHookNavigationCount: Number(backHookNavigationCount),
+            navigatorBackPopCount: Number(navigatorBackPopCount),
+            rootBackCount: Number(rootBackCount),
+            lastBackSourceFamily: String(lastBackSourceFamily || ""),
+            lastBackOutcome: String(lastBackOutcome || "none"),
             lastBackRequestId: String(lastBackRequestId || ""),
             lastBackRequestGeneration:
                 Number(lastBackRequestGeneration),
@@ -1014,6 +1114,14 @@
         backDispatchCount = 0;
         duplicateBackRequestCount = 0;
         backCascadeGuardCount = 0;
+        backDispatcherCount = 0;
+        backHookDispatchCount = 0;
+        backHookConsumedCount = 0;
+        backHookNavigationCount = 0;
+        navigatorBackPopCount = 0;
+        rootBackCount = 0;
+        lastBackSourceFamily = "";
+        lastBackOutcome = "none";
         lastBackRequestId = "";
         lastBackRequestGeneration = -1;
         lastBackFromPageId = "";
@@ -1051,6 +1159,12 @@
         return true;
     }
 
+    ClipHub.BackDispatcher = {
+        API_VERSION: 1,
+        dispatch: backDispatcherDispatch,
+        getState: backDispatcherState
+    };
+
     ClipHub.PageStack = {
         API_VERSION: 1,
         push: pageStackPush,
@@ -1080,7 +1194,7 @@
 
     ClipHub.UIShell = {
         MODULE_NAME: "ch_16_ui_shell",
-        MODULE_VERSION: 11,
+        MODULE_VERSION: 12,
         init: init,
         registerPage: registerPage,
         getPage: function (pageId) { return copyDescriptor(requirePage(pageId)); },
