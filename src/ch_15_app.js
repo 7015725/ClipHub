@@ -416,6 +416,7 @@
         var list = safeState(ClipHub.List, "getState", {});
         var detail = safeState(ClipHub.List, "getDetailState", {});
         var editor = safeState(ClipHub.Editor, "getState", {});
+        var navigation = safeState(ClipHub.Navigation, "getState", {});
         var filter = safeState(ClipHub.Filter, "getPanelState", {});
         var settings = safeState(ClipHub.Settings, "getState", {});
         var translation = safeState(ClipHub.Translation, "getState", {});
@@ -481,7 +482,9 @@
             scrollPerformance: safeState(
                 ClipHub.Filter, "getScrollPerformanceState", null),
             uiShell: uiShell,
-            runtimeDiagnostics: runtimeDiagnostics
+            runtimeDiagnostics: runtimeDiagnostics,
+            editorState: editor,
+            navigationState: navigation
         };
     }
 
@@ -725,7 +728,7 @@
 
     ClipHub.App = {
         MODULE_NAME: "ch_15_app",
-        MODULE_VERSION: 23,
+        MODULE_VERSION: 24,
         CONTROL_ACTION_BASE: CONTROL_ACTION_BASE,
         CONTROL_ENDPOINT_SCHEMA: CONTROL_ENDPOINT_SCHEMA,
         CONTROL_COMMANDS: CONTROL_COMMANDS,

@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
-  "moduleSetVersion": "20260817.13",
+  "moduleSetVersion": "20260818.01",
   "entryMinVersion": 8,
-  "sourceRef": "cleanup/tokenizer-no-regression-20260817",
+  "sourceRef": "fix/editor-embedded-back-capture-20260818",
   "modules": [
     {
       "name": "ch_01_base.js",
@@ -117,7 +117,7 @@
     {
       "name": "ch_15_app.js",
       "path": "src/ch_15_app.js",
-      "sha": "d78022d4be8d17cf7136a4e01f00a2a9f8afc309",
+      "sha": "e81a4cb2a755f88d54f52951c4b232ce5ff333d8",
       "export": "App",
       "runtimeRole": "app"
     },
