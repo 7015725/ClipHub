@@ -31,21 +31,77 @@ Primary window system Back contracts: passed
 [node] scripts/test_system_back_gesture_contract.js
 System Back gesture/request contract: passed
 [node] scripts/test_child_back_route_contract.js
-/home/runner/work/ClipHub/ClipHub/scripts/test_child_back_route_contract.js:24
-    if (start < 0) { throw new Error("missing function: " + name); }
-                     ^
+Child Back route contract: passed
+[python] scripts/test_review_regressions.py
+Review regression checks: passed
+[node] scripts/test_runtime_diagnostics.js
+UIShell Stage7 runtime diagnostics: passed
+[node] scripts/test_shared_input_action.js
+Shared input action contract: passed
+[node] scripts/test_tokenizer_action_contract.js
+Tokenizer action contract: passed
+[node] scripts/test_tokenizer_copy_ingest_contract.js
+Tokenizer copy ingest contract: passed
+[node] scripts/test_tokenizer_core.js
+Tokenizer regex core contract: passed
+[node] scripts/test_tokenizer_home_long_press.js
+Tokenizer home long-press contract: passed
+[node] scripts/test_tokenizer_home_runtime_bridge.js
+Tokenizer home runtime bridge: passed
+[node] scripts/test_tokenizer_icon_contract.js
+Tokenizer icon contract: passed
+[node] scripts/test_tokenizer_layout_contract.js
+Tokenizer layout/navigation contract: passed
+[node] scripts/test_tokenizer_rule_drawer_contract.js
+Tokenizer rule drawer contract: passed
+[node] scripts/test_tokenizer_rule_schema_v2.js
+Tokenizer rule schema v2 contract: passed
+[node] scripts/test_tokenizer_runtime_mount_contract.js
+Tokenizer source render LayoutParams contract: passed
+[node] scripts/test_tokenizer_source_state_contract.js
+Tokenizer source-state contract: passed
+[node] scripts/test_tokenizer_toggle_selection_contract.js
+Tokenizer toggle selection contract: passed
+[node] scripts/test_ui_shell_navigation.js
+UIShell Stage6 navigation regression: passed
+Tokenizer regression suite: all 23 test scripts passed
+Rhino ES5 validation passed: /home/runner/work/ClipHub/ClipHub
+Expanded JS syntax verification: passed
+Manifest contract verification: passed
+schemaVersion: 2
+entryVersion: 8
+moduleSetVersion: 20260817.13
+sourceRef: cleanup/tokenizer-no-regression-20260817
+moduleCount: 19
+resourceCount: 2
+Tokenizer regex core contract: passed
+Tokenizer home long-press contract: passed
+Tokenizer home runtime bridge: passed
+Tokenizer layout/navigation contract: passed
+Tokenizer toggle selection contract: passed
+UIShell Stage6 navigation regression: passed
+UIShell Stage7 runtime diagnostics: passed
+Primary Window legacy route contracts: passed
+External Filter.showPanel callers: 1 (all rootMode=true)
+Legacy compatibility bridges: detail, editor/tags, translation, settings
+Review regression checks: passed
+System Back gesture/request contract: passed
+ClipHub Rhino/ColorOS 颜色接口审计
+HIGH=0 WARN=0 SAFE=10
 
-Error: missing function: handleSettingsBack
-    at functionBody (/home/runner/work/ClipHub/ClipHub/scripts/test_child_back_route_contract.js:24:28)
-    at Object.<anonymous> (/home/runner/work/ClipHub/ClipHub/scripts/test_child_back_route_contract.js:67:20)
-    at Module._compile (node:internal/modules/cjs/loader:1781:14)
-    at Object..js (node:internal/modules/cjs/loader:1913:10)
-    at Module.load (node:internal/modules/cjs/loader:1505:32)
-    at Function._load (node:internal/modules/cjs/loader:1309:12)
-    at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
-    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
-    at node:internal/main/run_main_module:36:49
+未发现需要报告的颜色接口调用。
 
-Node.js v22.23.2
+JSON: /tmp/cliphub-release-preflight.HBaICF/color-findings.json
+HIGH=0 WARN=0 SAFE=10
+Manifest SHA verification: passed
+Formal task structure: background + toggle
+entryVersion: 8
+endpointSchemaVersion: 3
+moduleSetVersion: 20260817.13
+sourceRef: cleanup/tokenizer-no-regression-20260817
+Theme: 11
+Traceback (most recent call last):
+  File "<stdin>", line 192, in <module>
+AssertionError: ('ch_13_settings.js', 42)
 translation provider SSOT apply failed rc=1
-HEAD is now at 99f7de5 chore: repair translation provider guarded workflow
+HEAD is now at 0ee778b chore: retrigger translation provider guarded workflow
