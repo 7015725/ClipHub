@@ -14,6 +14,7 @@
     var activeView = null;
     var activeBack = null;
     var activeClose = null;
+    var activeImeBackFirst = false;
     var mountCount = 0;
     var unmountCount = 0;
     var syncCount = 0;
@@ -27,6 +28,7 @@
     var backHookNavigationCount = 0;
     var navigatorBackPopCount = 0;
     var rootBackCount = 0;
+    var imeBackConsumeCount = 0;
     var lastBackSourceFamily = "";
     var lastBackOutcome = "none";
     var lastBackRequestId = "";
@@ -434,6 +436,7 @@
         activeView = spec.view || activeView;
         activeBack = typeof spec.onBack === "function" ? spec.onBack : null;
         activeClose = typeof spec.onClose === "function" ? spec.onClose : null;
+        activeImeBackFirst = spec.imeBackFirst !== false;
         ClipHub.Filter.mountPrimaryChildPage({
             pageId: activePageId,
             title: String(spec.title || ""),
@@ -462,7 +465,8 @@
             showBack: opts.showBack === true,
             view: view,
             onBack: opts.onBack,
-            onClose: opts.onClose
+            onClose: opts.onClose,
+            imeBackFirst: opts.imeBackFirst !== false
         }, "mount:" + id);
     }
 
@@ -478,7 +482,8 @@
             showBack: value.showBack === true,
             view: value.view || activeView,
             onBack: value.onBack,
-            onClose: value.onClose
+            onClose: value.onClose,
+            imeBackFirst: value.imeBackFirst !== false
         }, "sync:" + id);
         return true;
     }
@@ -510,6 +515,64 @@
         navigatorPopToRoot(reason || "unmount");
         lastAction = "unmount";
         lastReason = String(reason || "");
+        return true;
+    }
+
+    function imeVisibleForBack() {
+        var root = null;
+        var insets = null;
+        if (activeImeBackFirst !== true || activeView === null) { return false; }
+        try { root = activeView.getRootView(); } catch (ignoredRoot) { root = null; }
+        if (root === null) { return false; }
+        try {
+            if (Number(Packages.android.os.Build.VERSION.SDK_INT) >= 30) {
+                insets = root.getRootWindowInsets();
+                return insets !== null && insets.isVisible(
+                    Packages.android.view.WindowInsets.Type.ime()) === true;
+            }
+        } catch (ignoredInsets) {}
+        return false;
+    }
+
+    function consumeImeBackFirst() {
+        var root = null;
+        var focus = null;
+        var token = null;
+        var context = null;
+        var imm = null;
+        if (!imeVisibleForBack()) { return false; }
+        try { root = activeView.getRootView(); } catch (ignoredRoot) { root = null; }
+        if (root === null) { return false; }
+        try { focus = root.findFocus(); } catch (ignoredFocus) { focus = null; }
+        try { token = (focus !== null ? focus : root).getWindowToken(); }
+        catch (ignoredToken) { token = null; }
+        try {
+            context = runtimeContext && runtimeContext.androidContext ?
+                runtimeContext.androidContext : global.context;
+            imm = context.getSystemService(
+                Packages.android.content.Context.INPUT_METHOD_SERVICE);
+        } catch (ignoredImm) { imm = null; }
+        if (imm === null || token === null) { return false; }
+        try { imm.hideSoftInputFromWindow(token, 0); }
+        catch (hideError) { return false; }
+        try {
+            if (ClipHub.Navigation &&
+                    typeof ClipHub.Navigation.handoffBackFocus === "function") {
+                ClipHub.Navigation.handoffBackFocus({
+                    pageRoot: activeView,
+                    fallbackRoot: root,
+                    inputView: focus
+                });
+            }
+        } catch (ignoredHandoff) {}
+        try {
+            if (ClipHub.Navigation &&
+                    typeof ClipHub.Navigation.refreshSystemBackCapture === "function") {
+                ClipHub.Navigation.refreshSystemBackCapture(
+                    "back_dispatcher_ime_hidden");
+            }
+        } catch (ignoredRefresh) {}
+        imeBackConsumeCount += 1;
         return true;
     }
 
@@ -553,6 +616,8 @@
             legacyHookNavigationCount: Number(backHookNavigationCount),
             navigatorPopCount: Number(navigatorBackPopCount),
             rootBackCount: Number(rootBackCount),
+            imeBackFirst: activeImeBackFirst === true,
+            imeBackConsumeCount: Number(imeBackConsumeCount),
             duplicateCount: Number(duplicateBackRequestCount),
             lastSourceFamily: String(lastBackSourceFamily || ""),
             lastOutcome: String(lastBackOutcome || "none"),
@@ -593,6 +658,10 @@
         backDispatchCount += 1;
         backDispatcherCount += 1;
         try {
+            if (consumeImeBackFirst()) {
+                lastBackOutcome = "ime_consumed";
+                return true;
+            }
             if (typeof activeBack === "function") {
                 backHookDispatchCount += 1;
                 handled = activeBack() === true;
@@ -1082,6 +1151,8 @@
             legacyHookNavigationCount: Number(backHookNavigationCount),
             navigatorBackPopCount: Number(navigatorBackPopCount),
             rootBackCount: Number(rootBackCount),
+            imeBackFirst: activeImeBackFirst === true,
+            imeBackConsumeCount: Number(imeBackConsumeCount),
             lastBackSourceFamily: String(lastBackSourceFamily || ""),
             lastBackOutcome: String(lastBackOutcome || "none"),
             lastBackRequestId: String(lastBackRequestId || ""),
@@ -1107,6 +1178,7 @@
         activeView = null;
         activeBack = null;
         activeClose = null;
+        activeImeBackFirst = false;
         mountCount = 0;
         unmountCount = 0;
         syncCount = 0;
@@ -1120,6 +1192,7 @@
         backHookNavigationCount = 0;
         navigatorBackPopCount = 0;
         rootBackCount = 0;
+        imeBackConsumeCount = 0;
         lastBackSourceFamily = "";
         lastBackOutcome = "none";
         lastBackRequestId = "";
@@ -1194,7 +1267,7 @@
 
     ClipHub.UIShell = {
         MODULE_NAME: "ch_16_ui_shell",
-        MODULE_VERSION: 12,
+        MODULE_VERSION: 13,
         init: init,
         registerPage: registerPage,
         getPage: function (pageId) { return copyDescriptor(requirePage(pageId)); },
