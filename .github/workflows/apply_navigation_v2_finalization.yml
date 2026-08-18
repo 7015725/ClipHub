@@ -1,0 +1,843 @@
+name: Apply Navigation v2 finalization
+
+on:
+  push:
+    branches:
+      - refactor/navigation-contract-v2-20260818
+    paths:
+      - .github/workflows/apply_navigation_v2_finalization.yml
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/navigation-contract-v2-20260818
+          fetch-depth: 0
+      - name: Apply finalization patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import json
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit('%s replacement count=%d for anchor %r' % (path, count, old[:80]))
+              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          # ---- UIShell / PageStack / Navigator / BackDispatcher ----
+          replace_once(
+              'src/ch_16_ui_shell.js',
+              '    var lastBackDepthBefore = 0;\n    var lastBackDepthAfter = 0;\n\n    function normalizeId(value) {',
+              '''    var lastBackDepthBefore = 0;
+    var lastBackDepthAfter = 0;
+    var predictiveBackSession = null;
+    var predictiveBackStartCount = 0;
+    var predictiveBackProgressCount = 0;
+    var predictiveBackCancelCount = 0;
+    var predictiveBackCommitCount = 0;
+    var predictiveBackStableCancelCount = 0;
+    var predictiveBackSnapshotMismatchCount = 0;
+    var predictiveBackDuplicateCommitCount = 0;
+    var lastPredictiveCommitRequestId = "";
+    var lastPredictiveProgress = 0;
+
+    function normalizeId(value) {''')
+
+          replace_once(
+              'src/ch_16_ui_shell.js',
+              '    function backDispatcherState() {\n',
+              '''    function predictiveBackSnapshot() {
+        var ids = stackIds();
+        return {
+            generation: Number(generation),
+            depth: Number(ids.length),
+            currentPageId: ids.length > 0 ? String(ids[ids.length - 1]) : null,
+            previousPageId: ids.length > 1 ? String(ids[ids.length - 2]) : null,
+            pageIds: ids.slice(0),
+            entries: stackSnapshot()
+        };
+    }
+
+    function copyPredictiveBackSnapshot(snapshot) {
+        if (!snapshot) { return null; }
+        return {
+            generation: Number(snapshot.generation),
+            depth: Number(snapshot.depth),
+            currentPageId: snapshot.currentPageId === null ? null :
+                String(snapshot.currentPageId),
+            previousPageId: snapshot.previousPageId === null ? null :
+                String(snapshot.previousPageId),
+            pageIds: (snapshot.pageIds || []).slice(0)
+        };
+    }
+
+    function predictiveBackSnapshotMatches(snapshot) {
+        var ids;
+        var expected;
+        var index;
+        if (!snapshot) { return false; }
+        ids = stackIds();
+        expected = snapshot.pageIds || [];
+        if (Number(generation) !== Number(snapshot.generation) ||
+                ids.length !== expected.length ||
+                currentPageId() !== snapshot.currentPageId) {
+            return false;
+        }
+        for (index = 0; index < ids.length; index += 1) {
+            if (String(ids[index]) !== String(expected[index])) { return false; }
+        }
+        return true;
+    }
+
+    function predictiveRequestId(request) {
+        var value = request || {};
+        return normalizeId(value.requestId || value.gestureId || "");
+    }
+
+    function beginPredictiveBack(request) {
+        var value = request || {};
+        var requestId = predictiveRequestId(value);
+        if (predictiveBackSession !== null) {
+            if (!requestId || requestId === predictiveBackSession.requestId) {
+                return true;
+            }
+            predictiveBackSnapshotMismatchCount += 1;
+        }
+        predictiveBackSession = {
+            requestId: requestId,
+            gestureId: normalizeId(value.gestureId || ""),
+            sourceReason: normalizeId(value.sourceReason || "predictive_back"),
+            snapshot: predictiveBackSnapshot(),
+            lastProgress: 0
+        };
+        predictiveBackStartCount += 1;
+        lastPredictiveProgress = 0;
+        return true;
+    }
+
+    function progressPredictiveBack(progress, request) {
+        var value = Number(progress || 0);
+        var requestId = predictiveRequestId(request || {});
+        if (!predictiveBackSession) {
+            beginPredictiveBack(request || {});
+        }
+        if (!predictiveBackSession) { return false; }
+        if (requestId && predictiveBackSession.requestId &&
+                requestId !== predictiveBackSession.requestId) {
+            predictiveBackSnapshotMismatchCount += 1;
+            return false;
+        }
+        if (!isFinite(value)) { value = 0; }
+        value = Math.max(0, Math.min(1, value));
+        predictiveBackSession.lastProgress = value;
+        lastPredictiveProgress = value;
+        predictiveBackProgressCount += 1;
+        if (!predictiveBackSnapshotMatches(predictiveBackSession.snapshot)) {
+            predictiveBackSnapshotMismatchCount += 1;
+            return false;
+        }
+        return true;
+    }
+
+    function cancelPredictiveBack(request) {
+        var requestId = predictiveRequestId(request || {});
+        var stable = true;
+        if (!predictiveBackSession) { return true; }
+        if (requestId && predictiveBackSession.requestId &&
+                requestId !== predictiveBackSession.requestId) {
+            predictiveBackSnapshotMismatchCount += 1;
+            stable = false;
+        }
+        if (!predictiveBackSnapshotMatches(predictiveBackSession.snapshot)) {
+            predictiveBackSnapshotMismatchCount += 1;
+            stable = false;
+        }
+        predictiveBackCancelCount += 1;
+        if (stable) { predictiveBackStableCancelCount += 1; }
+        predictiveBackSession = null;
+        lastPredictiveProgress = 0;
+        return stable;
+    }
+
+    function commitPredictiveBack(reason, request) {
+        var value = request || {};
+        var requestId = predictiveRequestId(value);
+        var stable;
+        var handled;
+        if (requestId && requestId === lastPredictiveCommitRequestId) {
+            predictiveBackDuplicateCommitCount += 1;
+            return true;
+        }
+        if (!predictiveBackSession) {
+            beginPredictiveBack(value);
+        }
+        if (!predictiveBackSession) { return false; }
+        if (requestId && predictiveBackSession.requestId &&
+                requestId !== predictiveBackSession.requestId) {
+            predictiveBackSnapshotMismatchCount += 1;
+            predictiveBackSession = null;
+            return false;
+        }
+        stable = predictiveBackSnapshotMatches(predictiveBackSession.snapshot);
+        if (!stable) {
+            predictiveBackSnapshotMismatchCount += 1;
+            predictiveBackSession = null;
+            return false;
+        }
+        predictiveBackCommitCount += 1;
+        lastPredictiveCommitRequestId = requestId;
+        predictiveBackSession = null;
+        lastPredictiveProgress = 1;
+        handled = backDispatcherDispatch(reason || "predictive_back", value) === true;
+        return handled;
+    }
+
+    function backDispatcherState() {
+''')
+
+          replace_once(
+              'src/ch_16_ui_shell.js',
+              '            apiVersion: 1,\n            dispatching: backDispatchInProgress === true,',
+              '''            apiVersion: 2,
+            owner: "ClipHub.BackDispatcher",
+            dispatching: backDispatchInProgress === true,
+            predictiveBackActive: predictiveBackSession !== null,
+            predictiveBackStartCount: Number(predictiveBackStartCount),
+            predictiveBackProgressCount: Number(predictiveBackProgressCount),
+            predictiveBackCancelCount: Number(predictiveBackCancelCount),
+            predictiveBackCommitCount: Number(predictiveBackCommitCount),
+            predictiveBackStableCancelCount:
+                Number(predictiveBackStableCancelCount),
+            predictiveBackSnapshotMismatchCount:
+                Number(predictiveBackSnapshotMismatchCount),
+            predictiveBackDuplicateCommitCount:
+                Number(predictiveBackDuplicateCommitCount),
+            predictiveBackSnapshot: predictiveBackSession === null ? null :
+                copyPredictiveBackSnapshot(predictiveBackSession.snapshot),
+            lastPredictiveProgress: Number(lastPredictiveProgress),''')
+
+          replace_once(
+              'src/ch_16_ui_shell.js',
+              '            pageStackOwner: "ClipHub.PageStack",\n            navigationManagerOwner: "ClipHub.Navigator",\n            navigationApiVersion: 2,',
+              '''            pageStackOwner: "ClipHub.PageStack",
+            navigationManagerOwner: "ClipHub.Navigator",
+            navigationApiVersion: 2,
+            backDispatcherOwner: "ClipHub.BackDispatcher",
+            backDispatcherApiVersion: 2,
+            predictiveBackActive: predictiveBackSession !== null,
+            predictiveBackStartCount: Number(predictiveBackStartCount),
+            predictiveBackProgressCount: Number(predictiveBackProgressCount),
+            predictiveBackCancelCount: Number(predictiveBackCancelCount),
+            predictiveBackCommitCount: Number(predictiveBackCommitCount),
+            predictiveBackStableCancelCount:
+                Number(predictiveBackStableCancelCount),
+            predictiveBackSnapshotMismatchCount:
+                Number(predictiveBackSnapshotMismatchCount),
+            predictiveBackDuplicateCommitCount:
+                Number(predictiveBackDuplicateCommitCount),
+            predictiveBackSnapshot: predictiveBackSession === null ? null :
+                copyPredictiveBackSnapshot(predictiveBackSession.snapshot),''')
+
+          replace_once(
+              'src/ch_16_ui_shell.js',
+              '        lastBackDepthBefore = 0;\n        lastBackDepthAfter = 0;\n        mutationCount = 0;',
+              '''        lastBackDepthBefore = 0;
+        lastBackDepthAfter = 0;
+        predictiveBackSession = null;
+        predictiveBackStartCount = 0;
+        predictiveBackProgressCount = 0;
+        predictiveBackCancelCount = 0;
+        predictiveBackCommitCount = 0;
+        predictiveBackStableCancelCount = 0;
+        predictiveBackSnapshotMismatchCount = 0;
+        predictiveBackDuplicateCommitCount = 0;
+        lastPredictiveCommitRequestId = "";
+        lastPredictiveProgress = 0;
+        mutationCount = 0;''')
+
+          replace_once(
+              'src/ch_16_ui_shell.js',
+              '''    ClipHub.BackDispatcher = {
+        API_VERSION: 1,
+        dispatch: backDispatcherDispatch,
+        getState: backDispatcherState
+    };''',
+              '''    ClipHub.BackDispatcher = {
+        API_VERSION: 2,
+        OWNER: "ClipHub.BackDispatcher",
+        dispatch: backDispatcherDispatch,
+        beginPredictive: beginPredictiveBack,
+        progressPredictive: progressPredictiveBack,
+        cancelPredictive: cancelPredictiveBack,
+        commitPredictive: commitPredictiveBack,
+        getState: backDispatcherState
+    };''')
+
+          replace_once(
+              'src/ch_16_ui_shell.js',
+              '        MODULE_NAME: "ch_16_ui_shell",\n        MODULE_VERSION: 19,',
+              '        MODULE_NAME: "ch_16_ui_shell",\n        MODULE_VERSION: 20,')
+
+          # ---- Android Navigation bridge -> BackDispatcher predictive transaction ----
+          replace_once(
+              'src/ch_12_translation.js',
+              '\nfunction beginSystemBackGesture(reason) {',
+              '''
+function predictiveBackRequest(owner, reason, gestureId) {
+    var shell = shellBackSnapshot();
+    return {
+        sourceFamily: "predictive",
+        sourceReason: String(reason || "predictive_back"),
+        ownerPageId: shell.pageId || String(owner || ""),
+        generation: Number(shell.generation || 0),
+        requestId: "back:" + String(gestureId || ""),
+        gestureId: String(gestureId || "")
+    };
+}
+
+function beginPredictiveBackContract(owner, reason, gestureId) {
+    try {
+        if (ClipHub.BackDispatcher &&
+                typeof ClipHub.BackDispatcher.beginPredictive === "function") {
+            return ClipHub.BackDispatcher.beginPredictive(
+                predictiveBackRequest(owner, reason, gestureId)) === true;
+        }
+    } catch (error) { navState.lastError = String(error); }
+    return false;
+}
+
+function progressPredictiveBackContract(owner, event, gestureId) {
+    var progress = 0;
+    try { progress = Number(event.getProgress()); }
+    catch (ignoredProgress) { progress = 0; }
+    try {
+        if (ClipHub.BackDispatcher &&
+                typeof ClipHub.BackDispatcher.progressPredictive === "function") {
+            return ClipHub.BackDispatcher.progressPredictive(progress,
+                predictiveBackRequest(owner, "predictive_back", gestureId)) === true;
+        }
+    } catch (error) { navState.lastError = String(error); }
+    return false;
+}
+
+function cancelPredictiveBackContract(owner, gestureId) {
+    try {
+        if (ClipHub.BackDispatcher &&
+                typeof ClipHub.BackDispatcher.cancelPredictive === "function") {
+            return ClipHub.BackDispatcher.cancelPredictive(
+                predictiveBackRequest(owner, "predictive_back", gestureId)) === true;
+        }
+    } catch (error) { navState.lastError = String(error); }
+    return false;
+}
+
+function beginSystemBackGesture(reason) {''')
+
+          replace_once(
+              'src/ch_12_translation.js',
+              '''    if (shell.pageId && ClipHub.UIShell &&
+            typeof ClipHub.UIShell.dispatchBack === "function") {
+        handled = ClipHub.UIShell.dispatchBack(
+            navState.lastBackReason, request) === true;''',
+              '''    if (shell.pageId && ClipHub.UIShell &&
+            typeof ClipHub.UIShell.dispatchBack === "function") {
+        if (systemBack && request && request.sourceFamily === "predictive" &&
+                ClipHub.BackDispatcher &&
+                typeof ClipHub.BackDispatcher.commitPredictive === "function") {
+            handled = ClipHub.BackDispatcher.commitPredictive(
+                navState.lastBackReason, request) === true;
+        } else {
+            handled = ClipHub.UIShell.dispatchBack(
+                navState.lastBackReason, request) === true;
+        }''')
+
+          replace_once(
+              'src/ch_12_translation.js',
+              '''                        onBackStarted: function (event) {
+                            navState.backStartedCount += 1;
+                            beginSystemBackGesture("predictive_back");
+                            applyProgress(entry.view, event);
+                        },
+                        onBackProgressed: function (event) {
+                            applyProgress(entry.view, event);
+                        },
+                        onBackCancelled: function () {
+                            navState.backCancelledCount += 1;
+                            cancelSystemBackGesture();
+                            resetVisual(entry.view);
+                        },
+                        onBackInvoked: function () {
+                            resetVisual(entry.view);
+                            dispatchBack(entry.owner, "predictive_back");
+                        }''',
+              '''                        onBackStarted: function (event) {
+                            var gestureId;
+                            navState.backStartedCount += 1;
+                            gestureId = beginSystemBackGesture("predictive_back");
+                            beginPredictiveBackContract(entry.owner,
+                                "predictive_back", gestureId);
+                            progressPredictiveBackContract(entry.owner,
+                                event, gestureId);
+                            applyProgress(entry.view, event);
+                        },
+                        onBackProgressed: function (event) {
+                            var gestureId = activeBackGestureId ||
+                                beginSystemBackGesture("predictive_back");
+                            progressPredictiveBackContract(entry.owner,
+                                event, gestureId);
+                            applyProgress(entry.view, event);
+                        },
+                        onBackCancelled: function () {
+                            var gestureId = activeBackGestureId;
+                            navState.backCancelledCount += 1;
+                            cancelPredictiveBackContract(entry.owner, gestureId);
+                            cancelSystemBackGesture();
+                            resetVisual(entry.view);
+                        },
+                        onBackInvoked: function () {
+                            resetVisual(entry.view);
+                            dispatchBack(entry.owner, "predictive_back");
+                        }''')
+
+          replace_once(
+              'src/ch_12_translation.js',
+              '        MODULE_NAME: "ch_14_navigation_embedded",\n        MODULE_VERSION: 11,',
+              '        MODULE_NAME: "ch_14_navigation_embedded",\n        MODULE_VERSION: 12,')
+
+          # ---- Stronger Stage 8 core/legacy boundary audit ----
+          Path('scripts/audit_navigation_page_id_hardcoding.js').write_text(r'''var fs = require("fs");
+var shell = fs.readFileSync("src/ch_16_ui_shell.js", "utf8");
+var nav = fs.readFileSync("src/ch_12_translation.js", "utf8");
+var ids = ["home", "detail", "editor", "tags", "settings", "regex_rules", "regex_editor", "regex_test", "translation", "tokenizer", "tokenizer_rules", "tokenizer_rule_editor"];
+var baselineMax = {home:18, detail:11, editor:17, tags:7, settings:19, regex_rules:2, regex_editor:2, regex_test:1, translation:13, tokenizer:8, tokenizer_rules:2, tokenizer_rule_editor:1};
+var coreFunctions = ["isSameShellFamily", "canEmbed", "pageStackPush", "pageStackPop", "pageStackReplace", "navigatorPush", "navigatorPop", "navigatorReplace", "backDispatcherDispatch", "predictiveBackSnapshot", "beginPredictiveBack", "progressPredictiveBack", "cancelPredictiveBack", "commitPredictiveBack"];
+function block(source, name) {
+    var start = source.indexOf("function " + name + "(");
+    var end;
+    if (start < 0) { throw new Error("missing core function " + name); }
+    end = source.indexOf("\n    function ", start + 10);
+    if (end < 0) { end = source.indexOf("\nfunction ", start + 10); }
+    return source.substring(start, end < 0 ? source.length : end);
+}
+coreFunctions.forEach(function (name) {
+    var source = block(shell, name);
+    ids.forEach(function (id) {
+        if (source.indexOf('"' + id + '"') >= 0) {
+            throw new Error("Navigation core hardcodes business page id " + id + " in " + name);
+        }
+    });
+});
+var counts = {};
+ids.forEach(function (id) {
+    var re = new RegExp('\\"' + id + '\\"', 'g');
+    counts[id] = (shell.match(re) || []).length + (nav.match(re) || []).length;
+    if (counts[id] > baselineMax[id]) {
+        throw new Error("legacy/core business page-id count grew for " + id + ": " + counts[id] + " > " + baselineMax[id]);
+    }
+});
+console.log(JSON.stringify({status:"passed", coreBusinessPageIds:0, legacyCompatibilityFrozen:true, counts:counts}));
+''', encoding='utf-8')
+
+          replace_once(
+              'scripts/test_navigation_stage8_no_page_hardcoding.js',
+              '["isSameShellFamily", "canEmbed", "unmountPage", "navigatorPush", "navigatorPop", "backDispatcherDispatch"].forEach(function (name) {',
+              '["isSameShellFamily", "canEmbed", "unmountPage", "navigatorPush", "navigatorPop", "backDispatcherDispatch", "predictiveBackSnapshot", "beginPredictiveBack", "progressPredictiveBack", "cancelPredictiveBack", "commitPredictiveBack"].forEach(function (name) {')
+
+          # ---- Predictive Back transaction static/runtime simulation ----
+          Path('scripts/test_navigation_predictive_snapshot_contract.js').write_text(r'''var fs = require("fs");
+var vm = require("vm");
+var shellSource = fs.readFileSync("src/ch_16_ui_shell.js", "utf8");
+var mounted = null;
+var sandbox = {
+    console: console,
+    ClipHub: {
+        Filter: {
+            getPrimaryHostState: function () {
+                return { ready: true, attached: true, rootMode: true,
+                    childAttached: mounted !== null };
+            },
+            mountPrimaryChildPage: function (spec) { mounted = spec; return true; },
+            unmountPrimaryChildPage: function () { mounted = null; return true; }
+        }
+    }
+};
+vm.createContext(sandbox);
+vm.runInContext(shellSource, sandbox, { filename: "ch_16_ui_shell.js" });
+var ui = sandbox.ClipHub.UIShell;
+var back = sandbox.ClipHub.BackDispatcher;
+var view = {};
+ui.init({});
+ui.mountPage("editor", view, {
+    title: "Editor",
+    showBack: true,
+    onBack: function () { return ui.unmountPage("editor", "predictive_test_back"); }
+});
+if (!back || back.API_VERSION < 2 || back.OWNER !== "ClipHub.BackDispatcher") {
+    throw new Error("BackDispatcher v2 owner missing");
+}
+var before = ui.getState();
+var request1 = { sourceFamily: "predictive", sourceReason: "predictive_back",
+    ownerPageId: "editor", generation: before.generation,
+    requestId: "back:predictive:test:1", gestureId: "predictive:test:1" };
+if (back.beginPredictive(request1) !== true) { throw new Error("predictive start failed"); }
+var started = back.getState();
+if (!started.predictiveBackActive || !started.predictiveBackSnapshot ||
+        started.predictiveBackSnapshot.currentPageId !== "editor" ||
+        started.predictiveBackSnapshot.previousPageId !== "home" ||
+        started.predictiveBackSnapshot.depth !== 2) {
+    throw new Error("predictive start did not freeze current/previous/stack");
+}
+back.progressPredictive(0.45, request1);
+var progressed = ui.getState();
+if (progressed.currentPageId !== "editor" || progressed.stackDepth !== 2 ||
+        progressed.generation !== before.generation) {
+    throw new Error("predictive start/progress mutated PageStack");
+}
+if (back.cancelPredictive(request1) !== true) { throw new Error("stable predictive cancel failed"); }
+var cancelled = back.getState();
+if (cancelled.predictiveBackActive || ui.getState().currentPageId !== "editor" ||
+        ui.getState().stackDepth !== 2 || cancelled.predictiveBackCancelCount !== 1 ||
+        cancelled.predictiveBackStableCancelCount !== 1) {
+    throw new Error("predictive cancel did not preserve frozen stack");
+}
+var request2 = { sourceFamily: "predictive", sourceReason: "predictive_back",
+    ownerPageId: "editor", generation: ui.getState().generation,
+    requestId: "back:predictive:test:2", gestureId: "predictive:test:2" };
+back.beginPredictive(request2);
+back.progressPredictive(0.9, request2);
+if (back.commitPredictive("predictive_back", request2) !== true) {
+    throw new Error("predictive commit not handled");
+}
+if (ui.getState().currentPageId !== "home" || ui.getState().stackDepth !== 1) {
+    throw new Error("predictive commit did not pop exactly once");
+}
+var committed = back.getState();
+if (committed.predictiveBackCommitCount !== 1 ||
+        committed.predictiveBackSnapshotMismatchCount !== 0) {
+    throw new Error("predictive commit diagnostics mismatch");
+}
+if (back.commitPredictive("predictive_back", request2) !== true) {
+    throw new Error("duplicate predictive commit must be consumed");
+}
+var duplicate = back.getState();
+if (duplicate.predictiveBackCommitCount !== 1 ||
+        duplicate.predictiveBackDuplicateCommitCount !== 1 ||
+        ui.getState().stackDepth !== 1) {
+    throw new Error("duplicate predictive commit caused second pop");
+}
+console.log("Navigation Predictive Back snapshot/commit contract: passed");
+''', encoding='utf-8')
+
+          replace_once(
+              'scripts/test_navigation_stage4_back_dispatcher.js',
+              'need(shell, "dispatch: backDispatcherDispatch", "BackDispatcher dispatch API missing");\n',
+              '''need(shell, "dispatch: backDispatcherDispatch", "BackDispatcher dispatch API missing");
+need(shell, "beginPredictive: beginPredictiveBack", "Predictive begin API missing");
+need(shell, "progressPredictive: progressPredictiveBack", "Predictive progress API missing");
+need(shell, "cancelPredictive: cancelPredictiveBack", "Predictive cancel API missing");
+need(shell, "commitPredictive: commitPredictiveBack", "Predictive commit API missing");
+need(shell, 'backDispatcherOwner: "ClipHub.BackDispatcher"', "BackDispatcher owner diagnostics missing");
+''')
+
+          replace_once(
+              '.github/workflows/navigation_stage1_3_gate.yml',
+              '          node scripts/test_system_back_gesture_contract.js\n',
+              '          node scripts/test_system_back_gesture_contract.js\n          node scripts/test_navigation_predictive_snapshot_contract.js\n')
+
+          # ---- Probe 065 final owner coverage / module set ----
+          p = Path('probes/cliphub_navigation_contract_probe_065.js')
+          probe = p.read_text(encoding='utf-8')
+          probe = probe.replace('module set 20260818.11', 'module set 20260818.12', 1)
+          probe = probe.replace('var REQUIRED_SET = "20260818.11";', 'var REQUIRED_SET = "20260818.12";', 1)
+          probe = probe.replace('probeVersion: 1', 'probeVersion: 2')
+          old = '''                navigationApiVersion: number(shell.navigationApiVersion),
+                backDispatchCount: number(shell.backDispatchCount),'''
+          new = '''                navigationApiVersion: number(shell.navigationApiVersion),
+                backDispatcherOwner: String(shell.backDispatcherOwner || ""),
+                backDispatcherApiVersion:
+                    number(shell.backDispatcherApiVersion),
+                predictiveBackActive: shell.predictiveBackActive === true,
+                predictiveBackStartCount:
+                    number(shell.predictiveBackStartCount),
+                predictiveBackCancelCount:
+                    number(shell.predictiveBackCancelCount),
+                predictiveBackCommitCount:
+                    number(shell.predictiveBackCommitCount),
+                predictiveBackSnapshotMismatchCount:
+                    number(shell.predictiveBackSnapshotMismatchCount),
+                backDispatchCount: number(shell.backDispatchCount),'''
+          if probe.count(old) != 1:
+              raise SystemExit('probe shell owner anchor mismatch')
+          probe = probe.replace(old, new, 1)
+          old = '''            current.shell.pageStackOwner === "ClipHub.PageStack" &&
+            current.shell.navigationManagerOwner === "ClipHub.Navigator" &&
+            current.shell.navigationApiVersion >= 2;'''
+          new = '''            current.shell.pageStackOwner === "ClipHub.PageStack" &&
+            current.shell.navigationManagerOwner === "ClipHub.Navigator" &&
+            current.shell.navigationApiVersion >= 2 &&
+            current.shell.backDispatcherOwner === "ClipHub.BackDispatcher" &&
+            current.shell.backDispatcherApiVersion >= 2;'''
+          if probe.count(old) != 1:
+              raise SystemExit('probe architectureReady anchor mismatch')
+          probe = probe.replace(old, new, 1)
+          old = '''            backDispatcherCount: after.shell.backDispatcherCount -
+                before.shell.backDispatcherCount,
+            imeBackConsumeCount: after.shell.imeBackConsumeCount -'''
+          new = '''            backDispatcherCount: after.shell.backDispatcherCount -
+                before.shell.backDispatcherCount,
+            predictiveBackStartCount: after.shell.predictiveBackStartCount -
+                before.shell.predictiveBackStartCount,
+            predictiveBackCancelCount: after.shell.predictiveBackCancelCount -
+                before.shell.predictiveBackCancelCount,
+            predictiveBackCommitCount: after.shell.predictiveBackCommitCount -
+                before.shell.predictiveBackCommitCount,
+            predictiveBackSnapshotMismatchCount:
+                after.shell.predictiveBackSnapshotMismatchCount -
+                before.shell.predictiveBackSnapshotMismatchCount,
+            imeBackConsumeCount: after.shell.imeBackConsumeCount -'''
+          if probe.count(old) != 1:
+              raise SystemExit('probe diff anchor mismatch')
+          probe = probe.replace(old, new, 1)
+          p.write_text(probe, encoding='utf-8')
+
+          replace_once(
+              'probes/navigation_architecture_test_page.js',
+              ' * Run after ClipHub is started on moduleSetVersion 20260818.09.\n',
+              ' * Run after ClipHub is started on moduleSetVersion 20260818.12 or newer.\n')
+
+          # ---- Final reusable Navigation Contract v2 ----
+          Path('docs/ShortX_UI_Navigation_Contract_v2.md').write_text(r'''# ShortX UI Navigation Contract v2
+
+适用范围：ClipHub / ShortX Rhino ES5 单窗口嵌入式 UI。本文是 Navigation Contract v2 的最终可复用规范，后续普通页面接入不得修改导航核心。
+
+## 1. 唯一 Owner 与 SSOT
+
+| 能力 | 唯一 Owner | 规则 |
+|---|---|---|
+| 页面定义 | `ClipHub.PageRegistry` | 页面 ID、parent、family、factory、PageContract、生命周期 hooks 均在 Registry 声明 |
+| 页面栈 | `ClipHub.PageStack` | 唯一页面历史状态；业务页面不得维护第二套导航栈 |
+| 导航动作 | `ClipHub.Navigator` | `push/pop/replace/current/canPop/popTo/reset` 是业务导航唯一入口 |
+| Back 决策 | `ClipHub.BackDispatcher` | Toolbar/Page/System/Legacy/Predictive 最终进入同一 Back 状态机 |
+| Android Back 捕获 | `ClipHub.Navigation` | 仅负责 Window/Key/OnBackInvoked/OnBackAnimation 接入，不拥有业务页面语义 |
+| 页面承载 | `ClipHub.UIShell` + Primary Window | 单窗口 host、页面 mount/unmount 与兼容桥 |
+
+原则：一个事实一个 SSOT，一个能力一个 Owner。页面不得自行注册 Android Back Callback。
+
+## 2. PageStack
+
+最低 API：`push`、`pop`、`replace`、`current`、`canPop`、`size`、`popTo`、`popToRoot`、`resetRoot`、`snapshot`。
+
+不变量：
+
+- 根页面始终位于栈底；
+- 非根页面必须满足 Registry 声明的 `parentId` 或 `alternateParentIds`；
+- Back commit 最多只减少一层，除非显式 `popTo/popToRoot`；
+- start/progress/cancel 类型的手势阶段不得提前写 PageStack；
+- 页面关闭、Toolbar Back、System Back 不得各自维护独立历史。
+
+## 3. Navigator
+
+普通业务代码只使用 `ClipHub.Navigator`。新增普通页面的标准接入流程：
+
+```js
+ClipHub.PageRegistry.register({
+    id: "example_page",
+    parentId: "home",
+    owner: "example",
+    family: "example",
+    moduleName: "ExamplePage",
+    cachePolicy: "rebind",
+    shellReady: true,
+    factory: createExamplePage,
+    contract: {
+        canPop: true,
+        systemBack: true,
+        swipeBack: true,
+        predictiveBack: true,
+        imeBackFirst: true,
+        host: "primary"
+    }
+});
+
+ClipHub.Navigator.push("example_page", {}, "open_example");
+```
+
+若该普通页面需要修改 `PageStack`、`Navigator`、`BackDispatcher` 或 Android Back 捕获核心才能接入，则视为架构回归。
+
+## 4. PageContract
+
+默认合同：
+
+- `allowDuplicate=false`
+- `canPop=true`
+- `systemBack=true`
+- `swipeBack=true`
+- `predictiveBack=true`
+- `imeBackFirst=true`
+- `host="primary"`
+- `rootBehavior="none"`
+
+根页面可通过 `rootBehavior="close_host"` 定义 Back 关闭宿主；特殊页面只能通过 Contract/Registry 元数据声明差异，不得在 Navigator/BackDispatcher 中新增 Page ID 分支。
+
+## 5. BackDispatcher 顺序
+
+一次 Back 请求只允许一个状态机处理：
+
+1. Contract 判断该输入族是否允许；
+2. requestId / in-progress 去重；
+3. 若 `imeBackFirst=true` 且 IME 可见，只收起 IME并消费本次 Back；
+4. 调用当前页面 `onBack` hook；
+5. hook 若仅表达旧式导航意图，由兼容桥转成 Navigator 动作；
+6. 若页面未消费且 `Navigator.canPop()`，执行一次 `Navigator.pop()`；
+7. 根页面执行 `rootBehavior`；
+8. 记录 before/after depth，禁止同一次请求多层级联 pop。
+
+Legacy `KEYCODE_BACK`、`OnBackInvokedCallback`、Toolbar/Page Back 最终都必须进入该状态机。
+
+## 6. Predictive Back 事务
+
+`ClipHub.BackDispatcher` API v2 提供：
+
+- `beginPredictive(request)`
+- `progressPredictive(progress, request)`
+- `cancelPredictive(request)`
+- `commitPredictive(reason, request)`
+
+### start
+
+冻结以下只读导航快照：
+
+- `currentPageId`
+- `previousPageId`
+- `pageIds`
+- `depth`
+- `generation`
+
+此阶段不修改 PageStack。
+
+### progress
+
+只更新手势进度/视觉；必须验证冻结快照仍与 PageStack 一致，不执行 pop。
+
+### cancel
+
+清除 predictive session，并验证 PageStack 与 start 快照一致。因为 start/progress 从未修改 PageStack，所以稳定 cancel 不需要反向写栈；视觉恢复由 Android Navigation 层 `resetVisual()` 完成。
+
+### commit
+
+只有 commit 才进入 `BackDispatcher.dispatch()` 并最多 pop 一层。同一个 `requestId` 的重复 commit 必须被消费但不得再次 pop。
+
+若运行时检测到 start 后 PageStack 被其他路径改变，计入 `predictiveBackSnapshotMismatchCount` 并拒绝错误 commit，而不是猜测性修复栈。
+
+## 7. IME First Back
+
+IME 优先级是通用能力，不属于 Editor 私有逻辑。合同为 `imeBackFirst=true` 时：
+
+- 第一次 Back：IME 可见 -> 仅隐藏 IME；
+- 焦点交还 Primary Window Root；
+- 刷新 Android Back 捕获；
+- 页面栈不变；
+- 第二次 Back：正常进入页面 Back/`Navigator.pop()`。
+
+焦点交接与 Android Back callback 注册是两件事；不得把 `requestFocus()` 当成 callback 注册成功的证据。
+
+## 8. LegacyNavigationAdapter 边界
+
+`src/ch_12_translation.js` 仍保留 ShortX 历史窗口标题、旧模块 open/close wrapper、Legacy Key Back 等兼容适配。该区域允许识别既有页面/窗口名称，但它不是 Navigation Core。
+
+边界要求：
+
+- 不得把新的业务页面 ID 加入 Android Back 核心决策；
+- 新页面只能走 Registry/Contract/Navigator；
+- Stage 8 audit 冻结既有兼容硬编码数量，并对 PageStack/Navigator/BackDispatcher 核心函数执行零业务 Page ID 检查；
+- 后续可渐进删除 Legacy Adapter，但不得反向把兼容逻辑扩散回 Core。
+
+## 9. 真机与 CI 验收
+
+CI 最低要求：
+
+- Rhino/Node 语法检查；
+- Stage 2–10 Navigation tests；
+- Predictive snapshot/commit contract；
+- System Back gesture/request dedupe；
+- IME Back rearm；
+- Primary Window system/legacy Back；
+- Stage 8 hardcoding audit；
+- manifest contract；
+- release preflight。
+
+真机最低矩阵：Editor、Tags、Tokenizer、Tokenizer Rules、Settings/Regex、Translation、Detail、Root Back；验证顶部返回与系统 Back 语义一致。若宿主应用关闭 `OnBackInvokedCallback`，Predictive API 路径无法由设备实际触发，此时必须保留 Legacy KEYCODE_BACK 路径并以运行时能力诊断明确标记，不能把静态测试写成“真机 Predictive 已通过”。
+
+## 10. 新页面零修改导航核心验收
+
+`probes/navigation_architecture_test_page.js` 是参考页：仅调用 `PageRegistry.register()` + `Navigator.push()`，并通过 factory/hook/contract 描述行为。新增同类页面时，导航核心源码 diff 应为零。
+''', encoding='utf-8')
+
+          # ---- Manifest: module set + exact Git blob SHA ----
+          manifest_path = Path('module-manifest.json')
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          manifest['moduleSetVersion'] = '20260818.12'
+          def git_blob_sha(path):
+              data = Path(path).read_bytes()
+              header = ('blob %d\0' % len(data)).encode('ascii')
+              return hashlib.sha1(header + data).hexdigest()
+          updates = {
+              'src/ch_12_translation.js': git_blob_sha('src/ch_12_translation.js'),
+              'src/ch_16_ui_shell.js': git_blob_sha('src/ch_16_ui_shell.js')
+          }
+          for module in manifest.get('modules', []):
+              if module.get('path') in updates:
+                  module['sha'] = updates[module['path']]
+          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          PY
+
+      - name: Run finalization gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check src/ch_12_translation.js
+          node --check src/ch_16_ui_shell.js
+          node --check probes/cliphub_navigation_contract_probe_065.js
+          node --check probes/navigation_architecture_test_page.js
+          node scripts/test_navigation_stage4_back_dispatcher.js
+          node scripts/test_navigation_stage8_no_page_hardcoding.js
+          node scripts/test_system_back_gesture_contract.js
+          node scripts/test_navigation_predictive_snapshot_contract.js
+          node scripts/test_navigation_stage9_runtime_simulation.js
+          node scripts/test_navigation_stage10_legacy_hook_bridge.js
+          node scripts/test_editor_ime_back_rearm.js
+          node scripts/audit_navigation_page_id_hardcoding.js
+          python3 scripts/test_primary_window_system_back.py
+          python3 scripts/test_manifest_contract.py
+          bash scripts/release_preflight.sh --current
+          git diff --check
+
+      - name: Commit finalization
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/apply_navigation_v2_finalization.yml
+          git add src/ch_12_translation.js src/ch_16_ui_shell.js \
+            scripts/audit_navigation_page_id_hardcoding.js \
+            scripts/test_navigation_stage8_no_page_hardcoding.js \
+            scripts/test_navigation_stage4_back_dispatcher.js \
+            scripts/test_navigation_predictive_snapshot_contract.js \
+            .github/workflows/navigation_stage1_3_gate.yml \
+            probes/cliphub_navigation_contract_probe_065.js \
+            probes/navigation_architecture_test_page.js \
+            docs/ShortX_UI_Navigation_Contract_v2.md module-manifest.json
+          git commit -m "refactor: finalize Navigation Contract v2 predictive transaction"
+          git push origin HEAD:refactor/navigation-contract-v2-20260818
