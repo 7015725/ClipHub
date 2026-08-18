@@ -68,7 +68,7 @@ jobs:
           git rm .github/workflows/apply_navigation_v2_finalization.yml
           git rm .github/workflows/apply_navigation_v2_finalization_pr.yml
           git rm .github/workflows/apply_navigation_v2_finalization_runner.yml
-          git rm scripts/apply_navigation_v2_finalization.py
+          git rm -f scripts/apply_navigation_v2_finalization.py
           git add -A
           git commit -m "refactor: finalize Navigation Contract v2 predictive transaction"
           git push origin HEAD:refactor/navigation-contract-v2-20260818
