@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "moduleSetVersion": "20260818.09",
+  "moduleSetVersion": "20260818.10",
   "entryMinVersion": 8,
   "sourceRef": "refactor/navigation-contract-v2-20260818",
   "modules": [
@@ -93,7 +93,7 @@
     {
       "name": "ch_12_translation.js",
       "path": "src/ch_12_translation.js",
-      "sha": "be7cf4da07333bf9e444b85e3485e15d7474e801",
+      "sha": "1f9f15d2a84f5973c43694d47283179ffd73216d",
       "export": "Translation",
       "runtimeRole": "managed",
       "lifecycleIndex": 12
@@ -124,7 +124,7 @@
     {
       "name": "ch_16_ui_shell.js",
       "path": "src/ch_16_ui_shell.js",
-      "sha": "6e1195a5d7a4b276aabf1ed26bb539d250e0be5d",
+      "sha": "b97a26027c4e036d4da03b4e1080d513703dfcf5",
       "export": "UIShell",
       "runtimeRole": "managed",
       "lifecycleIndex": 13

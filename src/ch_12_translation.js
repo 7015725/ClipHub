@@ -612,6 +612,16 @@
             reason === "back_key" || reason === "escape_key";
     }
 
+    function systemBackInputFamily(reason) {
+        reason = String(reason || "");
+        if (reason === "predictive_back") { return "predictive"; }
+        if (reason === "back_key" || reason === "escape_key") {
+            return "legacy_key";
+        }
+        if (reason === "on_back_invoked") { return "system"; }
+        return "system";
+    }
+
     function backSignature(owner, reason) {
         return isSystemBackReason(reason) ? "system" :
             "owner:" + String(owner || "auto");
@@ -707,7 +717,8 @@ function dispatchBack(owner, reason) {
     navState.lastBackSignature = signature;
     if (systemBack) {
         request = {
-            sourceFamily: "system",
+            sourceFamily: systemBackInputFamily(reason),
+            sourceReason: String(reason || "system_back"),
             ownerPageId: shell.pageId || String(owner || ""),
             generation: Number(shell.generation || 0),
             requestId: "back:" + gestureId,
@@ -717,12 +728,13 @@ function dispatchBack(owner, reason) {
         navState.lastBackPageId = request.ownerPageId;
         navState.lastBackPageGeneration = request.generation;
     }
-    if (shell.childAttached === true && ClipHub.UIShell &&
+    if (shell.pageId && ClipHub.UIShell &&
             typeof ClipHub.UIShell.dispatchBack === "function") {
         handled = ClipHub.UIShell.dispatchBack(
-            "navigation_system_back", request) === true;
+            navState.lastBackReason, request) === true;
         if (handled) { navState.backHandledCount += 1; }
-        log("I", "navigation child back page=" + shell.pageId +
+        log("I", "navigation shell back page=" + shell.pageId +
+            " source=" + String(request && request.sourceFamily || "page") +
             " request=" + String(request && request.requestId || "") +
             " handled=" + String(handled));
         return handled;
@@ -1533,7 +1545,7 @@ function dispatchBack(owner, reason) {
 
     ClipHub.Navigation = {
         MODULE_NAME: "ch_14_navigation_embedded",
-        MODULE_VERSION: 10,
+        MODULE_VERSION: 11,
         init: navigationInit,
         dispatchBack: function (reason) {
             return dispatchBack("", reason || "api_back");
@@ -2750,7 +2762,7 @@ return view;
     }
     ClipHub.Translation = {
         MODULE_NAME: "ch_12_translation",
-        MODULE_VERSION: 23,
+        MODULE_VERSION: 24,
         init: function (context) {
             translationConfig = { enabled: true, provider: "settings" };
             navigationInit(context || {});

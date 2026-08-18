@@ -817,6 +817,29 @@
         return true;
     }
 
+    function executeRootBehavior(contract, reason) {
+        var behavior = String(contract && contract.rootBehavior || "none");
+        var result = null;
+        if (behavior === "consume") { return true; }
+        if (behavior !== "close_host") { return false; }
+        try {
+            if (ClipHub.App && typeof ClipHub.App.hideUi === "function") {
+                result = ClipHub.App.hideUi(
+                    String(reason || "navigation_root_back"));
+                return result !== false;
+            }
+        } catch (appHideError) {}
+        try {
+            if (ClipHub.Navigation &&
+                    typeof ClipHub.Navigation.hideUi === "function") {
+                result = ClipHub.Navigation.hideUi(
+                    String(reason || "navigation_root_back"));
+                return result !== false;
+            }
+        } catch (navigationHideError) {}
+        return false;
+    }
+
     function backDispatcherState() {
         return {
             apiVersion: 1,
@@ -848,7 +871,10 @@
         var hookChangedNavigation = false;
         lastAction = "dispatch_back";
         lastReason = String(reason || "");
-        lastBackSourceFamily = backSourceFamily(reason);
+        lastBackSourceFamily = normalizeId(value.sourceFamily || "");
+        if (!lastBackSourceFamily) {
+            lastBackSourceFamily = backSourceFamily(reason);
+        }
         var pageContract = currentPageContract();
         if (lastBackSourceFamily === "predictive" &&
                 pageContract.predictiveBack === false) {
@@ -920,8 +946,10 @@
                 }
             }
             rootBackCount += 1;
-            lastBackOutcome = "root_unhandled";
-            return false;
+            handled = executeRootBehavior(pageContract,
+                reason || "navigation_root_back") === true;
+            lastBackOutcome = handled ? "root_handled" : "root_unhandled";
+            return handled;
         } finally {
             lastBackToPageId = currentPageId() === null ? "" :
                 String(currentPageId());
@@ -1528,7 +1556,7 @@
 
     ClipHub.UIShell = {
         MODULE_NAME: "ch_16_ui_shell",
-        MODULE_VERSION: 17,
+        MODULE_VERSION: 18,
         init: init,
         registerPage: registerPage,
         getPage: function (pageId) { return copyDescriptor(requirePage(pageId)); },

@@ -31,14 +31,15 @@ flt = expanded('src/ch_11_filter.js')
 shell = expanded('src/ch_16_ui_shell.js')
 
 assert 'MODULE_NAME: "ch_14_navigation_embedded"' in nav
-assert 'MODULE_VERSION: 10' in nav
+assert re.search(r'MODULE_NAME:\s*"ch_14_navigation_embedded"[\s\S]*?MODULE_VERSION:\s*(?:1[1-9]|[2-9][0-9])', nav)
 assert 'PRIORITY_OVERLAY' in nav
 assert 'PRIORITY_DEFAULT' in nav
 assert 'OnBackInvokedCallback' in nav
 assert 'OnBackAnimationCallback' in nav
 assert 'KeyEvent.KEYCODE_BACK' in nav
 assert 'ClipHub.UIShell.dispatchBack(' in nav
-assert '"navigation_system_back", request' in nav
+assert 'navState.lastBackReason, request' in nav
+assert 'sourceFamily: systemBackInputFamily(reason)' in nav
 assert 'function beginSystemBackGesture(reason)' in nav
 assert 'function resolveSystemBackGesture(reason)' in nav
 assert 'function consumeSystemBackGesture(gestureId)' in nav
