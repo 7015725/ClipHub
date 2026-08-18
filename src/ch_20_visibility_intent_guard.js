@@ -4,6 +4,10 @@
     var Handler = Packages.android.os.Handler;
     var Looper = Packages.android.os.Looper;
 
+    var CLEANUP_DELAY_MS = 120;
+    var CLEANUP_VERIFY_DELAY_MS = 120;
+    var CLEANUP_MAX_PASSES = 2;
+
     var state = {
         started: false,
         desiredVisible: false,
@@ -19,6 +23,9 @@
         cleanupRunCount: 0,
         cleanupSkippedCount: 0,
         cleanupFailureCount: 0,
+        cleanupVerifyScheduledCount: 0,
+        cleanupVerifyRunCount: 0,
+        lastCleanupPass: 0,
         lastDroppedRole: "",
         lastDroppedGeneration: 0,
         lastError: null,
@@ -67,6 +74,24 @@
         return {};
     }
 
+    function safeFilterState() {
+        try {
+            if (state.filter && typeof state.filter.getPanelState === "function") {
+                return state.filter.getPanelState() || {};
+            }
+        } catch (ignored) {}
+        return {};
+    }
+
+    function hiddenResiduePresent() {
+        var windowState = safeWindowState();
+        var filterState = safeFilterState();
+        return windowState.primaryAttached === true ||
+            filterState.attached === true ||
+            filterState.attachedToWindow === true ||
+            filterState.rootMode === true;
+    }
+
     function beginIntent(visible, reason) {
         state.intentGeneration += 1;
         state.desiredVisible = visible === true;
@@ -87,18 +112,32 @@
         return options.restoreList === false;
     }
 
-    function scheduleLogicalCleanup(generation) {
+    function scheduleLogicalCleanup(generation, pass) {
         var task;
+        var delayMs;
+        pass = Math.max(1, Number(pass || 1));
+        if (pass > CLEANUP_MAX_PASSES) { return false; }
         state.cleanupScheduledCount += 1;
+        if (pass > 1) { state.cleanupVerifyScheduledCount += 1; }
+        delayMs = pass === 1 ? CLEANUP_DELAY_MS : CLEANUP_VERIFY_DELAY_MS;
         task = new Packages.java.lang.Runnable({
             run: function () {
-                if (!state.started ||
-                        state.desiredVisible === true ||
-                        Number(generation) !== Number(state.intentGeneration)) {
+                var currentGeneration;
+                if (state.desiredVisible === true) {
                     state.cleanupSkippedCount += 1;
                     return;
                 }
+                currentGeneration = Number(state.intentGeneration);
+                if (Number(generation) !== currentGeneration) {
+                    state.cleanupSkippedCount += 1;
+                    if (state.desiredVisible !== true) {
+                        scheduleLogicalCleanup(currentGeneration, 1);
+                    }
+                    return;
+                }
                 state.cleanupRunCount += 1;
+                state.lastCleanupPass = pass;
+                if (pass > 1) { state.cleanupVerifyRunCount += 1; }
                 if (typeof state.originalClosePanel !== "function") {
                     return;
                 }
@@ -106,7 +145,9 @@
                 try {
                     state.originalClosePanel({
                         restoreList: false,
-                        reason: "stale_attach_visibility_guard"
+                        reason: pass > 1 ?
+                            "stale_attach_visibility_guard_verify" :
+                            "stale_attach_visibility_guard"
                     });
                 } catch (error) {
                     state.cleanupFailureCount += 1;
@@ -114,13 +155,19 @@
                 } finally {
                     state.cleanupDepth -= 1;
                 }
+                if (pass < CLEANUP_MAX_PASSES &&
+                        state.desiredVisible !== true &&
+                        Number(generation) === Number(state.intentGeneration) &&
+                        hiddenResiduePresent()) {
+                    scheduleLogicalCleanup(generation, pass + 1);
+                }
             }
         });
         try {
             if (state.mainHandler === null) {
                 state.mainHandler = new Handler(Looper.getMainLooper());
             }
-            if (!state.mainHandler.post(task)) {
+            if (!state.mainHandler.postDelayed(task, Number(delayMs))) {
                 state.cleanupFailureCount += 1;
                 state.lastError = "Visibility guard cleanup post failed";
                 return false;
@@ -136,10 +183,7 @@
     function installFilterHooks() {
         var filter = state.filter;
         if (!filter) { return false; }
-
-        if (filter.__visibilityIntentGuardController) {
-            return true;
-        }
+        if (filter.__visibilityIntentGuardController) { return true; }
 
         state.originalShowRoot = filter.showRoot;
         state.originalShowPanel = filter.showPanel;
@@ -202,9 +246,7 @@
         if (!windowModule || typeof windowModule.attachWindow !== "function") {
             return false;
         }
-        if (windowModule.__visibilityIntentGuardController) {
-            return true;
-        }
+        if (windowModule.__visibilityIntentGuardController) { return true; }
         state.originalAttachWindow = windowModule.attachWindow;
         state.wrappedAttachWindow = function (options) {
             var generation = Number(state.intentGeneration);
@@ -213,7 +255,7 @@
                 state.staleAttachDropCount += 1;
                 state.lastDroppedRole = role;
                 state.lastDroppedGeneration = generation;
-                scheduleLogicalCleanup(generation);
+                scheduleLogicalCleanup(generation, 1);
                 return safeWindowState();
             }
             state.attachAllowedCount += 1;
@@ -226,6 +268,7 @@
 
     function currentDiagnostics() {
         var windowState = safeWindowState();
+        var filterState = safeFilterState();
         return {
             started: state.started === true,
             desiredVisible: state.desiredVisible === true,
@@ -241,16 +284,25 @@
             cleanupRunCount: Number(state.cleanupRunCount),
             cleanupSkippedCount: Number(state.cleanupSkippedCount),
             cleanupFailureCount: Number(state.cleanupFailureCount),
+            cleanupVerifyScheduledCount:
+                Number(state.cleanupVerifyScheduledCount),
+            cleanupVerifyRunCount: Number(state.cleanupVerifyRunCount),
+            lastCleanupPass: Number(state.lastCleanupPass),
+            cleanupDelayMs: CLEANUP_DELAY_MS,
+            cleanupVerifyDelayMs: CLEANUP_VERIFY_DELAY_MS,
             lastDroppedRole: String(state.lastDroppedRole || ""),
             lastDroppedGeneration: Number(state.lastDroppedGeneration || 0),
             primaryAttached: windowState.primaryAttached === true,
+            filterAttached: filterState.attached === true ||
+                filterState.attachedToWindow === true,
+            filterRootMode: filterState.rootMode === true,
             lastError: state.lastError
         };
     }
 
     ClipHub.VisibilityIntentGuard = {
         MODULE_NAME: "ch_20_visibility_intent_guard",
-        MODULE_VERSION: 2,
+        MODULE_VERSION: 3,
         init: function () {
             var windowState;
             state.filter = ClipHub.Filter || null;
