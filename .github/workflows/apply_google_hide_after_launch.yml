@@ -1,0 +1,109 @@
+name: Apply Google Translate Hide After Launch
+
+on:
+  push:
+    branches:
+      - cleanup/tokenizer-no-regression-20260817
+    paths:
+      - .github/workflows/apply_google_hide_after_launch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@v4
+        with:
+          ref: cleanup/tokenizer-no-regression-20260817
+          fetch-depth: 0
+
+      - name: Apply guarded patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/ch_12_translation.js')
+          text = path.read_text(encoding='utf-8')
+          old = '''    function startGoogleTranslateIntent(intent, method) {
+        googleKeepVisibleUntil = now() + 3000;
+        appContext.startActivity(intent);
+        googleLastLaunchMethod = String(method || "unknown");
+        googleLaunchSuccessCount += 1;
+        googleLastError = null;
+        return {
+'''
+          new = '''    function startGoogleTranslateIntent(intent, method) {
+        appContext.startActivity(intent);
+        googleLastLaunchMethod = String(method || "unknown");
+        googleLaunchSuccessCount += 1;
+        googleLastError = null;
+        if (mainHandler !== null) {
+            try {
+                mainHandler.post(new Packages.java.lang.Runnable({
+                    run: function () {
+                        try {
+                            if (ClipHub.App &&
+                                    typeof ClipHub.App.executeControlCommand ===
+                                        "function") {
+                                ClipHub.App.executeControlCommand("hide");
+                            }
+                        } catch (ignoredGoogleLaunchHide) {}
+                    }
+                }));
+            } catch (ignoredGoogleHidePost) {}
+        }
+        return {
+'''
+          if old not in text:
+              raise SystemExit('startGoogleTranslateIntent anchor not found or already changed')
+          text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          export CH12_SHA="$(git hash-object src/ch_12_translation.js)"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          path = Path('module-manifest.json')
+          data = json.loads(path.read_text(encoding='utf-8'))
+          found = False
+          for item in data.get('modules', []):
+              if str(item.get('name', '')) == 'ch_12_translation.js':
+                  item['sha'] = os.environ['CH12_SHA']
+                  found = True
+                  break
+          if not found:
+              raise SystemExit('ch_12_translation.js manifest entry missing')
+          path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          print('ch12 sha=' + os.environ['CH12_SHA'])
+          PY
+
+      - name: Validate no-regression contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check src/ch_12_translation.js
+          python3 scripts/validate_es5.py .
+          python3 scripts/manifest_contract.py validate --settings-tabs-beta
+          bash scripts/run_tokenizer_regression_suite.sh
+          bash scripts/release_preflight.sh --settings-tabs-beta
+          git diff --check
+
+      - name: Commit implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/ch_12_translation.js module-manifest.json
+          if git diff --cached --quiet; then
+            echo 'No implementation changes to commit.'
+            exit 0
+          fi
+          git commit -m 'fix: hide ClipHub after Google translation launch'
+          git push origin HEAD:cleanup/tokenizer-no-regression-20260817
