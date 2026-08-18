@@ -38,7 +38,7 @@
     {
       "name": "ch_05_classifier.js",
       "path": "src/ch_05_classifier.js",
-      "sha": "6fe9b6968749a175d5ad10d8e157e17e68975919",
+      "sha": "25b4c48520ca75b697bcb7cd724f80ec29e9085a",
       "export": "Classifier",
       "runtimeRole": "passive"
     },
