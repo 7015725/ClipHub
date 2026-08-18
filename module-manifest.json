@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "moduleSetVersion": "20260818.12",
+  "moduleSetVersion": "20260819.01",
   "entryMinVersion": 8,
   "sourceRef": "refactor/navigation-contract-v2-20260818",
   "modules": [
@@ -150,6 +150,14 @@
       "export": "TokenizerService",
       "runtimeRole": "managed",
       "lifecycleIndex": 14
+    },
+    {
+      "name": "ch_20_visibility_intent_guard.js",
+      "path": "src/ch_20_visibility_intent_guard.js",
+      "sha": "1789b890189a24b09fb1a8f69faa2b0745ddd6bb",
+      "export": "VisibilityIntentGuard",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 15
     }
   ],
   "resources": [
