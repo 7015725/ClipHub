@@ -1,1 +1,2 @@
 one-shot trigger for Google translation hide-after-launch validation
+sync=2
