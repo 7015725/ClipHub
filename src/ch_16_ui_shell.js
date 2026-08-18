@@ -104,7 +104,8 @@
             shellReady: source.shellReady === true,
             hasFactory: typeof source.factory === "function",
             metadata: copyObject(source.metadata),
-            contract: copyPageContract(source.contract)
+            contract: copyPageContract(source.contract),
+            hookNames: source.hooks ? source.hooks.names.slice(0) : []
         };
     }
 
@@ -138,6 +139,19 @@
             }
             if (alternateId !== parentId) { alternateParentIds.push(alternateId); }
         }
+        var hookInput = value.hooks || {};
+        var hookNames = ["onBeforeEnter", "onEnter", "onBeforeLeave",
+            "onLeave", "onBack", "onClose"];
+        var hooks = { names: [] };
+        var hookIndex;
+        var hookName;
+        for (hookIndex = 0; hookIndex < hookNames.length; hookIndex += 1) {
+            hookName = hookNames[hookIndex];
+            if (typeof hookInput[hookName] === "function") {
+                hooks[hookName] = hookInput[hookName];
+                hooks.names.push(hookName);
+            }
+        }
         page = {
             id: id,
             parentId: parentId,
@@ -150,7 +164,8 @@
             shellReady: value.shellReady === true,
             factory: typeof value.factory === "function" ? value.factory : null,
             metadata: copyObject(value.metadata),
-            contract: mergePageContract(value.contract)
+            contract: mergePageContract(value.contract),
+            hooks: hooks
         };
         pages[id] = page;
         pageOrder.push(id);
@@ -455,20 +470,149 @@
         return false;
     }
 
+    function invokePageHook(page, hookName, payload) {
+        var hooks = page && page.hooks ? page.hooks : null;
+        if (!hooks || typeof hooks[hookName] !== "function") { return null; }
+        return hooks[hookName](payload || {});
+    }
+
+    function normalizeFactoryPageSpec(page, created, params) {
+        var spec = created || {};
+        var view = null;
+        if (spec && spec.view) {
+            view = spec.view;
+        } else if (spec && typeof spec.getRootView === "function") {
+            view = spec;
+            spec = {};
+        }
+        if (!view) { throw new Error("Page factory did not return a view: " + page.id); }
+        return {
+            pageId: page.id,
+            title: String(spec.title || page.id),
+            showBack: spec.showBack !== false,
+            view: view,
+            onBack: typeof spec.onBack === "function" ? spec.onBack :
+                (page.hooks && page.hooks.onBack ? page.hooks.onBack : null),
+            onClose: typeof spec.onClose === "function" ? spec.onClose :
+                (page.hooks && page.hooks.onClose ? page.hooks.onClose : null),
+            imeBackFirst: page.contract.imeBackFirst === true,
+            params: copyObject(params)
+        };
+    }
+
+    function createFactoryPageSpec(page, params, reason) {
+        var payload;
+        var created;
+        if (!page || typeof page.factory !== "function") { return null; }
+        payload = {
+            context: runtimeContext,
+            pageId: page.id,
+            params: copyObject(params),
+            reason: String(reason || ""),
+            registry: ClipHub.PageRegistry,
+            navigator: ClipHub.Navigator
+        };
+        invokePageHook(page, "onBeforeEnter", payload);
+        created = page.factory(payload);
+        return normalizeFactoryPageSpec(page, created, params);
+    }
+
     function pageStackPopToRoot(reason) {
         return pageStackPopTo(rootPageId(), reason);
     }
 
     function navigatorPush(pageId, params, reason) {
-        return pageStackPush(pageId, params, reason || "navigator_push");
+        var page = requirePage(pageId);
+        var actualReason = reason || "navigator_push";
+        var spec = null;
+        var result;
+        if (typeof page.factory !== "function") {
+            return pageStackPush(page.id, params, actualReason);
+        }
+        if (!canEmbed(page.id)) {
+            throw new Error("Navigator host unavailable: " + page.id);
+        }
+        spec = createFactoryPageSpec(page, params, actualReason);
+        result = pageStackPush(page.id, params, actualReason);
+        if (currentPageId() !== page.id) { return result; }
+        mountCount += 1;
+        applyActivePage(spec, actualReason);
+        invokePageHook(page, "onEnter", {
+            pageId: page.id,
+            params: copyObject(params),
+            reason: String(actualReason)
+        });
+        return getState();
     }
 
     function navigatorPop(reason) {
-        return pageStackPop(reason || "navigator_pop");
+        var actualReason = reason || "navigator_pop";
+        var current = pageStackCurrent();
+        var page = current && hasPage(current.id) ? requirePage(current.id) : null;
+        var factoryManaged = page && typeof page.factory === "function";
+        var result;
+        if (factoryManaged) {
+            invokePageHook(page, "onBeforeLeave", {
+                pageId: page.id,
+                params: copyObject(current.params),
+                reason: String(actualReason)
+            });
+            if (activePageId === page.id) {
+                detachActivePageForNavigator(actualReason);
+            }
+        }
+        result = pageStackPop(actualReason);
+        if (factoryManaged && result === true) {
+            invokePageHook(page, "onLeave", {
+                pageId: page.id,
+                reason: String(actualReason),
+                current: pageStackCurrent()
+            });
+        }
+        return result;
     }
 
     function navigatorReplace(pageId, params, reason) {
-        return pageStackReplace(pageId, params, reason || "navigator_replace");
+        var actualReason = reason || "navigator_replace";
+        var target = requirePage(pageId);
+        var current = pageStackCurrent();
+        var oldPage = current && hasPage(current.id) ? requirePage(current.id) : null;
+        var targetSpec = null;
+        var result;
+        if (oldPage && typeof oldPage.factory === "function") {
+            invokePageHook(oldPage, "onBeforeLeave", {
+                pageId: oldPage.id,
+                reason: String(actualReason)
+            });
+            if (activePageId === oldPage.id) {
+                detachActivePageForNavigator(actualReason);
+            }
+        }
+        if (typeof target.factory === "function") {
+            if (!canEmbed(target.id)) {
+                throw new Error("Navigator host unavailable: " + target.id);
+            }
+            targetSpec = createFactoryPageSpec(target, params, actualReason);
+        }
+        result = pageStackReplace(target.id, params, actualReason);
+        if (oldPage && typeof oldPage.factory === "function") {
+            invokePageHook(oldPage, "onLeave", {
+                pageId: oldPage.id,
+                reason: String(actualReason),
+                current: pageStackCurrent()
+            });
+        }
+        if (targetSpec !== null) {
+            mountCount += 1;
+            applyActivePage(targetSpec, actualReason);
+            invokePageHook(target, "onEnter", {
+                pageId: target.id,
+                params: copyObject(params),
+                reason: String(actualReason)
+            });
+            return getState();
+        }
+        return result;
     }
 
     function navigatorCurrent() { return pageStackCurrent(); }
@@ -764,7 +908,8 @@
                 }
             }
             if (navigatorCanPop()) {
-                if (activePageId !== null) {
+                if (activePageId !== null &&
+                        typeof requirePage(currentPageId()).factory !== "function") {
                     detachActivePageForNavigator(reason || "back_dispatcher_pop");
                 }
                 handled = navigatorPop(reason || "back_dispatcher_pop") === true;
@@ -1383,7 +1528,7 @@
 
     ClipHub.UIShell = {
         MODULE_NAME: "ch_16_ui_shell",
-        MODULE_VERSION: 16,
+        MODULE_VERSION: 17,
         init: init,
         registerPage: registerPage,
         getPage: function (pageId) { return copyDescriptor(requirePage(pageId)); },

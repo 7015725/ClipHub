@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "moduleSetVersion": "20260818.08",
+  "moduleSetVersion": "20260818.09",
   "entryMinVersion": 8,
   "sourceRef": "refactor/navigation-contract-v2-20260818",
   "modules": [
@@ -124,7 +124,7 @@
     {
       "name": "ch_16_ui_shell.js",
       "path": "src/ch_16_ui_shell.js",
-      "sha": "4a9879567d477efe152586e8c5ab7a78506dcdc3",
+      "sha": "6e1195a5d7a4b276aabf1ed26bb539d250e0be5d",
       "export": "UIShell",
       "runtimeRole": "managed",
       "lifecycleIndex": 13
