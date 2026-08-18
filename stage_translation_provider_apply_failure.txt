@@ -1,0 +1,51 @@
+settings source sha before=abc2369b79fcc44e4f4b5b069675b1035a349366990984cd136e7a2b61d1b98f
+settings module version 42 -> 43
+settings source sha after=2f183a77969ea266a913849af7bf4d5785bc7830100f5d9c7d831ad7a5361558
+ch12 blob sha=b668393ba90c4f99a906dac024c326472becf77f
+ch13 blob sha=089bde89716d835b6ea2d22cda7a3a72545f5d7a
+Rhino ES5 validation passed: /home/runner/work/ClipHub/ClipHub
+translation provider contract: PASS
+Manifest contract verification: passed
+schemaVersion: 2
+entryVersion: 8
+moduleSetVersion: 20260817.13
+sourceRef: cleanup/tokenizer-no-regression-20260817
+moduleCount: 19
+resourceCount: 2
+[node] scripts/test_editor_transient_contract.js
+Editor transient contract: passed
+[node] scripts/test_editor_ime_back_rearm.js
+Editor IME Back rearm contract: passed
+[python] scripts/test_manifest_contract.py
+...
+----------------------------------------------------------------------
+Ran 3 tests in 0.003s
+
+OK
+[python] scripts/test_primary_window_legacy_routes.py
+Primary Window legacy route contracts: passed
+External Filter.showPanel callers: 1 (all rootMode=true)
+Legacy compatibility bridges: detail, editor/tags, translation, settings
+[python] scripts/test_primary_window_system_back.py
+Primary window system Back contracts: passed
+[node] scripts/test_system_back_gesture_contract.js
+System Back gesture/request contract: passed
+[node] scripts/test_child_back_route_contract.js
+/home/runner/work/ClipHub/ClipHub/scripts/test_child_back_route_contract.js:24
+    if (start < 0) { throw new Error("missing function: " + name); }
+                     ^
+
+Error: missing function: handleSettingsBack
+    at functionBody (/home/runner/work/ClipHub/ClipHub/scripts/test_child_back_route_contract.js:24:28)
+    at Object.<anonymous> (/home/runner/work/ClipHub/ClipHub/scripts/test_child_back_route_contract.js:67:20)
+    at Module._compile (node:internal/modules/cjs/loader:1781:14)
+    at Object..js (node:internal/modules/cjs/loader:1913:10)
+    at Module.load (node:internal/modules/cjs/loader:1505:32)
+    at Function._load (node:internal/modules/cjs/loader:1309:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+    at node:internal/main/run_main_module:36:49
+
+Node.js v22.23.2
+translation provider SSOT apply failed rc=1
+HEAD is now at 99f7de5 chore: repair translation provider guarded workflow
