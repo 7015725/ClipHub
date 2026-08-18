@@ -145,6 +145,16 @@ else
   grep '^HIGH=0 WARN=0 ' "$AUDIT_DIR/color-findings.txt"
 fi
 
+# --current is branch-agnostic: validate the active schema/hash contract and
+# run the complete tokenizer/navigation regression suite without pinning an
+# historical release's module versions or sourceRef.
+if [ "$MODE" = '--current' ]; then
+  python3 scripts/manifest_contract.py validate --current
+  bash scripts/run_tokenizer_regression_suite.sh
+  echo 'Current release preflight: passed'
+  exit 0
+fi
+
 python3 - \
   "$MODE" \
   "$EXPECTED_REF" \
