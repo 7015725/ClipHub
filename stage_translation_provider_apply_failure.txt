@@ -18,7 +18,7 @@ Editor IME Back rearm contract: passed
 [python] scripts/test_manifest_contract.py
 ...
 ----------------------------------------------------------------------
-Ran 3 tests in 0.003s
+Ran 3 tests in 0.002s
 
 OK
 [python] scripts/test_primary_window_legacy_routes.py
@@ -90,7 +90,7 @@ HIGH=0 WARN=0 SAFE=10
 
 未发现需要报告的颜色接口调用。
 
-JSON: /tmp/cliphub-release-preflight.wtCGL7/color-findings.json
+JSON: /tmp/cliphub-release-preflight.o7hSeh/color-findings.json
 HIGH=0 WARN=0 SAFE=10
 Manifest SHA verification: passed
 Formal task structure: background + toggle
@@ -107,8 +107,25 @@ Regex beta safety contracts: passed
 Formal release preflight passed.
 Mode: --settings-tabs-beta
 rm '.github/workflows/apply_translation_provider_ssot.yml'
-error: the following file has local modifications:
-    scripts/apply_translation_provider_ssot.py
-(use --cached to keep the file, or -f to force removal)
-translation provider SSOT apply failed rc=1
-HEAD is now at 70273ce chore: preserve branch module versions in provider gate
+rm 'scripts/apply_translation_provider_ssot.py'
+Expected final scope:
+.github/workflows/apply_translation_provider_ssot.yml
+module-manifest.json
+scripts/apply_translation_provider_ssot.py
+scripts/test_translation_provider_contract.py
+src/ch_12_translation.js
+src/ch_13_settings.js
+stage_translation_provider_apply_failure.txt
+stage_translation_provider_stage1.txt
+Actual final scope:
+.github/workflows/apply_translation_provider_ssot.yml
+module-manifest.json
+scripts/apply_translation_provider_ssot.py
+scripts/test_translation_provider_contract.py
+src/ch_12_translation.js
+src/ch_13_settings.js
+stage_translation_provider_apply_failure.txt
+stage_translation_provider_stage1.txt
+fatal: pathspec '.github/workflows/apply_translation_provider_ssot.yml' did not match any files
+translation provider SSOT apply failed rc=128
+HEAD is now at df49cfb chore: finalize translation provider guarded workflow
