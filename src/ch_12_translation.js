@@ -643,6 +643,54 @@
     };
 }
 
+function predictiveBackRequest(owner, reason, gestureId) {
+    var shell = shellBackSnapshot();
+    return {
+        sourceFamily: "predictive",
+        sourceReason: String(reason || "predictive_back"),
+        ownerPageId: shell.pageId || String(owner || ""),
+        generation: Number(shell.generation || 0),
+        requestId: "back:" + String(gestureId || ""),
+        gestureId: String(gestureId || "")
+    };
+}
+
+function beginPredictiveBackContract(owner, reason, gestureId) {
+    try {
+        if (ClipHub.BackDispatcher &&
+                typeof ClipHub.BackDispatcher.beginPredictive === "function") {
+            return ClipHub.BackDispatcher.beginPredictive(
+                predictiveBackRequest(owner, reason, gestureId)) === true;
+        }
+    } catch (error) { navState.lastError = String(error); }
+    return false;
+}
+
+function progressPredictiveBackContract(owner, event, gestureId) {
+    var progress = 0;
+    try { progress = Number(event.getProgress()); }
+    catch (ignoredProgress) { progress = 0; }
+    try {
+        if (ClipHub.BackDispatcher &&
+                typeof ClipHub.BackDispatcher.progressPredictive === "function") {
+            return ClipHub.BackDispatcher.progressPredictive(progress,
+                predictiveBackRequest(owner, "predictive_back", gestureId)) === true;
+        }
+    } catch (error) { navState.lastError = String(error); }
+    return false;
+}
+
+function cancelPredictiveBackContract(owner, gestureId) {
+    try {
+        if (ClipHub.BackDispatcher &&
+                typeof ClipHub.BackDispatcher.cancelPredictive === "function") {
+            return ClipHub.BackDispatcher.cancelPredictive(
+                predictiveBackRequest(owner, "predictive_back", gestureId)) === true;
+        }
+    } catch (error) { navState.lastError = String(error); }
+    return false;
+}
+
 function beginSystemBackGesture(reason) {
     var timestamp = now();
     if (activeBackGestureId) {
@@ -730,8 +778,15 @@ function dispatchBack(owner, reason) {
     }
     if (shell.pageId && ClipHub.UIShell &&
             typeof ClipHub.UIShell.dispatchBack === "function") {
-        handled = ClipHub.UIShell.dispatchBack(
-            navState.lastBackReason, request) === true;
+        if (systemBack && request && request.sourceFamily === "predictive" &&
+                ClipHub.BackDispatcher &&
+                typeof ClipHub.BackDispatcher.commitPredictive === "function") {
+            handled = ClipHub.BackDispatcher.commitPredictive(
+                navState.lastBackReason, request) === true;
+        } else {
+            handled = ClipHub.UIShell.dispatchBack(
+                navState.lastBackReason, request) === true;
+        }
         if (handled) { navState.backHandledCount += 1; }
         log("I", "navigation shell back page=" + shell.pageId +
             " source=" + String(request && request.sourceFamily || "page") +
@@ -1068,15 +1123,26 @@ function dispatchBack(owner, reason) {
                 callback = new JavaAdapter(
                     Packages.android.window.OnBackAnimationCallback, {
                         onBackStarted: function (event) {
+                            var gestureId;
                             navState.backStartedCount += 1;
-                            beginSystemBackGesture("predictive_back");
+                            gestureId = beginSystemBackGesture("predictive_back");
+                            beginPredictiveBackContract(entry.owner,
+                                "predictive_back", gestureId);
+                            progressPredictiveBackContract(entry.owner,
+                                event, gestureId);
                             applyProgress(entry.view, event);
                         },
                         onBackProgressed: function (event) {
+                            var gestureId = activeBackGestureId ||
+                                beginSystemBackGesture("predictive_back");
+                            progressPredictiveBackContract(entry.owner,
+                                event, gestureId);
                             applyProgress(entry.view, event);
                         },
                         onBackCancelled: function () {
+                            var gestureId = activeBackGestureId;
                             navState.backCancelledCount += 1;
+                            cancelPredictiveBackContract(entry.owner, gestureId);
                             cancelSystemBackGesture();
                             resetVisual(entry.view);
                         },
@@ -1545,7 +1611,7 @@ function dispatchBack(owner, reason) {
 
     ClipHub.Navigation = {
         MODULE_NAME: "ch_14_navigation_embedded",
-        MODULE_VERSION: 11,
+        MODULE_VERSION: 12,
         init: navigationInit,
         dispatchBack: function (reason) {
             return dispatchBack("", reason || "api_back");

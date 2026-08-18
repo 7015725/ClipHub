@@ -1,6 +1,6 @@
 /* ClipHub NavigationArchitectureTestPage. Rhino ES5 only.
  * Stage 9 zero-navigation-core acceptance page.
- * Run after ClipHub is started on moduleSetVersion 20260818.09.
+ * Run after ClipHub is started on moduleSetVersion 20260818.12 or newer.
  */
 (function (global) {
     var ClipHub = global.ClipHub || (global.ClipHub = {});

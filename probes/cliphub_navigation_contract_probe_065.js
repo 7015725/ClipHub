@@ -1,5 +1,5 @@
 /* ClipHub Navigation Contract v2 device probe 065. Rhino ES5 only.
- * One-shot workflow for module set 20260818.11.
+ * One-shot workflow for module set 20260818.12.
  * Run once, open ClipHub -> Editor, then follow Toast side-swipe prompts.
  * Result is written to ClipHub/probes and copied to clipboard.
  */
@@ -25,7 +25,7 @@
     var Locale = Packages.java.util.Locale;
     var Date = Packages.java.util.Date;
 
-    var REQUIRED_SET = "20260818.11";
+    var REQUIRED_SET = "20260818.12";
     var REQUIRED_REF = "refactor/navigation-contract-v2-20260818";
     var PROBE_NAME = "cliphub_navigation_contract_probe_065";
     var WAIT_EDITOR_MS = 45000;
@@ -231,6 +231,18 @@
                 navigationManagerOwner:
                     String(shell.navigationManagerOwner || ""),
                 navigationApiVersion: number(shell.navigationApiVersion),
+                backDispatcherOwner: String(shell.backDispatcherOwner || ""),
+                backDispatcherApiVersion:
+                    number(shell.backDispatcherApiVersion),
+                predictiveBackActive: shell.predictiveBackActive === true,
+                predictiveBackStartCount:
+                    number(shell.predictiveBackStartCount),
+                predictiveBackCancelCount:
+                    number(shell.predictiveBackCancelCount),
+                predictiveBackCommitCount:
+                    number(shell.predictiveBackCommitCount),
+                predictiveBackSnapshotMismatchCount:
+                    number(shell.predictiveBackSnapshotMismatchCount),
                 backDispatchCount: number(shell.backDispatchCount),
                 backDispatcherCount: number(shell.backDispatcherCount),
                 imeBackConsumeCount: number(shell.imeBackConsumeCount),
@@ -260,7 +272,9 @@
             current.shell.pageContractOwner === "ClipHub.PageRegistry" &&
             current.shell.pageStackOwner === "ClipHub.PageStack" &&
             current.shell.navigationManagerOwner === "ClipHub.Navigator" &&
-            current.shell.navigationApiVersion >= 2;
+            current.shell.navigationApiVersion >= 2 &&
+            current.shell.backDispatcherOwner === "ClipHub.BackDispatcher" &&
+            current.shell.backDispatcherApiVersion >= 2;
     }
 
     function diff(after, before) {
@@ -277,6 +291,15 @@
                 before.shell.backDispatchCount,
             backDispatcherCount: after.shell.backDispatcherCount -
                 before.shell.backDispatcherCount,
+            predictiveBackStartCount: after.shell.predictiveBackStartCount -
+                before.shell.predictiveBackStartCount,
+            predictiveBackCancelCount: after.shell.predictiveBackCancelCount -
+                before.shell.predictiveBackCancelCount,
+            predictiveBackCommitCount: after.shell.predictiveBackCommitCount -
+                before.shell.predictiveBackCommitCount,
+            predictiveBackSnapshotMismatchCount:
+                after.shell.predictiveBackSnapshotMismatchCount -
+                before.shell.predictiveBackSnapshotMismatchCount,
             imeBackConsumeCount: after.shell.imeBackConsumeCount -
                 before.shell.imeBackConsumeCount,
             navigatorBackPopCount: after.shell.navigatorBackPopCount -
@@ -418,7 +441,7 @@
             result = {
                 ok: false,
                 probe: PROBE_NAME,
-                probeVersion: 1,
+                probeVersion: 2,
                 phase: "editor_open_timeout",
                 classification: "EDITOR_NOT_OPENED_IN_TIME",
                 moduleSetVersion: REQUIRED_SET,
@@ -433,7 +456,7 @@
             result = {
                 ok: false,
                 probe: PROBE_NAME,
-                probeVersion: 1,
+                probeVersion: 2,
                 phase: "architecture_owner_mismatch",
                 classification: "NAVIGATION_CONTRACT_V2_OWNER_MISMATCH",
                 moduleSetVersion: REQUIRED_SET,
@@ -454,7 +477,7 @@
             result = {
                 ok: true,
                 probe: PROBE_NAME,
-                probeVersion: 1,
+                probeVersion: 2,
                 phase: "comparison_complete_after_ime",
                 classification: classify(baseline,
                     second.after, second.change),
@@ -477,7 +500,7 @@
         result = {
             ok: true,
             probe: PROBE_NAME,
-            probeVersion: 1,
+            probeVersion: 2,
             phase: "comparison_complete",
             classification: classify(baseline, first.after, first.change),
             moduleSetVersion: REQUIRED_SET,
@@ -493,7 +516,7 @@
     global.ClipHubNavigationContractProbe065Result = {
         ok: true,
         probe: PROBE_NAME,
-        probeVersion: 1,
+        probeVersion: 2,
         phase: "monitor_started",
         instruction: "只运行一次：45 秒内进入编辑页，按 Toast 提示侧滑；结果自动复制到剪贴板。"
     };
@@ -515,7 +538,7 @@
                         result = {
                             ok: false,
                             probe: PROBE_NAME,
-                            probeVersion: 1,
+                            probeVersion: 2,
                             phase: "fatal",
                             error: String(error),
                             finishedAt: now()
@@ -529,7 +552,7 @@
         global.ClipHubNavigationContractProbe065Result = {
             ok: false,
             probe: PROBE_NAME,
-            probeVersion: 1,
+            probeVersion: 2,
             phase: "start_failed",
             error: String(startError)
         };

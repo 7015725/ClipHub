@@ -6,6 +6,11 @@ function need(source, token, message) {
 }
 need(shell, "ClipHub.BackDispatcher = {", "BackDispatcher owner missing");
 need(shell, "dispatch: backDispatcherDispatch", "BackDispatcher dispatch API missing");
+need(shell, "beginPredictive: beginPredictiveBack", "Predictive begin API missing");
+need(shell, "progressPredictive: progressPredictiveBack", "Predictive progress API missing");
+need(shell, "cancelPredictive: cancelPredictiveBack", "Predictive cancel API missing");
+need(shell, "commitPredictive: commitPredictiveBack", "Predictive commit API missing");
+need(shell, 'backDispatcherOwner: "ClipHub.BackDispatcher"', "BackDispatcher owner diagnostics missing");
 need(shell, "function backDispatcherDispatch(reason, request)", "BackDispatcher state machine missing");
 need(shell, "return backDispatcherDispatch(reason, request);", "UIShell Back does not delegate to BackDispatcher");
 if (shell.indexOf('if (typeof activeBack === "function")') < 0 &&

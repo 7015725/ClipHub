@@ -51,6 +51,16 @@
     var lastBackToPageId = "";
     var lastBackDepthBefore = 0;
     var lastBackDepthAfter = 0;
+    var predictiveBackSession = null;
+    var predictiveBackStartCount = 0;
+    var predictiveBackProgressCount = 0;
+    var predictiveBackCancelCount = 0;
+    var predictiveBackCommitCount = 0;
+    var predictiveBackStableCancelCount = 0;
+    var predictiveBackSnapshotMismatchCount = 0;
+    var predictiveBackDuplicateCommitCount = 0;
+    var lastPredictiveCommitRequestId = "";
+    var lastPredictiveProgress = 0;
 
     function normalizeId(value) {
         return String(value === null || value === undefined ? "" : value)
@@ -932,10 +942,171 @@
         return false;
     }
 
+    function predictiveBackSnapshot() {
+        var ids = stackIds();
+        return {
+            generation: Number(generation),
+            depth: Number(ids.length),
+            currentPageId: ids.length > 0 ? String(ids[ids.length - 1]) : null,
+            previousPageId: ids.length > 1 ? String(ids[ids.length - 2]) : null,
+            pageIds: ids.slice(0),
+            entries: stackSnapshot()
+        };
+    }
+
+    function copyPredictiveBackSnapshot(snapshot) {
+        if (!snapshot) { return null; }
+        return {
+            generation: Number(snapshot.generation),
+            depth: Number(snapshot.depth),
+            currentPageId: snapshot.currentPageId === null ? null :
+                String(snapshot.currentPageId),
+            previousPageId: snapshot.previousPageId === null ? null :
+                String(snapshot.previousPageId),
+            pageIds: (snapshot.pageIds || []).slice(0)
+        };
+    }
+
+    function predictiveBackSnapshotMatches(snapshot) {
+        var ids;
+        var expected;
+        var index;
+        if (!snapshot) { return false; }
+        ids = stackIds();
+        expected = snapshot.pageIds || [];
+        if (Number(generation) !== Number(snapshot.generation) ||
+                ids.length !== expected.length ||
+                currentPageId() !== snapshot.currentPageId) {
+            return false;
+        }
+        for (index = 0; index < ids.length; index += 1) {
+            if (String(ids[index]) !== String(expected[index])) { return false; }
+        }
+        return true;
+    }
+
+    function predictiveRequestId(request) {
+        var value = request || {};
+        return normalizeId(value.requestId || value.gestureId || "");
+    }
+
+    function beginPredictiveBack(request) {
+        var value = request || {};
+        var requestId = predictiveRequestId(value);
+        if (predictiveBackSession !== null) {
+            if (!requestId || requestId === predictiveBackSession.requestId) {
+                return true;
+            }
+            predictiveBackSnapshotMismatchCount += 1;
+        }
+        predictiveBackSession = {
+            requestId: requestId,
+            gestureId: normalizeId(value.gestureId || ""),
+            sourceReason: normalizeId(value.sourceReason || "predictive_back"),
+            snapshot: predictiveBackSnapshot(),
+            lastProgress: 0
+        };
+        predictiveBackStartCount += 1;
+        lastPredictiveProgress = 0;
+        return true;
+    }
+
+    function progressPredictiveBack(progress, request) {
+        var value = Number(progress || 0);
+        var requestId = predictiveRequestId(request || {});
+        if (!predictiveBackSession) {
+            beginPredictiveBack(request || {});
+        }
+        if (!predictiveBackSession) { return false; }
+        if (requestId && predictiveBackSession.requestId &&
+                requestId !== predictiveBackSession.requestId) {
+            predictiveBackSnapshotMismatchCount += 1;
+            return false;
+        }
+        if (!isFinite(value)) { value = 0; }
+        value = Math.max(0, Math.min(1, value));
+        predictiveBackSession.lastProgress = value;
+        lastPredictiveProgress = value;
+        predictiveBackProgressCount += 1;
+        if (!predictiveBackSnapshotMatches(predictiveBackSession.snapshot)) {
+            predictiveBackSnapshotMismatchCount += 1;
+            return false;
+        }
+        return true;
+    }
+
+    function cancelPredictiveBack(request) {
+        var requestId = predictiveRequestId(request || {});
+        var stable = true;
+        if (!predictiveBackSession) { return true; }
+        if (requestId && predictiveBackSession.requestId &&
+                requestId !== predictiveBackSession.requestId) {
+            predictiveBackSnapshotMismatchCount += 1;
+            stable = false;
+        }
+        if (!predictiveBackSnapshotMatches(predictiveBackSession.snapshot)) {
+            predictiveBackSnapshotMismatchCount += 1;
+            stable = false;
+        }
+        predictiveBackCancelCount += 1;
+        if (stable) { predictiveBackStableCancelCount += 1; }
+        predictiveBackSession = null;
+        lastPredictiveProgress = 0;
+        return stable;
+    }
+
+    function commitPredictiveBack(reason, request) {
+        var value = request || {};
+        var requestId = predictiveRequestId(value);
+        var stable;
+        var handled;
+        if (requestId && requestId === lastPredictiveCommitRequestId) {
+            predictiveBackDuplicateCommitCount += 1;
+            return true;
+        }
+        if (!predictiveBackSession) {
+            beginPredictiveBack(value);
+        }
+        if (!predictiveBackSession) { return false; }
+        if (requestId && predictiveBackSession.requestId &&
+                requestId !== predictiveBackSession.requestId) {
+            predictiveBackSnapshotMismatchCount += 1;
+            predictiveBackSession = null;
+            return false;
+        }
+        stable = predictiveBackSnapshotMatches(predictiveBackSession.snapshot);
+        if (!stable) {
+            predictiveBackSnapshotMismatchCount += 1;
+            predictiveBackSession = null;
+            return false;
+        }
+        predictiveBackCommitCount += 1;
+        lastPredictiveCommitRequestId = requestId;
+        predictiveBackSession = null;
+        lastPredictiveProgress = 1;
+        handled = backDispatcherDispatch(reason || "predictive_back", value) === true;
+        return handled;
+    }
+
     function backDispatcherState() {
         return {
-            apiVersion: 1,
+            apiVersion: 2,
+            owner: "ClipHub.BackDispatcher",
             dispatching: backDispatchInProgress === true,
+            predictiveBackActive: predictiveBackSession !== null,
+            predictiveBackStartCount: Number(predictiveBackStartCount),
+            predictiveBackProgressCount: Number(predictiveBackProgressCount),
+            predictiveBackCancelCount: Number(predictiveBackCancelCount),
+            predictiveBackCommitCount: Number(predictiveBackCommitCount),
+            predictiveBackStableCancelCount:
+                Number(predictiveBackStableCancelCount),
+            predictiveBackSnapshotMismatchCount:
+                Number(predictiveBackSnapshotMismatchCount),
+            predictiveBackDuplicateCommitCount:
+                Number(predictiveBackDuplicateCommitCount),
+            predictiveBackSnapshot: predictiveBackSession === null ? null :
+                copyPredictiveBackSnapshot(predictiveBackSession.snapshot),
+            lastPredictiveProgress: Number(lastPredictiveProgress),
             dispatchCount: Number(backDispatcherCount),
             pageHookDispatchCount: Number(backHookDispatchCount),
             pageHookConsumedCount: Number(backHookConsumedCount),
@@ -1523,6 +1694,21 @@
             pageStackOwner: "ClipHub.PageStack",
             navigationManagerOwner: "ClipHub.Navigator",
             navigationApiVersion: 2,
+            backDispatcherOwner: "ClipHub.BackDispatcher",
+            backDispatcherApiVersion: 2,
+            predictiveBackActive: predictiveBackSession !== null,
+            predictiveBackStartCount: Number(predictiveBackStartCount),
+            predictiveBackProgressCount: Number(predictiveBackProgressCount),
+            predictiveBackCancelCount: Number(predictiveBackCancelCount),
+            predictiveBackCommitCount: Number(predictiveBackCommitCount),
+            predictiveBackStableCancelCount:
+                Number(predictiveBackStableCancelCount),
+            predictiveBackSnapshotMismatchCount:
+                Number(predictiveBackSnapshotMismatchCount),
+            predictiveBackDuplicateCommitCount:
+                Number(predictiveBackDuplicateCommitCount),
+            predictiveBackSnapshot: predictiveBackSession === null ? null :
+                copyPredictiveBackSnapshot(predictiveBackSession.snapshot),
             canPop: navigatorCanPop(),
             pageCount: Number(pageOrder.length),
             registeredPageIds: pageIds(),
@@ -1598,6 +1784,16 @@
         lastBackToPageId = "";
         lastBackDepthBefore = 0;
         lastBackDepthAfter = 0;
+        predictiveBackSession = null;
+        predictiveBackStartCount = 0;
+        predictiveBackProgressCount = 0;
+        predictiveBackCancelCount = 0;
+        predictiveBackCommitCount = 0;
+        predictiveBackStableCancelCount = 0;
+        predictiveBackSnapshotMismatchCount = 0;
+        predictiveBackDuplicateCommitCount = 0;
+        lastPredictiveCommitRequestId = "";
+        lastPredictiveProgress = 0;
         mutationCount = 0;
         lastAction = "init";
         lastReason = "";
@@ -1644,8 +1840,13 @@
     };
 
     ClipHub.BackDispatcher = {
-        API_VERSION: 1,
+        API_VERSION: 2,
+        OWNER: "ClipHub.BackDispatcher",
         dispatch: backDispatcherDispatch,
+        beginPredictive: beginPredictiveBack,
+        progressPredictive: progressPredictiveBack,
+        cancelPredictive: cancelPredictiveBack,
+        commitPredictive: commitPredictiveBack,
         getState: backDispatcherState
     };
 
@@ -1678,7 +1879,7 @@
 
     ClipHub.UIShell = {
         MODULE_NAME: "ch_16_ui_shell",
-        MODULE_VERSION: 19,
+        MODULE_VERSION: 20,
         init: init,
         registerPage: registerPage,
         getPage: function (pageId) { return copyDescriptor(requirePage(pageId)); },

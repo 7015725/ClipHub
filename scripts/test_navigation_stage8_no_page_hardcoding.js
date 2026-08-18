@@ -7,7 +7,7 @@ function block(name) {
     var end = shell.indexOf("\n    function ", start + 10);
     return shell.substring(start, end < 0 ? shell.length : end);
 }
-["isSameShellFamily", "canEmbed", "unmountPage", "navigatorPush", "navigatorPop", "backDispatcherDispatch"].forEach(function (name) {
+["isSameShellFamily", "canEmbed", "unmountPage", "navigatorPush", "navigatorPop", "backDispatcherDispatch", "predictiveBackSnapshot", "beginPredictiveBack", "progressPredictiveBack", "cancelPredictiveBack", "commitPredictiveBack"].forEach(function (name) {
     var source = block(name);
     ids.forEach(function (id) {
         if (source.indexOf('"' + id + '"') >= 0) {
