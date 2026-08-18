@@ -31,6 +31,7 @@ jobs:
           node scripts/test_navigation_stage8_no_page_hardcoding.js
           node scripts/test_navigation_stage9_factory_core.js
           node scripts/test_navigation_stage9_zero_core_page.js
+          node scripts/test_navigation_stage9_runtime_simulation.js
           node scripts/test_navigation_stage10_source_root.js
           node scripts/test_editor_ime_back_rearm.js
           node scripts/test_child_back_route_contract.js
