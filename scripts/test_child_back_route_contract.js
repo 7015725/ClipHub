@@ -3,7 +3,7 @@ var zlib = require("zlib");
 
 function expanded(path) {
     var loader = fs.readFileSync(path, "utf8");
-    var match = loader.match(/var PACKED_B64\s*=\s*([\s\S]*?)\n\s*;/);
+    var match = loader.match(/var PACKED_B64\s*=\s*([\s\S]*?);/);
     var chunks = [];
     var reChunk = /"([A-Za-z0-9+/=]+)"/g;
     var item;
