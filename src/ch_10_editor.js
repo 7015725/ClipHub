@@ -847,6 +847,23 @@ return view;
         return changed;
     }
 
+    function editorBackFocusRoot() {
+        var navigation = null;
+        var root = null;
+        try { navigation = ClipHub.Navigation; } catch (ignoredNavigation) { navigation = null; }
+        if (navigation && typeof navigation.resolveBackFocusRoot === "function") {
+            try { return navigation.resolveBackFocusRoot(panelPageRoot, panelWindowRoot, panelRoot); }
+            catch (ignoredResolve) {}
+        }
+        if (embeddedInPrimary && panelPageRoot !== null) {
+            try { root = panelPageRoot.getRootView();
+                if (root !== null && root.isAttachedToWindow()) { return root; }
+            } catch (ignoredPrimaryRoot) { root = null; }
+        }
+        if (panelWindowRoot !== null) { return panelWindowRoot; }
+        return panelRoot;
+    }
+
     function rearmSystemBackAfterImeHide() {
         var navigation = null;
         if (!state.attached || state.keyboardVisible ||
@@ -863,7 +880,7 @@ return view;
             return false;
         }
         try {
-            navigation.refreshSystemBackCapture();
+            navigation.refreshSystemBackCapture("editor_ime_hidden");
             return true;
         } catch (ignoredBackRefresh) {
             return false;
@@ -871,8 +888,7 @@ return view;
     }
 
     function handoffEditorFocusAfterImeHide() {
-        var focusRoot = panelWindowRoot !== null ?
-            panelWindowRoot : panelRoot;
+        var focusRoot = editorBackFocusRoot();
         var previousDescendantFocusability = -1;
         var released = false;
         var requested = false;
@@ -916,8 +932,7 @@ return view;
         state.rootFocusedAfterImeHide = focused;
         if (mainHandler !== null) {
             postEditorDelayed(function () {
-                var currentRoot = panelWindowRoot !== null ?
-                    panelWindowRoot : panelRoot;
+                var currentRoot = editorBackFocusRoot();
                 var previous = -1;
                 var retried = false;
                 if (!state.attached || state.keyboardVisible ||
@@ -1009,11 +1024,10 @@ return view;
             }
             state.lastKeyboardVisible = ime.visible;
             if (!ime.visible && state.focusReleasedAfterImeHide === true &&
-                    (panelWindowRoot !== null || panelRoot !== null)) {
+                    editorBackFocusRoot() !== null) {
                 try {
                     state.rootFocusedAfterImeHide =
-                        (panelWindowRoot !== null ?
-                            panelWindowRoot : panelRoot).isFocused();
+                        editorBackFocusRoot().isFocused();
                 } catch (ignoredRootFocus) {}
             }
             state.keyboardVisible = ime.visible;
@@ -3157,7 +3171,7 @@ function bindTokenizerToEditor() {
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 39,
+        MODULE_VERSION: 40,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;

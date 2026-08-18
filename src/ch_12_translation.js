@@ -5,6 +5,7 @@
     var Handler = Packages.android.os.Handler;
     var System = Packages.java.lang.System;
     var View = Packages.android.view.View;
+    var ViewGroup = Packages.android.view.ViewGroup;
     var Gravity = Packages.android.view.Gravity;
     var KeyEvent = Packages.android.view.KeyEvent;
     var WindowManager = Packages.android.view.WindowManager;
@@ -80,6 +81,13 @@
         focusGainCount: 0,
         focusLossCount: 0,
         callbackMode: "none",
+        backMode: "uninitialized",
+        predictiveBackSupported: Build.VERSION.SDK_INT >= 33,
+        predictiveBackEnabled: false,
+        predictiveBackCapabilitySource: "uninitialized",
+        predictiveBackContextPackage: "",
+        predictiveBackTargetSdk: 0,
+        legacyBackRefreshCount: 0,
         baselinePackage: "",
         lastTopPackage: "",
         lastActivityType: 0,
@@ -865,6 +873,88 @@ function dispatchBack(owner, reason) {
         scheduleBackground("focus_lost_" + String(owner || "unknown"));
     }
 
+    function detectBackCapability(context) {
+        var result = { supported: Build.VERSION.SDK_INT >= 33, enabled: false,
+            source: Build.VERSION.SDK_INT >= 33 ? "unavailable" : "sdk_lt_33",
+            packageName: "", targetSdkVersion: 0 };
+        var info = null;
+        if (!context) { return result; }
+        try { result.packageName = String(context.getPackageName()); }
+        catch (ignoredPackage) {}
+        try { info = context.getApplicationInfo();
+            if (info) { result.targetSdkVersion = Number(info.targetSdkVersion || 0); }
+        } catch (ignoredInfo) { info = null; }
+        if (!result.supported) { return result; }
+        try {
+            result.enabled = Packages.android.window.WindowOnBackInvokedDispatcher
+                .isOnBackInvokedCallbackEnabled(context) === true;
+            result.source = "WindowOnBackInvokedDispatcher";
+            return result;
+        } catch (ignoredWindowCapability) {}
+        try {
+            if (info && typeof info.isOnBackInvokedCallbackEnabled === "function") {
+                result.enabled = info.isOnBackInvokedCallbackEnabled() === true;
+                result.source = "ApplicationInfo";
+                return result;
+            }
+        } catch (ignoredApplicationCapability) {}
+        return result;
+    }
+
+    function resolveBackFocusRoot(pageRoot, windowRoot, fallbackRoot) {
+        var root = null;
+        if (pageRoot !== null && pageRoot !== undefined) {
+            try { root = pageRoot.getRootView();
+                if (root !== null && root !== undefined && root.isAttachedToWindow()) { return root; }
+            } catch (ignoredPageRoot) { root = null; }
+        }
+        if (windowRoot !== null && windowRoot !== undefined) {
+            try { if (windowRoot.isAttachedToWindow()) { return windowRoot; } }
+            catch (ignoredWindowRootAttached) { return windowRoot; }
+        }
+        if (fallbackRoot !== null && fallbackRoot !== undefined) { return fallbackRoot; }
+        return pageRoot || windowRoot || null;
+    }
+
+    function handoffBackFocus(options) {
+        options = options || {};
+        if (!initialized) { return { ok: false, reason: "navigation_not_initialized" }; }
+        return runOnMainSync(function () {
+            var root = resolveBackFocusRoot(options.pageRoot || null, options.windowRoot || null, options.fallbackRoot || null);
+            var input = options.inputView || null;
+            var previous = -1;
+            var released = input === null;
+            var requested = false;
+            var focused = false;
+            if (root === null) { return { ok: false, reason: "back_focus_root_missing" }; }
+            try { previous = Number(root.getDescendantFocusability()); } catch (ignoredPrevious) {}
+            try {
+                root.setFocusable(true);
+                root.setFocusableInTouchMode(true);
+                if (typeof root.setDescendantFocusability === "function") { root.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS); }
+                if (input !== null) { input.clearFocus(); released = !input.hasFocus(); }
+                requested = root.requestFocus();
+                focused = root.isFocused();
+            } finally {
+                if (previous >= 0 && typeof root.setDescendantFocusability === "function") {
+                    try { root.setDescendantFocusability(previous); } catch (ignoredRestore) {}
+                }
+            }
+            return { ok: released && (requested || focused), inputReleased: released,
+                rootFocusRequested: requested || focused, rootFocused: focused };
+        }, 2500);
+    }
+
+    function getBackCapability() {
+        return { sdkInt: Number(Build.VERSION.SDK_INT),
+            supported: navState.predictiveBackSupported === true,
+            predictiveBackEnabled: navState.predictiveBackEnabled === true,
+            mode: String(navState.backMode || "legacy_key"),
+            source: String(navState.predictiveBackCapabilitySource || ""),
+            contextPackage: String(navState.predictiveBackContextPackage || ""),
+            targetSdkVersion: Number(navState.predictiveBackTargetSdk || 0) };
+    }
+
     function backCallbackPriority() {
         try {
             return Number(Packages.android.window.OnBackInvokedDispatcher
@@ -885,6 +975,13 @@ function dispatchBack(owner, reason) {
         var oldMode;
         var priority;
         if (!entry || entry.removed || Build.VERSION.SDK_INT < 33) {
+            return true;
+        }
+        if (!navState.predictiveBackEnabled) {
+            makeFocusable(entry);
+            entry.callbackMode = "legacy_key";
+            navState.callbackMode = "legacy_key";
+            navState.legacyBackRefreshCount += 1;
             return true;
         }
         try {
@@ -950,6 +1047,7 @@ function dispatchBack(owner, reason) {
 
     function callbackFor(entry) {
         var callback = null;
+        if (!navState.predictiveBackEnabled) { return null; }
         var animationClass;
         if (Build.VERSION.SDK_INT >= 34) {
             try {
@@ -1094,7 +1192,8 @@ function dispatchBack(owner, reason) {
                 }
             }));
         } catch (errorKey) { navState.lastError = String(errorKey); }
-        if (Build.VERSION.SDK_INT >= 33) {
+        if (Build.VERSION.SDK_INT >= 33 &&
+                navState.predictiveBackEnabled) {
             try { dispatcher = view.findOnBackInvokedDispatcher(); }
             catch (ignoredDispatcher) { dispatcher = null; }
             if (dispatcher) {
@@ -1110,10 +1209,14 @@ function dispatchBack(owner, reason) {
         }
         entries.push(entry);
         navState.registerCount += 1;
+        if (!navState.predictiveBackEnabled) {
+            entry.callbackMode = "legacy_key";
+            navState.callbackMode = "legacy_key";
+        }
         try { view.requestFocus(); } catch (ignoredRequestFocus) {}
         captureTaskBaseline(false);
         if (!entry.dispatcher && Build.VERSION.SDK_INT >= 33 &&
-                entry.retryCount < 3) {
+                navState.predictiveBackEnabled && entry.retryCount < 3) {
             runOnMain(function () {
                 if (!entry.removed && entry.view &&
                         entry.view.isAttachedToWindow()) {
@@ -1150,6 +1253,25 @@ function dispatchBack(owner, reason) {
     function refreshSystemBackCapture(reason) {
         if (!initialized) { return false; }
         if (Build.VERSION.SDK_INT < 33) { return true; }
+        if (!navState.predictiveBackEnabled) {
+            return runOnMainSync(function () {
+                var index;
+                var entry;
+                var targetCount = 0;
+                pruneEntries();
+                for (index = 0; index < entries.length; index += 1) {
+                    entry = entries[index];
+                    if (!entry || entry.removed) { continue; }
+                    makeFocusable(entry);
+                    entry.callbackMode = "legacy_key";
+                    targetCount += 1;
+                }
+                navState.callbackMode = "legacy_key";
+                navState.legacyBackRefreshCount += targetCount;
+                if (targetCount <= 0) { scheduleScan(null); return false; }
+                return true;
+            }, 2500) === true;
+        }
         return runOnMainSync(function () {
             var index;
             var entry;
@@ -1290,6 +1412,13 @@ function dispatchBack(owner, reason) {
             registeredOwners: owners,
             registeredTitles: titles,
             callbackMode: navState.callbackMode,
+            backMode: navState.backMode,
+            predictiveBackSupported: navState.predictiveBackSupported === true,
+            predictiveBackEnabled: navState.predictiveBackEnabled === true,
+            predictiveBackCapabilitySource: navState.predictiveBackCapabilitySource,
+            predictiveBackContextPackage: navState.predictiveBackContextPackage,
+            predictiveBackTargetSdk: Number(navState.predictiveBackTargetSdk),
+            legacyBackRefreshCount: Number(navState.legacyBackRefreshCount),
             mainFocusableUpgradeCount:
                 Number(navState.mainFocusableUpgradeCount),
             backRefreshCount: Number(navState.backRefreshCount),
@@ -1332,6 +1461,7 @@ function dispatchBack(owner, reason) {
     }
 
     function navigationInit(context) {
+        var backCapability;
         if (initialized) { return navigationState(); }
         appContext = context && context.androidContext ?
             context.androidContext : global.context;
@@ -1344,6 +1474,14 @@ function dispatchBack(owner, reason) {
         mainHandler = new Handler(Looper.getMainLooper());
         density = Number(appContext.getResources()
             .getDisplayMetrics().density || 1);
+        backCapability = detectBackCapability(appContext);
+        navState.predictiveBackSupported = backCapability.supported === true;
+        navState.predictiveBackEnabled = backCapability.enabled === true;
+        navState.predictiveBackCapabilitySource = String(backCapability.source || "unavailable");
+        navState.predictiveBackContextPackage = String(backCapability.packageName || "");
+        navState.predictiveBackTargetSdk = Number(backCapability.targetSdkVersion || 0);
+        navState.backMode = navState.predictiveBackEnabled ? "predictive" : "legacy_key";
+        navState.callbackMode = navState.predictiveBackEnabled ? "predictive_pending" : "legacy_key";
         initialized = true;
         lastBackAt = 0;
         lastBackSignature = "";
@@ -1362,7 +1500,8 @@ function dispatchBack(owner, reason) {
         captureTaskBaseline(true);
         scheduleScan(null);
         log("I", "navigation initialized sdk=" +
-            String(Build.VERSION.SDK_INT));
+            String(Build.VERSION.SDK_INT) + " backMode=" + navState.backMode +
+            " capability=" + navState.predictiveBackCapabilitySource);
         return navigationState();
     }
 
@@ -1394,7 +1533,7 @@ function dispatchBack(owner, reason) {
 
     ClipHub.Navigation = {
         MODULE_NAME: "ch_14_navigation_embedded",
-        MODULE_VERSION: 9,
+        MODULE_VERSION: 10,
         init: navigationInit,
         dispatchBack: function (reason) {
             return dispatchBack("", reason || "api_back");
@@ -1409,6 +1548,9 @@ function dispatchBack(owner, reason) {
         scanNow: function () { return scan(null); },
         registerWindow: registerManagedWindow,
         refreshSystemBackCapture: refreshSystemBackCapture,
+        getBackCapability: getBackCapability,
+        resolveBackFocusRoot: resolveBackFocusRoot,
+        handoffBackFocus: handoffBackFocus,
         getState: navigationState,
         shutdown: navigationShutdown
     };

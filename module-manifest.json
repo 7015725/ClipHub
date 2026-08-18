@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "moduleSetVersion": "20260818.01",
+  "moduleSetVersion": "20260818.02",
   "entryMinVersion": 8,
   "sourceRef": "fix/editor-embedded-back-capture-20260818",
   "modules": [
@@ -77,7 +77,7 @@
     {
       "name": "ch_10_editor.js",
       "path": "src/ch_10_editor.js",
-      "sha": "d5cbd00b9873d410c98c6d4792210794e5543bf5",
+      "sha": "8fd96a49ee34638a1d51f154fcf98cb314032feb",
       "export": "Editor",
       "runtimeRole": "managed",
       "lifecycleIndex": 9
@@ -93,7 +93,7 @@
     {
       "name": "ch_12_translation.js",
       "path": "src/ch_12_translation.js",
-      "sha": "6da6eda4c1fe28b829ce9890c821b56186e9544a",
+      "sha": "be7cf4da07333bf9e444b85e3485e15d7474e801",
       "export": "Translation",
       "runtimeRole": "managed",
       "lifecycleIndex": 12
