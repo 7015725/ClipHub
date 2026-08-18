@@ -1,0 +1,834 @@
+name: Apply Translation Provider SSOT
+
+on:
+  push:
+    branches:
+      - cleanup/tokenizer-no-regression-20260817
+    paths:
+      - .github/workflows/apply_translation_provider_ssot.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@v4
+        with:
+          ref: cleanup/tokenizer-no-regression-20260817
+          fetch-depth: 0
+
+      - name: Apply guarded provider SSOT patch and validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG=/tmp/translation_provider_ssot.log
+          exec > >(tee "$LOG") 2>&1
+          on_exit() {
+            rc=$?
+            if [ "$rc" -ne 0 ]; then
+              echo "translation provider SSOT apply failed rc=$rc"
+              git reset --hard HEAD || true
+              cp "$LOG" stage_translation_provider_apply_failure.txt || true
+              git config user.name 'github-actions[bot]'
+              git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+              git add stage_translation_provider_apply_failure.txt || true
+              if ! git diff --cached --quiet; then
+                git commit -m 'chore: record translation provider apply failure' || true
+                git push origin HEAD:cleanup/tokenizer-no-regression-20260817 || true
+              fi
+            fi
+          }
+          trap on_exit EXIT
+
+          python3 - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          import json
+          import re
+          from pathlib import Path
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit('%s anchor count=%d' % (label, count))
+              return text.replace(old, new, 1)
+
+          # ---- ch_12_translation.js ----
+          ch12_path = Path('src/ch_12_translation.js')
+          ch12 = ch12_path.read_text(encoding='utf-8')
+
+          old = '''    function translationSettings() {
+        var settings = ClipHub.Settings;
+        var engine;
+        var mode;
+        if (!settings || typeof settings.get !== "function") {
+            throw new Error("翻译设置尚未初始化");
+        }
+        engine = String(settings.get("translation.engine", "baidu"));
+        mode = String(settings.get("translation.mode", "builtin"));
+        return {
+            mode: mode === "google" ? "google" : "builtin",
+            engine: engine === "youdao" ? "youdao" : "baidu",
+            baiduAppId: String(settings.get("translation.baidu.app_id", "")),
+            baiduSecret: String(settings.get("translation.baidu.app_secret", "")),
+            youdaoAppKey: String(settings.get("translation.youdao.app_key", "")),
+            youdaoSecret: String(settings.get("translation.youdao.app_secret", "")),
+            maxChars: Math.max(1, Math.min(10000,
+                Number(settings.get("translation.max_chars", 5000))))
+        };
+    }
+'''
+          new = '''    function translationSettings() {
+        var settings = ClipHub.Settings;
+        var provider;
+        if (!settings || typeof settings.get !== "function") {
+            throw new Error("翻译设置尚未初始化");
+        }
+        provider = String(settings.get("translation.provider", "baidu"));
+        if (provider !== "google" && provider !== "youdao") {
+            provider = "baidu";
+        }
+        return {
+            provider: provider,
+            baiduAppId: String(settings.get("translation.baidu.app_id", "")),
+            baiduSecret: String(settings.get("translation.baidu.app_secret", "")),
+            youdaoAppKey: String(settings.get("translation.youdao.app_key", "")),
+            youdaoSecret: String(settings.get("translation.youdao.app_secret", "")),
+            maxChars: Math.max(1, Math.min(10000,
+                Number(settings.get("translation.max_chars", 5000))))
+        };
+    }
+'''
+          ch12 = replace_once(ch12, old, new, 'ch12 translationSettings')
+
+          old = '''        translationState.errorCount += 1;
+        translationState.lastError = String(result.error || "Google 翻译启动失败");
+        if (result.notInstalled === true || result.blank === true) {
+            showClipHubTranslationFeedback(translationState.lastError);
+            return { handled: true, result: result, fallbackBuiltin: false };
+        }
+        googleLaunchFallbackCount += 1;
+        showClipHubTranslationFeedback(
+            "Google 翻译启动失败，已切换内置翻译");
+        return { handled: false, result: result, fallbackBuiltin: true };
+'''
+          new = '''        translationState.errorCount += 1;
+        translationState.lastError = String(result.error || "Google 翻译启动失败");
+        showClipHubTranslationFeedback(translationState.lastError);
+        return { handled: true, result: result, fallbackBuiltin: false };
+'''
+          ch12 = replace_once(ch12, old, new, 'ch12 google no fallback')
+
+          old = '''    function translateConfiguredSync(text, providerOverride) {
+        var config = translationSettings();
+        var provider = providerOverride ? String(providerOverride) : config.engine;
+        text = String(text === null || text === undefined ? "" : text);
+        if (text.replace(/^\\s+|\\s+$/g, "").length === 0) {
+            throw new Error("翻译内容不能为空");
+        }
+        if (text.length > config.maxChars) {
+            throw new Error("翻译内容超过 " + config.maxChars + " 字符");
+        }
+        return provider === "youdao" ?
+            translateYoudao(text, config) : translateBaidu(text, config);
+    }
+'''
+          new = '''    function translateConfiguredSync(text, providerOverride) {
+        var config = translationSettings();
+        var provider = providerOverride ? String(providerOverride) :
+            config.provider;
+        text = String(text === null || text === undefined ? "" : text);
+        if (text.replace(/^\\s+|\\s+$/g, "").length === 0) {
+            throw new Error("翻译内容不能为空");
+        }
+        if (text.length > config.maxChars) {
+            throw new Error("翻译内容超过 " + config.maxChars + " 字符");
+        }
+        if (provider !== "baidu" && provider !== "youdao") {
+            throw new Error("内置翻译仅支持百度或有道");
+        }
+        return provider === "youdao" ?
+            translateYoudao(text, config) : translateBaidu(text, config);
+    }
+'''
+          ch12 = replace_once(ch12, old, new, 'ch12 translateConfiguredSync')
+
+          old = '''    function openTranslationForItem(itemId) {
+        var config;
+        var googleResult;
+        if (!initialized) { throw new Error("翻译模块尚未初始化"); }
+        config = translationSettings();
+        if (config.mode === "google") {
+            googleResult = openGoogleTranslationForItem(itemId);
+            if (googleResult.fallbackBuiltin !== true) {
+                return getTranslationState();
+            }
+        }
+        return openBuiltinTranslationForItem(itemId);
+    }
+'''
+          new = '''    function openTranslationForItem(itemId) {
+        var config;
+        if (!initialized) { throw new Error("翻译模块尚未初始化"); }
+        config = translationSettings();
+        if (config.provider === "google") {
+            openGoogleTranslationForItem(itemId);
+            return getTranslationState();
+        }
+        return openBuiltinTranslationForItem(itemId);
+    }
+'''
+          ch12 = replace_once(ch12, old, new, 'ch12 openTranslationForItem')
+
+          old = '''    function getTranslationState() {
+        var attachedToWindow = false;
+        try {
+            attachedToWindow = translationRoot !== null &&
+                translationRoot.isAttachedToWindow();
+        } catch (ignored) {}
+        return {
+'''
+          new = '''    function getTranslationState() {
+        var attachedToWindow = false;
+        var config;
+        try {
+            attachedToWindow = translationRoot !== null &&
+                translationRoot.isAttachedToWindow();
+        } catch (ignored) {}
+        try { config = translationSettings(); }
+        catch (ignoredConfig) { config = { provider: "baidu" }; }
+        return {
+'''
+          ch12 = replace_once(ch12, old, new, 'ch12 getState prefix')
+
+          old = '''            itemId: translationState.itemId,
+            provider: translationState.provider,
+            mode: (function () {
+                try { return translationSettings().mode; }
+                catch (ignoredMode) { return "builtin"; }
+            }()),
+            googleInstalled: isGoogleTranslateInstalled(),
+'''
+          new = '''            itemId: translationState.itemId,
+            provider: translationState.provider,
+            configuredProvider: String(config.provider || "baidu"),
+            mode: config.provider === "google" ? "google" : "builtin",
+            engine: config.provider === "youdao" ? "youdao" : "baidu",
+            googleInstalled: isGoogleTranslateInstalled(),
+'''
+          ch12 = replace_once(ch12, old, new, 'ch12 getState provider compatibility')
+
+          old = '''        testConfigured: function (text, callback) {
+            var config = translationSettings();
+            var result;
+            if (config.mode === "google") {
+                result = launchGoogleTranslateText(
+                    text || "ClipHub 翻译测试");
+                postTranslationCallback(callback, result);
+                return result;
+            }
+            return translateConfiguredAsync(text || "ClipHub 翻译测试",
+                callback);
+        },
+'''
+          new = '''        testConfigured: function (text, callback, providerOverride) {
+            var config = translationSettings();
+            var provider = providerOverride ? String(providerOverride) :
+                config.provider;
+            var result;
+            if (provider === "google") {
+                result = launchGoogleTranslateText(
+                    text || "ClipHub 翻译测试");
+                postTranslationCallback(callback, result);
+                return result;
+            }
+            return translateConfiguredAsync(text || "ClipHub 翻译测试",
+                callback, provider);
+        },
+'''
+          ch12 = replace_once(ch12, old, new, 'ch12 testConfigured')
+          ch12 = replace_once(ch12,
+              '        MODULE_VERSION: 23,\n',
+              '        MODULE_VERSION: 24,\n',
+              'ch12 module version')
+
+          if 'settings.get("translation.mode"' in ch12 or \
+                  'settings.get("translation.engine"' in ch12:
+              raise SystemExit('ch12 still reads legacy translation mode/engine')
+          if 'config.mode === "google"' in ch12 or 'config.engine' in ch12:
+              raise SystemExit('ch12 still routes on legacy mode/engine')
+          ch12_path.write_text(ch12, encoding='utf-8')
+
+          # ---- unpack and patch ch_13_settings.js real source ----
+          ch13_path = Path('src/ch_13_settings.js')
+          loader = ch13_path.read_text(encoding='utf-8')
+          sha_match = re.search(r'var SOURCE_SHA256 = "([0-9a-f]{64})";', loader)
+          packed_match = re.search(r'    var PACKED_B64\s*=\s*(.*?);\s*\n', loader, re.S)
+          if sha_match is None or packed_match is None:
+              raise SystemExit('settings packed loader anchors missing')
+          pieces = re.findall(r'"(?:\\.|[^"\\])*"', packed_match.group(1))
+          encoded = ''.join(json.loads(piece) for piece in pieces)
+          source = gzip.decompress(base64.b64decode(encoded)).decode('utf-8')
+          old_source_sha = hashlib.sha256(source.encode('utf-8')).hexdigest()
+          if old_source_sha != sha_match.group(1):
+              raise SystemExit('settings source sha mismatch before patch')
+          print('settings source sha before=' + old_source_sha)
+
+          source = replace_once(source,
+              '        "translation.mode": "builtin",\n        "translation.engine": "baidu",\n',
+              '        "translation.provider": "baidu",\n        "translation.mode": "builtin",\n        "translation.engine": "baidu",\n',
+              'settings DEFAULT provider')
+
+          source = replace_once(source,
+              '''        if (key === "translation.mode") {
+            value = String(value || "builtin");
+            return value === "google" ? "google" : "builtin";
+        }
+''',
+              '''        if (key === "translation.provider") {
+            value = String(value || "baidu");
+            return value === "google" || value === "youdao" ?
+                value : "baidu";
+        }
+        if (key === "translation.mode") {
+            value = String(value || "builtin");
+            return value === "google" ? "google" : "builtin";
+        }
+''',
+              'settings normalize provider')
+
+          old = '''    function load() {
+        var rows = ClipHub.Database.queryAll("SELECT key, value FROM settings", []);
+        var output = defaultsCopy();
+        var index;
+        var key;
+        for (index = 0; index < rows.length; index += 1) {
+            key = String(rows[index].key || "");
+            if (DEFAULTS.hasOwnProperty(key)) {
+                output[key] = deserialize(key, rows[index].value);
+            }
+        }
+        values = output;
+        return getAll();
+    }
+'''
+          new = '''    function load() {
+        var rows = ClipHub.Database.queryAll("SELECT key, value FROM settings", []);
+        var output = defaultsCopy();
+        var index;
+        var key;
+        var providerStored = false;
+        for (index = 0; index < rows.length; index += 1) {
+            key = String(rows[index].key || "");
+            if (key === "translation.provider") {
+                providerStored = true;
+            }
+            if (DEFAULTS.hasOwnProperty(key)) {
+                output[key] = deserialize(key, rows[index].value);
+            }
+        }
+        if (!providerStored) {
+            if (String(output["translation.mode"] || "builtin") === "google") {
+                output["translation.provider"] = "google";
+            } else if (String(output["translation.engine"] || "baidu") ===
+                    "youdao") {
+                output["translation.provider"] = "youdao";
+            } else {
+                output["translation.provider"] = "baidu";
+            }
+            persist("translation.provider", output["translation.provider"]);
+        }
+        values = output;
+        return getAll();
+    }
+'''
+          source = replace_once(source, old, new, 'settings load migration')
+
+          old = '''    function translationDraftFromInputs() {
+        return {
+            "translation.mode": draftTranslationMode,
+            "translation.engine": draftEngine,
+            "translation.baidu.app_id": baiduIdInput === null ? "" :
+                String(baiduIdInput.getText()),
+            "translation.baidu.app_secret": baiduSecretInput === null ? "" :
+                String(baiduSecretInput.getText()),
+            "translation.youdao.app_key": youdaoKeyInput === null ? "" :
+                String(youdaoKeyInput.getText()),
+            "translation.youdao.app_secret": youdaoSecretInput === null ? "" :
+                String(youdaoSecretInput.getText()),
+            "translation.auto_direction": true,
+            "translation.max_chars": 5000
+        };
+    }
+'''
+          new = '''    function translationDraftFromInputs() {
+        return {
+            "translation.provider": draftTranslationMode,
+            "translation.baidu.app_id": baiduIdInput === null ? "" :
+                String(baiduIdInput.getText()),
+            "translation.baidu.app_secret": baiduSecretInput === null ? "" :
+                String(baiduSecretInput.getText()),
+            "translation.youdao.app_key": youdaoKeyInput === null ? "" :
+                String(youdaoKeyInput.getText()),
+            "translation.youdao.app_secret": youdaoSecretInput === null ? "" :
+                String(youdaoSecretInput.getText()),
+            "translation.auto_direction": true,
+            "translation.max_chars": 5000
+        };
+    }
+'''
+          source = replace_once(source, old, new, 'settings translation draft')
+
+          pattern = re.compile(r'    function updateTranslationModeViews\(colors\) \{.*?\n    \}\n\n    function saveTranslationSettings\(\)', re.S)
+          m = pattern.search(source)
+          if m is None:
+              raise SystemExit('settings updateTranslationModeViews block missing')
+          replacement = '''    function updateTranslationModeViews(colors) {
+        var provider = String(draftTranslationMode || "baidu");
+        var installed = googleTranslationInstalledFromSettings();
+        var baidu = provider === "baidu";
+        var youdao = provider === "youdao";
+        var google = provider === "google";
+        draftEngine = youdao ? "youdao" : "baidu";
+        if (translationModeBuiltinView !== null) {
+            translationModeBuiltinView.setBackground(roundedBackground(
+                baidu ? colors.accentStrong : colors.accentSoft,
+                colors.accentBorder, 11));
+            ClipHub.Theme.applyTextColor(translationModeBuiltinView,
+                baidu ? "#FFFFFFFF" : colors.accentStrong);
+        }
+        if (engineYoudaoView !== null) {
+            engineYoudaoView.setBackground(roundedBackground(
+                youdao ? colors.accentStrong : colors.accentSoft,
+                colors.accentBorder, 11));
+            ClipHub.Theme.applyTextColor(engineYoudaoView,
+                youdao ? "#FFFFFFFF" : colors.accentStrong);
+        }
+        if (translationModeGoogleView !== null) {
+            translationModeGoogleView.setBackground(roundedBackground(
+                google ? colors.accentStrong : colors.accentSoft,
+                colors.accentBorder, 11));
+            ClipHub.Theme.applyTextColor(translationModeGoogleView,
+                google ? "#FFFFFFFF" : colors.accentStrong);
+        }
+        if (translationEngineRowView !== null) {
+            translationEngineRowView.setVisibility(View.GONE);
+        }
+        if (baiduGroup !== null) {
+            baiduGroup.setVisibility(baidu ? View.VISIBLE : View.GONE);
+        }
+        if (youdaoGroup !== null) {
+            youdaoGroup.setVisibility(youdao ? View.VISIBLE : View.GONE);
+        }
+        if (translationStatusView !== null) {
+            if (google) {
+                translationStatusView.setText(installed ?
+                    "Google 翻译：已安装" : "Google 翻译：未安装");
+            } else {
+                translationStatusView.setText("配置存储于 ClipHub SQLite");
+            }
+        }
+        return true;
+    }
+
+    function updateEngineViews(colors) {
+        return updateTranslationModeViews(colors);
+    }
+
+    function saveTranslationSettings()'''
+          source = source[:m.start()] + replacement + source[m.end():]
+
+          old = '''    function saveTranslationSettings() {
+        try {
+            setMany(translationDraftFromInputs(), { cleanup: false });
+            uiState.saveTranslationCount += 1;
+            if (translationStatusView !== null) {
+                translationStatusView.setText(
+                    draftTranslationMode === "google" ?
+                        (googleTranslationInstalledFromSettings() ?
+                            "Google 翻译已启用 · 已安装" :
+                            "Google 翻译已启用 · 未安装") :
+                        "配置已保存到 SQLite");
+            }
+            return true;
+        } catch (error) {
+            uiState.lastError = String(error);
+            if (translationStatusView !== null) {
+                translationStatusView.setText("保存失败：" + String(error));
+            }
+            return false;
+        }
+    }
+'''
+          new = '''    function saveTranslationSettings() {
+        try {
+            setMany(translationDraftFromInputs(), { cleanup: false });
+            uiState.saveTranslationCount += 1;
+            if (translationStatusView !== null) {
+                translationStatusView.setText(
+                    draftTranslationMode === "google" ?
+                        (googleTranslationInstalledFromSettings() ?
+                            "Google 翻译已启用 · 已安装" :
+                            "Google 翻译已启用 · 未安装") :
+                        "配置已保存到 SQLite");
+            }
+            return true;
+        } catch (error) {
+            uiState.lastError = String(error);
+            if (translationStatusView !== null) {
+                translationStatusView.setText("保存失败：" + String(error));
+            }
+            return false;
+        }
+    }
+'''
+          # Keep save function body stable; this assertion protects the owner boundary.
+          if source.count(old) != 1:
+              raise SystemExit('settings saveTranslationSettings anchor count=%d' % source.count(old))
+
+          pattern = re.compile(r'    function testTranslationSettings\(\) \{.*?\n    \}\n\n    function parseColorValue', re.S)
+          m = pattern.search(source)
+          if m is None:
+              raise SystemExit('settings testTranslationSettings block missing')
+          new_test = '''    function testTranslationSettings() {
+        var draft;
+        uiState.testTranslationCount += 1;
+        if (translationStatusView !== null) {
+            translationStatusView.setText("正在测试翻译…");
+        }
+        try {
+            if (!ClipHub.Translation ||
+                    typeof ClipHub.Translation.testConfigured !== "function") {
+                throw new Error("翻译模块尚未就绪");
+            }
+            draft = translationDraftFromInputs();
+            setMany({
+                "translation.baidu.app_id":
+                    draft["translation.baidu.app_id"],
+                "translation.baidu.app_secret":
+                    draft["translation.baidu.app_secret"],
+                "translation.youdao.app_key":
+                    draft["translation.youdao.app_key"],
+                "translation.youdao.app_secret":
+                    draft["translation.youdao.app_secret"]
+            }, { cleanup: false });
+            ClipHub.Translation.testConfigured("ClipHub 翻译测试",
+                function (result) {
+                    runOnMainSync(function () {
+                        if (result && result.ok === true) {
+                            uiState.testTranslationSuccessCount += 1;
+                            uiState.lastTestResult = String(result.translatedText || "");
+                            if (translationStatusView !== null) {
+                                translationStatusView.setText("测试成功：" +
+                                    uiState.lastTestResult);
+                            }
+                        } else {
+                            uiState.lastError = result ? String(result.error) :
+                                "翻译测试失败";
+                            if (translationStatusView !== null) {
+                                translationStatusView.setText("测试失败：" +
+                                    uiState.lastError);
+                            }
+                        }
+                        return true;
+                    }, 3000);
+                }, draftTranslationMode);
+            return true;
+        } catch (error) {
+            uiState.lastError = String(error);
+            if (translationStatusView !== null) {
+                translationStatusView.setText("测试失败：" + String(error));
+            }
+            return false;
+        }
+    }
+
+    function parseColorValue'''
+          source = source[:m.start()] + new_test + source[m.end():]
+
+          pattern = re.compile(r'    function makeTranslationSection\(colors\) \{.*?\n    \}\n\n    function makeTagRow', re.S)
+          m = pattern.search(source)
+          if m is None:
+              raise SystemExit('settings makeTranslationSection block missing')
+          new_section = '''    function makeTranslationSection(colors) {
+        var section = makeSection(colors);
+        var modeRow = new LinearLayout(appContext);
+        var actionRow = new LinearLayout(appContext);
+        var saveButton;
+        var testButton;
+        var params;
+        makeSectionTitle(section, "翻译",
+            "选择默认使用的翻译服务", colors);
+        draftTranslationMode = String(
+            values["translation.provider"] || "baidu");
+        if (draftTranslationMode !== "google" &&
+                draftTranslationMode !== "youdao") {
+            draftTranslationMode = "baidu";
+        }
+        draftEngine = draftTranslationMode === "youdao" ?
+            "youdao" : "baidu";
+        modeRow.setOrientation(LinearLayout.HORIZONTAL);
+        translationModeBuiltinView = makeButton(
+            "百度翻译", colors, false, false);
+        engineYoudaoView = makeButton(
+            "有道翻译", colors, false, false);
+        translationModeGoogleView = makeButton(
+            "Google 翻译", colors, false, false);
+        translationModeBuiltinView.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, { onClick: function () {
+                draftTranslationMode = "baidu";
+                updateTranslationModeViews(colors);
+            }}));
+        engineYoudaoView.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, { onClick: function () {
+                draftTranslationMode = "youdao";
+                updateTranslationModeViews(colors);
+            }}));
+        translationModeGoogleView.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, { onClick: function () {
+                draftTranslationMode = "google";
+                updateTranslationModeViews(colors);
+            }}));
+        params = new LinearLayout.LayoutParams(0, dp(40), 1);
+        params.rightMargin = dp(6);
+        modeRow.addView(translationModeBuiltinView, params);
+        params = new LinearLayout.LayoutParams(0, dp(40), 1);
+        params.rightMargin = dp(6);
+        modeRow.addView(engineYoudaoView, params);
+        modeRow.addView(translationModeGoogleView,
+            new LinearLayout.LayoutParams(0, dp(40), 1));
+        section.addView(modeRow, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(40)));
+        translationEngineRowView = null;
+        engineBaiduView = null;
+
+        baiduGroup = new LinearLayout(appContext);
+        baiduGroup.setOrientation(LinearLayout.VERTICAL);
+        baiduIdInput = makeInput("百度 APP ID",
+            values["translation.baidu.app_id"], colors, false,
+            "translation.baidu.app_id");
+        baiduSecretInput = makeInput("百度密钥",
+            values["translation.baidu.app_secret"], colors, true,
+            "translation.baidu.app_secret");
+        addField(baiduGroup, "百度 APP ID", baiduIdInput, colors);
+        addField(baiduGroup, "百度密钥", baiduSecretInput, colors);
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.topMargin = dp(8);
+        section.addView(baiduGroup, params);
+
+        youdaoGroup = new LinearLayout(appContext);
+        youdaoGroup.setOrientation(LinearLayout.VERTICAL);
+        youdaoKeyInput = makeInput("有道 App Key",
+            values["translation.youdao.app_key"], colors, false,
+            "translation.youdao.app_key");
+        youdaoSecretInput = makeInput("有道应用密钥",
+            values["translation.youdao.app_secret"], colors, true,
+            "translation.youdao.app_secret");
+        addField(youdaoGroup, "有道 App Key", youdaoKeyInput, colors);
+        addField(youdaoGroup, "有道应用密钥", youdaoSecretInput, colors);
+        section.addView(youdaoGroup, params);
+
+        translationStatusView = makeText("配置存储于 ClipHub SQLite",
+            9, colors.textSecondary, false);
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.bottomMargin = dp(6);
+        section.addView(translationStatusView, params);
+        actionRow.setOrientation(LinearLayout.HORIZONTAL);
+        saveButton = makeButton("保存配置", colors, true, false);
+        testButton = makeButton("测试翻译", colors, false, false);
+        saveButton.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, { onClick: saveTranslationSettings }));
+        testButton.setOnClickListener(new JavaAdapter(
+            View.OnClickListener, { onClick: testTranslationSettings }));
+        params = new LinearLayout.LayoutParams(0, dp(40), 1);
+        params.rightMargin = dp(6);
+        actionRow.addView(saveButton, params);
+        actionRow.addView(testButton,
+            new LinearLayout.LayoutParams(0, dp(40), 1));
+        section.addView(actionRow, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(40)));
+        updateTranslationModeViews(colors);
+        return section;
+    }
+
+    function makeTagRow'''
+          source = source[:m.start()] + new_section + source[m.end():]
+
+          old = '''            translationFieldCount: Number(uiState.translationFieldCount),
+            tagRowCount: Number(uiState.tagRowCount),
+            selectedTranslationMode: String(draftTranslationMode),
+            configuredTranslationMode:
+                String(values["translation.mode"] || "builtin"),
+            googleTranslationInstalled:
+                googleTranslationInstalledFromSettings(),
+            selectedEngine: String(draftEngine),
+            configuredEngine: String(values["translation.engine"] || "baidu"),
+'''
+          new = '''            translationFieldCount: Number(uiState.translationFieldCount),
+            tagRowCount: Number(uiState.tagRowCount),
+            selectedTranslationProvider: String(draftTranslationMode || "baidu"),
+            configuredTranslationProvider:
+                String(values["translation.provider"] || "baidu"),
+            selectedTranslationMode:
+                draftTranslationMode === "google" ? "google" : "builtin",
+            configuredTranslationMode:
+                String(values["translation.provider"] || "baidu") === "google" ?
+                    "google" : "builtin",
+            googleTranslationInstalled:
+                googleTranslationInstalledFromSettings(),
+            selectedEngine:
+                draftTranslationMode === "youdao" ? "youdao" : "baidu",
+            configuredEngine:
+                String(values["translation.provider"] || "baidu") === "youdao" ?
+                    "youdao" : "baidu",
+'''
+          source = replace_once(source, old, new, 'settings getState provider')
+
+          version_matches = list(re.finditer(r'(MODULE_VERSION:\s*)(\d+)', source))
+          if len(version_matches) != 1:
+              raise SystemExit('settings MODULE_VERSION matches=%d' % len(version_matches))
+          vm = version_matches[0]
+          old_version = int(vm.group(2))
+          source = source[:vm.start(2)] + str(old_version + 1) + source[vm.end(2):]
+          print('settings module version %d -> %d' % (old_version, old_version + 1))
+
+          # Formal runtime/UI decision paths may no longer use legacy mode/engine.
+          if 'values["translation.mode"]' in source and \
+                  'output["translation.mode"]' not in source:
+              raise SystemExit('unexpected translation.mode value consumer remains')
+          if 'draft["translation.mode"]' in source or \
+                  '"translation.mode": draftTranslationMode' in source:
+              raise SystemExit('settings still writes legacy translation.mode')
+          if '"translation.engine": draftEngine' in source:
+              raise SystemExit('settings still writes legacy translation.engine')
+          if source.count('选择内置翻译或 Google 翻译') != 0 or \
+                  source.count('"内置翻译"') != 0:
+              raise SystemExit('legacy two-level translation UI remains')
+
+          new_source_sha = hashlib.sha256(source.encode('utf-8')).hexdigest()
+          packed = base64.b64encode(gzip.compress(
+              source.encode('utf-8'), compresslevel=9, mtime=0)).decode('ascii')
+          chunks = [packed[i:i + 120] for i in range(0, len(packed), 120)]
+          assignment = '    var PACKED_B64 =\n' + ''.join(
+              '        ' + json.dumps(chunk) + (' +\n' if i < len(chunks) - 1 else ';\n')
+              for i, chunk in enumerate(chunks))
+          loader = loader[:packed_match.start()] + assignment + loader[packed_match.end():]
+          loader = re.sub(r'var SOURCE_SHA256 = "[0-9a-f]{64}";',
+              'var SOURCE_SHA256 = "' + new_source_sha + '";', loader, count=1)
+
+          verify_match = re.search(r'    var PACKED_B64\s*=\s*(.*?);\s*\n', loader, re.S)
+          verify_pieces = re.findall(r'"(?:\\.|[^"\\])*"', verify_match.group(1))
+          verify_encoded = ''.join(json.loads(piece) for piece in verify_pieces)
+          verify_source = gzip.decompress(base64.b64decode(verify_encoded)).decode('utf-8')
+          if verify_source != source:
+              raise SystemExit('settings repack roundtrip mismatch')
+          if hashlib.sha256(verify_source.encode('utf-8')).hexdigest() != new_source_sha:
+              raise SystemExit('settings repack sha mismatch')
+          print('settings source sha after=' + new_source_sha)
+          ch13_path.write_text(loader, encoding='utf-8')
+
+          # ---- contract test ----
+          test = r'''#!/usr/bin/env python3
+import base64
+import gzip
+import json
+import re
+from pathlib import Path
+
+root = Path(__file__).resolve().parents[1]
+ch12 = (root / "src/ch_12_translation.js").read_text(encoding="utf-8")
+loader = (root / "src/ch_13_settings.js").read_text(encoding="utf-8")
+match = re.search(r'    var PACKED_B64\s*=\s*(.*?);\s*\n', loader, re.S)
+assert match is not None
+pieces = re.findall(r'"(?:\\.|[^"\\])*"', match.group(1))
+encoded = ''.join(json.loads(piece) for piece in pieces)
+settings = gzip.decompress(base64.b64decode(encoded)).decode('utf-8')
+
+assert 'settings.get("translation.provider", "baidu")' in ch12
+assert 'settings.get("translation.mode"' not in ch12
+assert 'settings.get("translation.engine"' not in ch12
+assert 'config.provider === "google"' in ch12
+assert 'fallbackBuiltin: true' not in ch12
+assert 'testConfigured: function (text, callback, providerOverride)' in ch12
+assert '"translation.provider": "baidu"' in settings
+assert 'persist("translation.provider", output["translation.provider"])' in settings
+assert '"translation.provider": draftTranslationMode' in settings
+assert '"translation.mode": draftTranslationMode' not in settings
+assert '"translation.engine": draftEngine' not in settings
+assert '选择默认使用的翻译服务' in settings
+assert '"内置翻译"' not in settings
+assert 'selectedTranslationProvider' in settings
+assert 'configuredTranslationProvider' in settings
+print('translation provider contract: PASS')
+'''
+          Path('scripts/test_translation_provider_contract.py').write_text(
+              test, encoding='utf-8')
+
+          # ---- manifest SHA updates ----
+          def git_blob_sha(path):
+              data = Path(path).read_bytes()
+              header = ('blob %d\0' % len(data)).encode('ascii')
+              return hashlib.sha1(header + data).hexdigest()
+
+          manifest_path = Path('module-manifest.json')
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          wanted = {
+              'ch_12_translation.js': git_blob_sha('src/ch_12_translation.js'),
+              'ch_13_settings.js': git_blob_sha('src/ch_13_settings.js')
+          }
+          seen = set()
+          for item in manifest.get('modules', []):
+              name = str(item.get('name', ''))
+              if name in wanted:
+                  item['sha'] = wanted[name]
+                  seen.add(name)
+          if seen != set(wanted):
+              raise SystemExit('manifest translation entries missing')
+          manifest_path.write_text(json.dumps(
+              manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          print('ch12 blob sha=' + wanted['ch_12_translation.js'])
+          print('ch13 blob sha=' + wanted['ch_13_settings.js'])
+          PY
+
+          node --check src/ch_12_translation.js
+          node --check src/ch_13_settings.js
+          python3 scripts/validate_es5.py .
+          python3 scripts/test_translation_provider_contract.py
+          python3 scripts/manifest_contract.py validate --settings-tabs-beta
+          bash scripts/run_tokenizer_regression_suite.sh
+          bash scripts/release_preflight.sh --settings-tabs-beta
+          git diff --check
+
+          rm -f stage_translation_provider_stage1.txt
+          rm -f stage_translation_provider_apply_failure.txt
+          git rm .github/workflows/apply_translation_provider_ssot.yml
+
+          expected="$(printf '%s\n' \
+            .github/workflows/apply_translation_provider_ssot.yml \
+            module-manifest.json \
+            scripts/test_translation_provider_contract.py \
+            src/ch_12_translation.js \
+            src/ch_13_settings.js \
+            stage_translation_provider_stage1.txt | sort)"
+          actual="$(git status --short | sed -E 's/^.. //' | sort)"
+          printf 'Expected final scope:\n%s\n' "$expected"
+          printf 'Actual final scope:\n%s\n' "$actual"
+          diff -u <(printf '%s\n' "$expected") <(printf '%s\n' "$actual")
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/ch_12_translation.js src/ch_13_settings.js module-manifest.json \
+            scripts/test_translation_provider_contract.py
+          git add -u stage_translation_provider_stage1.txt \
+            .github/workflows/apply_translation_provider_ssot.yml
+          git commit -m 'refactor: unify translation provider selection'
+          git push origin HEAD:cleanup/tokenizer-no-regression-20260817
