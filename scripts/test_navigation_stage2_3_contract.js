@@ -28,5 +28,8 @@ if (shell.indexOf("stack.push(") >= 0 || shell.indexOf("stack.pop(") >= 0 ||
         shell.indexOf("stack = next;") >= 0) {
     throw new Error("legacy direct stack mutation remains");
 }
-need('MODULE_VERSION: 11,', "UIShell module version not bumped");
+var versionMatch = shell.match(/MODULE_NAME:\s*"ch_16_ui_shell"[\s\S]*?MODULE_VERSION:\s*(\d+)/);
+if (!versionMatch || Number(versionMatch[1]) < 11) {
+    throw new Error("UIShell module version must remain >= 11");
+}
 console.log("Navigation Stage 2-3 contract: passed");
