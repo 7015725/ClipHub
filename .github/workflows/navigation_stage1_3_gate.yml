@@ -20,10 +20,16 @@ jobs:
         run: |
           set -euo pipefail
           node --check src/ch_16_ui_shell.js
+          node --check probes/navigation_architecture_test_page.js
           node scripts/test_navigation_contract_v1.js
           node scripts/test_navigation_stage2_3_contract.js
           node scripts/test_navigation_stage4_back_dispatcher.js
           node scripts/test_navigation_stage5_ime_priority.js
+          node scripts/test_navigation_stage6_page_registry.js
+          node scripts/test_navigation_stage7_page_contract.js
+          node scripts/test_navigation_stage8_no_page_hardcoding.js
+          node scripts/test_navigation_stage9_factory_core.js
+          node scripts/test_navigation_stage9_zero_core_page.js
           node scripts/test_editor_ime_back_rearm.js
           node scripts/test_child_back_route_contract.js
           node scripts/test_runtime_diagnostics.js
