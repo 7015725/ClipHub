@@ -3,6 +3,16 @@
     var initialized = false;
     var runtimeContext = null;
     var pages = {};
+    var DEFAULT_PAGE_CONTRACT = {
+        allowDuplicate: false,
+        canPop: true,
+        systemBack: true,
+        swipeBack: true,
+        predictiveBack: true,
+        imeBackFirst: true,
+        host: "primary",
+        rootBehavior: "none"
+    };
     var pageOrder = [];
     var stack = [];
     var visible = false;
@@ -53,6 +63,34 @@
         return output;
     }
 
+    function mergePageContract(override) {
+        var output = copyObject(DEFAULT_PAGE_CONTRACT);
+        var value = override || {};
+        var key;
+        for (key in value) {
+            if (value.hasOwnProperty(key)) { output[key] = value[key]; }
+        }
+        output.allowDuplicate = output.allowDuplicate === true;
+        output.canPop = output.canPop !== false;
+        output.systemBack = output.systemBack !== false;
+        output.swipeBack = output.swipeBack !== false;
+        output.predictiveBack = output.predictiveBack !== false;
+        output.imeBackFirst = output.imeBackFirst !== false;
+        output.host = normalizeId(output.host || "primary");
+        output.rootBehavior = normalizeId(output.rootBehavior || "none");
+        return output;
+    }
+
+    function copyPageContract(contract) {
+        return mergePageContract(contract || {});
+    }
+
+    function currentPageContract() {
+        var id = currentPageId();
+        if (!id || !pages[id]) { return copyPageContract(DEFAULT_PAGE_CONTRACT); }
+        return copyPageContract(pages[id].contract);
+    }
+
     function copyDescriptor(source) {
         return {
             id: String(source.id),
@@ -65,7 +103,8 @@
             legacySurface: String(source.legacySurface || ""),
             shellReady: source.shellReady === true,
             hasFactory: typeof source.factory === "function",
-            metadata: copyObject(source.metadata)
+            metadata: copyObject(source.metadata),
+            contract: copyPageContract(source.contract)
         };
     }
 
@@ -110,7 +149,8 @@
             legacySurface: normalizeId(value.legacySurface || ""),
             shellReady: value.shellReady === true,
             factory: typeof value.factory === "function" ? value.factory : null,
-            metadata: copyObject(value.metadata)
+            metadata: copyObject(value.metadata),
+            contract: mergePageContract(value.contract)
         };
         pages[id] = page;
         pageOrder.push(id);
@@ -121,7 +161,14 @@
     function installDefaultPages() {
         registerPage({ id: "home", parentId: null, owner: "home", family: "root",
             moduleName: "Filter", cachePolicy: "keep",
-            legacySurface: "filter_root", shellReady: true });
+            legacySurface: "filter_root", shellReady: true,
+            contract: {
+                canPop: false,
+                swipeBack: false,
+                predictiveBack: false,
+                imeBackFirst: false,
+                rootBehavior: "close_host"
+            } });
         registerPage({ id: "detail", parentId: "home", owner: "detail", family: "detail",
             moduleName: "List", cachePolicy: "rebind",
             legacySurface: "detail", shellReady: true });
@@ -169,12 +216,17 @@
         return typeof page.factory === "function" ? page.factory : null;
     }
 
+    function getPageContract(pageId) {
+        return copyPageContract(requirePage(pageId).contract);
+    }
+
     function pageRegistryState() {
         return {
             apiVersion: 1,
             pageCount: Number(pageOrder.length),
             pageIds: pageIds(),
-            rootPageId: pageOrder.length > 0 ? rootPageId() : null
+            rootPageId: pageOrder.length > 0 ? rootPageId() : null,
+            contractVersion: 1
         };
     }
 
@@ -360,6 +412,11 @@
             throw new Error("UI page parent mismatch: " + page.id +
                 " requires " + page.parentId + ", current=" + currentId);
         }
+        if (currentId === page.id && page.contract.allowDuplicate !== true) {
+            lastAction = "push_duplicate_ignored";
+            lastReason = String(reason || "");
+            return getState();
+        }
         next.push({ id: page.id, params: copyObject(params) });
         return commitStackState(next, "push", reason);
     }
@@ -432,7 +489,10 @@
 
     function navigatorCurrent() { return pageStackCurrent(); }
 
-    function navigatorCanPop() { return pageStackCanPop(); }
+    function navigatorCanPop() {
+        var contract = currentPageContract();
+        return contract.canPop !== false && pageStackCanPop();
+    }
 
     function navigatorStackSize() { return pageStackSize(); }
 
@@ -461,7 +521,7 @@
         activeView = spec.view || activeView;
         activeBack = typeof spec.onBack === "function" ? spec.onBack : null;
         activeClose = typeof spec.onClose === "function" ? spec.onClose : null;
-        activeImeBackFirst = spec.imeBackFirst !== false;
+        activeImeBackFirst = requirePage(activePageId).contract.imeBackFirst === true;
         ClipHub.Filter.mountPrimaryChildPage({
             pageId: activePageId,
             title: String(spec.title || ""),
@@ -663,6 +723,23 @@
         lastAction = "dispatch_back";
         lastReason = String(reason || "");
         lastBackSourceFamily = backSourceFamily(reason);
+        var pageContract = currentPageContract();
+        if (lastBackSourceFamily === "predictive" &&
+                pageContract.predictiveBack === false) {
+            lastBackOutcome = "predictive_disabled_by_contract";
+            return true;
+        }
+        if (lastBackSourceFamily === "gesture" &&
+                pageContract.swipeBack === false) {
+            lastBackOutcome = "swipe_disabled_by_contract";
+            return true;
+        }
+        if ((lastBackSourceFamily === "legacy_key" ||
+                lastBackSourceFamily === "system") &&
+                pageContract.systemBack === false) {
+            lastBackOutcome = "system_back_disabled_by_contract";
+            return true;
+        }
         if (requestId && requestId === lastBackRequestId) {
             duplicateBackRequestCount += 1;
             lastBackOutcome = "duplicate_request";
@@ -1155,6 +1232,8 @@
             stackDepth: Number(stack.length),
             pageStack: stackIds(),
             pageRegistryOwner: "ClipHub.PageRegistry",
+            pageContractOwner: "ClipHub.PageRegistry",
+            pageContractVersion: 1,
             pageStackOwner: "ClipHub.PageStack",
             navigationManagerOwner: "ClipHub.Navigator",
             navigationApiVersion: 2,
@@ -1265,6 +1344,10 @@
         has: hasPage,
         list: pageIds,
         getFactory: getPageFactory,
+        getContract: getPageContract,
+        getDefaultContract: function () {
+            return copyPageContract(DEFAULT_PAGE_CONTRACT);
+        },
         getState: pageRegistryState
     };
 
@@ -1303,7 +1386,7 @@
 
     ClipHub.UIShell = {
         MODULE_NAME: "ch_16_ui_shell",
-        MODULE_VERSION: 14,
+        MODULE_VERSION: 15,
         init: init,
         registerPage: registerPage,
         getPage: function (pageId) { return copyDescriptor(requirePage(pageId)); },
