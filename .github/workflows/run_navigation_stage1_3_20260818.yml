@@ -1,0 +1,51 @@
+name: Run Navigation Stage 1-3
+
+on:
+  push:
+    branches:
+      - refactor/navigation-contract-v2-finalwork-20260818
+    paths:
+      - scripts/apply_navigation_stage1_3.py
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/navigation-contract-v2-finalwork-20260818
+          fetch-depth: 0
+      - name: Apply Stage 1-3
+        run: python3 scripts/apply_navigation_stage1_3.py
+      - name: Regression gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check src/ch_16_ui_shell.js
+          node scripts/test_navigation_contract_v1.js
+          node scripts/test_navigation_stage2_3_contract.js
+          node scripts/test_child_back_route_contract.js
+          node scripts/test_runtime_diagnostics.js
+          node scripts/audit_navigation_page_id_hardcoding.js
+          python3 scripts/test_primary_window_system_back.py
+          python3 scripts/test_primary_window_legacy_routes.py
+          python3 scripts/test_manifest_contract.py
+          git diff --check
+          grep -F '"moduleSetVersion": "20260818.03"' module-manifest.json
+          grep -F '"sourceRef": "refactor/navigation-contract-v2-finalwork-20260818"' module-manifest.json
+      - name: Commit Stage 1-3
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/ch_16_ui_shell.js module-manifest.json docs/Navigation_Stage1_Audit_20260818.md scripts/test_navigation_stage2_3_contract.js scripts/audit_navigation_page_id_hardcoding.js
+          if git diff --cached --quiet; then
+            echo "No Stage 1-3 changes"
+            exit 0
+          fi
+          git commit -m "refactor: establish PageStack and Navigator owners"
+          git push origin HEAD:refactor/navigation-contract-v2-finalwork-20260818
