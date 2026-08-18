@@ -14,7 +14,10 @@ need(shell, "if (navigatorCanPop())", "BackDispatcher canPop phase missing");
 need(shell, "handled = navigatorPop(reason || \"back_dispatcher_pop\") === true", "BackDispatcher final pop missing");
 need(shell, "lastBackOutcome = \"page_hook_consumed\"", "page consume outcome missing");
 need(shell, "lastBackOutcome = \"navigator_pop\"", "navigator pop outcome missing");
-need(shell, "lastBackOutcome = \"root_unhandled\"", "root outcome missing");
+if (shell.indexOf('lastBackOutcome = "root_unhandled"') < 0 &&
+        shell.indexOf('lastBackOutcome = handled ? "root_handled" : "root_unhandled"') < 0) {
+    throw new Error("root outcome missing");
+}
 need(shell, "backDispatchInProgress", "Back concurrency guard missing");
 need(shell, "duplicateBackRequestCount", "Back request dedupe missing");
 need(nav, "ClipHub.UIShell.dispatchBack(", "Android Back no longer enters UIShell bridge");
