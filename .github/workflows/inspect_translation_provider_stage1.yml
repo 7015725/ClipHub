@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   inspect:
@@ -25,7 +25,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
+          python3 - <<'PY' > stage_translation_provider_stage1.txt
           import base64
           import gzip
           import json
@@ -81,7 +81,7 @@ jobs:
                       continue
                   seen.add(key)
                   start = max(1, owner_line - 5 if owner_line else line_no - 20)
-                  end = min(len(lines), max(line_no + 30, owner_line + 120 if owner_line else line_no + 30))
+                  end = min(len(lines), max(line_no + 30, owner_line + 140 if owner_line else line_no + 30))
                   print('--- OWNER_SNIPPET ' + owner + ' ' + str(start) + ':' + str(end) + ' ---')
                   for n in range(start, end + 1):
                       print('%05d: %s' % (n, lines[n - 1]))
@@ -92,3 +92,14 @@ jobs:
               if re.search(r'\bfunction\s+.*(?:get|set|save|translation|Translation).*\(', line):
                   print('%05d: %s' % (i, line))
           PY
+
+      - name: Publish inspection result and remove inspector
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add stage_translation_provider_stage1.txt
+          git rm .github/workflows/inspect_translation_provider_stage1.yml
+          git commit -m 'chore: record translation provider stage1 inspection'
+          git push origin HEAD:cleanup/tokenizer-no-regression-20260817
