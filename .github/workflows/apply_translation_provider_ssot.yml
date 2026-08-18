@@ -94,7 +94,5 @@ jobs:
           git add scripts/test_translation_provider_contract.py
           git add -u stage_translation_provider_stage1.txt
           git add -u stage_translation_provider_apply_failure.txt
-          git add -u .github/workflows/apply_translation_provider_ssot.yml
-          git add -u scripts/apply_translation_provider_ssot.py
           git commit -m 'refactor: unify translation provider selection'
           git push origin HEAD:cleanup/tokenizer-no-regression-20260817
