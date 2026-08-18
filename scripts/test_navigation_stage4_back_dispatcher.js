@@ -22,5 +22,8 @@ need(nav, "onBackStarted: function", "Predictive start missing");
 need(nav, "onBackProgressed: function", "Predictive progress missing");
 need(nav, "onBackCancelled: function", "Predictive cancel missing");
 need(nav, "onBackInvoked: function", "Predictive commit missing");
-need(shell, 'MODULE_VERSION: 12,', "UIShell module version not bumped");
+var versionMatch = shell.match(/MODULE_NAME:\s*"ch_16_ui_shell"[\s\S]*?MODULE_VERSION:\s*(\d+)/);
+if (!versionMatch || Number(versionMatch[1]) < 12) {
+    throw new Error("UIShell module version must remain >= 12");
+}
 console.log("Navigation Stage 4 BackDispatcher contract: passed");
