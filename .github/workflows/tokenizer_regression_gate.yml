@@ -56,10 +56,22 @@ jobs:
         run: python3 scripts/audit_color_api.py --release-strict
 
       - name: Manifest contract
-        run: python3 scripts/manifest_contract.py validate --settings-tabs-beta
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.base_ref }}" = "cleanup/tokenizer-no-regression-20260817" ]; then
+            python3 scripts/manifest_contract.py validate --settings-tabs-beta
+          else
+            python3 scripts/manifest_contract.py validate --current
+          fi
 
       - name: Unified regression suite
         run: bash scripts/run_tokenizer_regression_suite.sh
 
       - name: Release preflight
-        run: bash scripts/release_preflight.sh --settings-tabs-beta
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.base_ref }}" = "cleanup/tokenizer-no-regression-20260817" ]; then
+            bash scripts/release_preflight.sh --settings-tabs-beta
+          else
+            bash scripts/release_preflight.sh --current
+          fi
