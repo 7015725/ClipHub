@@ -197,4 +197,48 @@ if (duplicate !== true || rootHideCount !== 1) {
     throw new Error("duplicate Back request executed root behavior twice");
 }
 
+registry.register({
+    id: "runtime_legacy_page",
+    parentId: "home",
+    family: "runtime_legacy",
+    owner: "runtime_legacy",
+    moduleName: "RuntimeLegacyPage",
+    shellReady: true,
+    contract: {
+        imeBackFirst: false,
+        systemBack: true
+    }
+});
+shell.mountPage("runtime_legacy_page", fakeView, {
+    title: "legacy",
+    showBack: true,
+    imeBackFirst: false,
+    onBack: function () {
+        return shell.unmountPage("runtime_legacy_page", "legacy_hook_back");
+    }
+});
+var legacyBefore = dispatcher.getState();
+var legacyBack = dispatcher.dispatch("back_key", {
+    sourceFamily: "legacy_key",
+    requestId: "runtime-legacy-back"
+});
+var legacyAfter = dispatcher.getState();
+if (legacyBack !== true || navigator.current().id !== "home" ||
+        navigator.stackSize() !== 1 || hostState.childAttached) {
+    throw new Error("legacy hook intent was not committed by Navigator");
+}
+if (legacyAfter.legacyHookIntentCount !== legacyBefore.legacyHookIntentCount + 1 ||
+        legacyAfter.deferredHookNavigationCount !==
+            legacyBefore.deferredHookNavigationCount + 1 ||
+        legacyAfter.navigatorPopCount !== legacyBefore.navigatorPopCount + 1) {
+    throw new Error("legacy hook did not produce one deferred Navigator pop");
+}
+if (legacyAfter.legacyHookNavigationCount !==
+        legacyBefore.legacyHookNavigationCount) {
+    throw new Error("legacy hook directly mutated PageStack");
+}
+if (legacyAfter.lastOutcome !== "navigator_pop_after_page_hook") {
+    throw new Error("legacy hook outcome did not converge on Navigator");
+}
+
 console.log("Navigation Stage 9 runtime simulation: passed");
