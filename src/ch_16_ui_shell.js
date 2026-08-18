@@ -29,6 +29,8 @@
     var unmountCount = 0;
     var syncCount = 0;
     var backDispatchInProgress = false;
+    var backHookInProgress = false;
+    var pendingLegacyNavigation = null;
     var backDispatchCount = 0;
     var duplicateBackRequestCount = 0;
     var backCascadeGuardCount = 0;
@@ -36,6 +38,8 @@
     var backHookDispatchCount = 0;
     var backHookConsumedCount = 0;
     var backHookNavigationCount = 0;
+    var legacyHookIntentCount = 0;
+    var deferredHookNavigationCount = 0;
     var navigatorBackPopCount = 0;
     var rootBackCount = 0;
     var imeBackConsumeCount = 0;
@@ -173,6 +177,16 @@
         return copyDescriptor(page);
     }
 
+    function defaultHomeBackHook() {
+        try {
+            if (ClipHub.Filter &&
+                    typeof ClipHub.Filter.handleBack === "function") {
+                return ClipHub.Filter.handleBack() === true;
+            }
+        } catch (ignoredFilterBack) {}
+        return false;
+    }
+
     function installDefaultPages() {
         registerPage({ id: "home", parentId: null, owner: "home", family: "root",
             moduleName: "Filter", cachePolicy: "keep",
@@ -183,6 +197,9 @@
                 predictiveBack: false,
                 imeBackFirst: false,
                 rootBehavior: "close_host"
+            },
+            hooks: {
+                onBack: defaultHomeBackHook
             } });
         registerPage({ id: "detail", parentId: "home", owner: "detail", family: "detail",
             moduleName: "List", cachePolicy: "rebind",
@@ -641,6 +658,15 @@
     }
 
     function setStackPath(path, reason) {
+        if (backHookInProgress) {
+            pendingLegacyNavigation = {
+                type: "sync_path",
+                path: (path || []).slice(0),
+                reason: String(reason || "legacy_set_stack_path")
+            };
+            legacyHookIntentCount += 1;
+            return getState();
+        }
         return navigatorSyncPath(path, reason || "legacy_set_stack_path");
     }
 
@@ -701,6 +727,61 @@
         return true;
     }
 
+    function normalizeDeferredPath(path) {
+        var input = path || [];
+        var output = [];
+        var rootId = rootPageId();
+        var index = 0;
+        if (input.length <= 0 || normalizeId(input[0]) !== rootId) {
+            output.push(rootId);
+        }
+        for (index = 0; index < input.length; index += 1) {
+            output.push(normalizeId(input[index]));
+        }
+        return output;
+    }
+
+    function pathIsCurrentPrefix(path) {
+        var ids = normalizeDeferredPath(path);
+        var current = stackIds();
+        var index;
+        if (ids.length <= 0 || ids.length >= current.length) { return false; }
+        for (index = 0; index < ids.length; index += 1) {
+            if (String(ids[index]) !== String(current[index])) { return false; }
+        }
+        return true;
+    }
+
+    function applyDeferredHookNavigation(pending, reason) {
+        var target;
+        var ids;
+        var currentDepth = pageStackSize();
+        if (!pending) { return false; }
+        deferredHookNavigationCount += 1;
+        if (pending.type === "pop_to_root") {
+            if (currentDepth === 2) {
+                return navigatorPop(reason || pending.reason ||
+                    "deferred_hook_pop") === true;
+            }
+            return navigatorPopToRoot(reason || pending.reason ||
+                "deferred_hook_pop_to_root") === true;
+        }
+        if (pending.type === "sync_path") {
+            ids = normalizeDeferredPath(pending.path);
+            if (!pathIsCurrentPrefix(ids)) {
+                return false;
+            }
+            if (ids.length === currentDepth - 1) {
+                return navigatorPop(reason || pending.reason ||
+                    "deferred_hook_pop") === true;
+            }
+            target = ids[ids.length - 1];
+            return navigatorPopTo(target, reason || pending.reason ||
+                "deferred_hook_pop_to") === true;
+        }
+        return false;
+    }
+
     function unmountPage(pageId, reason) {
         var id = normalizeId(pageId);
         if (activePageId === null) {
@@ -722,7 +803,18 @@
         activeView = null;
         activeBack = null;
         activeClose = null;
+        activeImeBackFirst = false;
         unmountCount += 1;
+        if (backHookInProgress) {
+            pendingLegacyNavigation = {
+                type: "pop_to_root",
+                reason: String(reason || "unmount")
+            };
+            legacyHookIntentCount += 1;
+            lastAction = "unmount_deferred";
+            lastReason = String(reason || "");
+            return true;
+        }
         navigatorPopToRoot(reason || "unmount");
         lastAction = "unmount";
         lastReason = String(reason || "");
@@ -848,6 +940,8 @@
             pageHookDispatchCount: Number(backHookDispatchCount),
             pageHookConsumedCount: Number(backHookConsumedCount),
             legacyHookNavigationCount: Number(backHookNavigationCount),
+            legacyHookIntentCount: Number(legacyHookIntentCount),
+            deferredHookNavigationCount: Number(deferredHookNavigationCount),
             navigatorPopCount: Number(navigatorBackPopCount),
             rootBackCount: Number(rootBackCount),
             imeBackFirst: activeImeBackFirst === true,
@@ -916,15 +1010,37 @@
                 lastBackOutcome = "ime_consumed";
                 return true;
             }
-            if (typeof activeBack === "function") {
+            var page = beforePageId && hasPage(beforePageId) ?
+                requirePage(beforePageId) : null;
+            var pageBackHook = typeof activeBack === "function" ? activeBack :
+                (page && page.hooks && typeof page.hooks.onBack === "function" ?
+                    page.hooks.onBack : null);
+            if (typeof pageBackHook === "function") {
                 backHookDispatchCount += 1;
-                handled = activeBack() === true;
+                pendingLegacyNavigation = null;
+                backHookInProgress = true;
+                try {
+                    handled = pageBackHook() === true;
+                } finally {
+                    backHookInProgress = false;
+                }
+                if (pendingLegacyNavigation !== null) {
+                    handled = applyDeferredHookNavigation(
+                        pendingLegacyNavigation,
+                        reason || "back_dispatcher_page_hook") === true;
+                    pendingLegacyNavigation = null;
+                    if (handled) {
+                        navigatorBackPopCount += 1;
+                        lastBackOutcome = "navigator_pop_after_page_hook";
+                        return true;
+                    }
+                }
                 hookChangedNavigation = Number(generation) !== beforeGeneration ||
                     Number(stack.length) !== beforeDepth ||
                     currentPageId() !== beforePageId;
                 if (hookChangedNavigation) {
                     backHookNavigationCount += 1;
-                    lastBackOutcome = "legacy_hook_navigation";
+                    lastBackOutcome = "unexpected_hook_navigation";
                     return true;
                 }
                 if (handled) {
@@ -1424,6 +1540,8 @@
             backHookDispatchCount: Number(backHookDispatchCount),
             backHookConsumedCount: Number(backHookConsumedCount),
             legacyHookNavigationCount: Number(backHookNavigationCount),
+            legacyHookIntentCount: Number(legacyHookIntentCount),
+            deferredHookNavigationCount: Number(deferredHookNavigationCount),
             navigatorBackPopCount: Number(navigatorBackPopCount),
             rootBackCount: Number(rootBackCount),
             imeBackFirst: activeImeBackFirst === true,
@@ -1458,6 +1576,8 @@
         unmountCount = 0;
         syncCount = 0;
         backDispatchInProgress = false;
+        backHookInProgress = false;
+        pendingLegacyNavigation = null;
         backDispatchCount = 0;
         duplicateBackRequestCount = 0;
         backCascadeGuardCount = 0;
@@ -1465,6 +1585,8 @@
         backHookDispatchCount = 0;
         backHookConsumedCount = 0;
         backHookNavigationCount = 0;
+        legacyHookIntentCount = 0;
+        deferredHookNavigationCount = 0;
         navigatorBackPopCount = 0;
         rootBackCount = 0;
         imeBackConsumeCount = 0;
@@ -1556,7 +1678,7 @@
 
     ClipHub.UIShell = {
         MODULE_NAME: "ch_16_ui_shell",
-        MODULE_VERSION: 18,
+        MODULE_VERSION: 19,
         init: init,
         registerPage: registerPage,
         getPage: function (pageId) { return copyDescriptor(requirePage(pageId)); },
