@@ -24,12 +24,6 @@ jobs:
             exit 0
           fi
           python3 scripts/apply_current_preflight_mode.py
-      - name: Validate current mode
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 scripts/manifest_contract.py validate --current
-          bash scripts/release_preflight.sh --current
       - name: Commit
         shell: bash
         run: |
@@ -41,3 +35,9 @@ jobs:
           git add .github/workflows/tokenizer_regression_gate.yml scripts/release_preflight.sh
           git commit -m "ci: make release preflight branch-aware"
           git push origin HEAD:refactor/navigation-contract-v2-20260818
+      - name: Validate current mode
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/manifest_contract.py validate --current
+          bash scripts/release_preflight.sh --current
