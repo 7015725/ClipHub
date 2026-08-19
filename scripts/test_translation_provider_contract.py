@@ -20,6 +20,13 @@ assert 'settings.get("translation.engine"' not in ch12
 assert 'config.provider === "google"' in ch12
 assert 'fallbackBuiltin: true' not in ch12
 assert 'testConfigured: function (text, callback, providerOverride)' in ch12
+assert 'function hideClipHubAfterGoogleLaunch()' in ch12
+assert 'hideUi("google_translation_launched")' in ch12
+assert 'hideClipHubAfterGoogleLaunch();' in ch12
+classifier = (root / "src" / "ch_05_classifier.js").read_text(encoding="utf-8")
+assert 'ClipHub.Classifier = {' in classifier
+assert 'ClipHub.Translation' not in classifier
+assert '__googleHideAfterLaunchWrapped' not in classifier
 assert '"translation.provider": "baidu"' in settings
 assert 'persist("translation.provider", output["translation.provider"])' in settings
 assert '"translation.provider": draftTranslationMode' in settings

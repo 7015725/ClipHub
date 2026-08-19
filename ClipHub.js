@@ -20,7 +20,7 @@
     var ENTRY_VERSION = 8;
     var OWNER = "7015725";
     var REPO = "ClipHub";
-    var DEFAULT_REF = "cleanup/tokenizer-no-regression-20260817";
+    var DEFAULT_REF = "refactor/navigation-contract-v2-20260818";
     var MANIFEST_PATH = "module-manifest.json";
     var LEGACY_MODULE_EXPORTS = {
         "ch_01_base.js": "Base",

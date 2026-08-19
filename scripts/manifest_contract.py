@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+"""Validate or refresh the schema-v2 runtime package manifest.
+
+The checked-in module-manifest.json is the only module/resource descriptor
+source. Refresh operations preserve its descriptors and only update values
+that can be derived from the current worktree.
+"""
+
 from __future__ import annotations
 
 import base64
@@ -6,7 +13,6 @@ import gzip
 import hashlib
 import json
 import re
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -16,62 +22,16 @@ class ContractError(RuntimeError):
     pass
 
 
-MODE_DEFAULTS = {
-    "--settings-tabs-beta": {
-        "sourceRef": "cleanup/tokenizer-no-regression-20260817",
-        "moduleSetVersion": "20260817.13",
-        "entryVersion": 8,
-        "appModuleVersion": 23,
-    },
-}
-
-MODULE_DEFAULTS = {
-    "ch_01_base.js": ("Base", "base", None),
-    "ch_02_log.js": ("Log", "managed", 1),
-    "ch_03_database.js": ("Database", "managed", 2),
-    "ch_04_clipboard.js": ("Clipboard", "managed", 6),
-    "ch_05_classifier.js": ("Classifier", "passive", None),
-    "ch_06_repository.js": ("Repository", "managed", 3),
-    "ch_07_theme.js": ("Theme", "managed", 5),
-    "ch_08_window.js": ("Window", "managed", 7),
-    "ch_09_list.js": ("List", "managed", 8),
-    "ch_10_editor.js": ("Editor", "managed", 9),
-    "ch_11_filter.js": ("Filter", "managed", 10),
-    "ch_12_translation.js": ("Translation", "managed", 12),
-    "ch_13_settings.js": ("Settings", "managed", 11),
-    "ch_14_event_bus.js": ("EventBus", "managed", 4),
-    "ch_15_app.js": ("App", "app", None),
-    "ch_16_ui_shell.js": ("UIShell", "managed", 13),
-    "ch_17_tokenizer_ui.js": ("TokenizerUI", "passive", None),
-    "ch_18_tokenizer_core.js": ("TokenizerCore", "passive", None),
-    "ch_19_tokenizer_service.js": ("TokenizerService", "managed", 14),
-}
-
-RESOURCE_DEFAULTS = [
-    {
-        "id": "test.manifest.resource",
-        "purpose": "manifest-contract-test",
-        "path": "assets/test/manifest-resource.txt",
-        "encoding": "utf-8",
-        "loadPolicy": "on_demand",
-    },
-    {
-        "id": "tokenizer.dictionary.default",
-        "purpose": "tokenizer-dictionary",
-        "path": "assets/tokenizer/jieba-small.gz.b64",
-        "encoding": "gzip+base64",
-        "loadPolicy": "on_demand",
-    }
-]
-
 ALLOWED_ROLES = {"base", "managed", "passive", "app"}
 ALLOWED_ENCODINGS = {"utf-8", "gzip+base64"}
 ALLOWED_LOAD_POLICIES = {"on_demand"}
 
 
-def git_blob_sha(text: str) -> str:
-    data = text.encode("utf-8")
-    return hashlib.sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()
+def git_blob_sha(value: str | bytes) -> str:
+    data = value.encode("utf-8") if isinstance(value, str) else value
+    return hashlib.sha1(
+        b"blob " + str(len(data)).encode("ascii") + b"\0" + data
+    ).hexdigest()
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -79,22 +39,33 @@ def read_json(path: Path) -> dict[str, Any]:
 
 
 def write_json(path: Path, value: dict[str, Any]) -> None:
-    path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(value, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
 
-def expanded_source(source: str) -> str | None:
-    assignment = re.search(r"\bvar\s+(?:PACKED_B64|encoded)\s*=\s*(.*?);", source, re.S)
+def expanded_source(source: str) -> str:
+    assignment = re.search(
+        r"\bvar\s+(?:PACKED_B64|encoded)\s*=\s*(.*?);", source, re.S
+    )
     if assignment is None:
-        return None
+        return source
     pieces = re.findall(r'"(?:\\.|[^"\\])*"', assignment.group(1))
+    if not pieces:
+        raise ContractError("packed source payload missing")
     encoded = "".join(json.loads(piece) for piece in pieces)
-    expanded = gzip.decompress(base64.b64decode(encoded)).decode("utf-8")
-    expected = re.search(r"\bvar\s+SOURCE_SHA256\s*=\s*['\"]([0-9a-fA-F]{64})['\"]", source)
-    if expected is not None:
-        actual = hashlib.sha256(expanded.encode("utf-8")).hexdigest()
-        if actual != expected.group(1).lower():
-            raise ContractError("packed source SHA mismatch: " + actual)
-    return expanded
+    output = gzip.decompress(base64.b64decode(encoded)).decode("utf-8")
+    expected = re.search(
+        r"\bvar\s+SOURCE_SHA256\s*=\s*['\"]([0-9a-fA-F]{64})['\"]",
+        source,
+    )
+    if expected is None:
+        raise ContractError("packed source SHA marker missing")
+    actual = hashlib.sha256(output.encode("utf-8")).hexdigest()
+    if actual != expected.group(1).lower():
+        raise ContractError("packed source SHA mismatch: " + actual)
+    return output
 
 
 def entry_version(root: Path) -> int:
@@ -122,38 +93,42 @@ def assert_relative_path(path: str, root_name: str, suffix: str | None = None) -
         raise ContractError("path suffix mismatch: " + path)
 
 
-def module_defaults(name: str) -> tuple[str, str, int | None]:
-    if name not in MODULE_DEFAULTS:
-        raise ContractError("missing module defaults: " + name)
-    return MODULE_DEFAULTS[name]
+def require_descriptor(item: dict[str, Any], key: str, name: str) -> Any:
+    if key not in item:
+        raise ContractError("manifest descriptor missing " + key + ": " + name)
+    return item[key]
 
 
 def build_module_descriptor(root: Path, item: dict[str, Any]) -> dict[str, Any]:
-    name = str(item["name"])
-    path = str(item.get("path", "src/" + name))
-    export_name, role, lifecycle_index = module_defaults(name)
+    name = str(require_descriptor(item, "name", "module"))
+    path = str(require_descriptor(item, "path", name))
+    export_name = str(require_descriptor(item, "export", name))
+    role = str(require_descriptor(item, "runtimeRole", name))
     source_path = root / path
     if not source_path.is_file():
         raise ContractError("missing module file: " + path)
     descriptor: dict[str, Any] = {
         "name": name,
         "path": path,
-        "sha": git_blob_sha(source_path.read_text(encoding="utf-8")),
-        "export": str(item.get("export", export_name)),
-        "runtimeRole": str(item.get("runtimeRole", role)),
+        "sha": git_blob_sha(source_path.read_bytes()),
+        "export": export_name,
+        "runtimeRole": role,
     }
-    if lifecycle_index is not None:
-        descriptor["lifecycleIndex"] = int(item.get("lifecycleIndex", lifecycle_index))
+    if role == "managed":
+        descriptor["lifecycleIndex"] = int(
+            require_descriptor(item, "lifecycleIndex", name)
+        )
     return descriptor
 
 
 def build_resource_descriptor(root: Path, item: dict[str, Any]) -> dict[str, Any]:
-    path = str(item["path"])
+    resource_id = str(require_descriptor(item, "id", "resource"))
+    path = str(require_descriptor(item, "path", resource_id))
     source_path = root / path
     if not source_path.is_file():
         raise ContractError("missing resource file: " + path)
     descriptor = dict(item)
-    descriptor["sha"] = git_blob_sha(source_path.read_text(encoding="utf-8"))
+    descriptor["sha"] = git_blob_sha(source_path.read_bytes())
     return descriptor
 
 
@@ -164,30 +139,27 @@ def build_manifest_contract(
     legacy_manifest: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     root = Path(root)
-    if legacy_manifest is not None:
-        source_modules = legacy_manifest.get("modules", [])
-    else:
-        existing = root / "module-manifest.json"
-        source_modules = read_json(existing).get("modules", []) if existing.is_file() else []
-    seen_names = {}
-    normalized_source_modules = []
-    for item in source_modules:
-        normalized_source_modules.append(item)
-        seen_names[str(item.get("name", ""))] = True
-    for name in ("ch_18_tokenizer_core.js", "ch_19_tokenizer_service.js"):
-        if not seen_names.get(name) and (root / "src" / name).is_file():
-            normalized_source_modules.append({"name": name, "path": "src/" + name})
-    modules = [build_module_descriptor(root, item) for item in normalized_source_modules]
-    resources = []
-    for item in RESOURCE_DEFAULTS:
-        resource_path = root / str(item["path"])
-        if resource_path.is_file():
-            resources.append(build_resource_descriptor(root, item))
+    seed = legacy_manifest
+    if seed is None:
+        manifest_path = root / "module-manifest.json"
+        if not manifest_path.is_file():
+            raise ContractError("module-manifest.json missing")
+        seed = read_json(manifest_path)
+    modules = [
+        build_module_descriptor(root, item)
+        for item in seed.get("modules", [])
+    ]
+    resources = [
+        build_resource_descriptor(root, item)
+        for item in seed.get("resources", [])
+    ]
+    if not modules:
+        raise ContractError("manifest modules missing")
     return {
         "schemaVersion": 2,
-        "moduleSetVersion": module_set_version,
-        "entryMinVersion": 8,
-        "sourceRef": source_ref,
+        "moduleSetVersion": str(module_set_version),
+        "entryMinVersion": entry_version(root),
+        "sourceRef": str(source_ref),
         "modules": modules,
         "resources": resources,
     }
@@ -210,11 +182,19 @@ def validate_module(root: Path, item: dict[str, Any], index: int, seen: set[str]
     source_path = root / path
     if not source_path.is_file():
         raise ContractError("missing module file: " + path)
-    actual = git_blob_sha(source_path.read_text(encoding="utf-8"))
+    raw_source = source_path.read_text(encoding="utf-8")
+    actual = git_blob_sha(raw_source)
     if actual != str(item.get("sha", "")):
         raise ContractError("module SHA mismatch: " + name + " " + actual)
-    if role == "managed" and int(item.get("lifecycleIndex", 0)) <= 0:
-        raise ContractError("managed module lifecycleIndex missing: " + name)
+    runtime_source = expanded_source(raw_source)
+    export_pattern = r"\bClipHub\." + re.escape(export_name) + r"\s*="
+    if re.search(export_pattern, runtime_source) is None:
+        raise ContractError("declared export missing from module: " + name)
+    if role == "managed":
+        if int(item.get("lifecycleIndex", 0)) <= 0:
+            raise ContractError("managed module lifecycleIndex missing: " + name)
+    elif "lifecycleIndex" in item:
+        raise ContractError("non-managed module has lifecycleIndex: " + name)
     seen.add(name)
 
 
@@ -231,30 +211,30 @@ def validate_resource(root: Path, item: dict[str, Any], index: int, seen: set[st
     source_path = root / path
     if not source_path.is_file():
         raise ContractError("missing resource file: " + path)
-    actual = git_blob_sha(source_path.read_text(encoding="utf-8"))
+    actual = git_blob_sha(source_path.read_bytes())
     if actual != str(item.get("sha", "")):
         raise ContractError("resource SHA mismatch: " + resource_id + " " + actual)
     seen.add(resource_id)
 
 
-def validate_manifest_contract(root: Path, mode: str = "--settings-tabs-beta") -> dict[str, Any]:
+def validate_manifest_contract(root: Path, mode: str = "--current") -> dict[str, Any]:
     root = Path(root)
     manifest = read_json(root / "module-manifest.json")
-    defaults = MODE_DEFAULTS.get(mode, {})
     actual_entry_version = entry_version(root)
     if int(manifest.get("schemaVersion", 0)) != 2:
         raise ContractError("schemaVersion must be 2")
-    if int(manifest.get("entryMinVersion", 0)) != 8:
-        raise ContractError("entryMinVersion must be 8")
+    if int(manifest.get("entryMinVersion", 0)) != actual_entry_version:
+        raise ContractError("entryMinVersion must equal ClipHub.js ENTRY_VERSION")
     if actual_entry_version < 8:
         raise ContractError("ENTRY_VERSION must be >= 8")
-    if defaults:
-        if str(manifest.get("sourceRef", "")) != defaults["sourceRef"]:
-            raise ContractError("sourceRef mismatch")
-        if str(manifest.get("moduleSetVersion", "")) != defaults["moduleSetVersion"]:
-            raise ContractError("moduleSetVersion mismatch")
-        if actual_entry_version != int(defaults["entryVersion"]):
-            raise ContractError("ENTRY_VERSION mismatch")
+    if not str(manifest.get("moduleSetVersion", "")):
+        raise ContractError("moduleSetVersion missing")
+    source_ref = str(manifest.get("sourceRef", ""))
+    if not source_ref:
+        raise ContractError("sourceRef missing")
+    if mode == "--main" and source_ref != "main":
+        raise ContractError("sourceRef must be main")
+
     modules = manifest.get("modules", [])
     if not isinstance(modules, list) or len(modules) < 2:
         raise ContractError("modules must be a non-empty list")
@@ -267,20 +247,27 @@ def validate_manifest_contract(root: Path, mode: str = "--settings-tabs-beta") -
         if role in role_counts:
             role_counts[role] += 1
         if role == "managed":
-            lifecycle_index = int(item.get("lifecycleIndex", 0))
+            lifecycle_index = int(item["lifecycleIndex"])
             if lifecycle_index in lifecycle_indexes:
                 raise ContractError("duplicate lifecycleIndex: " + str(lifecycle_index))
             lifecycle_indexes.add(lifecycle_index)
     if role_counts["base"] != 1 or role_counts["app"] != 1:
         raise ContractError("manifest must contain exactly one base and one app")
+    expected_indexes = set(range(1, len(lifecycle_indexes) + 1))
+    if lifecycle_indexes != expected_indexes:
+        raise ContractError("managed lifecycleIndex values must be contiguous")
+
     resources = manifest.get("resources", [])
     if not isinstance(resources, list):
         raise ContractError("resources must be a list")
     seen_resources: set[str] = set()
     for index, item in enumerate(resources):
         validate_resource(root, item, index, seen_resources)
+
     entry = (root / "ClipHub.js").read_text(encoding="utf-8")
-    app_source = (root / "src" / "ch_15_app.js").read_text(encoding="utf-8")
+    app_source = expanded_source(
+        (root / "src" / "ch_15_app.js").read_text(encoding="utf-8")
+    )
     if "var NAMES =" in entry:
         raise ContractError("ClipHub.js still contains NAMES module truth")
     if re.search(r"\bvar\s+order\s*=", app_source):
@@ -290,19 +277,20 @@ def validate_manifest_contract(root: Path, mode: str = "--settings-tabs-beta") -
         "entryVersion": actual_entry_version,
         "moduleCount": len(modules),
         "resourceCount": len(resources),
-        "moduleSetVersion": str(manifest.get("moduleSetVersion", "")),
-        "sourceRef": str(manifest.get("sourceRef", "")),
+        "moduleSetVersion": str(manifest["moduleSetVersion"]),
+        "sourceRef": source_ref,
     }
 
 
 def command_update(root: Path, mode: str) -> int:
-    defaults = MODE_DEFAULTS.get(mode)
-    if defaults is None:
-        raise ContractError("unsupported update mode: " + mode)
+    if mode not in ("--current", "--main"):
+        raise ContractError("update mode must be --current or --main")
+    current = read_json(root / "module-manifest.json")
+    source_ref = "main" if mode == "--main" else str(current.get("sourceRef", ""))
     manifest = build_manifest_contract(
         root,
-        source_ref=str(defaults["sourceRef"]),
-        module_set_version=str(defaults["moduleSetVersion"]),
+        source_ref=source_ref,
+        module_set_version=str(current.get("moduleSetVersion", "")),
     )
     write_json(root / "module-manifest.json", manifest)
     print("Manifest contract updated: " + str(root / "module-manifest.json"))
@@ -324,14 +312,16 @@ def command_validate(root: Path, mode: str) -> int:
 def main(argv: list[str]) -> int:
     root = Path.cwd()
     command = argv[1] if len(argv) > 1 else "validate"
-    mode = argv[2] if len(argv) > 2 else "--settings-tabs-beta"
+    mode = argv[2] if len(argv) > 2 else "--current"
     try:
         if command == "update":
             return command_update(root, mode)
         if command == "validate":
             return command_validate(root, mode)
-        raise ContractError("usage: manifest_contract.py [update|validate] [--settings-tabs-beta]")
-    except ContractError as error:
+        raise ContractError(
+            "usage: manifest_contract.py [update|validate] [--current|--main]"
+        )
+    except (ContractError, OSError, ValueError, KeyError) as error:
         print("Manifest contract error: " + str(error), file=sys.stderr)
         return 1
 

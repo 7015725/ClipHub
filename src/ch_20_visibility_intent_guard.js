@@ -42,7 +42,8 @@
         wrappedShowRoot: null,
         wrappedShowPanel: null,
         wrappedClosePanel: null,
-        wrappedAttachWindow: null
+        wrappedAttachWindow: null,
+        pendingCleanupTasks: []
     };
 
     function now() {
@@ -112,9 +113,30 @@
         return options.restoreList === false;
     }
 
+    function removePendingCleanupTask(task) {
+        var index = state.pendingCleanupTasks.indexOf(task);
+        if (index >= 0) {
+            state.pendingCleanupTasks.splice(index, 1);
+        }
+    }
+
+    function cancelPendingCleanupTasks() {
+        var handler = state.mainHandler;
+        var tasks = state.pendingCleanupTasks.slice(0);
+        var index;
+        state.pendingCleanupTasks = [];
+        if (handler === null) { return 0; }
+        for (index = 0; index < tasks.length; index += 1) {
+            try { handler.removeCallbacks(tasks[index]); }
+            catch (ignoredRemove) {}
+        }
+        return tasks.length;
+    }
+
     function scheduleLogicalCleanup(generation, pass) {
         var task;
         var delayMs;
+        if (!state.started) { return false; }
         pass = Math.max(1, Number(pass || 1));
         if (pass > CLEANUP_MAX_PASSES) { return false; }
         state.cleanupScheduledCount += 1;
@@ -123,6 +145,11 @@
         task = new Packages.java.lang.Runnable({
             run: function () {
                 var currentGeneration;
+                removePendingCleanupTask(task);
+                if (!state.started) {
+                    state.cleanupSkippedCount += 1;
+                    return;
+                }
                 if (state.desiredVisible === true) {
                     state.cleanupSkippedCount += 1;
                     return;
@@ -172,6 +199,7 @@
                 state.lastError = "Visibility guard cleanup post failed";
                 return false;
             }
+            state.pendingCleanupTasks.push(task);
             return true;
         } catch (error) {
             state.cleanupFailureCount += 1;
@@ -266,6 +294,49 @@
         return true;
     }
 
+    function clearControllerMarker(target) {
+        if (!target || target.__visibilityIntentGuardController !== state) {
+            return false;
+        }
+        try { delete target.__visibilityIntentGuardController; }
+        catch (ignoredDelete) {
+            target.__visibilityIntentGuardController = null;
+        }
+        return true;
+    }
+
+    function uninstallHooks() {
+        var filter = state.filter;
+        var windowModule = state.windowModule;
+        if (filter) {
+            if (filter.showRoot === state.wrappedShowRoot) {
+                filter.showRoot = state.originalShowRoot;
+            }
+            if (filter.showPanel === state.wrappedShowPanel) {
+                filter.showPanel = state.originalShowPanel;
+            }
+            if (filter.closePanel === state.wrappedClosePanel) {
+                filter.closePanel = state.originalClosePanel;
+            }
+            clearControllerMarker(filter);
+        }
+        if (windowModule) {
+            if (windowModule.attachWindow === state.wrappedAttachWindow) {
+                windowModule.attachWindow = state.originalAttachWindow;
+            }
+            clearControllerMarker(windowModule);
+        }
+        state.originalShowRoot = null;
+        state.originalShowPanel = null;
+        state.originalClosePanel = null;
+        state.originalAttachWindow = null;
+        state.wrappedShowRoot = null;
+        state.wrappedShowPanel = null;
+        state.wrappedClosePanel = null;
+        state.wrappedAttachWindow = null;
+        return true;
+    }
+
     function currentDiagnostics() {
         var windowState = safeWindowState();
         var filterState = safeFilterState();
@@ -287,6 +358,7 @@
             cleanupVerifyScheduledCount:
                 Number(state.cleanupVerifyScheduledCount),
             cleanupVerifyRunCount: Number(state.cleanupVerifyRunCount),
+            pendingCleanupCount: Number(state.pendingCleanupTasks.length),
             lastCleanupPass: Number(state.lastCleanupPass),
             cleanupDelayMs: CLEANUP_DELAY_MS,
             cleanupVerifyDelayMs: CLEANUP_VERIFY_DELAY_MS,
@@ -302,9 +374,10 @@
 
     ClipHub.VisibilityIntentGuard = {
         MODULE_NAME: "ch_20_visibility_intent_guard",
-        MODULE_VERSION: 3,
+        MODULE_VERSION: 4,
         init: function () {
             var windowState;
+            if (state.started) { return currentDiagnostics(); }
             state.filter = ClipHub.Filter || null;
             state.windowModule = ClipHub.Window || null;
             if (!state.filter || !state.windowModule) {
@@ -320,8 +393,14 @@
             state.lastIntentReason = "guard_init";
             state.lastIntentAt = now();
             state.started = true;
-            installFilterHooks();
-            installWindowHook();
+            if (!installFilterHooks() || !installWindowHook()) {
+                state.started = false;
+                uninstallHooks();
+                state.filter = null;
+                state.windowModule = null;
+                state.mainHandler = null;
+                throw new Error("Visibility intent guard hook install failed");
+            }
             return currentDiagnostics();
         },
         shutdown: function () {
@@ -331,10 +410,19 @@
             state.lastIntent = "hide";
             state.lastIntentReason = "guard_shutdown";
             state.lastIntentAt = now();
+            cancelPendingCleanupTasks();
+            uninstallHooks();
+            state.filter = null;
+            state.windowModule = null;
+            state.mainHandler = null;
+            state.showDepth = 0;
+            state.closeDepth = 0;
+            state.cleanupDepth = 0;
             return currentDiagnostics();
         },
         getState: currentDiagnostics,
         markVisibleIntent: function (visible, reason) {
+            if (!state.started) { return currentDiagnostics(); }
             beginIntent(visible === true, reason || "external");
             return currentDiagnostics();
         }

@@ -76,36 +76,79 @@ class ManifestContractTest(unittest.TestCase):
     def test_rejects_schema_v2_when_entry_version_is_7(self) -> None:
         root = self.make_root()
         (root / "ClipHub.js").write_text("var ENTRY_VERSION = 7;\n", encoding="utf-8")
-        manifest = build_manifest_contract(root, source_ref="unit-test", module_set_version="test.1")
-        (root / "module-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-        with self.assertRaises(ContractError):
-            validate_manifest_contract(root, mode="--settings-tabs-beta")
-
-    def test_local_v1_manifest_can_be_upgraded_for_offline_cache(self) -> None:
-        root = self.make_root()
-        legacy = {
-            "schemaVersion": 1,
-            "moduleSetVersion": "legacy.1",
-            "entryMinVersion": 7,
-            "sourceRef": "unit-test",
+        seed = {
             "modules": [
                 {
                     "name": "ch_01_base.js",
                     "path": "src/ch_01_base.js",
-                    "sha": git_blob_sha((root / "src" / "ch_01_base.js").read_text(encoding="utf-8")),
+                    "export": "Base",
+                    "runtimeRole": "base",
                 },
                 {
                     "name": "ch_15_app.js",
                     "path": "src/ch_15_app.js",
-                    "sha": git_blob_sha((root / "src" / "ch_15_app.js").read_text(encoding="utf-8")),
+                    "export": "App",
+                    "runtimeRole": "app",
                 },
             ],
+            "resources": [],
         }
-        upgraded = build_manifest_contract(root, source_ref="unit-test", module_set_version="test.1", legacy_manifest=legacy)
-        self.assertEqual(upgraded["schemaVersion"], 2)
-        self.assertEqual(upgraded["entryMinVersion"], 8)
-        self.assertEqual(upgraded["modules"][0]["runtimeRole"], "base")
-        self.assertEqual(upgraded["modules"][1]["runtimeRole"], "app")
+        manifest = build_manifest_contract(
+            root,
+            source_ref="unit-test",
+            module_set_version="test.1",
+            legacy_manifest=seed,
+        )
+        (root / "module-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        with self.assertRaises(ContractError):
+            validate_manifest_contract(root, mode="--current")
+
+    def test_refresh_preserves_descriptors_without_injecting_resources(self) -> None:
+        root = self.make_root()
+        seed = {
+            "modules": [
+                {
+                    "name": "ch_01_base.js",
+                    "path": "src/ch_01_base.js",
+                    "export": "Base",
+                    "runtimeRole": "base",
+                },
+                {
+                    "name": "ch_15_app.js",
+                    "path": "src/ch_15_app.js",
+                    "export": "App",
+                    "runtimeRole": "app",
+                },
+            ],
+            "resources": [],
+        }
+        refreshed = build_manifest_contract(
+            root,
+            source_ref="unit-test",
+            module_set_version="test.1",
+            legacy_manifest=seed,
+        )
+        self.assertEqual(refreshed["schemaVersion"], 2)
+        self.assertEqual(refreshed["entryMinVersion"], 8)
+        self.assertEqual(refreshed["modules"][0]["runtimeRole"], "base")
+        self.assertEqual(refreshed["modules"][1]["runtimeRole"], "app")
+        self.assertEqual(refreshed["resources"], [])
+
+    def test_rejects_descriptorless_legacy_module(self) -> None:
+        root = self.make_root()
+        legacy = {
+            "modules": [
+                {"name": "ch_01_base.js", "path": "src/ch_01_base.js"}
+            ],
+            "resources": [],
+        }
+        with self.assertRaises(ContractError):
+            build_manifest_contract(
+                root,
+                source_ref="unit-test",
+                module_set_version="test.1",
+                legacy_manifest=legacy,
+            )
 
 
 if __name__ == "__main__":

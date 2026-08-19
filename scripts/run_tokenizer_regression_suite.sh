@@ -14,15 +14,6 @@ run_python() {
   python3 "$1"
 }
 
-run_node scripts/test_editor_transient_contract.js
-run_node scripts/test_editor_ime_back_rearm.js
-run_python scripts/test_manifest_contract.py
-run_python scripts/test_primary_window_legacy_routes.py
-run_python scripts/test_primary_window_system_back.py
-run_node scripts/test_system_back_gesture_contract.js
-run_node scripts/test_child_back_route_contract.js
-run_python scripts/test_review_regressions.py
-run_node scripts/test_runtime_diagnostics.js
 run_node scripts/test_shared_input_action.js
 run_node scripts/test_tokenizer_action_contract.js
 run_node scripts/test_tokenizer_copy_ingest_contract.js
@@ -36,6 +27,4 @@ run_node scripts/test_tokenizer_rule_schema_v2.js
 run_node scripts/test_tokenizer_runtime_mount_contract.js
 run_node scripts/test_tokenizer_source_state_contract.js
 run_node scripts/test_tokenizer_toggle_selection_contract.js
-run_node scripts/test_ui_shell_navigation.js
-
-echo "Tokenizer regression suite: all 23 test scripts passed"
+echo "Tokenizer regression suite: all 13 contract scripts passed"

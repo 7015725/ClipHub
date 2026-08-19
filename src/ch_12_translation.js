@@ -1990,13 +1990,24 @@ return view;
         }, 0);
     }
 
+    function hideClipHubAfterGoogleLaunch() {
+        try {
+            return hideUi("google_translation_launched") !== false;
+        } catch (error) {
+            googleLastError = "Google 翻译已启动，但 ClipHub 关闭失败：" +
+                String(error);
+            return false;
+        }
+    }
+
     function startGoogleTranslateIntent(intent, method) {
+        var result;
         googleKeepVisibleUntil = now() + 3000;
         appContext.startActivity(intent);
         googleLastLaunchMethod = String(method || "unknown");
         googleLaunchSuccessCount += 1;
         googleLastError = null;
-        return {
+        result = {
             ok: true,
             provider: "google",
             providerLabel: "Google 翻译",
@@ -2004,6 +2015,8 @@ return view;
             translatedText: "已发送到 Google 翻译",
             targetLanguage: "Google 翻译"
         };
+        hideClipHubAfterGoogleLaunch();
+        return result;
     }
 
     function launchGoogleTranslateText(text) {

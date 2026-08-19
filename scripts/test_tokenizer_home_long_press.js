@@ -24,7 +24,7 @@ requireText(filter, "tokenizer_home_long_press_v1");
 requireText(filter, "function openTokenizerForResultRow(row, origin)");
 requireText(filter, "View.OnLongClickListener");
 requireText(filter, "TokenizerUI.openFromHomeItem");
-requireText(filter, "MODULE_VERSION: 95");
+requireText(filter, "MODULE_VERSION: 96");
 requireText(filter, "tokenizer_home_long_press_guard_v1");
 requireText(filter, "primary_host_panel_attached_fix_v1");
 requireText(tokenizer, "tokenizer_home_direct_open_v3");
@@ -41,7 +41,7 @@ requireText(tokenizer, "ClipHub.Editor.openItem(id, { requestKeyboard: false })"
 requireText(tokenizer, "tokenizerLaunchOrigin = String(options.origin || \"editor\")");
 requireText(tokenizer, "ClipHub.Editor.requestExit(\"tokenizer_home_back\")");
 requireText(tokenizer, "openFromHomeItem: function (itemId, options)");
-requireText(tokenizer, "MODULE_VERSION: 30");
+requireText(tokenizer, "MODULE_VERSION: 31");
 if (tokenizer.indexOf("runOnMainSync(") >= 0) { throw new Error("foreign runOnMainSync reference remains"); }
 swipe = filter.match(/function bindSwipeGesture\([\s\S]*?function resultPreviewText/);
 if (!swipe || swipe[0].indexOf("if (!gesture.swiping) { return false; }") < 0) {

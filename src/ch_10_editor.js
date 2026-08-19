@@ -442,19 +442,6 @@ return view;
     }
 
 
-    function makeCloseButton(dark) {
-        var view = makeText("×", 22,
-            dark ? "#FFC7C7CE" : "#FF5A5A63", true);
-        view.setGravity(Gravity.CENTER);
-        view.setPadding(dp(8), dp(2), dp(8), dp(2));
-        view.setBackground(roundedBackground(
-            dark ? "#FF272A2F" : "#FFF2F2F4",
-            dark ? "#24FFFFFF" : "#14000000", 10));
-        view.setClickable(true);
-        view.setFocusable(true);
-        return view;
-    }
-
     function editorPalette() {
         var dark = isDarkMode();
         try {
