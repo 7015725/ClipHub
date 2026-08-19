@@ -1,0 +1,61 @@
+name: Tokenizer Regression Gate
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Rhino ES5 validation
+        run: python3 scripts/validate_es5.py .
+
+      - name: Color API release audit
+        run: python3 scripts/audit_color_api.py --release-strict
+
+      - name: Manifest contract
+        shell: bash
+        run: |
+          mode='--current'
+          source_ref="$(python3 -c 'import json; print(json.load(open("module-manifest.json", encoding="utf-8"))["sourceRef"])')"
+          if [ "$GITHUB_EVENT_NAME" = 'push' ] || [ "$source_ref" = 'main' ]; then
+            mode='--main'
+          fi
+          python3 scripts/manifest_contract.py validate "$mode"
+
+      - name: Unified regression suite
+        run: bash scripts/run_tokenizer_regression_suite.sh
+
+      - name: Release preflight
+        shell: bash
+        run: |
+          mode='--current'
+          source_ref="$(python3 -c 'import json; print(json.load(open("module-manifest.json", encoding="utf-8"))["sourceRef"])')"
+          if [ "$GITHUB_EVENT_NAME" = 'push' ] || [ "$source_ref" = 'main' ]; then
+            mode='--main'
+          fi
+          bash scripts/release_preflight.sh "$mode"

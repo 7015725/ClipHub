@@ -520,7 +520,8 @@
                 return ignoredEvent(read, origin, eventAt);
             }
             hash = ClipHub.Repository.hashContent(read.text);
-            if (state.ownWrite.hash === hash &&
+            if (state.ownWrite.consumed !== true &&
+                    state.ownWrite.hash === hash &&
                     eventAt >= Number(state.ownWrite.at || 0) &&
                     eventAt <= Number(state.ownWrite.expiresAt || 0)) {
                 state.ownWrite.consumed = true;
@@ -684,6 +685,132 @@
         }
     }
 
+    /* tokenizer_selection_copy_ingest_v1 */
+    function recordManualText(value, options) {
+        var text = String(value === null || value === undefined ? "" : value);
+        var metadata = options || {};
+        var eventAt = now();
+        var thread = Thread.currentThread();
+        var hash;
+        var result;
+        var event;
+        if (text.length === 0) { return { ok: false, reason: "empty_text" }; }
+        if (text.length > config.maxChars) { return { ok: false, reason: "text_too_large" }; }
+        if (ClipHub.Repository.normalizeContent(text).length === 0) {
+            return { ok: false, reason: "blank_text" };
+        }
+        processingLock.lock();
+        try {
+            hash = ClipHub.Repository.hashContent(text);
+            state.eventSeq += 1;
+            state.callbackThreadId = Number(thread.getId());
+            state.callbackThreadName = String(thread.getName());
+            result = recordText(text, hash, "text", eventAt, {
+                sensitive: metadata.sensitive === true,
+                sourcePackage: String(metadata.sourcePackage || "tokenizer"),
+                sourceLabel: String(metadata.sourceLabel || "分词"),
+                sourceUid: metadata.sourceUid === undefined ? null : metadata.sourceUid,
+                sourceConfidence: Number(metadata.sourceConfidence === undefined ? 100 :
+                    metadata.sourceConfidence)
+            });
+            state.lastObserved.hash = hash;
+            state.lastObserved.at = eventAt;
+            state.lastObserved.seq = state.eventSeq;
+            state.handledCount += 1;
+            if (result.inserted) { state.insertedCount += 1; }
+            if (result.merged) { state.mergedCount += 1; }
+            event = {
+                seq: state.eventSeq,
+                at: eventAt,
+                origin: String(metadata.origin || "manual"),
+                status: result.inserted ? "inserted" : "merged",
+                id: Number(result.id),
+                copyCount: Number(result.copyCount || 1),
+                hashPrefix: hash.substring(0, 12),
+                contentLength: text.length,
+                contentType: "text",
+                sensitive: metadata.sensitive === true,
+                sourcePackage: String(metadata.sourcePackage || "tokenizer"),
+                sourceLabel: String(metadata.sourceLabel || "分词"),
+                sourceUid: metadata.sourceUid === undefined ? null : metadata.sourceUid,
+                sourceConfidence: Number(metadata.sourceConfidence === undefined ? 100 :
+                    metadata.sourceConfidence),
+                threadId: state.callbackThreadId,
+                threadName: state.callbackThreadName
+            };
+            log("info", "clipboard " + event.status + " origin=" + event.origin +
+                " id=" + event.id + " len=" + event.contentLength +
+                " hash=" + event.hashPrefix + " source=" + event.sourcePackage);
+            emit(result.inserted ? "clipboard_added" : "clipboard_merged", event);
+            setLastEvent(event);
+            return {
+                ok: true,
+                recorded: true,
+                id: event.id,
+                inserted: result.inserted === true,
+                merged: result.merged === true,
+                copyCount: event.copyCount,
+                hash: hash,
+                event: event
+            };
+        } catch (error) {
+            state.errorCount += 1;
+            event = {
+                seq: state.eventSeq,
+                at: eventAt,
+                origin: String(metadata.origin || "manual"),
+                status: "error",
+                error: String(error),
+                threadId: state.callbackThreadId,
+                threadName: state.callbackThreadName
+            };
+            log("error", "clipboard manual record failed error=" + event.error);
+            emit("clipboard_error", event);
+            setLastEvent(event);
+            return { ok: false, recorded: false, error: event.error };
+        } finally {
+            processingLock.unlock();
+        }
+    }
+
+    function copyAndRecordText(value, options) {
+        var text = String(value === null || value === undefined ? "" : value);
+        var metadata = options || {};
+        var writeResult;
+        var recordResult;
+        try {
+            writeResult = writeText(text, {
+                label: metadata.label === undefined ? "ClipHub" : metadata.label,
+                sensitive: metadata.sensitive === true,
+                suppressWindowMs: metadata.suppressWindowMs,
+                haptic: metadata.haptic,
+                hapticLabel: metadata.hapticLabel
+            });
+        } catch (error) {
+            return { ok: false, written: false, recorded: false, error: String(error) };
+        }
+        if (!running) { state.ownWrite.consumed = true; }
+        recordResult = recordManualText(text, {
+            origin: String(metadata.origin || "manual_copy"),
+            sourcePackage: String(metadata.sourcePackage || "tokenizer"),
+            sourceLabel: String(metadata.sourceLabel || "分词"),
+            sourceUid: metadata.sourceUid === undefined ? null : metadata.sourceUid,
+            sourceConfidence: Number(metadata.sourceConfidence === undefined ? 100 :
+                metadata.sourceConfidence),
+            sensitive: metadata.sensitive === true
+        });
+        return {
+            ok: writeResult && writeResult.ok === true &&
+                recordResult && recordResult.ok === true,
+            written: writeResult && writeResult.written === true,
+            recorded: recordResult && recordResult.ok === true,
+            id: recordResult && recordResult.id !== undefined ? recordResult.id : null,
+            inserted: recordResult && recordResult.inserted === true,
+            merged: recordResult && recordResult.merged === true,
+            hash: writeResult ? writeResult.hash : null
+        };
+    }
+
     function start() {
         if (running) { return { ok: true, running: true, reused: true }; }
         if (manager === null) { throw new Error("ClipboardManager unavailable"); }
@@ -779,7 +906,7 @@
 
     ClipHub.Clipboard = {
         MODULE_NAME: "ch_04_clipboard",
-        MODULE_VERSION: 9,
+        MODULE_VERSION: 10,
         SENSITIVE_KEY: SENSITIVE_KEY,
         init: function (context) {
             androidContext = context && context.androidContext
@@ -801,6 +928,7 @@
             return handlePrimaryClipChanged("manual");
         },
         writeText: writeText,
+        copyAndRecordText: copyAndRecordText,
         markOwnWrite: markOwnWrite,
         configure: configure,
         getState: getState,

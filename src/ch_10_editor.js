@@ -38,6 +38,9 @@
     var panelWindowRoot = null;
     var panelManagedFrame = null;
     var panelParams = null;
+    var panelPageRoot = null;
+    var panelOverlayHost = null;
+    var embeddedInPrimary = false;
     var contentInput = null;
     var tagNameInput = null;
     var saveView = null;
@@ -76,6 +79,8 @@
     var editorRemovalPending = false;
     var editorRemovalGeneration = 0;
     var pendingOpenRequest = null;
+    var transientTextSession = null;
+    var transientTextGeneration = 0;
     var ready = false;
     var state = {
         open: false,
@@ -418,7 +423,7 @@
         return drawable;
     }
 
-    function makeText(text, sizeSp, color, bold) {
+    function makeText(text, sizeSp, color, bold, semanticIcon) {
         var view = new TextView(appContext);
         view.setText(String(text));
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, Number(sizeSp));
@@ -428,50 +433,14 @@
             view.setTypeface(Packages.android.graphics.Typeface.DEFAULT,
                 Packages.android.graphics.Typeface.BOLD);
         }
-        return view;
+        /* panel_icon_explicit_v2 */
+if (semanticIcon === true && ClipHub.Theme &&
+        typeof ClipHub.Theme.decoratePanelIcon === "function") {
+    ClipHub.Theme.decoratePanelIcon(view, text, view.getCurrentTextColor(), sizeSp, true);
+}
+return view;
     }
 
-    function makeButton(text, dark, primary, danger, selected, compact) {
-        var color;
-        var fill;
-        var stroke;
-        var view;
-        if (danger) {
-            color = dark ? "#FFFFB0B0" : "#FFB42323";
-            fill = dark ? "#2AD75D66" : "#14D92D36";
-            stroke = dark ? "#4FD75D66" : "#30D92D36";
-        } else if (selected || primary) {
-            color = dark ? "#FFE5F1FC" : "#FF285777";
-            fill = dark ? "#FF2C4356" : "#FFE8F1F8";
-            stroke = dark ? "#556F9FC7" : "#40799DBB";
-        } else {
-            color = dark ? "#FFD8D8DC" : "#FF45454D";
-            fill = dark ? "#FF292C31" : "#FFF3F3F5";
-            stroke = dark ? "#28FFFFFF" : "#14000000";
-        }
-        view = makeText(text, compact ? 11 : 12, color,
-            primary || danger || selected);
-        view.setGravity(Gravity.CENTER);
-        view.setPadding(dp(compact ? 9 : 11), dp(compact ? 6 : 7),
-            dp(compact ? 9 : 11), dp(compact ? 6 : 7));
-        view.setBackground(roundedBackground(fill, stroke, compact ? 9 : 10));
-        view.setClickable(true);
-        view.setFocusable(true);
-        return view;
-    }
-
-    function makeCloseButton(dark) {
-        var view = makeText("×", 22,
-            dark ? "#FFC7C7CE" : "#FF5A5A63", true);
-        view.setGravity(Gravity.CENTER);
-        view.setPadding(dp(8), dp(2), dp(8), dp(2));
-        view.setBackground(roundedBackground(
-            dark ? "#FF272A2F" : "#FFF2F2F4",
-            dark ? "#24FFFFFF" : "#14000000", 10));
-        view.setClickable(true);
-        view.setFocusable(true);
-        return view;
-    }
 
     function editorPalette() {
         var dark = isDarkMode();
@@ -494,6 +463,55 @@
             textTertiary: dark ? "#FF968DA1" : "#FF9992A3",
             icon: dark ? "#FFE7DFF1" : "#FF3D3748"
         };
+    }
+
+    function editorChromeMetrics() {
+        var widthDp = Number(state.panelWidthDp || 0);
+        var fontScale = 1;
+        var filterState = null;
+        if (!isFinite(widthDp) || widthDp <= 0) {
+            try {
+                if (ClipHub.Filter && typeof ClipHub.Filter.getState === "function") {
+                    filterState = ClipHub.Filter.getState();
+                    widthDp = Number(filterState && filterState.panelWidthDp || 0);
+                }
+            } catch (ignoredEditorFilterMetrics) { widthDp = 0; }
+        }
+        if (!isFinite(widthDp) || widthDp <= 0) { widthDp = 390; }
+        try {
+            fontScale = Number(appContext.getResources()
+                .getConfiguration().fontScale || 1);
+        } catch (ignoredEditorFontScale) { fontScale = 1; }
+        return ClipHub.Theme.getPanelChromeMetrics(widthDp, fontScale, 1);
+    }
+
+    function addEditorStandaloneDragSlot(parent, colors, chrome) {
+        var slot;
+        var handle;
+        var params;
+        if (embeddedInPrimary) { return null; }
+        slot = new FrameLayout(appContext);
+        handle = new View(appContext);
+        handle.setBackground(roundedBackground(colors.accentBorder, null, 3));
+        params = new FrameLayout.LayoutParams(
+            dp(chrome.dragHandleWidthDp), dp(chrome.dragHandleHeightDp));
+        params.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+        params.topMargin = dp(chrome.dragHandleTopDp);
+        slot.addView(handle, params);
+        parent.addView(slot, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(chrome.dragHandleSlotDp)));
+        return slot;
+    }
+
+    function makeEditorHeaderAction(text, description, colors, chrome) {
+        var view = makeText(text, chrome.iconSp, colors.icon, false, true);
+        view.setGravity(Gravity.CENTER);
+        view.setContentDescription(String(description || text));
+        view.setBackground(roundedBackground(colors.surfaceMuted, null,
+            chrome.actionSizeDp / 2));
+        view.setClickable(true);
+        view.setFocusable(true);
+        return view;
     }
 
     function makeEditorPill(text, colors, accent) {
@@ -524,14 +542,6 @@
         return view;
     }
 
-    function contentTypeLabel(value) {
-        value = String(value || "text").toLowerCase();
-        if (value === "url" || value === "link") { return "链接"; }
-        if (value === "code") { return "代码"; }
-        if (value === "email") { return "邮件"; }
-        if (value === "phone") { return "电话"; }
-        return "文本";
-    }
 
     function updateCharacterCount() {
         var length = 0;
@@ -824,9 +834,48 @@
         return changed;
     }
 
+    function editorBackFocusRoot() {
+        var navigation = null;
+        var root = null;
+        try { navigation = ClipHub.Navigation; } catch (ignoredNavigation) { navigation = null; }
+        if (navigation && typeof navigation.resolveBackFocusRoot === "function") {
+            try { return navigation.resolveBackFocusRoot(panelPageRoot, panelWindowRoot, panelRoot); }
+            catch (ignoredResolve) {}
+        }
+        if (embeddedInPrimary && panelPageRoot !== null) {
+            try { root = panelPageRoot.getRootView();
+                if (root !== null && root.isAttachedToWindow()) { return root; }
+            } catch (ignoredPrimaryRoot) { root = null; }
+        }
+        if (panelWindowRoot !== null) { return panelWindowRoot; }
+        return panelRoot;
+    }
+
+    function rearmSystemBackAfterImeHide() {
+        var navigation = null;
+        if (!state.attached || state.keyboardVisible ||
+                state.mode === "tags") {
+            return false;
+        }
+        try {
+            navigation = ClipHub.Navigation;
+        } catch (ignoredNavigationRead) {
+            navigation = null;
+        }
+        if (navigation === null || navigation === undefined ||
+                typeof navigation.refreshSystemBackCapture !== "function") {
+            return false;
+        }
+        try {
+            navigation.refreshSystemBackCapture("editor_ime_hidden");
+            return true;
+        } catch (ignoredBackRefresh) {
+            return false;
+        }
+    }
+
     function handoffEditorFocusAfterImeHide() {
-        var focusRoot = panelWindowRoot !== null ?
-            panelWindowRoot : panelRoot;
+        var focusRoot = editorBackFocusRoot();
         var previousDescendantFocusability = -1;
         var released = false;
         var requested = false;
@@ -835,6 +884,12 @@
                 state.mode === "tags") {
             return false;
         }
+        postEditorDelayed(function () {
+            rearmSystemBackAfterImeHide();
+        }, 80, true);
+        postEditorDelayed(function () {
+            rearmSystemBackAfterImeHide();
+        }, 220, true);
         state.focusReleaseCount += 1;
         try {
             previousDescendantFocusability =
@@ -864,8 +919,7 @@
         state.rootFocusedAfterImeHide = focused;
         if (mainHandler !== null) {
             postEditorDelayed(function () {
-                var currentRoot = panelWindowRoot !== null ?
-                    panelWindowRoot : panelRoot;
+                var currentRoot = editorBackFocusRoot();
                 var previous = -1;
                 var retried = false;
                 if (!state.attached || state.keyboardVisible ||
@@ -957,11 +1011,10 @@
             }
             state.lastKeyboardVisible = ime.visible;
             if (!ime.visible && state.focusReleasedAfterImeHide === true &&
-                    (panelWindowRoot !== null || panelRoot !== null)) {
+                    editorBackFocusRoot() !== null) {
                 try {
                     state.rootFocusedAfterImeHide =
-                        (panelWindowRoot !== null ?
-                            panelWindowRoot : panelRoot).isFocused();
+                        editorBackFocusRoot().isFocused();
                 } catch (ignoredRootFocus) {}
             }
             state.keyboardVisible = ime.visible;
@@ -1255,6 +1308,9 @@
         panelWindowRoot = null;
         panelManagedFrame = null;
         panelParams = null;
+        panelPageRoot = null;
+        panelOverlayHost = null;
+        embeddedInPrimary = false;
         contentInput = null;
         tagNameInput = null;
         saveView = null;
@@ -1388,6 +1444,202 @@
         return true;
     }
 
+
+    function primaryShellAvailable() {
+        try {
+            return ClipHub.UIShell &&
+                typeof ClipHub.UIShell.canEmbed === "function" &&
+                ClipHub.UIShell.canEmbed("editor") === true;
+        } catch (ignored) {}
+        return false;
+    }
+
+    function primaryEditorTitle() {
+        return state.mode === "new" ? "新增剪贴板" : "编辑剪贴板";
+    }
+
+    function mountPrimaryEditorPage() {
+        if (!embeddedInPrimary || panelPageRoot === null ||
+                !ClipHub.UIShell ||
+                typeof ClipHub.UIShell.mountPage !== "function") {
+            return false;
+        }
+        ClipHub.UIShell.mountPage("editor", panelPageRoot, {
+            title: primaryEditorTitle(),
+            showBack: true,
+            onBack: function () { return requestExit("shell_back"); },
+            onClose: function () { return requestExit("shell_close"); }
+        });
+        return true;
+    }
+
+    function syncPrimaryEditorPage(pageId, title, onBack) {
+        var id = String(pageId || "editor");
+        var path = id === "editor" ? ["editor"] : ["editor", id];
+        if (!embeddedInPrimary || panelPageRoot === null ||
+                !ClipHub.UIShell ||
+                typeof ClipHub.UIShell.syncEmbeddedPage !== "function") {
+            return false;
+        }
+        return ClipHub.UIShell.syncEmbeddedPage({
+            pageId: id,
+            path: path,
+            title: String(title || primaryEditorTitle()),
+            showBack: true,
+            view: panelPageRoot,
+            onBack: typeof onBack === "function" ? onBack : function () {
+                return requestExit("shell_back");
+            },
+            onClose: function () { return requestExit("shell_close"); }
+        }) === true;
+    }
+
+        function restoreTransientMetadataView(session) {
+        if (metadataTypeView === null || session === null || session === undefined) {
+            return false;
+        }
+        try { metadataTypeView.setEnabled(session.metadataEnabled === true); }
+        catch (ignoredEnabled) {}
+        try { metadataTypeView.setClickable(session.metadataClickable === true); }
+        catch (ignoredClickable) {}
+        return true;
+    }
+
+    function completeTransientTextSession(save) {
+        var session = transientTextSession;
+        var content = "";
+        var start;
+        var end;
+        var callback = null;
+        if (session === null || session === undefined || session.completing === true) {
+            return false;
+        }
+        if (contentInput === null) {
+            transientTextSession = null;
+            transientTextGeneration += 1;
+            return false;
+        }
+        session.completing = true;
+        if (save === true) {
+            content = String(contentInput.getText());
+            if (content.replace(/^\s+|\s+$/g, "").length === 0) {
+                session.completing = false;
+                state.lastError = "内容不能为空";
+                return false;
+            }
+            if (content.length > 200000) {
+                session.completing = false;
+                state.lastError = "内容长度不能超过 200000 字符";
+                return false;
+            }
+        }
+        try {
+            contentInput.setText(String(session.originalText || ""));
+            start = Math.max(0, Math.min(Number(session.originalSelectionStart || 0),
+                contentInput.getText().length()));
+            end = Math.max(start, Math.min(Number(session.originalSelectionEnd || start),
+                contentInput.getText().length()));
+            contentInput.setSelection(start, end);
+            updateCharacterCount();
+        } catch (restoreError) {
+            state.lastError = String(restoreError);
+        }
+        restoreTransientMetadataView(session);
+        try { hideKeyboardOnMain(); } catch (ignoredKeyboard) {}
+        callback = save === true ? session.onComplete : session.onCancel;
+        transientTextSession = null;
+        transientTextGeneration += 1;
+        try {
+            syncPrimaryEditorPage("editor", primaryEditorTitle(), function () {
+                return requestExit("shell_back");
+            });
+        } catch (ignoredShell) {}
+        if (typeof callback === "function") {
+            try {
+                if (save === true) { callback(content); }
+                else { callback(); }
+            } catch (callbackError) {
+                state.lastError = String(callbackError);
+            }
+        }
+        return true;
+    }
+
+    function beginTransientTextSessionOnMain(text, options) {
+        var originalStart = 0;
+        var originalEnd = 0;
+        var metadataEnabled = false;
+        var metadataClickable = false;
+        options = options || {};
+        if (!state.attached || contentInput === null || transientTextSession !== null) {
+            return false;
+        }
+        try { originalStart = Number(contentInput.getSelectionStart()); }
+        catch (ignoredStart) { originalStart = 0; }
+        try { originalEnd = Number(contentInput.getSelectionEnd()); }
+        catch (ignoredEnd) { originalEnd = originalStart; }
+        if (metadataTypeView !== null) {
+            try { metadataEnabled = metadataTypeView.isEnabled() === true; }
+            catch (ignoredMetaEnabled) {}
+            try { metadataClickable = metadataTypeView.isClickable() === true; }
+            catch (ignoredMetaClickable) {}
+        }
+        transientTextGeneration += 1;
+        transientTextSession = {
+            generation: transientTextGeneration,
+            completing: false,
+            originalText: String(contentInput.getText()),
+            originalSelectionStart: originalStart,
+            originalSelectionEnd: originalEnd,
+            metadataEnabled: metadataEnabled,
+            metadataClickable: metadataClickable,
+            onComplete: typeof options.onComplete === "function" ? options.onComplete : null,
+            onCancel: typeof options.onCancel === "function" ? options.onCancel : null
+        };
+        contentInput.setText(String(text === null || text === undefined ? "" : text));
+        contentInput.setSelection(contentInput.getText().length());
+        updateCharacterCount();
+        if (metadataTypeView !== null) {
+            try { metadataTypeView.setEnabled(false); } catch (ignoredDisable) {}
+            try { metadataTypeView.setClickable(false); } catch (ignoredClick) {}
+        }
+        state.lastError = null;
+        syncPrimaryEditorPage("editor", "编辑选中文本", function () {
+            return requestExit("transient_shell_back");
+        });
+        requestKeyboardOnMain();
+        return true;
+    }
+
+function bindTokenizerToEditor() {
+        if (transientTextSession !== null) { return false; }
+        if (!ClipHub.TokenizerUI ||
+                typeof ClipHub.TokenizerUI.bindEditorRoot !== "function" ||
+                panelRoot === null) {
+            return false;
+        }
+        try {
+            return ClipHub.TokenizerUI.bindEditorRoot(
+                panelRoot,
+                panelPageRoot !== null ? panelPageRoot : panelWindowRoot,
+                embeddedInPrimary === true) === true;
+        } catch (error) {
+            state.lastError = String(error);
+            return false;
+        }
+    }
+
+    function unbindTokenizerFromEditor(discard) {
+        if (!ClipHub.TokenizerUI ||
+                typeof ClipHub.TokenizerUI.unbindEditorRoot !== "function") {
+            return false;
+        }
+        try {
+            return ClipHub.TokenizerUI.unbindEditorRoot(discard === true) === true;
+        } catch (ignored) {}
+        return false;
+    }
+
     function showExitConfirmOnMain(reason) {
         var colors;
         var overlay;
@@ -1400,9 +1652,7 @@
         var cardParams;
         var actionParams;
         if (exitConfirmOverlay !== null) { return true; }
-        if (!panelManagedFrame || !panelManagedFrame.panelView) {
-            return false;
-        }
+        if (panelOverlayHost === null) { return false; }
         colors = editorPalette();
         overlay = new FrameLayout(appContext);
         ClipHub.Theme.applyBackgroundColor(overlay, "#76000000");
@@ -1475,7 +1725,7 @@
         cardParams.leftMargin = dp(22);
         cardParams.rightMargin = dp(22);
         overlay.addView(card, cardParams);
-        panelManagedFrame.panelView.addView(overlay,
+        panelOverlayHost.addView(overlay,
             new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
@@ -1488,6 +1738,9 @@
     function requestExit(reason) {
         return requireMain(runOnMainSync(function () {
             if (!state.attached) { return true; }
+            if (transientTextSession !== null) {
+                return completeTransientTextSession(false);
+            }
             if (exitConfirmOverlay !== null) {
                 removeExitConfirmOnMain();
                 return true;
@@ -1607,6 +1860,10 @@
     }
 
     function closePanel(reason) {
+        if (transientTextSession !== null) {
+            transientTextSession = null;
+            transientTextGeneration += 1;
+        }
         var reasonText = String(reason || "close");
         var removalOk;
         if (state.mode === "tags" && tagReturnMode !== null &&
@@ -1625,6 +1882,37 @@
             state.itemId = null;
             return { ok: true, attached: false, alreadyClosed: true,
                 state: getState() };
+        }
+        if (embeddedInPrimary) {
+            removalOk = requireMain(runOnMainSync(function () {
+                var thread = nowThread();
+                hideKeyboardOnMain();
+                unbindTokenizerFromEditor(true);
+                try {
+                    if (ClipHub.UIShell &&
+                            typeof ClipHub.UIShell.unmountPage === "function") {
+                        ClipHub.UIShell.unmountPage("editor", reasonText);
+                    }
+                } catch (errorUnmount) {
+                    state.lastError = String(errorUnmount);
+                    return false;
+                }
+                state.closeCount += 1;
+                if (reasonText === "cancel") { state.cancelCount += 1; }
+                state.removeThreadId = thread.id;
+                state.removeThreadName = thread.name;
+                state.lastError = null;
+                state.open = false;
+                state.attached = false;
+                state.inputFocused = false;
+                state.itemId = null;
+                editorClosing = false;
+                editorRemovalPending = false;
+                clearViews();
+                return true;
+            }, 3000));
+            return { ok: removalOk === true, attached: false,
+                alreadyClosed: false, embedded: true, state: getState() };
         }
         removalOk = requireMain(runOnMainSync(function () {
             var thread = nowThread();
@@ -1704,6 +1992,9 @@
         var delivered;
         var saved;
         if (contentInput === null) { return false; }
+        if (transientTextSession !== null) {
+            return completeTransientTextSession(true);
+        }
         try {
             content = String(contentInput.getText());
             if (content.replace(/^\s+|\s+$/g, "").length === 0) {
@@ -1811,7 +2102,9 @@
 
     function updatePanelSizeForMode() {
         var size;
-        if (panelRoot === null || panelParams === null) { return false; }
+        if (panelRoot === null) { return false; }
+        if (embeddedInPrimary) { return true; }
+        if (panelParams === null) { return false; }
         if (panelWindowRoot !== null && ClipHub.Window &&
                 typeof ClipHub.Window.refreshWindow === "function") {
             return ClipHub.Window.refreshWindow(panelWindowRoot,
@@ -1946,6 +2239,11 @@
         hideKeyboardOnMain();
         buildTagContent(false);
         updatePanelSizeForMode();
+        if (embeddedInPrimary) {
+            syncPrimaryEditorPage("tags", "选择标签", function () {
+                return requestExit("shell_tag_back");
+            });
+        }
         return true;
     }
 
@@ -1967,6 +2265,12 @@
         });
         updatePanelSizeForMode();
         tagReturnMode = null;
+        bindTokenizerToEditor();
+        if (embeddedInPrimary) {
+            syncPrimaryEditorPage("editor", primaryEditorTitle(), function () {
+                return requestExit("shell_back");
+            });
+        }
         return true;
     }
 
@@ -1976,52 +2280,14 @@
         }, 2500));
     }
 
-    function cancelTagSelectionDraft() {
-        return requireMain(runOnMainSync(function () {
-            return restoreTextEditorOnMain(false);
-        }, 2500));
-    }
 
-    function addTitle(titleText, subtitleText) {
-        var dark = isDarkMode();
-        var primary = dark ? "#FFF1F1F3" : "#FF1B1B1F";
-        var secondary = dark ? "#FFA9A9B2" : "#FF6A6A73";
-        var titleRow = new LinearLayout(appContext);
-        var title = makeText(titleText, 15, primary, true);
-        var subtitle;
-        var params;
-        titleRow.setOrientation(LinearLayout.HORIZONTAL);
-        titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        titleRow.addView(title, new LinearLayout.LayoutParams(
-            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-        cancelView = makeCloseButton(dark);
-        cancelView.setContentDescription("关闭编辑窗口");
-        cancelView.setOnClickListener(new JavaAdapter(View.OnClickListener, {
-            onClick: function () { requestExit("cancel_button"); }
-        }));
-        titleRow.addView(cancelView, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT));
-        params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dp(5);
-        panelRoot.addView(titleRow, params);
-        subtitle = makeText(subtitleText, 11, secondary, false);
-        params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dp(9);
-        panelRoot.addView(subtitle, params);
-    }
 
     function buildTextContent(initialText, row, options) {
         var colors = editorPalette();
         var isNew = state.mode === "new";
         var sourceText = isNew ? "ClipHub 手动" :
             String(row && row.source_label ? row.source_label : "未知来源");
-        var dragRow = new LinearLayout(appContext);
-        var dragHandle = new View(appContext);
+        var chrome = editorChromeMetrics();
         var header = new LinearLayout(appContext);
         var titleStack = new LinearLayout(appContext);
         var metaRow = new LinearLayout(appContext);
@@ -2038,31 +2304,15 @@
         state.contentMinLines = 10;
         state.contentLength = String(initialText || "").length;
 
-        dragRow.setGravity(Gravity.CENTER);
-        dragHandle.setBackground(roundedBackground(
-            colors.accentBorder, null, 3));
-        dragRow.addView(dragHandle,
-            new LinearLayout.LayoutParams(dp(42), dp(4)));
-        params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(16));
-        params.bottomMargin = dp(4);
-        panelRoot.addView(dragRow, params);
-        state.dragHandlePresent = true;
+        /* editor_chrome_unified_v1 */
+        addEditorStandaloneDragSlot(panelRoot, colors, chrome);
+        state.dragHandlePresent = embeddedInPrimary !== true;
 
         header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        titleIconView = makeText(isNew ? "+" : "✎", 19,
-            colors.accentStrong, true);
-        titleIconView.setGravity(Gravity.CENTER);
-        titleIconView.setBackground(roundedBackground(
-            colors.accentSoft, colors.accentBorder, 10));
-        params = new LinearLayout.LayoutParams(dp(38), dp(38));
-        params.rightMargin = dp(9);
-        header.addView(titleIconView, params);
-
+        header.setGravity(Gravity.TOP);
         titleStack.setOrientation(LinearLayout.VERTICAL);
         titleTextView = makeText(isNew ? "新增剪贴板" : "编辑剪贴板",
-            18, colors.textPrimary, true);
+            chrome.titleSp, colors.textPrimary, true);
         subtitleTextView = makeText(isNew ?
             "手动添加一条本地剪贴板记录" :
             "修改正文并管理当前记录的自定义标签",
@@ -2076,29 +2326,28 @@
             LinearLayout.LayoutParams.WRAP_CONTENT);
         params.topMargin = dp(2);
         titleStack.addView(subtitleTextView, params);
-        header.addView(titleStack, new LinearLayout.LayoutParams(
-            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        params = new LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+        params.topMargin = dp(8);
+        header.addView(titleStack, params);
 
-        headerCloseView = makeText("×", 22, colors.icon, true);
-        headerCloseView.setGravity(Gravity.CENTER);
-        headerCloseView.setContentDescription("关闭编辑窗口");
-        headerCloseView.setBackground(roundedBackground(
-            colors.surfaceMuted, null, 18));
-        headerCloseView.setClickable(true);
-        headerCloseView.setFocusable(true);
+        headerCloseView = makeEditorHeaderAction("×",
+            "关闭编辑窗口", colors, chrome);
         headerCloseView.setOnClickListener(new JavaAdapter(
             View.OnClickListener, {
                 onClick: function () { requestExit("cancel_button"); }
             }));
-        header.addView(headerCloseView,
-            new LinearLayout.LayoutParams(dp(38), dp(38)));
         params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dp(10);
+            dp(chrome.actionSizeDp), dp(chrome.actionSizeDp));
+        params.gravity = Gravity.TOP;
+        header.addView(headerCloseView, params);
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(44));
+        params.bottomMargin = dp(chrome.headerBottomGapDp);
         panelRoot.addView(header, params);
-        state.headerIconPresent = true;
-        state.headerCloseButtonPresent = true;
+        if (embeddedInPrimary) { header.setVisibility(View.GONE); }
+        state.headerIconPresent = false;
+        state.headerCloseButtonPresent = embeddedInPrimary !== true;
 
         metaRow.setOrientation(LinearLayout.HORIZONTAL);
         metaRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -2199,7 +2448,7 @@
                 onClick: function () { saveFromInput(); }
             }));
         params = new LinearLayout.LayoutParams(0, dp(42), 1);
-        params.rightMargin = dp(8);
+        params.rightMargin = dp(6);
         footer.addView(cancelView, params);
         footer.addView(saveView,
             new LinearLayout.LayoutParams(0, dp(42), 1));
@@ -2221,8 +2470,7 @@
 
     function buildTagContent(requestFocus) {
         var colors = editorPalette();
-        var dragRow = new LinearLayout(appContext);
-        var dragHandle = new View(appContext);
+        var chrome = editorChromeMetrics();
         var header = new LinearLayout(appContext);
         var titleStack = new LinearLayout(appContext);
         var title;
@@ -2251,20 +2499,12 @@
         state.tagColorPreviewCount = 0;
         state.tagFooterActionCount = 2;
 
-        dragRow.setGravity(Gravity.CENTER);
-        dragHandle.setBackground(roundedBackground(
-            colors.accentBorder, null, 3));
-        dragRow.addView(dragHandle,
-            new LinearLayout.LayoutParams(dp(42), dp(4)));
-        params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(16));
-        params.bottomMargin = dp(4);
-        panelRoot.addView(dragRow, params);
+        addEditorStandaloneDragSlot(panelRoot, colors, chrome);
 
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
         titleStack.setOrientation(LinearLayout.VERTICAL);
-        title = makeText("选择标签", 18, colors.textPrimary, true);
+        title = makeText("选择标签", chrome.titleSp, colors.textPrimary, true);
         subtitle = makeText("已选择 " + String(editorDraftTagIds.length) +
             " 个 · 取消不会保存更改", 10, colors.textSecondary, false);
         titleStack.addView(title, new LinearLayout.LayoutParams(
@@ -2277,24 +2517,21 @@
         titleStack.addView(subtitle, params);
         header.addView(titleStack, new LinearLayout.LayoutParams(
             0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-        headerCloseView = makeText("×", 22, colors.icon, true);
-        headerCloseView.setGravity(Gravity.CENTER);
-        headerCloseView.setBackground(roundedBackground(
-            colors.surfaceMuted, null, 18));
-        headerCloseView.setClickable(true);
-        headerCloseView.setFocusable(true);
-        headerCloseView.setContentDescription("取消标签选择");
+        headerCloseView = makeEditorHeaderAction("×",
+            "取消标签选择", colors, chrome);
         headerCloseView.setOnClickListener(new JavaAdapter(
             View.OnClickListener, {
                 onClick: function () { requestExit("tag_cancel"); }
             }));
         header.addView(headerCloseView,
-            new LinearLayout.LayoutParams(dp(38), dp(38)));
+            new LinearLayout.LayoutParams(dp(chrome.actionSizeDp),
+                dp(chrome.actionSizeDp)));
         params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dp(10);
+        params.bottomMargin = dp(chrome.headerBottomGapDp);
         panelRoot.addView(header, params);
+        if (embeddedInPrimary) { header.setVisibility(View.GONE); }
 
         inputRow.setOrientation(LinearLayout.HORIZONTAL);
         inputRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -2451,11 +2688,15 @@
             initialText = String(row.content);
         }
         if (state.attached) {
-            closePanel("replace");
-            pendingOpenRequest = { mode: mode, itemId: itemId,
-                options: options };
-            return { ok: true, attached: false, pending: true,
-                state: getState() };
+            if (embeddedInPrimary) {
+                closePanel("replace");
+            } else {
+                closePanel("replace");
+                pendingOpenRequest = { mode: mode, itemId: itemId,
+                    options: options };
+                return { ok: true, attached: false, pending: true,
+                    state: getState() };
+            }
         }
         state.mode = mode === "edit" ? "edit" :
             (mode === "tags" ? "tags" : "new");
@@ -2488,9 +2729,14 @@
             var thread = nowThread();
             var dark = isDarkMode();
             var colors = editorPalette();
+            var usePrimary = primaryShellAvailable();
+            var host = null;
             panelRoot = new LinearLayout(appContext);
             panelRoot.setOrientation(LinearLayout.VERTICAL);
-            if (state.mode === "tags") {
+            if (usePrimary) {
+                panelRoot.setPadding(0, 0, 0, 0);
+                panelRoot.setBackground(null);
+            } else if (state.mode === "tags") {
                 panelRoot.setPadding(dp(14), dp(12), dp(14), dp(12));
                 panelRoot.setBackground(roundedBackground(
                     dark ? "#FF181A1F" : "#FFFFFFFF",
@@ -2504,10 +2750,70 @@
                 panelRoot.setElevation(0);
                 panelRoot.setClipToOutline(true);
             }
+            if (usePrimary) {
+                embeddedInPrimary = true;
+                panelPageRoot = new FrameLayout(appContext);
+                panelOverlayHost = panelPageRoot;
+                panelPageRoot.addView(panelRoot,
+                    new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT));
+                state.open = true;
+                state.attached = true;
+                state.openCount += 1;
+                state.windowType = null;
+                state.windowFlags = null;
+                state.panelGravity = "shared";
+                state.panelBottomMarginDp = 0;
+                state.softInputMode = Number(
+                    WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+                state.softInputAdjustResize = true;
+                state.dimAmount = 0;
+                state.modalWindow = false;
+                state.opaqueBackground = false;
+                state.addThreadId = thread.id;
+                state.addThreadName = thread.name;
+                state.lastError = null;
+                try {
+                    host = ClipHub.Filter &&
+                        typeof ClipHub.Filter.getPrimaryHostState === "function" ?
+                        ClipHub.Filter.getPrimaryHostState() : null;
+                } catch (ignoredHost) { host = null; }
+                state.panelWidthDp = Number(host && host.widthDp || 0);
+                state.panelHeightDp = Number(host && host.heightDp || 0);
+                state.panelWidthPx = state.panelWidthDp > 0 ?
+                    dp(state.panelWidthDp) : null;
+                state.panelHeightPx = state.panelHeightDp > 0 ?
+                    dp(state.panelHeightDp) : null;
+                state.normalPanelHeightDp = Number(state.panelHeightDp || 0);
+                state.currentPanelHeightDp = Number(state.panelHeightDp || 0);
+                state.currentPanelTopDp = 0;
+                if (!mountPrimaryEditorPage()) {
+                    state.open = false;
+                    state.attached = false;
+                    clearViews();
+                    throw new Error("ClipHub primary editor mount failed");
+                }
+                if (state.mode === "tags") {
+                    state.editorStyle = "legacy_tags_v1";
+                    buildTagContent(requestKeyboard);
+                    syncPrimaryEditorPage("tags", "选择标签", function () {
+                        return requestExit("shell_tag_back");
+                    });
+                } else {
+                    buildTextContent(initialText, row, {
+                        requestKeyboard: requestKeyboard
+                    });
+                }
+                bindTokenizerToEditor();
+                return { ok: true, attached: true, embedded: true,
+                    mode: state.mode, itemId: state.itemId, state: getState() };
+            }
             panelManagedFrame = ClipHub.Window.createManagedFrame(panelRoot, {
                 accentColor: colors.accentStrong
             });
             panelWindowRoot = panelManagedFrame.rootView;
+            panelOverlayHost = panelManagedFrame.panelView;
             panelParams = new WindowManager.LayoutParams(
                 size.width, size.height, type,
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
@@ -2618,6 +2924,7 @@
             ready: ready,
             open: state.open,
             attached: state.attached,
+            embeddedInPrimary: embeddedInPrimary === true,
             closing: editorClosing === true,
             removalPending: editorRemovalPending === true,
             attachedToWindow: attachedToWindow,
@@ -2851,7 +3158,7 @@
 
     ClipHub.Editor = {
         MODULE_NAME: "ch_10_editor",
-        MODULE_VERSION: 24,
+        MODULE_VERSION: 40,
         init: function (context) {
             androidContext = context && context.androidContext ?
                 context.androidContext : global.context;
@@ -2898,6 +3205,20 @@
         close: function () { return closePanel("force_close"); },
         handleBack: function () { return requestExit("system_back"); },
         requestExit: requestExit,
+        beginTransientTextSession: function (text, options) {
+            return requireMain(runOnMainSync(function () {
+                return beginTransientTextSessionOnMain(text, options || {});
+            }, 2500));
+        },
+        cancelTransientTextSession: function () {
+            return requireMain(runOnMainSync(function () {
+                return transientTextSession !== null ?
+                    completeTransientTextSession(false) : false;
+            }, 2500));
+        },
+        isTransientTextSessionActive: function () {
+            return transientTextSession !== null;
+        },
         hasUnsavedChanges: hasEditorUnsavedChanges,
         captureDraft: captureDraft,
         hasPendingDraft: hasPendingDraft,

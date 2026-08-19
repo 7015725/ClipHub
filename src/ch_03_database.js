@@ -5,6 +5,7 @@
     var ReflectArray = Packages.java.lang.reflect.Array;
     var JavaString = Packages.java.lang.String;
     var SCHEMA_VERSION = 2;
+    var REGEX_FEATURE_SCHEMA_VERSION = 1;
     var path = null;
     var database = null;
 
@@ -254,6 +255,98 @@
         return true;
     }
 
+    var REGEX_FEATURE_MIGRATIONS = {
+        1: function (db) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS regex_rules (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "title TEXT NOT NULL," +
+                "title_normalized TEXT NOT NULL," +
+                "note TEXT NOT NULL DEFAULT ''," +
+                "pattern TEXT NOT NULL," +
+                "flags INTEGER NOT NULL DEFAULT 0," +
+                "enabled INTEGER NOT NULL DEFAULT 1," +
+                "manual_order INTEGER NOT NULL DEFAULT 0," +
+                "created_at INTEGER NOT NULL," +
+                "updated_at INTEGER NOT NULL" +
+                ")"
+            );
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS " +
+                "idx_regex_rules_title_normalized " +
+                "ON regex_rules(title_normalized)"
+            );
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS idx_regex_rules_enabled_order " +
+                "ON regex_rules(enabled, manual_order, id)"
+            );
+        }
+    };
+
+    function readSchemaMetaInt(db, key, fallback) {
+        var cursor = null;
+        try {
+            cursor = db.rawQuery(
+                "SELECT value FROM schema_meta WHERE key = ? LIMIT 1",
+                toStringArray([String(key)]));
+            var value;
+            if (!cursor.moveToFirst()) { return Number(fallback); }
+            value = Number(cursor.getString(0));
+            if (!isFinite(value) || value < 0) { return Number(fallback); }
+            return Math.floor(value);
+        } catch (ignoredSchemaMetaRead) {
+            return Number(fallback);
+        } finally {
+            closeCursor(cursor);
+        }
+    }
+
+    function writeSchemaMeta(db, key, value) {
+        var statement = null;
+        try {
+            statement = db.compileStatement(
+                "INSERT OR REPLACE INTO schema_meta(key, value) VALUES (?, ?)");
+            statement.bindString(1, String(key));
+            statement.bindString(2, String(value));
+            statement.executeInsert();
+            return true;
+        } finally {
+            if (statement !== null) {
+                try { statement.close(); } catch (ignoredSchemaMetaStatement) {}
+            }
+        }
+    }
+
+    function migrateRegexFeatureSchema() {
+        var db = requireOpen();
+        var key = "feature.regex_rules.schema_version";
+        var current = readSchemaMetaInt(db, key, 0);
+        var target;
+        if (current > REGEX_FEATURE_SCHEMA_VERSION) {
+            throw new Error(
+                "Regex feature schema is newer than this build: " + current +
+                " > " + REGEX_FEATURE_SCHEMA_VERSION
+            );
+        }
+        if (current === REGEX_FEATURE_SCHEMA_VERSION) { return false; }
+        runInTransaction(function () {
+            for (target = current + 1;
+                    target <= REGEX_FEATURE_SCHEMA_VERSION; target += 1) {
+                if (typeof REGEX_FEATURE_MIGRATIONS[target] !== "function") {
+                    throw new Error("Missing Regex feature migration: " + target);
+                }
+                REGEX_FEATURE_MIGRATIONS[target](db);
+                writeSchemaMeta(db, key, target);
+            }
+        });
+        return true;
+    }
+
+    function ensureRegexFeatureSchema() {
+        migrateRegexFeatureSchema();
+        return true;
+    }
+
     function openDatabase() {
         var file;
         if (path === null) {
@@ -265,6 +358,7 @@
         try {
             database.setForeignKeyConstraintsEnabled(true);
             migrate();
+            ensureRegexFeatureSchema();
             return database;
         } catch (error) {
             try { database.close(); } catch (ignored) {}
@@ -282,8 +376,9 @@
 
     ClipHub.Database = {
         MODULE_NAME: "ch_03_database",
-        MODULE_VERSION: 3,
+        MODULE_VERSION: 5,
         SCHEMA_VERSION: SCHEMA_VERSION,
+        REGEX_FEATURE_SCHEMA_VERSION: REGEX_FEATURE_SCHEMA_VERSION,
         init: function (context) {
             var dir = ClipHub.Base.ensureDir(
                 ClipHub.Base.joinPath(context.runtimeDir, "data")

@@ -1,0 +1,113 @@
+var fs = require("fs");
+var zlib = require("zlib");
+function expanded(path) {
+    var loader = fs.readFileSync(path, "utf8");
+    var match = loader.match(/var PACKED_B64\s*=\s*([\s\S]*?)\n\s*;/);
+    var chunks = [];
+    var reChunk = /"([A-Za-z0-9+/=]+)"/g;
+    var item;
+    if (!match) { throw new Error("PACKED_B64 missing: " + path); }
+    while ((item = reChunk.exec(match[1])) !== null) { chunks.push(item[1]); }
+    return zlib.gunzipSync(Buffer.from(chunks.join(""), "base64")).toString("utf8");
+}
+function functionBody(source, name) {
+    var start = source.indexOf("function " + name + "(");
+    var next;
+    if (start < 0) { throw new Error("missing function: " + name); }
+    next = source.indexOf("\n    function ", start + 10);
+    return source.substring(start, next < 0 ? source.length : next);
+}
+var source = expanded("src/ch_17_tokenizer_ui.js");
+var build = functionBody(source, "buildTokenView");
+var reflow = functionBody(source, "reflowTokens");
+var hit = functionBody(source, "tokenAtRawPoint");
+var surface = functionBody(source, "renderTokenizerSurface");
+var header = functionBody(source, "buildHeader");
+var segment = functionBody(source, "buildSegment");
+var top = functionBody(source, "makeTokenizerTopActions");
+var toolbar = functionBody(source, "buildToolbar");
+var cell = functionBody(source, "makeToolbarCell");
+var click = functionBody(source, "performToolbarClick");
+var sync = functionBody(source, "syncTokenizerShell");
+if (sync.indexOf('showBack: tokenizerPage ? tokenizerLaunchOrigin !== "home" : true') < 0 ||
+        sync.indexOf('dispatchTokenizerBack("shell_close")') < 0) {
+    throw new Error("primary host header navigation contract missing");
+}
+if (source.indexOf("MODULE_VERSION: 31") < 0) { throw new Error("TokenizerUI v31 missing"); }
+if (source.indexOf("tokenizer_chip_layout_cleanup_v1") < 0) { throw new Error("chip cleanup marker missing"); }
+if (source.indexOf("tokenizer_embedded_single_header_v1") < 0 ||
+        header.indexOf("if (editorEmbeddedInPrimary) { return; }") < 0) {
+    throw new Error("embedded duplicate tokenizer header remains");
+}
+if (segment.indexOf("makeTokenizerTopActions") >= 0 ||
+        segment.indexOf("editorEmbeddedInPrimary") >= 0) {
+    throw new Error("compact segment/action merge remains");
+}
+if (top.indexOf("关闭分词") < 0 || top.indexOf("返回编辑页") < 0 ||
+        top.indexOf("dispatchTokenizerBack") < 0 ||
+        top.indexOf("规则") >= 0 || top.indexOf("帮助") >= 0) {
+    throw new Error("top controls were not cleaned to context navigation");
+}
+var requiredActions = ["copy", "input", "edit"];
+var actionIndex;
+var action;
+for (actionIndex = 0; actionIndex < requiredActions.length; actionIndex += 1) {
+    action = requiredActions[actionIndex];
+    if (toolbar.indexOf('"' + action + '"') < 0) {
+        throw new Error("toolbar action missing: " + action);
+    }
+}
+if (toolbar.indexOf('"清空"') >= 0 || toolbar.indexOf('"clear"') >= 0 ||
+        click.indexOf("clear: true") >= 0) {
+    throw new Error("destructive clear toolbar contract remains");
+}
+if (toolbar.indexOf('"export"') >= 0 || toolbar.indexOf('"back"') >= 0 ||
+        click.indexOf('action === "back"') >= 0 || click.indexOf('export: true') >= 0) {
+    throw new Error("removed toolbar export/back action contract regressed");
+}
+if (cell.indexOf("decorateSemanticPanelIcon") < 0) {
+    throw new Error("semantic toolbar icon contract missing");
+}
+if (cell.indexOf("tokenizer_toolbar_horizontal_compact_v1") < 0 ||
+        cell.indexOf("cell.setOrientation(LinearLayout.HORIZONTAL)") < 0 ||
+        cell.indexOf("new LinearLayout.LayoutParams(dp(18), dp(18))") < 0 ||
+        cell.indexOf("labelParams.leftMargin = dp(7)") < 0 ||
+        cell.indexOf("cell.setOrientation(LinearLayout.VERTICAL)") >= 0) {
+    throw new Error("compact horizontal toolbar cell contract regressed");
+}
+if ((toolbar.match(/params\.rightMargin = dp\(6\);/g) || []).length !== 2 ||
+        toolbar.indexOf("ViewGroup.LayoutParams.MATCH_PARENT, dp(46)") < 0) {
+    throw new Error("toolbar spacing symmetry contract regressed");
+}
+if (build.indexOf("/^\\s*$/.test") < 0 ||
+        build.indexOf('state.mode !== "regex"') < 0 ||
+        build.indexOf("visibleWhitespaceText(token.text)") < 0 ||
+        build.indexOf("view.setVisibility(View.GONE)") < 0 ||
+        reflow.indexOf("view.getVisibility() !== View.VISIBLE") < 0 ||
+        hit.indexOf("view.getVisibility() !== View.VISIBLE") < 0) {
+    throw new Error("mode-scoped whitespace token contract regressed");
+}
+if (source.indexOf('replace(/\\r\\n/g, "↵")') < 0 ||
+        source.indexOf('replace(/\\t/g, "⇥")') < 0 ||
+        source.indexOf('replace(/ /g, "␠")') < 0) {
+    throw new Error("regex whitespace placeholder rendering missing");
+}
+if (build.indexOf("tokenizer_chip_adaptive_height_v1") < 0 ||
+        build.indexOf("view.setSingleLine(false)") < 0 ||
+        build.indexOf("view.setHorizontallyScrolling(false)") < 0 ||
+        build.indexOf("view.setMinHeight(dp(34))") < 0 ||
+        reflow.indexOf("view.setMaxWidth(available)") < 0 ||
+        reflow.indexOf("View.MeasureSpec.AT_MOST") < 0 ||
+        reflow.indexOf("row.setMinimumHeight(dp(36))") < 0 ||
+        (reflow.match(/LinearLayout\.LayoutParams\.WRAP_CONTENT/g) || []).length < 3) {
+    throw new Error("long tokenizer chip adaptive-height contract missing");
+}
+if (reflow.indexOf("LinearLayout.LayoutParams.MATCH_PARENT, dp(36)") >= 0 ||
+        reflow.indexOf("LinearLayout.LayoutParams.WRAP_CONTENT, dp(34)") >= 0) {
+    throw new Error("fixed tokenizer chip height regressed");
+}
+if (surface.indexOf("buildIndicator(pageColumn)") >= 0 ||
+        source.indexOf("function buildIndicator(column)") >= 0) {
+    throw new Error("static purple indicator regressed");
+}
+console.log("Tokenizer layout/navigation contract: passed");

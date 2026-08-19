@@ -1,83 +1,164 @@
 {
-  "schemaVersion": 1,
-  "moduleSetVersion": "20260809.05",
-  "entryMinVersion": 6,
+  "schemaVersion": 2,
+  "moduleSetVersion": "20260819.08",
+  "entryMinVersion": 8,
   "sourceRef": "main",
   "modules": [
     {
       "name": "ch_01_base.js",
       "path": "src/ch_01_base.js",
-      "sha": "563791ff518078bfd57d7b73fc51b9c7482a3ffb"
+      "sha": "563791ff518078bfd57d7b73fc51b9c7482a3ffb",
+      "export": "Base",
+      "runtimeRole": "base"
     },
     {
       "name": "ch_02_log.js",
       "path": "src/ch_02_log.js",
-      "sha": "581d7a9a0e47bdee2be0341cbfbe6b0308c207bb"
+      "sha": "581d7a9a0e47bdee2be0341cbfbe6b0308c207bb",
+      "export": "Log",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 1
     },
     {
       "name": "ch_03_database.js",
       "path": "src/ch_03_database.js",
-      "sha": "3c3ea319844cf9470aff385def30cac11bf95e3c"
+      "sha": "b8d8d436820639da11ea4246830b02975a070761",
+      "export": "Database",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 2
     },
     {
       "name": "ch_04_clipboard.js",
       "path": "src/ch_04_clipboard.js",
-      "sha": "847f28b25e8aa6c27ab490d4f89fdd96169588d2"
+      "sha": "b7e9a8df43a9ba234bcd1eef723efc77038a430b",
+      "export": "Clipboard",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 6
     },
     {
       "name": "ch_05_classifier.js",
       "path": "src/ch_05_classifier.js",
-      "sha": "6fe9b6968749a175d5ad10d8e157e17e68975919"
+      "sha": "dceacbc0936d18b242cfadfd721d3d1c8fb4c044",
+      "export": "Classifier",
+      "runtimeRole": "passive"
     },
     {
       "name": "ch_06_repository.js",
       "path": "src/ch_06_repository.js",
-      "sha": "c245668f495ba7b668002f4497e4441f3da8a4fa"
+      "sha": "e3cb4a5cf99784ddd4e4351d6458aba3351ecb4a",
+      "export": "Repository",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 3
     },
     {
       "name": "ch_07_theme.js",
       "path": "src/ch_07_theme.js",
-      "sha": "2d26ee75a5216a8ba58d15010f439596c98d0b30"
+      "sha": "61495b5983b20fbed85a17dda2664cc83960ae22",
+      "export": "Theme",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 5
     },
     {
       "name": "ch_08_window.js",
       "path": "src/ch_08_window.js",
-      "sha": "dfa9211951f2e80c8f69f029d3876f6378f3ecc9"
+      "sha": "dfa9211951f2e80c8f69f029d3876f6378f3ecc9",
+      "export": "Window",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 7
     },
     {
       "name": "ch_09_list.js",
       "path": "src/ch_09_list.js",
-      "sha": "8aae91e24d475884f2cbcba6b3e5afb241b291c3"
+      "sha": "af54b7b927d03b2630ea49e82098441b0fb27531",
+      "export": "List",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 8
     },
     {
       "name": "ch_10_editor.js",
       "path": "src/ch_10_editor.js",
-      "sha": "0929c76137b9b5a44a55062444393f9f06b364a8"
+      "sha": "8c677752ec2779fe540bb2a8c01b267aa1be799f",
+      "export": "Editor",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 9
     },
     {
       "name": "ch_11_filter.js",
       "path": "src/ch_11_filter.js",
-      "sha": "6c573c90d32456738801d5c8a426dc4cb06fbb9e"
+      "sha": "3d3aa59c7f9112a594eb90741ace437ea2c756ca",
+      "export": "Filter",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 10
     },
     {
       "name": "ch_12_translation.js",
       "path": "src/ch_12_translation.js",
-      "sha": "4a5e6af14f94f90046f2652590e4a45a24803a17"
+      "sha": "61da8e9816da23bdb13b0273154f8cd67ed5c9d0",
+      "export": "Translation",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 12
     },
     {
       "name": "ch_13_settings.js",
       "path": "src/ch_13_settings.js",
-      "sha": "f8a6aea8fda90803ba14bdb227a7211b01d8ae58"
+      "sha": "9c073e0a1a64a401f12cb42b64c1ac4456729c1a",
+      "export": "Settings",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 11
     },
     {
       "name": "ch_14_event_bus.js",
       "path": "src/ch_14_event_bus.js",
-      "sha": "a64b7973d02c42aea14ebfdfdd62de0886fa8057"
+      "sha": "a64b7973d02c42aea14ebfdfdd62de0886fa8057",
+      "export": "EventBus",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 4
     },
     {
       "name": "ch_15_app.js",
       "path": "src/ch_15_app.js",
-      "sha": "9b93907ac47103a063b10a2257c1b37b4bb4b624"
+      "sha": "e81a4cb2a755f88d54f52951c4b232ce5ff333d8",
+      "export": "App",
+      "runtimeRole": "app"
+    },
+    {
+      "name": "ch_16_ui_shell.js",
+      "path": "src/ch_16_ui_shell.js",
+      "sha": "c5ff86f1da1ab6553d4d8ff21c64f9456e44aad3",
+      "export": "UIShell",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 13
+    },
+    {
+      "name": "ch_17_tokenizer_ui.js",
+      "path": "src/ch_17_tokenizer_ui.js",
+      "sha": "5d2e3fdc90a001caf7f9a84d7bfc503e0f136493",
+      "export": "TokenizerUI",
+      "runtimeRole": "passive"
+    },
+    {
+      "name": "ch_18_tokenizer_core.js",
+      "path": "src/ch_18_tokenizer_core.js",
+      "sha": "99d0473135cd63c01ee31eb64d1d7800ec6d6618",
+      "export": "TokenizerCore",
+      "runtimeRole": "passive"
+    },
+    {
+      "name": "ch_19_tokenizer_service.js",
+      "path": "src/ch_19_tokenizer_service.js",
+      "sha": "1a126bcbecc46dcbaf428c250af8345a78919245",
+      "export": "TokenizerService",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 14
+    },
+    {
+      "name": "ch_20_visibility_intent_guard.js",
+      "path": "src/ch_20_visibility_intent_guard.js",
+      "sha": "21acce5b55ef0a9d074b865dd6c1a69cb8a4eb86",
+      "export": "VisibilityIntentGuard",
+      "runtimeRole": "managed",
+      "lifecycleIndex": 15
     }
-  ]
+  ],
+  "resources": []
 }

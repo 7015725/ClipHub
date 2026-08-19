@@ -1,9 +1,28 @@
 /*
- * ClipHub 分类器兼容占位模块。
+ * ClipHub 分类器兼容模块。
  *
- * ENTRY_VERSION 5 固定加载该文件。自动内容分类已取消。保留本文件
- * 以维持 15 模块清单、离线缓存和旧入口兼容。
+ * 自动内容分类已取消。该模块只保留旧脚本可调用的纯文本分类接口，
+ * 不修改 UI、数据库或其他模块，也不参与 App 生命周期。
  */
-(function () {
-    return true;
-}());
+(function (global) {
+    var ClipHub = global.ClipHub || (global.ClipHub = {});
+
+    ClipHub.Classifier = {
+        MODULE_NAME: "ch_05_classifier",
+        MODULE_VERSION: 3,
+        classify: function (value) {
+            var text = String(value === null || value === undefined ? "" : value);
+            return {
+                type: "text",
+                confidence: 100,
+                normalizedContent: text
+            };
+        },
+        getState: function () {
+            return {
+                compatibilityOnly: true,
+                automaticClassification: false
+            };
+        }
+    };
+}((function () { return this; }())));

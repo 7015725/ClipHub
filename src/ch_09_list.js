@@ -41,6 +41,7 @@ var detailClosing = false;
 var detailRemovalPending = false;
 var detailRemovalGeneration = 0;
 var pendingDetailOpen = null;
+var detailEmbeddedInPrimary = false;
 var state = {
 refreshCount: 0,
 eventRefreshCount: 0,
@@ -117,7 +118,7 @@ ClipHub.Theme.applyGradientStroke(drawable, dp(1), stroke);
 }
 return drawable;
 }
-function makeText(text, sizeSp, color, bold) {
+function makeText(text, sizeSp, color, bold, semanticIcon) {
 var view = new TextView(androidContext);
 view.setText(String(text));
 view.setTextSize(TypedValue.COMPLEX_UNIT_SP, Number(sizeSp));
@@ -127,10 +128,15 @@ if (bold) {
 view.setTypeface(Packages.android.graphics.Typeface.DEFAULT,
 Packages.android.graphics.Typeface.BOLD);
 }
+/* panel_icon_explicit_v2 */
+if (semanticIcon === true && ClipHub.Theme &&
+        typeof ClipHub.Theme.decoratePanelIcon === "function") {
+    ClipHub.Theme.decoratePanelIcon(view, text, view.getCurrentTextColor(), sizeSp, true);
+}
 return view;
 }
 function makeIcon(text, color, sizeSp, contentDescription) {
-var view = makeText(text, sizeSp, color, false);
+var view = makeText(text, sizeSp, color, false, true);
 view.setGravity(Gravity.CENTER);
 view.setClickable(true);
 view.setFocusable(true);
@@ -139,7 +145,16 @@ view.setContentDescription(String(contentDescription));
 }
 return view;
 }
-function makePill(text, palette, selected) {
+function detailChromeMetrics() {
+var widthDp = Number(detailWidthPx || 0) > 0 ? Number(detailWidthPx) / density : 390;
+var fontScale = 1;
+try {
+fontScale = Number(androidContext.getResources().getConfiguration().fontScale || 1);
+} catch (ignoredDetailFontScale) { fontScale = 1; }
+return ClipHub.Theme.getPanelChromeMetrics(widthDp, fontScale, 1);
+}
+
+    function makePill(text, palette, selected) {
 var view = makeText(text, 9,
 selected ? palette.accentStrong : palette.textSecondary,
 selected);
@@ -468,12 +483,47 @@ state: getDetailState()
 }
 if (detailRoot === null && !detailRemovalPending) {
 detailRow = null;
+detailEmbeddedInPrimary = false;
 return {
 ok: true,
 attached: false,
 alreadyClosed: true,
 state: getDetailState()
 };
+}
+if (detailEmbeddedInPrimary) {
+return ClipHub.Window.runOnMain(function () {
+var thread = Thread.currentThread();
+try {
+if (ClipHub.UIShell &&
+typeof ClipHub.UIShell.unmountPage === "function") {
+ClipHub.UIShell.unmountPage("detail", reasonText);
+}
+} catch (errorUnmount) {
+state.lastError = String(errorUnmount);
+return { ok: false, attached: true, embedded: true,
+state: getDetailState() };
+}
+state.detailCloseCount += 1;
+state.detailRemoveThreadName = String(thread.getName());
+state.lastDetailAction = reasonText;
+detailEmbeddedInPrimary = false;
+detailClosing = false;
+detailRemovalPending = false;
+detailRoot = null;
+detailWindowRoot = null;
+detailManagedFrame = null;
+detailParams = null;
+detailRow = null;
+detailCopyView = null;
+detailEditView = null;
+detailCloseView = null;
+detailWidthPx = 0;
+detailHeightPx = 0;
+state.lastError = null;
+return { ok: true, attached: false, alreadyClosed: false,
+embedded: true, state: getDetailState() };
+}, 3000);
 }
 return ClipHub.Window.runOnMain(function () {
 var thread = Thread.currentThread();
@@ -495,6 +545,7 @@ ClipHub.Window.detachWindow(capturedRoot);
 state.detailCloseCount += 1;
 state.detailRemoveThreadName = String(thread.getName());
 state.lastDetailAction = reasonText;
+detailEmbeddedInPrimary = false;
 detailRoot = null;
 detailWindowRoot = null;
 detailManagedFrame = null;
@@ -582,12 +633,14 @@ state.lastError = String(error);
 return false;
 }
 }
-function buildDetailView(row) {
+function buildDetailView(row, embedded) {
 var palette = colors();
+var chrome = detailChromeMetrics();
 var root = new LinearLayout(androidContext);
+var handleSlot = new FrameLayout(androidContext);
 var handle = new View(androidContext);
 var header = new LinearLayout(androidContext);
-var title = makeText("内容详情", 17,
+var title = makeText("内容详情", chrome.titleSp,
 palette.textPrimary, true);
 var meta = makeText(sourceText(row) + "  ·  " +
 formatTime(row.last_copied_at), 10,
@@ -597,24 +650,36 @@ var body = makeText(String(row.content), 13,
 palette.textPrimary, false);
 var footer = new LinearLayout(androidContext);
 var params;
+var embeddedMode = embedded === true;
 root.setOrientation(LinearLayout.VERTICAL);
-root.setPadding(dp(14), dp(8), dp(14), dp(12));
+if (embeddedMode) {
+root.setPadding(0, 0, 0, 0);
+root.setBackground(null);
+} else {
+root.setPadding(dp(chrome.screenPaddingDp), dp(chrome.pagePaddingTopDp),
+dp(chrome.screenPaddingDp), dp(chrome.pagePaddingBottomDp));
 root.setBackground(roundedBackground(palette.surface,
-palette.stroke, 24));
-if (Build.VERSION.SDK_INT >= 21) {
-root.setElevation(dp(18));
+palette.stroke, chrome.pageRadiusDp));
 }
+if (Build.VERSION.SDK_INT >= 21) {
+root.setElevation(embeddedMode ? 0 : dp(18));
+}
+/* detail_chrome_unified_v1 */
 handle.setBackground(roundedBackground(
 palette.strokeStrong, null, 3));
-params = new LinearLayout.LayoutParams(dp(42), dp(4));
-params.gravity = Gravity.CENTER_HORIZONTAL;
-params.bottomMargin = dp(8);
-root.addView(handle, params);
+params = new FrameLayout.LayoutParams(dp(chrome.dragHandleWidthDp),
+dp(chrome.dragHandleHeightDp));
+params.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+params.topMargin = dp(chrome.dragHandleTopDp);
+handleSlot.addView(handle, params);
+root.addView(handleSlot, new LinearLayout.LayoutParams(
+LinearLayout.LayoutParams.MATCH_PARENT, dp(chrome.dragHandleSlotDp)));
+if (embeddedMode) { handleSlot.setVisibility(View.GONE); }
 header.setOrientation(LinearLayout.HORIZONTAL);
 header.setGravity(Gravity.CENTER_VERTICAL);
 header.addView(title, new LinearLayout.LayoutParams(
 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-detailCloseView = makeIcon("×", palette.icon, 23,
+detailCloseView = makeIcon("×", palette.icon, chrome.iconSp,
 "关闭内容详情");
 detailCloseView.setBackground(circleBackground(
 palette.surfaceMuted, null));
@@ -625,12 +690,16 @@ closeDetail("button");
 }
 }));
 header.addView(detailCloseView,
-new LinearLayout.LayoutParams(dp(38), dp(38)));
+new LinearLayout.LayoutParams(dp(chrome.actionSizeDp), dp(chrome.actionSizeDp)));
 params = new LinearLayout.LayoutParams(
 LinearLayout.LayoutParams.MATCH_PARENT,
-LinearLayout.LayoutParams.WRAP_CONTENT);
-params.bottomMargin = dp(4);
+dp(chrome.headerHeightDp));
+params.bottomMargin = dp(chrome.headerBottomGapDp);
 root.addView(header, params);
+if (embeddedMode) {
+header.setVisibility(View.GONE);
+detailCloseView = null;
+}
 meta.setSingleLine(true);
 meta.setEllipsize(TextUtils.TruncateAt.END);
 params = new LinearLayout.LayoutParams(
@@ -643,7 +712,7 @@ body.setGravity(Gravity.TOP | Gravity.START);
 body.setLineSpacing(0, 1.13);
 body.setPadding(dp(12), dp(11), dp(12), dp(11));
 body.setBackground(roundedBackground(palette.surfaceMuted,
-palette.stroke, 14));
+palette.stroke, chrome.cardRadiusDp));
 scroll.setFillViewport(true);
 scroll.setVerticalScrollBarEnabled(false);
 scroll.addView(body, new FrameLayout.LayoutParams(
@@ -693,22 +762,83 @@ pendingDetailOpen = { row: row, force: force };
 return { ok: true, attached: false, pending: true };
 }
 if (detailRoot !== null) {
+if (detailEmbeddedInPrimary) {
+closeDetail("replace");
+} else {
 closeDetail("replace");
 pendingDetailOpen = { row: row, force: force };
 return { ok: true, attached: false, pending: true };
 }
+}
 return ClipHub.Window.runOnMain(function () {
-var size = detailDimensions();
-var type = Build.VERSION.SDK_INT >= 26 ?
+var size;
+var type;
+var flags;
+var thread = Thread.currentThread();
+var primaryAvailable = false;
+var primaryMounted = false;
+try {
+primaryAvailable = ClipHub.UIShell &&
+typeof ClipHub.UIShell.canEmbed === "function" &&
+ClipHub.UIShell.canEmbed("detail") === true;
+} catch (ignoredPrimaryAvailability) {
+primaryAvailable = false;
+}
+if (primaryAvailable) {
+detailRow = row;
+detailRoot = buildDetailView(row, true);
+try {
+primaryMounted = ClipHub.UIShell.mountPage("detail", detailRoot, {
+title: "内容详情",
+showBack: true,
+onBack: function () {
+return closeDetail("shell_back").ok === true;
+},
+onClose: function () {
+return closeDetail("shell_close").ok === true;
+}
+}) !== false;
+} catch (primaryError) {
+state.lastError = String(primaryError);
+primaryMounted = false;
+try {
+if (ClipHub.UIShell &&
+typeof ClipHub.UIShell.unmountPage === "function") {
+ClipHub.UIShell.unmountPage("detail", "detail_mount_failed");
+}
+} catch (ignoredPrimaryCleanup) {}
+}
+if (primaryMounted) {
+detailEmbeddedInPrimary = true;
+detailWindowRoot = null;
+detailManagedFrame = null;
+detailParams = null;
+detailWidthPx = 0;
+detailHeightPx = 0;
+state.detailOpenCount += 1;
+state.lastDetailItemId = Number(row.id);
+state.detailAddThreadName = String(thread.getName());
+state.lastDetailAction = "open";
+state.lastError = null;
+return true;
+}
+detailRoot = null;
+detailRow = null;
+detailCopyView = null;
+detailEditView = null;
+detailCloseView = null;
+}
+size = detailDimensions();
+type = Build.VERSION.SDK_INT >= 26 ?
 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY :
 WindowManager.LayoutParams.TYPE_SYSTEM_ALERT;
-var flags =
+flags =
 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
 WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED |
 WindowManager.LayoutParams.FLAG_DIM_BEHIND;
-var thread = Thread.currentThread();
+detailEmbeddedInPrimary = false;
 detailRow = row;
-detailRoot = buildDetailView(row);
+detailRoot = buildDetailView(row, false);
 detailManagedFrame = ClipHub.Window.createManagedFrame(detailRoot, {
 accentColor: colors().accentStrong
 });
@@ -763,6 +893,7 @@ detailRoot.isAttachedToWindow();
 return {
 attached: detailRoot !== null,
 attachedToWindow: attached,
+embeddedInPrimary: detailEmbeddedInPrimary === true,
 closing: detailClosing === true,
 removalPending: detailRemovalPending === true,
 itemId: detailRow === null ? null : Number(detailRow.id),
@@ -922,7 +1053,7 @@ state.lastError = null;
 }
 ClipHub.List = {
 MODULE_NAME: "ch_09_list",
-MODULE_VERSION: 21,
+MODULE_VERSION: 25,
 LONG_TEXT_THRESHOLD: LONG_TEXT_THRESHOLD,
 init: function (context) {
 androidContext = context && context.androidContext ?

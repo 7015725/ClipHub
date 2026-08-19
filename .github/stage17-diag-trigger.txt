@@ -1,1 +1,0 @@
-trigger=stage17.1-stable-channel-v2

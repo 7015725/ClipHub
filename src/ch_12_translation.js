@@ -5,10 +5,13 @@
     var Handler = Packages.android.os.Handler;
     var System = Packages.java.lang.System;
     var View = Packages.android.view.View;
+    var ViewGroup = Packages.android.view.ViewGroup;
     var Gravity = Packages.android.view.Gravity;
     var KeyEvent = Packages.android.view.KeyEvent;
     var WindowManager = Packages.android.view.WindowManager;
     var Context = Packages.android.content.Context;
+    var Intent = Packages.android.content.Intent;
+    var ComponentName = Packages.android.content.ComponentName;
     var CountDownLatch = Packages.java.util.concurrent.CountDownLatch;
     var TimeUnit = Packages.java.util.concurrent.TimeUnit;
     var AtomicReference = Packages.java.util.concurrent.atomic.AtomicReference;
@@ -46,6 +49,11 @@
     var originalAppHideUi = null;
     var lastBackAt = 0;
     var lastBackSignature = "";
+    var backGestureSequence = 0;
+    var activeBackGestureId = "";
+    var lastBackGestureId = "";
+    var lastBackGestureAt = 0;
+    var consumedBackGestureId = "";
     var navState = {
         initCount: 0,
         shutdownCount: 0,
@@ -55,6 +63,8 @@
         entryPurgeCount: 0,
         residualWindowRemoveCount: 0,
         mainFocusableUpgradeCount: 0,
+        backRefreshCount: 0,
+        backRefreshFailureCount: 0,
         keyBackCount: 0,
         backStartedCount: 0,
         backProgressCount: 0,
@@ -62,6 +72,8 @@
         backInvokedCount: 0,
         backHandledCount: 0,
         duplicateBackCount: 0,
+        systemBackGestureCount: 0,
+        systemBackCommitCount: 0,
         filterBackCount: 0,
         uiHideCount: 0,
         backgroundCheckCount: 0,
@@ -69,12 +81,23 @@
         focusGainCount: 0,
         focusLossCount: 0,
         callbackMode: "none",
+        backMode: "uninitialized",
+        predictiveBackSupported: Build.VERSION.SDK_INT >= 33,
+        predictiveBackEnabled: false,
+        predictiveBackCapabilitySource: "uninitialized",
+        predictiveBackContextPackage: "",
+        predictiveBackTargetSdk: 0,
+        legacyBackRefreshCount: 0,
         baselinePackage: "",
         lastTopPackage: "",
         lastActivityType: 0,
         lastBackOwner: "",
         lastBackReason: "",
         lastBackSignature: "",
+        lastBackGestureId: "",
+        lastBackRequestId: "",
+        lastBackPageId: "",
+        lastBackPageGeneration: 0,
         lastHideReason: "",
         lastBackgroundReason: "",
         lastError: null
@@ -589,46 +612,208 @@
             reason === "back_key" || reason === "escape_key";
     }
 
+    function systemBackInputFamily(reason) {
+        reason = String(reason || "");
+        if (reason === "predictive_back") { return "predictive"; }
+        if (reason === "back_key" || reason === "escape_key") {
+            return "legacy_key";
+        }
+        if (reason === "on_back_invoked") { return "system"; }
+        return "system";
+    }
+
     function backSignature(owner, reason) {
         return isSystemBackReason(reason) ? "system" :
             "owner:" + String(owner || "auto");
     }
 
-    function dispatchBack(owner, reason) {
-        var timestamp = now();
-        var signature = backSignature(owner, reason);
-        var handled = false;
-        if (timestamp - lastBackAt < 180 &&
-                signature === lastBackSignature) {
-            navState.duplicateBackCount += 1;
-            return true;
+    function shellBackSnapshot() {
+    var shell = null;
+    try {
+        if (ClipHub.UIShell &&
+                typeof ClipHub.UIShell.getState === "function") {
+            shell = ClipHub.UIShell.getState() || null;
         }
-        lastBackAt = timestamp;
-        lastBackSignature = signature;
-        navState.backInvokedCount += 1;
-        navState.lastBackOwner = String(owner || "");
-        navState.lastBackReason = String(reason || "system_back");
-        navState.lastBackSignature = signature;
-        try {
-            if (ClipHub.Window &&
-                    typeof ClipHub.Window.requestBack === "function") {
-                handled = ClipHub.Window.requestBack(
-                    navState.lastBackReason) === true;
-            }
-        } catch (windowBackError) {
-            navState.lastError = String(windowBackError);
-            handled = false;
+    } catch (ignored) { shell = null; }
+    return {
+        childAttached: !!(shell && shell.childAttached === true),
+        pageId: shell ? String(shell.activePageId ||
+            shell.currentPageId || "") : "",
+        generation: shell ? Number(shell.generation || 0) : 0
+    };
+}
+
+function predictiveBackRequest(owner, reason, gestureId) {
+    var shell = shellBackSnapshot();
+    return {
+        sourceFamily: "predictive",
+        sourceReason: String(reason || "predictive_back"),
+        ownerPageId: shell.pageId || String(owner || ""),
+        generation: Number(shell.generation || 0),
+        requestId: "back:" + String(gestureId || ""),
+        gestureId: String(gestureId || "")
+    };
+}
+
+function beginPredictiveBackContract(owner, reason, gestureId) {
+    try {
+        if (ClipHub.BackDispatcher &&
+                typeof ClipHub.BackDispatcher.beginPredictive === "function") {
+            return ClipHub.BackDispatcher.beginPredictive(
+                predictiveBackRequest(owner, reason, gestureId)) === true;
         }
-        if (!handled) {
-            handled = closeTop(owner, navState.lastBackReason);
+    } catch (error) { navState.lastError = String(error); }
+    return false;
+}
+
+function progressPredictiveBackContract(owner, event, gestureId) {
+    var progress = 0;
+    try { progress = Number(event.getProgress()); }
+    catch (ignoredProgress) { progress = 0; }
+    try {
+        if (ClipHub.BackDispatcher &&
+                typeof ClipHub.BackDispatcher.progressPredictive === "function") {
+            return ClipHub.BackDispatcher.progressPredictive(progress,
+                predictiveBackRequest(owner, "predictive_back", gestureId)) === true;
+        }
+    } catch (error) { navState.lastError = String(error); }
+    return false;
+}
+
+function cancelPredictiveBackContract(owner, gestureId) {
+    try {
+        if (ClipHub.BackDispatcher &&
+                typeof ClipHub.BackDispatcher.cancelPredictive === "function") {
+            return ClipHub.BackDispatcher.cancelPredictive(
+                predictiveBackRequest(owner, "predictive_back", gestureId)) === true;
+        }
+    } catch (error) { navState.lastError = String(error); }
+    return false;
+}
+
+function beginSystemBackGesture(reason) {
+    var timestamp = now();
+    if (activeBackGestureId) {
+        lastBackGestureAt = timestamp;
+        return activeBackGestureId;
+    }
+    backGestureSequence += 1;
+    activeBackGestureId = "system:" + String(backGestureSequence) +
+        ":" + String(timestamp);
+    lastBackGestureId = activeBackGestureId;
+    lastBackGestureAt = timestamp;
+    navState.systemBackGestureCount += 1;
+    navState.lastBackGestureId = activeBackGestureId;
+    return activeBackGestureId;
+}
+
+function cancelSystemBackGesture() {
+    activeBackGestureId = "";
+    lastBackGestureId = "";
+    lastBackGestureAt = 0;
+    navState.lastBackGestureId = "";
+    return true;
+}
+
+function resolveSystemBackGesture(reason) {
+    var timestamp = now();
+    if (activeBackGestureId) { return activeBackGestureId; }
+    if (lastBackGestureId &&
+            timestamp - lastBackGestureAt >= 0 &&
+            timestamp - lastBackGestureAt <= 96) {
+        return lastBackGestureId;
+    }
+    return beginSystemBackGesture(reason);
+}
+
+function consumeSystemBackGesture(gestureId) {
+    if (!gestureId) { return true; }
+    if (consumedBackGestureId === gestureId) {
+        navState.duplicateBackCount += 1;
+        return false;
+    }
+    consumedBackGestureId = gestureId;
+    activeBackGestureId = "";
+    lastBackGestureId = gestureId;
+    lastBackGestureAt = now();
+    navState.systemBackCommitCount += 1;
+    navState.lastBackGestureId = gestureId;
+    return true;
+}
+
+function dispatchBack(owner, reason) {
+    var timestamp = now();
+    var systemBack = isSystemBackReason(reason);
+    var gestureId = systemBack ? resolveSystemBackGesture(reason) : "";
+    var signature = systemBack ? "system:" + gestureId :
+        backSignature(owner, reason);
+    var shell = shellBackSnapshot();
+    var request = null;
+    var handled = false;
+    if (systemBack) {
+        if (!consumeSystemBackGesture(gestureId)) { return true; }
+    } else if (timestamp - lastBackAt < 180 &&
+            signature === lastBackSignature) {
+        navState.duplicateBackCount += 1;
+        return true;
+    }
+    lastBackAt = timestamp;
+    lastBackSignature = signature;
+    navState.backInvokedCount += 1;
+    navState.lastBackOwner = String(owner || "");
+    navState.lastBackReason = String(reason || "system_back");
+    navState.lastBackSignature = signature;
+    if (systemBack) {
+        request = {
+            sourceFamily: systemBackInputFamily(reason),
+            sourceReason: String(reason || "system_back"),
+            ownerPageId: shell.pageId || String(owner || ""),
+            generation: Number(shell.generation || 0),
+            requestId: "back:" + gestureId,
+            gestureId: gestureId
+        };
+        navState.lastBackRequestId = request.requestId;
+        navState.lastBackPageId = request.ownerPageId;
+        navState.lastBackPageGeneration = request.generation;
+    }
+    if (shell.pageId && ClipHub.UIShell &&
+            typeof ClipHub.UIShell.dispatchBack === "function") {
+        if (systemBack && request && request.sourceFamily === "predictive" &&
+                ClipHub.BackDispatcher &&
+                typeof ClipHub.BackDispatcher.commitPredictive === "function") {
+            handled = ClipHub.BackDispatcher.commitPredictive(
+                navState.lastBackReason, request) === true;
+        } else {
+            handled = ClipHub.UIShell.dispatchBack(
+                navState.lastBackReason, request) === true;
         }
         if (handled) { navState.backHandledCount += 1; }
-        log("I", "navigation back owner=" + navState.lastBackOwner +
-            " reason=" + navState.lastBackReason +
-            " signature=" + signature +
+        log("I", "navigation shell back page=" + shell.pageId +
+            " source=" + String(request && request.sourceFamily || "page") +
+            " request=" + String(request && request.requestId || "") +
             " handled=" + String(handled));
         return handled;
     }
+    try {
+        if (ClipHub.Window &&
+                typeof ClipHub.Window.requestBack === "function") {
+            handled = ClipHub.Window.requestBack(
+                navState.lastBackReason) === true;
+        }
+    } catch (windowBackError) {
+        navState.lastError = String(windowBackError);
+        handled = false;
+    }
+    if (!handled) {
+        handled = closeTop(owner, navState.lastBackReason);
+    }
+    if (handled) { navState.backHandledCount += 1; }
+    log("I", "navigation back owner=" + navState.lastBackOwner +
+        " reason=" + navState.lastBackReason +
+        " signature=" + signature +
+        " handled=" + String(handled));
+    return handled;
+}
 
     function anyFocused() {
         var index;
@@ -706,6 +891,7 @@
         if (!initialized || hideInProgress || !uiVisible() || anyFocused()) {
             return false;
         }
+        if (now() < googleKeepVisibleUntil) { return false; }
         navState.backgroundCheckCount += 1;
         snapshot = taskSnapshot();
         navState.lastTopPackage = snapshot.packageName;
@@ -754,8 +940,181 @@
         scheduleBackground("focus_lost_" + String(owner || "unknown"));
     }
 
+    function detectBackCapability(context) {
+        var result = { supported: Build.VERSION.SDK_INT >= 33, enabled: false,
+            source: Build.VERSION.SDK_INT >= 33 ? "unavailable" : "sdk_lt_33",
+            packageName: "", targetSdkVersion: 0 };
+        var info = null;
+        if (!context) { return result; }
+        try { result.packageName = String(context.getPackageName()); }
+        catch (ignoredPackage) {}
+        try { info = context.getApplicationInfo();
+            if (info) { result.targetSdkVersion = Number(info.targetSdkVersion || 0); }
+        } catch (ignoredInfo) { info = null; }
+        if (!result.supported) { return result; }
+        try {
+            result.enabled = Packages.android.window.WindowOnBackInvokedDispatcher
+                .isOnBackInvokedCallbackEnabled(context) === true;
+            result.source = "WindowOnBackInvokedDispatcher";
+            return result;
+        } catch (ignoredWindowCapability) {}
+        try {
+            if (info && typeof info.isOnBackInvokedCallbackEnabled === "function") {
+                result.enabled = info.isOnBackInvokedCallbackEnabled() === true;
+                result.source = "ApplicationInfo";
+                return result;
+            }
+        } catch (ignoredApplicationCapability) {}
+        return result;
+    }
+
+    function resolveBackFocusRoot(pageRoot, windowRoot, fallbackRoot) {
+        var root = null;
+        if (pageRoot !== null && pageRoot !== undefined) {
+            try { root = pageRoot.getRootView();
+                if (root !== null && root !== undefined && root.isAttachedToWindow()) { return root; }
+            } catch (ignoredPageRoot) { root = null; }
+        }
+        if (windowRoot !== null && windowRoot !== undefined) {
+            try { if (windowRoot.isAttachedToWindow()) { return windowRoot; } }
+            catch (ignoredWindowRootAttached) { return windowRoot; }
+        }
+        if (fallbackRoot !== null && fallbackRoot !== undefined) { return fallbackRoot; }
+        return pageRoot || windowRoot || null;
+    }
+
+    function handoffBackFocus(options) {
+        options = options || {};
+        if (!initialized) { return { ok: false, reason: "navigation_not_initialized" }; }
+        return runOnMainSync(function () {
+            var root = resolveBackFocusRoot(options.pageRoot || null, options.windowRoot || null, options.fallbackRoot || null);
+            var input = options.inputView || null;
+            var previous = -1;
+            var released = input === null;
+            var requested = false;
+            var focused = false;
+            if (root === null) { return { ok: false, reason: "back_focus_root_missing" }; }
+            try { previous = Number(root.getDescendantFocusability()); } catch (ignoredPrevious) {}
+            try {
+                root.setFocusable(true);
+                root.setFocusableInTouchMode(true);
+                if (typeof root.setDescendantFocusability === "function") { root.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS); }
+                if (input !== null) { input.clearFocus(); released = !input.hasFocus(); }
+                requested = root.requestFocus();
+                focused = root.isFocused();
+            } finally {
+                if (previous >= 0 && typeof root.setDescendantFocusability === "function") {
+                    try { root.setDescendantFocusability(previous); } catch (ignoredRestore) {}
+                }
+            }
+            return { ok: released && (requested || focused), inputReleased: released,
+                rootFocusRequested: requested || focused, rootFocused: focused };
+        }, 2500);
+    }
+
+    function getBackCapability() {
+        return { sdkInt: Number(Build.VERSION.SDK_INT),
+            supported: navState.predictiveBackSupported === true,
+            predictiveBackEnabled: navState.predictiveBackEnabled === true,
+            mode: String(navState.backMode || "legacy_key"),
+            source: String(navState.predictiveBackCapabilitySource || ""),
+            contextPackage: String(navState.predictiveBackContextPackage || ""),
+            targetSdkVersion: Number(navState.predictiveBackTargetSdk || 0) };
+    }
+
+    function backCallbackPriority() {
+        try {
+            return Number(Packages.android.window.OnBackInvokedDispatcher
+                .PRIORITY_OVERLAY);
+        } catch (ignoredOverlayPriority) {
+            try {
+                return Number(Packages.android.window.OnBackInvokedDispatcher
+                    .PRIORITY_DEFAULT);
+            } catch (ignoredDefaultPriority) { return 0; }
+        }
+    }
+
+    function refreshEntryBackCallback(entry, reason) {
+        var dispatcher = null;
+        var callback = null;
+        var oldDispatcher;
+        var oldCallback;
+        var oldMode;
+        var priority;
+        if (!entry || entry.removed || Build.VERSION.SDK_INT < 33) {
+            return true;
+        }
+        if (!navState.predictiveBackEnabled) {
+            makeFocusable(entry);
+            entry.callbackMode = "legacy_key";
+            navState.callbackMode = "legacy_key";
+            navState.legacyBackRefreshCount += 1;
+            return true;
+        }
+        try {
+            if (!entry.view || !entry.view.isAttachedToWindow()) {
+                return false;
+            }
+        } catch (ignoredAttached) { return false; }
+        try { dispatcher = entry.view.findOnBackInvokedDispatcher(); }
+        catch (ignoredDispatcher) { dispatcher = null; }
+        if (!dispatcher) {
+            navState.backRefreshFailureCount += 1;
+            return false;
+        }
+        oldDispatcher = entry.dispatcher;
+        oldCallback = entry.callback;
+        oldMode = entry.callbackMode;
+        callback = callbackFor(entry);
+        if (!callback) {
+            entry.callbackMode = oldMode;
+            navState.backRefreshFailureCount += 1;
+            return false;
+        }
+        priority = backCallbackPriority();
+        if (oldDispatcher && oldCallback) {
+            try {
+                oldDispatcher.unregisterOnBackInvokedCallback(oldCallback);
+            } catch (unregisterError) {
+                entry.callbackMode = oldMode;
+                navState.lastError = String(unregisterError);
+                navState.backRefreshFailureCount += 1;
+                return false;
+            }
+        }
+        try {
+            dispatcher.registerOnBackInvokedCallback(
+                Number(priority), callback);
+            entry.dispatcher = dispatcher;
+            entry.callback = callback;
+            navState.callbackMode = entry.callbackMode;
+            navState.backRefreshCount += 1;
+            log("D", "navigation system back refreshed owner=" +
+                String(entry.owner || "") + " reason=" +
+                String(reason || "refresh"));
+            return true;
+        } catch (registerError) {
+            entry.dispatcher = null;
+            entry.callback = null;
+            entry.callbackMode = oldMode;
+            navState.lastError = String(registerError);
+            navState.backRefreshFailureCount += 1;
+            if (oldDispatcher && oldCallback) {
+                try {
+                    oldDispatcher.registerOnBackInvokedCallback(
+                        Number(priority), oldCallback);
+                    entry.dispatcher = oldDispatcher;
+                    entry.callback = oldCallback;
+                    navState.callbackMode = oldMode;
+                } catch (ignoredRestore) {}
+            }
+            return false;
+        }
+    }
+
     function callbackFor(entry) {
         var callback = null;
+        if (!navState.predictiveBackEnabled) { return null; }
         var animationClass;
         if (Build.VERSION.SDK_INT >= 34) {
             try {
@@ -764,14 +1123,27 @@
                 callback = new JavaAdapter(
                     Packages.android.window.OnBackAnimationCallback, {
                         onBackStarted: function (event) {
+                            var gestureId;
                             navState.backStartedCount += 1;
+                            gestureId = beginSystemBackGesture("predictive_back");
+                            beginPredictiveBackContract(entry.owner,
+                                "predictive_back", gestureId);
+                            progressPredictiveBackContract(entry.owner,
+                                event, gestureId);
                             applyProgress(entry.view, event);
                         },
                         onBackProgressed: function (event) {
+                            var gestureId = activeBackGestureId ||
+                                beginSystemBackGesture("predictive_back");
+                            progressPredictiveBackContract(entry.owner,
+                                event, gestureId);
                             applyProgress(entry.view, event);
                         },
                         onBackCancelled: function () {
+                            var gestureId = activeBackGestureId;
                             navState.backCancelledCount += 1;
+                            cancelPredictiveBackContract(entry.owner, gestureId);
+                            cancelSystemBackGesture();
                             resetVisual(entry.view);
                         },
                         onBackInvoked: function () {
@@ -898,16 +1270,14 @@
                 }
             }));
         } catch (errorKey) { navState.lastError = String(errorKey); }
-        if (Build.VERSION.SDK_INT >= 33) {
+        if (Build.VERSION.SDK_INT >= 33 &&
+                navState.predictiveBackEnabled) {
             try { dispatcher = view.findOnBackInvokedDispatcher(); }
             catch (ignoredDispatcher) { dispatcher = null; }
             if (dispatcher) {
                 entry.callback = callbackFor(entry);
                 if (entry.callback) {
-                    try {
-                        priority = Packages.android.window
-                            .OnBackInvokedDispatcher.PRIORITY_DEFAULT;
-                    } catch (ignoredPriority) { priority = 0; }
+                    priority = backCallbackPriority();
                     dispatcher.registerOnBackInvokedCallback(
                         Number(priority), entry.callback);
                     entry.dispatcher = dispatcher;
@@ -917,10 +1287,14 @@
         }
         entries.push(entry);
         navState.registerCount += 1;
+        if (!navState.predictiveBackEnabled) {
+            entry.callbackMode = "legacy_key";
+            navState.callbackMode = "legacy_key";
+        }
         try { view.requestFocus(); } catch (ignoredRequestFocus) {}
         captureTaskBaseline(false);
         if (!entry.dispatcher && Build.VERSION.SDK_INT >= 33 &&
-                entry.retryCount < 3) {
+                navState.predictiveBackEnabled && entry.retryCount < 3) {
             runOnMain(function () {
                 if (!entry.removed && entry.view &&
                         entry.view.isAttachedToWindow()) {
@@ -952,6 +1326,50 @@
             return registerView(view,
                 String(owner || ownerFor(view, "unknown")), 0);
         }, 2500);
+    }
+
+    function refreshSystemBackCapture(reason) {
+        if (!initialized) { return false; }
+        if (Build.VERSION.SDK_INT < 33) { return true; }
+        if (!navState.predictiveBackEnabled) {
+            return runOnMainSync(function () {
+                var index;
+                var entry;
+                var targetCount = 0;
+                pruneEntries();
+                for (index = 0; index < entries.length; index += 1) {
+                    entry = entries[index];
+                    if (!entry || entry.removed) { continue; }
+                    makeFocusable(entry);
+                    entry.callbackMode = "legacy_key";
+                    targetCount += 1;
+                }
+                navState.callbackMode = "legacy_key";
+                navState.legacyBackRefreshCount += targetCount;
+                if (targetCount <= 0) { scheduleScan(null); return false; }
+                return true;
+            }, 2500) === true;
+        }
+        return runOnMainSync(function () {
+            var index;
+            var entry;
+            var targetCount = 0;
+            var refreshedCount = 0;
+            pruneEntries();
+            for (index = 0; index < entries.length; index += 1) {
+                entry = entries[index];
+                if (!entry || entry.removed) { continue; }
+                targetCount += 1;
+                if (refreshEntryBackCallback(entry, reason)) {
+                    refreshedCount += 1;
+                }
+            }
+            if (targetCount <= 0) {
+                scheduleScan(null);
+                return false;
+            }
+            return refreshedCount === targetCount;
+        }, 2500) === true;
     }
 
     function scan(owner) {
@@ -1072,8 +1490,18 @@
             registeredOwners: owners,
             registeredTitles: titles,
             callbackMode: navState.callbackMode,
+            backMode: navState.backMode,
+            predictiveBackSupported: navState.predictiveBackSupported === true,
+            predictiveBackEnabled: navState.predictiveBackEnabled === true,
+            predictiveBackCapabilitySource: navState.predictiveBackCapabilitySource,
+            predictiveBackContextPackage: navState.predictiveBackContextPackage,
+            predictiveBackTargetSdk: Number(navState.predictiveBackTargetSdk),
+            legacyBackRefreshCount: Number(navState.legacyBackRefreshCount),
             mainFocusableUpgradeCount:
                 Number(navState.mainFocusableUpgradeCount),
+            backRefreshCount: Number(navState.backRefreshCount),
+            backRefreshFailureCount:
+                Number(navState.backRefreshFailureCount),
             keyBackCount: Number(navState.keyBackCount),
             backStartedCount: Number(navState.backStartedCount),
             backProgressCount: Number(navState.backProgressCount),
@@ -1081,6 +1509,10 @@
             backInvokedCount: Number(navState.backInvokedCount),
             backHandledCount: Number(navState.backHandledCount),
             duplicateBackCount: Number(navState.duplicateBackCount),
+            systemBackGestureCount:
+                Number(navState.systemBackGestureCount),
+            systemBackCommitCount:
+                Number(navState.systemBackCommitCount),
             filterBackCount: Number(navState.filterBackCount),
             uiHideCount: Number(navState.uiHideCount),
             backgroundCheckCount:
@@ -1095,6 +1527,11 @@
             lastBackOwner: navState.lastBackOwner,
             lastBackReason: navState.lastBackReason,
             lastBackSignature: navState.lastBackSignature,
+            lastBackGestureId: navState.lastBackGestureId,
+            lastBackRequestId: navState.lastBackRequestId,
+            lastBackPageId: navState.lastBackPageId,
+            lastBackPageGeneration:
+                Number(navState.lastBackPageGeneration),
             lastHideReason: navState.lastHideReason,
             lastBackgroundReason: navState.lastBackgroundReason,
             lastError: navState.lastError
@@ -1102,6 +1539,7 @@
     }
 
     function navigationInit(context) {
+        var backCapability;
         if (initialized) { return navigationState(); }
         appContext = context && context.androidContext ?
             context.androidContext : global.context;
@@ -1114,16 +1552,34 @@
         mainHandler = new Handler(Looper.getMainLooper());
         density = Number(appContext.getResources()
             .getDisplayMetrics().density || 1);
+        backCapability = detectBackCapability(appContext);
+        navState.predictiveBackSupported = backCapability.supported === true;
+        navState.predictiveBackEnabled = backCapability.enabled === true;
+        navState.predictiveBackCapabilitySource = String(backCapability.source || "unavailable");
+        navState.predictiveBackContextPackage = String(backCapability.packageName || "");
+        navState.predictiveBackTargetSdk = Number(backCapability.targetSdkVersion || 0);
+        navState.backMode = navState.predictiveBackEnabled ? "predictive" : "legacy_key";
+        navState.callbackMode = navState.predictiveBackEnabled ? "predictive_pending" : "legacy_key";
         initialized = true;
         lastBackAt = 0;
         lastBackSignature = "";
+        backGestureSequence = 0;
+        activeBackGestureId = "";
+        lastBackGestureId = "";
+        lastBackGestureAt = 0;
+        consumedBackGestureId = "";
         navState.lastBackSignature = "";
+        navState.lastBackGestureId = "";
+        navState.lastBackRequestId = "";
+        navState.lastBackPageId = "";
+        navState.lastBackPageGeneration = 0;
         navState.initCount += 1;
         installWrappers();
         captureTaskBaseline(true);
         scheduleScan(null);
         log("I", "navigation initialized sdk=" +
-            String(Build.VERSION.SDK_INT));
+            String(Build.VERSION.SDK_INT) + " backMode=" + navState.backMode +
+            " capability=" + navState.predictiveBackCapabilitySource);
         return navigationState();
     }
 
@@ -1146,12 +1602,16 @@
         hideInProgress = false;
         lastBackAt = 0;
         lastBackSignature = "";
+        activeBackGestureId = "";
+        lastBackGestureId = "";
+        lastBackGestureAt = 0;
+        consumedBackGestureId = "";
         return true;
     }
 
     ClipHub.Navigation = {
         MODULE_NAME: "ch_14_navigation_embedded",
-        MODULE_VERSION: 7,
+        MODULE_VERSION: 12,
         init: navigationInit,
         dispatchBack: function (reason) {
             return dispatchBack("", reason || "api_back");
@@ -1165,11 +1625,16 @@
         },
         scanNow: function () { return scan(null); },
         registerWindow: registerManagedWindow,
+        refreshSystemBackCapture: refreshSystemBackCapture,
+        getBackCapability: getBackCapability,
+        resolveBackFocusRoot: resolveBackFocusRoot,
+        handoffBackFocus: handoffBackFocus,
         getState: navigationState,
         shutdown: navigationShutdown
     };
 
     var translationRoot = null;
+    var translationEmbeddedInPrimary = false;
     var translationWindowRoot = null;
     var translationManagedFrame = null;
     var translationParams = null;
@@ -1188,6 +1653,25 @@
     var translationRemovalPending = false;
     var translationRemovalGeneration = 0;
     var pendingTranslationItemId = null;
+    var GOOGLE_TRANSLATE_PACKAGE = "com.google.android.apps.translate";
+    var GOOGLE_TRANSLATE_ACTIVITY =
+        "com.google.android.apps.translate.copydrop.gm3.TapToTranslateActivity";
+    var GOOGLE_TRANSLATE_ACTION_PROCESS_TEXT =
+        "android.intent.action.PROCESS_TEXT";
+    var GOOGLE_TRANSLATE_EXTRA_PROCESS_TEXT =
+        "android.intent.extra.PROCESS_TEXT";
+    var GOOGLE_TRANSLATE_EXTRA_PROCESS_TEXT_READONLY =
+        "android.intent.extra.PROCESS_TEXT_READONLY";
+    var GOOGLE_TRANSLATE_DEBOUNCE_MS = 400;
+    var googleLastLaunchAt = 0;
+    var googleKeepVisibleUntil = 0;
+    var googleLaunchCount = 0;
+    var googleLaunchSuccessCount = 0;
+    var googleLaunchFallbackCount = 0;
+    var googleLastLaunchMethod = "none";
+    var googleLastError = null;
+    var googleFeedbackView = null;
+    var googleFeedbackRunnable = null;
     var translationState = {
         attached: false,
         itemId: null,
@@ -1230,7 +1714,8 @@
             stroke: "#FFE5E0EF", accentStrong: "#FF5A37E6",
             accentSoft: "#FFF0ECFF", accentBorder: "#FFBBAAF8",
             textPrimary: "#FF1F1C28", textSecondary: "#FF6F697A",
-            textTertiary: "#FF9992A3", icon: "#FF3D3748"
+            textTertiary: "#FF9992A3", icon: "#FF3D3748",
+            danger: "#FFD84A5B", dangerSoft: "#FFFFECEF"
         };
     }
 
@@ -1244,20 +1729,43 @@
             view.setTypeface(Packages.android.graphics.Typeface.DEFAULT,
                 Packages.android.graphics.Typeface.BOLD);
         }
-        return view;
+        /* panel_icon_explicit_v2 */
+if (ClipHub.Theme && typeof ClipHub.Theme.decoratePanelIcon === "function") {
+    ClipHub.Theme.decoratePanelIcon(view, text, view.getCurrentTextColor(), size, true);
+}
+return view;
+    }
+
+    function translationChromeMetrics() {
+        var widthDp = 390;
+        var fontScale = 1;
+        var filterState = null;
+        try {
+            if (ClipHub.Filter && typeof ClipHub.Filter.getState === "function") {
+                filterState = ClipHub.Filter.getState();
+                if (filterState && Number(filterState.panelWidthDp || 0) > 0) {
+                    widthDp = Number(filterState.panelWidthDp);
+                }
+            }
+        } catch (ignoredTranslationFilterMetrics) {}
+        try {
+            fontScale = Number(appContext.getResources()
+                .getConfiguration().fontScale || 1);
+        } catch (ignoredTranslationFontScale) { fontScale = 1; }
+        return ClipHub.Theme.getPanelChromeMetrics(widthDp, fontScale, 1);
     }
 
     function translationButton(text, colors, primary, danger) {
-        var view = translationText(text, 10,
-            danger ? "#FFB42323" : (primary ? "#FFFFFFFF" : colors.accentStrong),
-            primary || danger);
+        var view = translationText(text, 12,
+            danger ? colors.danger : (primary ? "#FFFFFFFF" : colors.accentStrong),
+            true);
         view.setGravity(Gravity.CENTER);
         view.setSingleLine(true);
         view.setPadding(dp(8), dp(6), dp(8), dp(6));
         view.setBackground(translationRounded(
             primary ? colors.accentStrong :
-                (danger ? "#FFFFEEEE" : colors.accentSoft),
-            primary ? colors.accentStrong : colors.accentBorder, 11));
+                (danger ? colors.dangerSoft : colors.accentSoft),
+            primary ? colors.accentStrong : colors.accentBorder, 13));
         view.setClickable(true);
         view.setFocusable(true);
         return view;
@@ -1374,13 +1882,16 @@
 
     function translationSettings() {
         var settings = ClipHub.Settings;
-        var engine;
+        var provider;
         if (!settings || typeof settings.get !== "function") {
             throw new Error("翻译设置尚未初始化");
         }
-        engine = String(settings.get("translation.engine", "baidu"));
+        provider = String(settings.get("translation.provider", "baidu"));
+        if (provider !== "google" && provider !== "youdao") {
+            provider = "baidu";
+        }
         return {
-            engine: engine === "youdao" ? "youdao" : "baidu",
+            provider: provider,
             baiduAppId: String(settings.get("translation.baidu.app_id", "")),
             baiduSecret: String(settings.get("translation.baidu.app_secret", "")),
             youdaoAppKey: String(settings.get("translation.youdao.app_key", "")),
@@ -1388,6 +1899,216 @@
             maxChars: Math.max(1, Math.min(10000,
                 Number(settings.get("translation.max_chars", 5000))))
         };
+    }
+
+    function isBlankGoogleText(value) {
+        return value === null || value === undefined ||
+            String(value).replace(/^\s+|\s+$/g, "").length === 0;
+    }
+
+    function isGoogleTranslateInstalled() {
+        var manager;
+        var launchIntent;
+        if (!appContext) { return false; }
+        try {
+            manager = appContext.getPackageManager();
+            manager.getPackageInfo(GOOGLE_TRANSLATE_PACKAGE, 0);
+            return true;
+        } catch (ignoredPackageInfo) {}
+        try {
+            manager = appContext.getPackageManager();
+            launchIntent = manager.getLaunchIntentForPackage(
+                GOOGLE_TRANSLATE_PACKAGE);
+            return launchIntent !== null;
+        } catch (ignoredLaunchIntent) {}
+        return false;
+    }
+
+    function fillGoogleTextIntent(intent, text) {
+        intent.setType("text/plain");
+        intent.putExtra(GOOGLE_TRANSLATE_EXTRA_PROCESS_TEXT, String(text));
+        intent.putExtra(Intent.EXTRA_TEXT, String(text));
+        intent.putExtra(GOOGLE_TRANSLATE_EXTRA_PROCESS_TEXT_READONLY, true);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        return intent;
+    }
+
+    function clearGoogleFeedback() {
+        var captured = googleFeedbackView;
+        googleFeedbackView = null;
+        if (mainHandler !== null && googleFeedbackRunnable !== null) {
+            try { mainHandler.removeCallbacks(googleFeedbackRunnable); }
+            catch (ignoredCallback) {}
+        }
+        googleFeedbackRunnable = null;
+        if (captured !== null && windowManager !== null) {
+            try { windowManager.removeView(captured); }
+            catch (ignoredRemove) {}
+        }
+        return true;
+    }
+
+    function showClipHubTranslationFeedback(message) {
+        if (!initialized || appContext === null || windowManager === null ||
+                mainHandler === null) { return false; }
+        return runOnMain(function () {
+            var colors = translationPalette();
+            var view;
+            var params;
+            var type;
+            clearGoogleFeedback();
+            view = translationText(String(message || ""), 11,
+                colors.textPrimary, false);
+            view.setGravity(Gravity.CENTER);
+            view.setPadding(dp(14), dp(9), dp(14), dp(9));
+            view.setBackground(translationRounded(
+                colors.surface, colors.stroke, 12));
+            if (Build.VERSION.SDK_INT >= 21) { view.setElevation(dp(8)); }
+            type = Build.VERSION.SDK_INT >= 26 ?
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY :
+                WindowManager.LayoutParams.TYPE_SYSTEM_ALERT;
+            params = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                type,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE |
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE |
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL |
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                PixelFormat.TRANSLUCENT);
+            params.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+            params.y = dp(76);
+            try { params.setTitle("ClipHub Internal Translation Feedback"); }
+            catch (ignoredTitle) {}
+            windowManager.addView(view, params);
+            googleFeedbackView = view;
+            googleFeedbackRunnable = new Packages.java.lang.Runnable({
+                run: function () { clearGoogleFeedback(); }
+            });
+            mainHandler.postDelayed(googleFeedbackRunnable, 1800);
+            return true;
+        }, 0);
+    }
+
+    function hideClipHubAfterGoogleLaunch() {
+        try {
+            return hideUi("google_translation_launched") !== false;
+        } catch (error) {
+            googleLastError = "Google 翻译已启动，但 ClipHub 关闭失败：" +
+                String(error);
+            return false;
+        }
+    }
+
+    function startGoogleTranslateIntent(intent, method) {
+        var result;
+        googleKeepVisibleUntil = now() + 3000;
+        appContext.startActivity(intent);
+        googleLastLaunchMethod = String(method || "unknown");
+        googleLaunchSuccessCount += 1;
+        googleLastError = null;
+        result = {
+            ok: true,
+            provider: "google",
+            providerLabel: "Google 翻译",
+            launchMethod: googleLastLaunchMethod,
+            translatedText: "已发送到 Google 翻译",
+            targetLanguage: "Google 翻译"
+        };
+        hideClipHubAfterGoogleLaunch();
+        return result;
+    }
+
+    function launchGoogleTranslateText(text) {
+        var intent;
+        var manager;
+        var lastError = null;
+        text = String(text === null || text === undefined ? "" : text);
+        googleLaunchCount += 1;
+        if (isBlankGoogleText(text)) {
+            googleLastError = "没有可翻译文本";
+            return { ok: false, error: googleLastError, blank: true };
+        }
+        if (!isGoogleTranslateInstalled()) {
+            googleLastError = "未安装 Google 翻译";
+            return {
+                ok: false,
+                error: googleLastError,
+                notInstalled: true
+            };
+        }
+        try {
+            intent = fillGoogleTextIntent(
+                new Intent(GOOGLE_TRANSLATE_ACTION_PROCESS_TEXT), text);
+            intent.setComponent(new ComponentName(
+                GOOGLE_TRANSLATE_PACKAGE, GOOGLE_TRANSLATE_ACTIVITY));
+            return startGoogleTranslateIntent(intent, "tap_to_translate");
+        } catch (explicitError) {
+            lastError = explicitError;
+        }
+        try {
+            intent = fillGoogleTextIntent(
+                new Intent(GOOGLE_TRANSLATE_ACTION_PROCESS_TEXT), text);
+            intent.setPackage(GOOGLE_TRANSLATE_PACKAGE);
+            return startGoogleTranslateIntent(intent, "process_text_package");
+        } catch (processTextError) {
+            lastError = processTextError;
+        }
+        try {
+            intent = new Intent(Intent.ACTION_SEND);
+            intent.setType("text/plain");
+            intent.setPackage(GOOGLE_TRANSLATE_PACKAGE);
+            intent.putExtra(Intent.EXTRA_TEXT, text);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            return startGoogleTranslateIntent(intent, "send_text_package");
+        } catch (sendError) {
+            lastError = sendError;
+        }
+        try {
+            manager = appContext.getPackageManager();
+            intent = manager.getLaunchIntentForPackage(GOOGLE_TRANSLATE_PACKAGE);
+            if (intent === null) {
+                throw new Error("Google 翻译启动入口不存在");
+            }
+            intent.putExtra(Intent.EXTRA_TEXT, text);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            return startGoogleTranslateIntent(intent, "launch_app");
+        } catch (launchError) {
+            lastError = launchError;
+        }
+        googleLastError = String(lastError || "Google 翻译启动失败");
+        return { ok: false, error: googleLastError, launchFailed: true };
+    }
+
+    function openGoogleTranslationForItem(itemId) {
+        var row;
+        var text;
+        var result;
+        var current = now();
+        if (current - googleLastLaunchAt < GOOGLE_TRANSLATE_DEBOUNCE_MS) {
+            return { handled: true, debounced: true, fallbackBuiltin: false };
+        }
+        googleLastLaunchAt = current;
+        row = ClipHub.Repository.getItem(Number(itemId), false);
+        if (row === null) { throw new Error("翻译目标不存在"); }
+        text = String(row.content || "");
+        translationState.itemId = Number(row.id);
+        translationState.sourceText = text;
+        translationState.translatedText = "";
+        translationState.provider = "google";
+        translationState.targetLanguage = "Google 翻译";
+        translationState.running = false;
+        translationState.lastError = null;
+        translationState.requestCount += 1;
+        result = launchGoogleTranslateText(text);
+        if (result.ok === true) {
+            translationState.successCount += 1;
+            return { handled: true, result: result, fallbackBuiltin: false };
+        }
+        translationState.errorCount += 1;
+        translationState.lastError = String(result.error || "Google 翻译启动失败");
+        showClipHubTranslationFeedback(translationState.lastError);
+        return { handled: true, result: result, fallbackBuiltin: false };
     }
 
     function translateBaidu(text, config) {
@@ -1478,13 +2199,17 @@
 
     function translateConfiguredSync(text, providerOverride) {
         var config = translationSettings();
-        var provider = providerOverride ? String(providerOverride) : config.engine;
+        var provider = providerOverride ? String(providerOverride) :
+            config.provider;
         text = String(text === null || text === undefined ? "" : text);
         if (text.replace(/^\s+|\s+$/g, "").length === 0) {
             throw new Error("翻译内容不能为空");
         }
         if (text.length > config.maxChars) {
             throw new Error("翻译内容超过 " + config.maxChars + " 字符");
+        }
+        if (provider !== "baidu" && provider !== "youdao") {
+            throw new Error("内置翻译仅支持百度或有道");
         }
         return provider === "youdao" ?
             translateYoudao(text, config) : translateBaidu(text, config);
@@ -1674,54 +2399,77 @@
             widthDp: 390, heightDp: 650 };
     }
 
+    function translationOriginalViewportDp(text) {
+        var value = String(text || "");
+        var lineCount = value.split("\n").length;
+        var length = value.length;
+        if (lineCount <= 1 && length <= 60) { return 48; }
+        if (lineCount <= 2 && length <= 140) { return 60; }
+        return 76;
+    }
+
     function buildTranslationPanel() {
         var colors = translationPalette();
+        var chrome = translationChromeMetrics();
         var root = new LinearLayout(appContext);
-        var handleRow = new LinearLayout(appContext);
+        var handleSlot = new FrameLayout(appContext);
         var handle = new View(appContext);
         var header = new LinearLayout(appContext);
-        var title = translationText("翻译结果", 18, colors.textPrimary, true);
-        var originalLabel = translationText("原文", 11,
+        var title = translationText("翻译结果", chrome.titleSp, colors.textPrimary, true);
+        var originalLabel = translationText("原文", 12,
             colors.textSecondary, true);
-        var resultLabel = translationText("译文", 11,
+        var resultLabel = translationText("译文", 12,
             colors.textSecondary, true);
         var originalScroll = new ScrollView(appContext);
         var resultScroll = new ScrollView(appContext);
         var actionRow1 = new LinearLayout(appContext);
         var actionRow2 = new LinearLayout(appContext);
         var params;
+        var embedded = translationEmbeddedInPrimary === true;
 
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(12), dp(8), dp(12), dp(10));
-        root.setBackground(translationRounded(colors.surface,
-            colors.stroke, 24));
-        handleRow.setGravity(Gravity.CENTER);
-        handle.setBackground(translationRounded(colors.accentBorder, null, 3));
-        handleRow.addView(handle, new LinearLayout.LayoutParams(dp(42), dp(4)));
-        root.addView(handleRow, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(16)));
+        if (embedded) {
+            root.setPadding(0, 0, 0, 0);
+            translationHeaderCloseView = null;
+        } else {
+            /* translation_chrome_unified_v1 */
+            root.setPadding(dp(chrome.screenPaddingDp), dp(chrome.pagePaddingTopDp),
+                dp(chrome.screenPaddingDp), dp(chrome.pagePaddingBottomDp));
+            root.setBackground(translationRounded(colors.surface,
+                colors.stroke, chrome.pageRadiusDp));
+            var handleParams = new FrameLayout.LayoutParams(
+                dp(chrome.dragHandleWidthDp), dp(chrome.dragHandleHeightDp));
+            handleParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+            handleParams.topMargin = dp(chrome.dragHandleTopDp);
+            handle.setBackground(translationRounded(colors.accentBorder, null, 3));
+            handleSlot.addView(handle, handleParams);
+            root.addView(handleSlot, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(chrome.dragHandleSlotDp)));
 
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.addView(title, new LinearLayout.LayoutParams(
-            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-        translationHeaderCloseView = translationText(
-            "×", 22, colors.icon, true);
-        translationHeaderCloseView.setGravity(Gravity.CENTER);
-        translationHeaderCloseView.setBackground(translationRounded(
-            colors.surfaceMuted, null, 18));
-        translationHeaderCloseView.setClickable(true);
-        translationHeaderCloseView.setFocusable(true);
-        translationHeaderCloseView.setOnClickListener(new JavaAdapter(
-            View.OnClickListener, { onClick: function () {
-                closeTranslationPanel("button");
-            }}));
-        header.addView(translationHeaderCloseView,
-            new LinearLayout.LayoutParams(dp(38), dp(38)));
-        params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(42));
-        params.bottomMargin = dp(5);
-        root.addView(header, params);
+            header.setOrientation(LinearLayout.HORIZONTAL);
+            header.setGravity(Gravity.CENTER_VERTICAL);
+            header.addView(title, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+            translationHeaderCloseView = translationText(
+                "×", chrome.iconSp, colors.icon, false);
+            translationHeaderCloseView.setGravity(Gravity.CENTER);
+            translationHeaderCloseView.setBackground(translationRounded(
+                colors.surfaceMuted, null, chrome.actionSizeDp / 2));
+            translationHeaderCloseView.setClickable(true);
+            translationHeaderCloseView.setFocusable(true);
+            translationHeaderCloseView.setOnClickListener(new JavaAdapter(
+                View.OnClickListener, { onClick: function () {
+                    closeTranslationPanel("button");
+                }}));
+            header.addView(translationHeaderCloseView,
+                new LinearLayout.LayoutParams(dp(chrome.actionSizeDp),
+                    dp(chrome.actionSizeDp)));
+            params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(chrome.headerHeightDp));
+            params.topMargin = 0;
+            params.bottomMargin = dp(chrome.headerBottomGapDp);
+            root.addView(header, params);
+        }
 
         translationProviderView = translationText("准备翻译", 10,
             colors.accentStrong, true);
@@ -1750,7 +2498,9 @@
             new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT));
         params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(96));
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            dp(translationOriginalViewportDp(
+                translationState.sourceText)));
         params.topMargin = dp(4);
         params.bottomMargin = dp(7);
         root.addView(originalScroll, params);
@@ -1777,27 +2527,27 @@
         translationCopyView = translationButton("复制译文", colors, true, false);
         translationReplaceView = translationButton("替换原文", colors, false, false);
         translationSaveView = translationButton("保存为新记录", colors, false, false);
-        params = new LinearLayout.LayoutParams(0, dp(40), 1);
+        params = new LinearLayout.LayoutParams(0, dp(42), 1);
         params.rightMargin = dp(6);
         actionRow1.addView(translationCopyView, params);
         actionRow1.addView(translationReplaceView, params);
         actionRow1.addView(translationSaveView,
-            new LinearLayout.LayoutParams(0, dp(40), 1));
+            new LinearLayout.LayoutParams(0, dp(42), 1));
         root.addView(actionRow1, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(40)));
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(42)));
 
         actionRow2.setOrientation(LinearLayout.HORIZONTAL);
         translationRetryView = translationButton(
             "重新翻译", colors, false, false);
         translationFooterCloseView = translationButton(
             "关闭", colors, false, false);
-        params = new LinearLayout.LayoutParams(0, dp(38), 1);
+        params = new LinearLayout.LayoutParams(0, dp(42), 1);
         params.rightMargin = dp(6);
         actionRow2.addView(translationRetryView, params);
         actionRow2.addView(translationFooterCloseView,
-            new LinearLayout.LayoutParams(0, dp(38), 1));
+            new LinearLayout.LayoutParams(0, dp(42), 1));
         params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(38));
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(42));
         params.topMargin = dp(6);
         root.addView(actionRow2, params);
 
@@ -1817,7 +2567,7 @@
         return root;
     }
 
-    function openTranslationForItem(itemId) {
+    function openBuiltinTranslationForItem(itemId) {
         var row;
         var size;
         var type;
@@ -1827,9 +2577,13 @@
             return getTranslationState();
         }
         if (translationState.attached || translationRoot !== null) {
-            pendingTranslationItemId = Number(itemId);
-            closeTranslationPanel("replace");
-            return getTranslationState();
+            if (translationEmbeddedInPrimary) {
+                closeTranslationPanel("replace");
+            } else {
+                pendingTranslationItemId = Number(itemId);
+                closeTranslationPanel("replace");
+                return getTranslationState();
+            }
         }
         row = ClipHub.Repository.getItem(Number(itemId), false);
         if (row === null) { throw new Error("翻译目标不存在"); }
@@ -1839,6 +2593,34 @@
         translationState.provider = "none";
         translationState.targetLanguage = "";
         translationState.lastError = null;
+        if (ClipHub.UIShell &&
+                typeof ClipHub.UIShell.canEmbed === "function" &&
+                ClipHub.UIShell.canEmbed("translation") === true) {
+            runOnMainSync(function () {
+                var host = ClipHub.Filter.getPrimaryHostState();
+                translationEmbeddedInPrimary = true;
+                translationRoot = buildTranslationPanel();
+                translationWindowRoot = null;
+                translationManagedFrame = null;
+                translationParams = null;
+                translationState.attached = true;
+                translationState.panelWidthDp = Number(host.widthDp || 0);
+                translationState.panelHeightDp = Number(host.heightDp || 0);
+                ClipHub.UIShell.mountPage("translation", translationRoot, {
+                    title: "翻译结果",
+                    showBack: false,
+                    onBack: function () {
+                        return closeTranslationPanel("shell_back");
+                    },
+                    onClose: function () {
+                        return closeTranslationPanel("button");
+                    }
+                });
+                return true;
+            }, 3000);
+            beginTranslation();
+            return getTranslationState();
+        }
         runOnMainSync(function () {
             size = translationPanelSize();
             type = Build.VERSION.SDK_INT >= 26 ?
@@ -1903,6 +2685,17 @@
         return getTranslationState();
     }
 
+    function openTranslationForItem(itemId) {
+        var config;
+        if (!initialized) { throw new Error("翻译模块尚未初始化"); }
+        config = translationSettings();
+        if (config.provider === "google") {
+            openGoogleTranslationForItem(itemId);
+            return getTranslationState();
+        }
+        return openBuiltinTranslationForItem(itemId);
+    }
+
     function closeTranslationPanel(reason) {
         var reasonText = String(reason || "close");
         translationGeneration += 1;
@@ -1914,11 +2707,18 @@
             return true;
         }
         return runOnMainSync(function () {
-            var capturedRoot = translationWindowRoot !== null ?
-                translationWindowRoot : translationRoot;
+            var wasEmbedded = translationEmbeddedInPrimary === true;
+            var capturedRoot = wasEmbedded ? null :
+                (translationWindowRoot !== null ?
+                    translationWindowRoot : translationRoot);
             var capturedManager = windowManager;
             var generation;
             var removal;
+            if (wasEmbedded && ClipHub.UIShell &&
+                    typeof ClipHub.UIShell.unmountPage === "function") {
+                ClipHub.UIShell.unmountPage("translation", reasonText);
+            }
+            translationEmbeddedInPrimary = false;
             translationClosing = true;
             translationRemovalPending = capturedRoot !== null;
             translationRemovalGeneration += 1;
@@ -1991,19 +2791,32 @@
 
     function getTranslationState() {
         var attachedToWindow = false;
+        var config;
         try {
             attachedToWindow = translationRoot !== null &&
                 translationRoot.isAttachedToWindow();
         } catch (ignored) {}
+        try { config = translationSettings(); }
+        catch (ignoredConfig) { config = { provider: "baidu" }; }
         return {
             ready: initialized,
             attached: translationState.attached,
+            embeddedInPrimary: translationEmbeddedInPrimary === true,
             attachedToWindow: attachedToWindow,
             closing: translationClosing === true,
             removalPending: translationRemovalPending === true,
             open: translationState.attached,
             itemId: translationState.itemId,
             provider: translationState.provider,
+            configuredProvider: String(config.provider || "baidu"),
+            mode: config.provider === "google" ? "google" : "builtin",
+            engine: config.provider === "youdao" ? "youdao" : "baidu",
+            googleInstalled: isGoogleTranslateInstalled(),
+            googleLaunchCount: Number(googleLaunchCount),
+            googleLaunchSuccessCount: Number(googleLaunchSuccessCount),
+            googleLaunchFallbackCount: Number(googleLaunchFallbackCount),
+            googleLastLaunchMethod: String(googleLastLaunchMethod || "none"),
+            googleLastError: googleLastError,
             sourceLength: String(translationState.sourceText || "").length,
             translatedLength:
                 String(translationState.translatedText || "").length,
@@ -2028,7 +2841,7 @@
     }
     ClipHub.Translation = {
         MODULE_NAME: "ch_12_translation",
-        MODULE_VERSION: 13,
+        MODULE_VERSION: 24,
         init: function (context) {
             translationConfig = { enabled: true, provider: "settings" };
             navigationInit(context || {});
@@ -2043,6 +2856,15 @@
             translationRemovalPending = false;
             translationRemovalGeneration = 0;
             pendingTranslationItemId = null;
+            googleLastLaunchAt = 0;
+            googleKeepVisibleUntil = 0;
+            googleLaunchCount = 0;
+            googleLaunchSuccessCount = 0;
+            googleLaunchFallbackCount = 0;
+            googleLastLaunchMethod = "none";
+            googleLastError = null;
+            googleFeedbackView = null;
+            googleFeedbackRunnable = null;
             return true;
         },
         configure: function (provider, enabled) {
@@ -2056,11 +2878,25 @@
             }
             return translateConfiguredSync(text, provider);
         },
-        testConfigured: function (text, callback) {
+        testConfigured: function (text, callback, providerOverride) {
+            var config = translationSettings();
+            var provider = providerOverride ? String(providerOverride) :
+                config.provider;
+            var result;
+            if (provider === "google") {
+                result = launchGoogleTranslateText(
+                    text || "ClipHub 翻译测试");
+                postTranslationCallback(callback, result);
+                return result;
+            }
             return translateConfiguredAsync(text || "ClipHub 翻译测试",
-                callback);
+                callback, provider);
         },
         openForItem: openTranslationForItem,
+        isGoogleTranslateInstalled: isGoogleTranslateInstalled,
+        launchGoogleText: function (text) {
+            return launchGoogleTranslateText(text);
+        },
         close: closeTranslationPanel,
         isAttached: function () {
             return translationState.attached === true;
@@ -2073,6 +2909,8 @@
         shutdown: function () {
             try { closeTranslationPanel("shutdown"); }
             catch (ignoredTranslationClose) {}
+            try { clearGoogleFeedback(); }
+            catch (ignoredGoogleFeedback) {}
             try { navigationShutdown(); }
             catch (ignoredNavigation) {}
             translationConfig.enabled = false;

@@ -1,236 +1,149 @@
-#!/data/data/com.termux/files/usr/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-MODE="${1:---candidate}"
-EXPECTED_MODULE_SET='20260723.14'
-EXPECTED_ENTRY_VERSION='5'
-EXPECTED_APP_MODULE_VERSION='9'
-CHECK_FILTER_LOADER_REF='0'
-REQUIRE_CLEAN='1'
+MODE="${1:---current}"
 case "$MODE" in
-  --candidate) EXPECTED_REF='agent/initialize-project-skeleton' ;;
-  --main)
-    EXPECTED_REF='main'
-    EXPECTED_MODULE_SET='20260809.05'
-    EXPECTED_ENTRY_VERSION='6'
-    EXPECTED_APP_MODULE_VERSION='20'
-    ;;
-  --beta)
-    EXPECTED_REF='beta-pagination-stage10-20260808'
-    EXPECTED_MODULE_SET='20260808.01'
-    EXPECTED_ENTRY_VERSION='6'
-    EXPECTED_APP_MODULE_VERSION='19'
-    CHECK_FILTER_LOADER_REF='1'
-    ;;
-  --current)
-    EXPECTED_REF=''
-    EXPECTED_MODULE_SET=''
-    EXPECTED_ENTRY_VERSION=''
-    EXPECTED_APP_MODULE_VERSION='20'
-    REQUIRE_CLEAN='0'
-    ;;
+  --current) ;;
+  --main) ;;
   *)
-    echo 'Usage: bash scripts/release_preflight.sh [--candidate|--main|--beta|--current]' >&2
+    echo 'Usage: bash scripts/release_preflight.sh [--current|--main]' >&2
     exit 2
     ;;
 esac
 
-AUDIT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cliphub-release-preflight.XXXXXX")"
-trap 'rm -rf "$AUDIT_DIR"' EXIT HUP INT TERM
-
-if [ "$REQUIRE_CLEAN" = '1' ] && [ -n "$(git status --short)" ]; then
-  echo 'ERROR: working tree is not clean.' >&2
+if [ "$MODE" = '--main' ] && [ -n "$(git status --short)" ]; then
+  echo 'ERROR: --main requires a clean working tree.' >&2
   git status --short >&2
   exit 1
 fi
 
+AUDIT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cliphub-release-preflight.XXXXXX")"
+trap 'rm -rf "$AUDIT_DIR"' EXIT HUP INT TERM
+
 python3 scripts/validate_es5.py .
-if [ "$MODE" = '--beta' ]; then
-  python3 scripts/audit_color_api.py \
-    --json "$AUDIT_DIR/color-findings.json" \
-    | tee "$AUDIT_DIR/color-findings.txt"
-  python3 - "$AUDIT_DIR/color-findings.json" <<'PY'
-import json
-import sys
 
-allowed = {
-    ("HIGH", "src/ch_08_window.js", 500, "setColorFilter"),
-    ("HIGH", "src/ch_08_window.js", 561, "setBackgroundColor"),
-    ("HIGH", "src/ch_08_window.js", 1115, "setColorFilter"),
-    ("HIGH", "src/ch_08_window.js", 1116, "setColorFilter"),
-    ("HIGH", "src/ch_10_editor.js", 1383, "setBackgroundColor"),
-}
-findings = json.load(open(sys.argv[1], encoding="utf-8"))
-risky = {
-    (item["severity"], item["path"], item["line"], item["api"])
-    for item in findings
-    if item["severity"] in ("HIGH", "WARN")
-}
-assert risky == allowed, {
-    "unexpected": sorted(risky - allowed),
-    "missing": sorted(allowed - risky),
-}
-print("Beta color audit: no findings added relative to Stage 10 baseline")
-PY
-else
-  python3 scripts/audit_color_api.py \
-    --release-strict \
-    --json "$AUDIT_DIR/color-findings.json" \
-    | tee "$AUDIT_DIR/color-findings.txt"
-  grep '^HIGH=0 WARN=0 ' "$AUDIT_DIR/color-findings.txt"
-fi
-
-python3 - \
-  "$MODE" \
-  "$EXPECTED_REF" \
-  "$EXPECTED_MODULE_SET" \
-  "$EXPECTED_ENTRY_VERSION" \
-  "$EXPECTED_APP_MODULE_VERSION" \
-  "$CHECK_FILTER_LOADER_REF" <<'PY'
-from __future__ import annotations
-
+PACKED_SYNTAX_DIR="$AUDIT_DIR/expanded-js"
+mkdir -p "$PACKED_SYNTAX_DIR"
+python3 - "$PACKED_SYNTAX_DIR" <<'PYJS'
 import base64
 import gzip
-import hashlib
 import json
+import re
+import sys
+from pathlib import Path
+
+out = Path(sys.argv[1])
+for path in sorted(Path("src").glob("*.js")):
+    text = path.read_text(encoding="utf-8")
+    match = re.search(r"\bvar\s+(?:PACKED_B64|encoded)\s*=\s*(.*?);", text, re.S)
+    source = text
+    if match is not None:
+        pieces = re.findall(r'"(?:\\.|[^"\\])*"', match.group(1))
+        source = gzip.decompress(
+            base64.b64decode("".join(json.loads(piece) for piece in pieces))
+        ).decode("utf-8")
+    (out / path.name).write_text(source, encoding="utf-8")
+PYJS
+for expanded_js in "$PACKED_SYNTAX_DIR"/*.js; do
+  node --check "$expanded_js" >/dev/null
+done
+echo 'Expanded JS syntax verification: passed'
+
+python3 scripts/audit_color_api.py \
+  --release-strict \
+  --json "$AUDIT_DIR/color-findings.json" \
+  | tee "$AUDIT_DIR/color-findings.txt"
+grep '^HIGH=0 WARN=0 ' "$AUDIT_DIR/color-findings.txt"
+
+python3 scripts/manifest_contract.py validate "$MODE"
+python3 scripts/test_manifest_contract.py
+
+python3 - "$MODE" <<'PY'
+import base64
+import gzip
+import json
+import os
 import re
 import subprocess
 import sys
 from pathlib import Path
 
-root = Path.cwd()
 mode = sys.argv[1]
-expected_ref = sys.argv[2]
-expected_module_set = sys.argv[3]
-expected_entry_text = sys.argv[4]
-expected_app_module_version = int(sys.argv[5])
-check_filter_loader_ref = sys.argv[6] == "1"
+root = Path.cwd()
 manifest = json.loads((root / "module-manifest.json").read_text(encoding="utf-8"))
+entry = (root / "ClipHub.js").read_text(encoding="utf-8")
 
-if mode == "--current":
-    expected_ref = str(manifest.get("sourceRef", ""))
-    expected_module_set = str(manifest.get("moduleSetVersion", ""))
-    expected_entry_version = int(manifest.get("entryMinVersion", -1))
-    branch = subprocess.check_output(
+
+def expanded(path):
+    source = path.read_text(encoding="utf-8")
+    match = re.search(r"\bvar\s+(?:PACKED_B64|encoded)\s*=\s*(.*?);", source, re.S)
+    if match is None:
+        return source
+    pieces = re.findall(r'"(?:\\.|[^"\\])*"', match.group(1))
+    encoded = "".join(json.loads(piece) for piece in pieces)
+    return gzip.decompress(base64.b64decode(encoded)).decode("utf-8")
+
+
+source_ref = str(manifest["sourceRef"])
+default_ref_match = re.search(r'\bvar DEFAULT_REF = "([^"]+)";', entry)
+assert default_ref_match is not None, "ClipHub.js DEFAULT_REF missing"
+assert default_ref_match.group(1) == source_ref, (
+    default_ref_match.group(1), source_ref
+)
+
+checkout_ref = os.environ.get("GITHUB_HEAD_REF", "").strip()
+if not checkout_ref and os.environ.get("GITHUB_EVENT_NAME") == "push":
+    checkout_ref = os.environ.get("GITHUB_REF_NAME", "").strip()
+if not checkout_ref:
+    checkout_ref = subprocess.check_output(
         ["git", "branch", "--show-current"], text=True
     ).strip()
-    assert branch == expected_ref, (branch, expected_ref)
-else:
-    expected_entry_version = int(expected_entry_text)
+if mode == "--main":
+    assert source_ref == "main", source_ref
+    if os.environ.get("GITHUB_EVENT_NAME") == "push" and checkout_ref:
+        assert checkout_ref == "main", checkout_ref
+elif checkout_ref:
+    assert source_ref == checkout_ref, (source_ref, checkout_ref)
 
-assert manifest.get("schemaVersion") == 1, manifest.get("schemaVersion")
-assert manifest.get("moduleSetVersion") == expected_module_set, manifest.get("moduleSetVersion")
-assert manifest.get("entryMinVersion") == expected_entry_version, manifest.get("entryMinVersion")
-assert manifest.get("sourceRef") == expected_ref, manifest.get("sourceRef")
-assert len(manifest.get("modules", [])) == 15, len(manifest.get("modules", []))
+manifest_names = [str(item["name"]) for item in manifest["modules"]]
+source_names = sorted(path.name for path in (root / "src").glob("ch_*.js"))
+assert sorted(manifest_names) == source_names, {
+    "manifest_only": sorted(set(manifest_names) - set(source_names)),
+    "source_only": sorted(set(source_names) - set(manifest_names)),
+}
+assert manifest.get("resources") == [], "unused production resources declared"
 
-
-def blob_sha(text: str) -> str:
-    data = text.encode("utf-8")
-    return hashlib.sha1(f"blob {len(data)}\0".encode("utf-8") + data).hexdigest()
-
-
-def expanded_source(source: str) -> str | None:
-    assignment = re.search(r"\bvar\s+PACKED_B64\s*=\s*(.*?);", source, re.S)
-    if assignment is None:
-        return None
-    pieces = re.findall(r'"(?:\\.|[^"\\])*"', assignment.group(1))
-    encoded = "".join(json.loads(piece) for piece in pieces)
-    expanded = gzip.decompress(base64.b64decode(encoded)).decode("utf-8")
-    expected = re.search(
-        r"\bvar\s+SOURCE_SHA256\s*=\s*['\"]([0-9a-fA-F]{64})['\"]",
-        source,
-    )
-    assert expected is not None
-    actual = hashlib.sha256(expanded.encode("utf-8")).hexdigest()
-    assert actual == expected.group(1).lower(), (actual, expected.group(1))
-    return expanded
-
-
-seen = set()
-actual_sources: dict[str, str] = {}
-for item in manifest["modules"]:
-    name = str(item["name"])
-    path = root / str(item["path"])
-    assert name not in seen, name
-    assert path.is_file(), path
-    assert path.name == name, (path, name)
-    source = path.read_text(encoding="utf-8")
-    actual = blob_sha(source)
-    assert actual == str(item["sha"]), (name, actual, item["sha"])
-    actual_sources[name] = expanded_source(source) or source
-    seen.add(name)
-
-entry = (root / "ClipHub.js").read_text(encoding="utf-8")
-app = actual_sources["ch_15_app.js"]
-filter_loader = (root / "src/ch_11_filter.js").read_text(encoding="utf-8")
-settings_loader = (root / "src/ch_13_settings.js").read_text(encoding="utf-8")
-toggle = (root / "tasks/ClipHub_全局剪贴板开关.js").read_text(encoding="utf-8")
-theme = actual_sources["ch_07_theme.js"]
-
-assert re.search(r"var ENTRY_VERSION = " + str(expected_entry_version) + r";", entry)
-assert re.search(r'var DEFAULT_REF = "' + re.escape(expected_ref) + r'";', entry)
-if check_filter_loader_ref:
-    assert re.search(r'var REF = "' + re.escape(expected_ref) + r'";', filter_loader)
-assert re.search(r"var CONTROL_ENDPOINT_SCHEMA = 3;", app)
+sources = {
+    name: expanded(root / "src" / name)
+    for name in manifest_names
+}
+combined = "\n".join(sources.values())
+assert "function buildLifecyclePlan(context)" in sources["ch_15_app.js"]
+assert "runtimePlan = context && context.runtimePlan" in sources["ch_15_app.js"]
+assert "MODULE_VERSION: 4" in sources["ch_20_visibility_intent_guard.js"]
+assert "function uninstallHooks()" in sources["ch_20_visibility_intent_guard.js"]
+assert "function hideClipHubAfterGoogleLaunch()" in sources["ch_12_translation.js"]
+assert 'hideUi("google_translation_launched")' in sources["ch_12_translation.js"]
+assert "ClipHub.Translation" not in sources["ch_05_classifier.js"]
+assert "removeViewImmediate(" not in combined
 assert re.search(
-    r"MODULE_NAME:\s*\"ch_15_app\"\s*,\s*MODULE_VERSION:\s*" +
-    str(expected_app_module_version), app, re.S,
-)
-assert re.search(r"var TASK_VERSION = 3;", toggle)
-assert re.search(r"var REQUIRED_ENDPOINT_SCHEMA = 3;", toggle)
-assert re.search(r"var MIN_ENTRY_VERSION = 5;", toggle)
-assert re.search(r"MODULE_NAME:\s*\"ch_07_theme\"\s*,\s*MODULE_VERSION:\s*4", theme, re.S)
-assert "getColorSafetyState: getColorSafetyState" in theme
-assert not (root / "tasks/ClipHub_打开全局剪贴板.js").exists()
+    r"Looper\.getMainLooper\(\)\s*===|===\s*Looper\.getMainLooper\(\)",
+    combined,
+) is None
 
-if mode in ("--current", "--main"):
-    required_versions = {
-        "ch_08_window.js": ("ch_08_window", 19),
-        "ch_09_list.js": ("ch_09_list", 21),
-        "ch_10_editor.js": ("ch_10_editor", 24),
-        "ch_11_filter.js": ("ch_11_filter", 74),
-        "ch_12_translation.js": ("ch_12_translation", 13),
-        "ch_13_settings.js": ("ch_13_settings", 24),
-        "ch_15_app.js": ("ch_15_app", 20),
-    }
-    for filename, (module_name, module_version) in required_versions.items():
-        source = actual_sources[filename]
-        pattern = (
-            r"MODULE_NAME:\s*\"" + re.escape(module_name) +
-            r"\"\s*,\s*MODULE_VERSION:\s*" + str(module_version)
-        )
-        assert re.search(pattern, source, re.S), (filename, module_version)
-    navigation = actual_sources["ch_12_translation.js"]
-    assert re.search(
-        r'MODULE_NAME:\s*"ch_14_navigation_embedded"\s*,\s*MODULE_VERSION:\s*7',
-        navigation,
-        re.S,
-    )
-    assert expected_module_set == "20260809.05", expected_module_set
-    combined = "\n".join(actual_sources.values())
-    assert "removeViewImmediate(" not in combined
-    assert not re.search(
-        r"Looper\.getMainLooper\(\)\s*===|===\s*Looper\.getMainLooper\(\)",
-        combined,
-    )
-    for forbidden in ("Packages.java.net.URL", "openConnection(",
-                      "modules.backup", "stage2"):
-        assert forbidden not in settings_loader, forbidden
-
-print("Manifest SHA verification: passed")
-print("Formal task structure: background + toggle")
-print("entryVersion: " + str(expected_entry_version))
-print("endpointSchemaVersion: 3")
-print("moduleSetVersion: " + expected_module_set)
-print("sourceRef: " + expected_ref)
-print("Theme: 4")
-if mode in ("--current", "--main"):
-    print("Current safety contracts: passed")
+print("Runtime package/reference contracts: passed")
+print("releaseMode: " + mode)
+print("sourceRef: " + source_ref)
+print("moduleSetVersion: " + str(manifest["moduleSetVersion"]))
+print("moduleCount: " + str(len(manifest_names)))
 PY
+
+bash scripts/run_navigation_regression_suite.sh
+bash scripts/run_tokenizer_regression_suite.sh
+python3 scripts/test_translation_provider_contract.py
 
 git diff --check
 

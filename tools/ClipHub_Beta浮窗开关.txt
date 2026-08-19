@@ -1,6 +1,6 @@
 /*
  * ShortX 任务名称：ClipHub Beta 浮窗开关
- * 作用：仅控制 agent/cliphub-ui-drag-handle-unify-20260809 分支运行实例的显示/隐藏。
+ * 作用：仅控制 beta-regex-settings-tabs-20260814 分支运行实例的显示/隐藏。
  * 运行环境：Rhino ES5。
  */
 (function (global) {
@@ -15,7 +15,7 @@
     var Intent = Packages.android.content.Intent;
 
     var TASK_VERSION = 1;
-    var EXPECTED_SOURCE_REF = "agent/cliphub-ui-drag-handle-unify-20260809";
+    var EXPECTED_SOURCE_REF = "beta-regex-settings-tabs-20260814";
     var REQUIRED_ENDPOINT_SCHEMA = 3;
     var MIN_ENTRY_VERSION = 6;
 

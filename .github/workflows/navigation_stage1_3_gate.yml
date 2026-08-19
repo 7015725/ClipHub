@@ -1,0 +1,32 @@
+name: Navigation Contract Gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  navigation-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Release and navigation contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mode='--current'
+          source_ref="$(python3 -c 'import json; print(json.load(open("module-manifest.json", encoding="utf-8"))["sourceRef"])')"
+          if [ "$GITHUB_EVENT_NAME" = 'push' ] || [ "$source_ref" = 'main' ]; then
+            mode='--main'
+          fi
+          bash scripts/release_preflight.sh "$mode"
+          git diff --check origin/main...HEAD

@@ -17,11 +17,6 @@
     var CONTROL_ACTION_BASE = "com.cliphub.runtime.CONTROL";
     var CONTROL_ENDPOINT_SCHEMA = 3;
     var CONTROL_COMMANDS = ["show", "hide", "toggle", "status", "stop"];
-    var order = [
-        "Log", "Database", "Repository",
-        "EventBus", "Theme", "Clipboard", "Window", "List",
-        "Editor", "Filter", "Settings", "Translation"
-    ];
     var state = {
         started: false,
         context: null,
@@ -42,7 +37,8 @@
         lastStopReason: "",
         filterPreparedForShutdown: false,
         filterStopping: false,
-        filterGuardInstalled: false
+        filterGuardInstalled: false,
+        runtimePlan: []
     };
 
     function closeQuietly(value) {
@@ -356,8 +352,34 @@
         }
     }
 
-    function runtimeModuleCount() {
-        return order.length + 2;
+    function buildLifecyclePlan(context) {
+        var source = context && context.runtimePlan ? context.runtimePlan : [];
+        var plan = [];
+        var index;
+        var item;
+        for (index = 0; index < source.length; index += 1) {
+            item = source[index];
+            if (item && String(item.runtimeRole || "") === "managed") {
+                plan.push({
+                    name: String(item.name || ""),
+                    exportName: String(item.export || ""),
+                    lifecycleIndex: Number(item.lifecycleIndex || 0)
+                });
+            }
+        }
+        plan.sort(function (left, right) {
+            if (left.lifecycleIndex !== right.lifecycleIndex) {
+                return left.lifecycleIndex - right.lifecycleIndex;
+            }
+            return left.name.localeCompare(right.name);
+        });
+        return plan;
+    }
+
+    function runtimeModuleCount(context) {
+        var source = context && context.runtimePlan ?
+            context.runtimePlan : state.runtimePlan;
+        return source && source.length ? source.length : state.initialized.length;
     }
 
     function moduleFileCount(context) {
@@ -394,6 +416,7 @@
         var list = safeState(ClipHub.List, "getState", {});
         var detail = safeState(ClipHub.List, "getDetailState", {});
         var editor = safeState(ClipHub.Editor, "getState", {});
+        var navigation = safeState(ClipHub.Navigation, "getState", {});
         var filter = safeState(ClipHub.Filter, "getPanelState", {});
         var settings = safeState(ClipHub.Settings, "getState", {});
         var translation = safeState(ClipHub.Translation, "getState", {});
@@ -401,6 +424,9 @@
         var removal = safeState(ClipHub.Window, "getRemovalState", {});
         var colorSafety = safeState(
             ClipHub.Theme, "getColorSafetyState", {});
+        var uiShell = safeState(ClipHub.UIShell, "getState", {});
+        var runtimeDiagnostics = safeState(
+            ClipHub.UIShell, "getRuntimeDiagnostics", null);
         var detailAttached = detail.attachedToWindow === true ||
             detail.attached === true;
         var editorAttached = editor.attachedToWindow === true ||
@@ -454,7 +480,11 @@
             hydrationWorker: safeState(
                 ClipHub.Filter, "getHydrationWorkerState", null),
             scrollPerformance: safeState(
-                ClipHub.Filter, "getScrollPerformanceState", null)
+                ClipHub.Filter, "getScrollPerformanceState", null),
+            uiShell: uiShell,
+            runtimeDiagnostics: runtimeDiagnostics,
+            editorState: editor,
+            navigationState: navigation
         };
     }
 
@@ -698,13 +728,14 @@
 
     ClipHub.App = {
         MODULE_NAME: "ch_15_app",
-        MODULE_VERSION: 20,
+        MODULE_VERSION: 24,
         CONTROL_ACTION_BASE: CONTROL_ACTION_BASE,
         CONTROL_ENDPOINT_SCHEMA: CONTROL_ENDPOINT_SCHEMA,
         CONTROL_COMMANDS: CONTROL_COMMANDS,
         start: function (context) {
             var index;
             var item;
+            var plan;
             if (state.started) {
                 return { ok: true, started: true, reused: true };
             }
@@ -718,6 +749,7 @@
             state.lastStopReason = "";
             state.lifecycleGeneration += 1;
             state.context = context;
+            state.runtimePlan = context && context.runtimePlan ? context.runtimePlan : [];
             state.entryVersion = Number(context && context.entryVersion || 0);
             state.moduleSetVersion = String(
                 context && context.moduleSetVersion || "");
@@ -726,10 +758,11 @@
                 ClipHub.Base.init(context);
                 state.initialized.push(ClipHub.Base);
                 acquireLock(context);
-                for (index = 0; index < order.length; index += 1) {
-                    item = ClipHub[order[index]];
+                plan = buildLifecyclePlan(context);
+                for (index = 0; index < plan.length; index += 1) {
+                    item = ClipHub[plan[index].exportName];
                     if (!item) {
-                        throw new Error("Missing module: " + order[index]);
+                        throw new Error("Missing module: " + plan[index].exportName);
                     }
                     if (typeof item.init === "function") { item.init(context); }
                     state.initialized.push(item);
@@ -747,7 +780,7 @@
                     databasePath: ClipHub.Database.getPath(),
                     initializedModuleCount: state.initialized.length,
                     moduleFileCount: moduleFileCount(context),
-                    moduleCount: runtimeModuleCount(),
+                    moduleCount: runtimeModuleCount(context),
                     placeholderModuleFileCount: Math.max(0,
                         moduleFileCount(context) - runtimeModuleCount()),
                     entryVersion: Number(state.entryVersion || 0),
@@ -774,6 +807,7 @@
                 state.entryVersion = 0;
                 state.moduleSetVersion = "";
                 state.sourceRef = "";
+                state.runtimePlan = [];
                 state.started = false;
                 state.stopping = false;
                 throw error;
@@ -806,6 +840,7 @@
             state.entryVersion = 0;
             state.moduleSetVersion = "";
             state.sourceRef = "";
+            state.runtimePlan = [];
             state.stopping = false;
             return {
                 ok: true,
