@@ -48,8 +48,11 @@ var modeSwitch = body(source, "switchMode");
 var service = fs.readFileSync("src/ch_19_tokenizer_service.js", "utf8");
 var configuredRules = body(service, "configuredRules");
 var asyncOptions = body(service, "prepareAsyncOptions");
-if (normalize.indexOf("start:") < 0 || normalize.indexOf("end:") < 0) {
-    throw new Error("UTF-16 token ranges are not preserved");
+var tokenizeSync = body(service, "tokenizeSync");
+if (normalize.indexOf("start:") < 0 || normalize.indexOf("end:") < 0 ||
+        normalize.indexOf("source:") < 0 || normalize.indexOf("ruleId:") < 0 ||
+        normalize.indexOf("title:") < 0) {
+    throw new Error("UTF-16 token ranges or regex metadata are not preserved");
 }
 if (range.indexOf("applySelectionIndexes(selected)") < 0 ||
         source.indexOf("state.tokens[normalized[0]].start") < 0 ||
@@ -76,9 +79,20 @@ if (modeSwitch.indexOf("tokenizer_regex_mode_autorun_selected_v1") < 0 ||
     throw new Error("regex mode must immediately tokenize with configured selected rules");
 }
 if (configuredRules.indexOf("selectedRulesForTokenize()") < 0 ||
+        configuredRules.indexOf("temporaryPriority: true") < 0 ||
         asyncOptions.indexOf("configuredRulesJson") < 0 ||
         asyncOptions.indexOf("selectedRuleIdsJson") < 0) {
     throw new Error("regex async request must snapshot persisted selected rules");
+}
+if (tokenizeSync.indexOf('settings.mode || "normal"') < 0 ||
+        tokenizeSync.indexOf("TokenizerCore.tokenizeRegexExact") < 0 ||
+        tokenizeSync.indexOf("TokenizerCore.tokenize(text, settings)") < 0) {
+    throw new Error("regex exact and normal tokenizer service routing missing");
+}
+if (request.indexOf("clearTokenizerResult()") < 0 ||
+        request.indexOf("normalizeRegexIssues") < 0 ||
+        request.indexOf("firstBlockingMessage") < 0) {
+    throw new Error("regex warning or blocking failure UI contract missing");
 }
 if (mount.indexOf("tokenizer_open_autorun_normal_v1") < 0 ||
         mount.indexOf('requestTokenizerRun("open")') < 0 ||

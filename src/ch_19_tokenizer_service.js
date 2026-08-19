@@ -86,7 +86,7 @@
         ruleSelectionChangeCount: 0,
         ruleConfigLoadErrorCount: 0,
         ruleMigrationCount: 0,
-        engine: "regex-tokenizer-v2"
+        engine: "regex-tokenizer-v3"
     };
 
     try { RhinoContext = Packages.org.mozilla.javascript.Context; }
@@ -706,6 +706,7 @@
                 flags: 0,
                 enabled: true,
                 priority: 2000,
+                temporaryPriority: true,
                 mode: temporaryMode,
                 keepDelimiter: temporaryMode === "split",
                 groupMode: "whole",
@@ -761,7 +762,14 @@
                 throw new Error("TokenizerCore is unavailable");
             }
             settings = prepareConfiguredOptions(options || {});
-            result = ClipHub.TokenizerCore.tokenize(text, settings);
+            if (String(settings.mode || "normal") === "regex") {
+                if (typeof ClipHub.TokenizerCore.tokenizeRegexExact !== "function") {
+                    throw new Error("TokenizerCore exact regex tokenizer unavailable");
+                }
+                result = ClipHub.TokenizerCore.tokenizeRegexExact(text, settings);
+            } else {
+                result = ClipHub.TokenizerCore.tokenize(text, settings);
+            }
             result.requestId = options && options.requestId !== undefined ?
                 String(options.requestId) : "";
             result.status = result.ok === true ? "ready" : "failed";
@@ -950,8 +958,8 @@
 
     ClipHub.TokenizerService = {
         MODULE_NAME: "ch_19_tokenizer_service",
-        MODULE_VERSION: 6,
-        ENGINE_VERSION: 2,
+        MODULE_VERSION: 7,
+        ENGINE_VERSION: 3,
         RULE_SCHEMA_VERSION: RULE_SCHEMA_VERSION,
         RULE_STORAGE_NAMESPACE: RULE_STORAGE_NAMESPACE,
         init: init,

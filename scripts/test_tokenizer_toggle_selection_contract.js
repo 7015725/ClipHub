@@ -47,6 +47,7 @@ var names = [
 var code = names.map(function (name) { return body(source, name); }).join("\n");
 var context = {
     state: {
+        mode: "regex",
         presentationState: "tokens",
         resultGeneration: 1,
         selectionGeneration: 1,
@@ -85,25 +86,21 @@ expectIndexes([0]);
 if (context.getSelectedOriginalText() !== "A") { throw new Error("single tap select failed"); }
 context.toggleToken(2);
 expectIndexes([0, 2]);
-if (context.getSelectedOriginalText() !== "A B") { throw new Error("multi-select whitespace preservation failed"); }
-context.toggleToken(0);
-expectIndexes([2]);
-if (context.getSelectedOriginalText() !== "B") { throw new Error("reverse toggle deselect failed"); }
-context.toggleToken(4);
-expectIndexes([2, 4]);
-if (context.getSelectedOriginalText() !== "B C") { throw new Error("second multi-select failed"); }
-context.toggleToken(2);
-expectIndexes([4]);
-context.toggleToken(4);
-expectIndexes([]);
-if (context.getSelectedOriginalText() !== "") { throw new Error("last deselect failed"); }
-context.toggleToken(0);
-context.toggleToken(4);
-expectIndexes([0, 4]);
-if (context.getSelectedOriginalText() !== "AC") { throw new Error("deselected middle token leaked into action text"); }
+if (context.getSelectedOriginalText() !== "AB") { throw new Error("regex discontinuous selection inserted text"); }
+context.toggleToken(1);
+expectIndexes([0, 1, 2]);
+if (context.getSelectedOriginalText() !== "A B") { throw new Error("regex whitespace token selection failed"); }
+context.applySelectionIndexes([]);
 context.applySelectionTokenRange(0, 4);
-expectIndexes([0, 2, 4]);
-if (context.getSelectedOriginalText() !== "A B C") { throw new Error("drag range selection regressed"); }
+expectIndexes([0, 1, 2, 3, 4]);
+if (context.getSelectedOriginalText() !== "A B C") { throw new Error("regex drag range selection regressed"); }
+context.applySelectionIndexes([]);
+context.state.mode = "normal";
+context.toggleToken(0);
+context.toggleToken(2);
+expectIndexes([0, 2]);
+if (context.getSelectedOriginalText() !== "A B") { throw new Error("normal whitespace preservation regressed"); }
+if (context.toggleToken(1) !== false) { throw new Error("normal whitespace became selectable"); }
 if (source.indexOf("tokenizer_click_toggle_multiselect_v1") < 0 ||
         source.indexOf("return setTokenSelected(numeric, !indexSelected(numeric));") < 0) {
     throw new Error("toggle selection marker missing");

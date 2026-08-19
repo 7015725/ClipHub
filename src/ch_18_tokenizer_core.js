@@ -81,6 +81,7 @@
             groupMode: String(rule.groupMode || "whole").toLowerCase(),
             type: String(rule.type || "word"),
             source: String(rule.source || source),
+            temporaryPriority: rule.temporaryPriority === true,
             order: index
         };
     }
@@ -291,6 +292,264 @@
         return { total: tokens.length, words: words, symbols: symbols };
     }
 
+    function makeRegexIssue(severity, code, message, rule) {
+        var value = String(message || code || "TOKENIZER_ERROR");
+        return {
+            severity: String(severity || "error"),
+            nonBlocking: String(severity || "error") === "warn",
+            code: String(code || "TOKENIZER_ERROR"),
+            ruleId: rule ? String(rule.id || "") : "",
+            title: rule ? String(rule.title || "") : "",
+            message: value,
+            error: value
+        };
+    }
+
+    function pushRuleIssueOnce(issues, seen, code, message, rule) {
+        var key = String(rule && rule.id || "") + ":" + String(code || "");
+        if (seen[key] === true) { return false; }
+        seen[key] = true;
+        issues.push(makeRegexIssue("warn", code, message, rule));
+        return true;
+    }
+
+    function collectRegexExactMatches(text, rules, matchBudget) {
+        var matches = [];
+        var issues = [];
+        var issueSeen = {};
+        var scannedCount = 0;
+        var sequence = 0;
+        var index;
+        var rule;
+        var regex;
+        var match;
+        var whole;
+        var start;
+        var nextIndex;
+        for (index = 0; index < rules.length; index += 1) {
+            rule = rules[index];
+            if (!rule.enabled || !rule.pattern) { continue; }
+            try {
+                regex = new RegExp(rule.pattern, jsFlags(rule.flags));
+            } catch (error) {
+                pushRuleIssueOnce(issues, issueSeen, "INVALID_REGEX",
+                    "正则表达式无效：" + String(error), rule);
+                continue;
+            }
+            while ((match = regex.exec(text)) !== null) {
+                scannedCount += 1;
+                if (scannedCount > matchBudget) {
+                    return {
+                        ok: false,
+                        code: "MATCH_LIMIT_EXCEEDED",
+                        matches: [],
+                        issues: issues,
+                        scannedCount: scannedCount
+                    };
+                }
+                whole = String(match[0]);
+                start = Number(match.index);
+                if (whole.length <= 0) {
+                    pushRuleIssueOnce(issues, issueSeen, "ZERO_WIDTH_MATCH",
+                        "规则产生零宽匹配，已跳过", rule);
+                    nextIndex = start < text.length ?
+                        start + unitLength(text, start) : start + 1;
+                    regex.lastIndex = Math.max(Number(regex.lastIndex), nextIndex);
+                    continue;
+                }
+                matches.push({
+                    start: start,
+                    end: start + whole.length,
+                    text: whole,
+                    rule: rule,
+                    sequence: sequence
+                });
+                sequence += 1;
+            }
+        }
+        return {
+            ok: true,
+            matches: matches,
+            issues: issues,
+            scannedCount: scannedCount
+        };
+    }
+
+    function regexExactCandidateSort(a, b) {
+        var temporaryA = a.rule.temporaryPriority === true ? 1 : 0;
+        var temporaryB = b.rule.temporaryPriority === true ? 1 : 0;
+        var priorityA = Number(a.rule.priority || 0);
+        var priorityB = Number(b.rule.priority || 0);
+        var lengthA = Number(a.end) - Number(a.start);
+        var lengthB = Number(b.end) - Number(b.start);
+        var orderA = Number(a.rule.order || 0);
+        var orderB = Number(b.rule.order || 0);
+        if (temporaryA !== temporaryB) { return temporaryB - temporaryA; }
+        if (priorityA !== priorityB) { return priorityB - priorityA; }
+        if (lengthA !== lengthB) { return lengthB - lengthA; }
+        if (orderA !== orderB) { return orderA - orderB; }
+        if (a.start !== b.start) { return a.start - b.start; }
+        if (a.end !== b.end) { return a.end - b.end; }
+        return Number(a.sequence || 0) - Number(b.sequence || 0);
+    }
+
+    function regexExactInsertionIndex(accepted, start) {
+        var low = 0;
+        var high = accepted.length;
+        var middle;
+        while (low < high) {
+            middle = Math.floor((low + high) / 2);
+            if (Number(accepted[middle].start) < Number(start)) {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        return low;
+    }
+
+    function resolveRegexExactOverlap(candidates) {
+        var ranked = candidates.slice(0);
+        var accepted = [];
+        var index;
+        var item;
+        var insertion;
+        var previous;
+        var next;
+        ranked.sort(regexExactCandidateSort);
+        for (index = 0; index < ranked.length; index += 1) {
+            item = ranked[index];
+            if (item.start < 0 || item.end <= item.start) { continue; }
+            insertion = regexExactInsertionIndex(accepted, item.start);
+            previous = insertion > 0 ? accepted[insertion - 1] : null;
+            next = insertion < accepted.length ? accepted[insertion] : null;
+            if (previous !== null && item.start < previous.end) { continue; }
+            if (next !== null && next.start < item.end) { continue; }
+            accepted.splice(insertion, 0, item);
+        }
+        return accepted;
+    }
+
+    function emitExactRawGap(text, start, end, out) {
+        if (start >= end) { return false; }
+        out.push(makeToken(text.substring(start, end), start, end,
+            "word", "raw-gap", null));
+        return true;
+    }
+
+    function validateExactCover(text, tokens) {
+        var cursor = 0;
+        var rebuilt = [];
+        var index;
+        var token;
+        var start;
+        var end;
+        for (index = 0; index < tokens.length; index += 1) {
+            token = tokens[index] || {};
+            start = Number(token.start);
+            end = Number(token.end);
+            if (!isFinite(start) || !isFinite(end) || start !== cursor ||
+                    end <= start || end > text.length) {
+                return { ok: false, code: "TOKEN_RANGE_INVALID" };
+            }
+            if (text.substring(start, end) !== String(token.text || "")) {
+                return { ok: false, code: "TOKEN_RANGE_INVALID" };
+            }
+            rebuilt.push(String(token.text || ""));
+            cursor = end;
+        }
+        if (cursor !== text.length || rebuilt.join("") !== text) {
+            return { ok: false, code: "RECONSTRUCTION_MISMATCH" };
+        }
+        return { ok: true };
+    }
+
+    function exactFailure(code, message, issues, ruleCount, scannedCount) {
+        var allIssues = (issues || []).slice(0);
+        allIssues.push(makeRegexIssue("error", code, message, null));
+        return {
+            ok: false,
+            code: String(code),
+            message: String(message || code),
+            engine: "regex-tokenizer-exact-v3",
+            tokens: [],
+            stats: { total: 0, words: 0, symbols: 0 },
+            issues: allIssues,
+            errors: allIssues,
+            ruleCount: Number(ruleCount || 0),
+            scannedMatchCount: Number(scannedCount || 0),
+            acceptedMatchCount: 0,
+            gapMode: "exact-raw"
+        };
+    }
+
+    function tokenizeRegexExact(text, options) {
+        var value = String(text === null || text === undefined ? "" : text);
+        var settings = options || {};
+        var charBudget = Number(settings.charBudget || CHAR_BUDGET);
+        var matchBudget = Math.max(1,
+            Number(settings.matchBudget || MATCH_BUDGET));
+        var rules;
+        var collected;
+        var accepted;
+        var out = [];
+        var cursor = 0;
+        var index;
+        var item;
+        var validation;
+        if (!isFinite(charBudget) || charBudget < 0) {
+            charBudget = CHAR_BUDGET;
+        }
+        if (!isFinite(matchBudget) || matchBudget < 1) {
+            matchBudget = MATCH_BUDGET;
+        }
+        if (value.length > charBudget) {
+            return exactFailure("TEXT_TOO_LARGE", "原文超过分词安全上限",
+                [], 0, 0);
+        }
+        rules = buildRules(settings.rules || [],
+            settings.includeBuiltins === true);
+        collected = collectRegexExactMatches(value, rules, matchBudget);
+        if (collected.ok !== true) {
+            return exactFailure("MATCH_LIMIT_EXCEEDED",
+                "正则命中数量超过安全上限",
+                collected.issues, rules.length, collected.scannedCount);
+        }
+        accepted = resolveRegexExactOverlap(collected.matches);
+        for (index = 0; index < accepted.length; index += 1) {
+            item = accepted[index];
+            if (item.start > cursor) {
+                emitExactRawGap(value, cursor, item.start, out);
+            }
+            out.push(makeToken(value.substring(item.start, item.end),
+                item.start, item.end, item.rule.type, "regex-match", item.rule));
+            cursor = item.end;
+        }
+        if (cursor < value.length) {
+            emitExactRawGap(value, cursor, value.length, out);
+        }
+        validation = validateExactCover(value, out);
+        if (validation.ok !== true) {
+            return exactFailure(validation.code,
+                validation.code === "TOKEN_RANGE_INVALID" ?
+                    "正则分词区间校验失败" : "正则分词结果无法还原原文",
+                collected.issues, rules.length, collected.scannedCount);
+        }
+        return {
+            ok: true,
+            engine: "regex-tokenizer-exact-v3",
+            tokens: out,
+            stats: stats(out),
+            issues: collected.issues,
+            errors: collected.issues,
+            ruleCount: rules.length,
+            scannedMatchCount: collected.scannedCount,
+            acceptedMatchCount: accepted.length,
+            gapMode: "exact-raw",
+            reconstructionVerified: true
+        };
+    }
+
     function tokenize(text, options) {
         var value = String(text === null || text === undefined ? "" : text);
         var settings = options || {};
@@ -412,10 +671,11 @@
 
     ClipHub.TokenizerCore = {
         MODULE_NAME: "ch_18_tokenizer_core",
-        MODULE_VERSION: 2,
-        ENGINE_VERSION: 2,
+        MODULE_VERSION: 3,
+        ENGINE_VERSION: 3,
         getDefaultRules: getDefaultRules,
         tokenize: tokenize,
+        tokenizeRegexExact: tokenizeRegexExact,
         tokenizeWithRules: tokenizeWithRules,
         scanRegexRanges: scanRegexRanges,
         resolveOverlap: resolveOverlap

@@ -33,7 +33,7 @@ if (sync.indexOf('showBack: tokenizerPage ? tokenizerLaunchOrigin !== "home" : t
         sync.indexOf('dispatchTokenizerBack("shell_close")') < 0) {
     throw new Error("primary host header navigation contract missing");
 }
-if (source.indexOf("MODULE_VERSION: 27") < 0) { throw new Error("TokenizerUI v26 missing"); }
+if (source.indexOf("MODULE_VERSION: 28") < 0) { throw new Error("TokenizerUI v28 missing"); }
 if (source.indexOf("tokenizer_chip_layout_cleanup_v1") < 0) { throw new Error("chip cleanup marker missing"); }
 if (source.indexOf("tokenizer_embedded_single_header_v1") < 0 ||
         header.indexOf("if (editorEmbeddedInPrimary) { return; }") < 0) {
@@ -79,10 +79,18 @@ if ((toolbar.match(/params\.rightMargin = dp\(6\);/g) || []).length !== 2 ||
         toolbar.indexOf("ViewGroup.LayoutParams.MATCH_PARENT, dp(46)") < 0) {
     throw new Error("toolbar spacing symmetry contract regressed");
 }
-if (build.indexOf("/^\\s*$/.test") < 0 || build.indexOf("view.setVisibility(View.GONE)") < 0 ||
+if (build.indexOf("/^\\s*$/.test") < 0 ||
+        build.indexOf('state.mode !== "regex"') < 0 ||
+        build.indexOf("visibleWhitespaceText(token.text)") < 0 ||
+        build.indexOf("view.setVisibility(View.GONE)") < 0 ||
         reflow.indexOf("view.getVisibility() !== View.VISIBLE") < 0 ||
         hit.indexOf("view.getVisibility() !== View.VISIBLE") < 0) {
-    throw new Error("whitespace token cleanup regressed");
+    throw new Error("mode-scoped whitespace token contract regressed");
+}
+if (source.indexOf('replace(/\\r\\n/g, "↵")') < 0 ||
+        source.indexOf('replace(/\\t/g, "⇥")') < 0 ||
+        source.indexOf('replace(/ /g, "␠")') < 0) {
+    throw new Error("regex whitespace placeholder rendering missing");
 }
 if (surface.indexOf("buildIndicator(pageColumn)") >= 0 ||
         source.indexOf("function buildIndicator(column)") >= 0) {
