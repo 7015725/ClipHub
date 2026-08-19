@@ -3,8 +3,10 @@ name: Tokenizer Regression Gate
 on:
   push:
     branches:
-      - cleanup/tokenizer-no-regression-20260817
+      - main
   pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -29,26 +31,6 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Assert guarded runtime cleanup scope
-        if: github.event_name == 'push' || github.base_ref == 'cleanup/tokenizer-no-regression-20260817'
-        shell: bash
-        run: |
-          set -euo pipefail
-          base=622bf132da368d758d8a166cd9df284cae4bd5f6
-          expected="$(printf '%s\n' \
-            ClipHub.js \
-            module-manifest.json \
-            src/ch_10_editor.js \
-            src/ch_11_filter.js \
-            src/ch_12_translation.js \
-            src/ch_13_settings.js \
-            src/ch_16_ui_shell.js \
-            src/ch_17_tokenizer_ui.js | sort)"
-          actual="$(git diff --name-only "$base" HEAD -- ClipHub.js module-manifest.json src tasks | sort)"
-          printf 'Expected guarded runtime scope:\n%s\n' "$expected"
-          printf 'Actual guarded runtime scope:\n%s\n' "$actual"
-          diff -u <(printf '%s\n' "$expected") <(printf '%s\n' "$actual")
-
       - name: Rhino ES5 validation
         run: python3 scripts/validate_es5.py .
 
@@ -58,11 +40,12 @@ jobs:
       - name: Manifest contract
         shell: bash
         run: |
-          if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.base_ref }}" = "cleanup/tokenizer-no-regression-20260817" ]; then
-            python3 scripts/manifest_contract.py validate --settings-tabs-beta
-          else
-            python3 scripts/manifest_contract.py validate --current
+          mode='--current'
+          source_ref="$(python3 -c 'import json; print(json.load(open("module-manifest.json", encoding="utf-8"))["sourceRef"])')"
+          if [ "$GITHUB_EVENT_NAME" = 'push' ] || [ "$source_ref" = 'main' ]; then
+            mode='--main'
           fi
+          python3 scripts/manifest_contract.py validate "$mode"
 
       - name: Unified regression suite
         run: bash scripts/run_tokenizer_regression_suite.sh
@@ -70,8 +53,9 @@ jobs:
       - name: Release preflight
         shell: bash
         run: |
-          if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.base_ref }}" = "cleanup/tokenizer-no-regression-20260817" ]; then
-            bash scripts/release_preflight.sh --settings-tabs-beta
-          else
-            bash scripts/release_preflight.sh --current
+          mode='--current'
+          source_ref="$(python3 -c 'import json; print(json.load(open("module-manifest.json", encoding="utf-8"))["sourceRef"])')"
+          if [ "$GITHUB_EVENT_NAME" = 'push' ] || [ "$source_ref" = 'main' ]; then
+            mode='--main'
           fi
+          bash scripts/release_preflight.sh "$mode"
