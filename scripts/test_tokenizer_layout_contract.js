@@ -33,7 +33,7 @@ if (sync.indexOf('showBack: tokenizerPage ? tokenizerLaunchOrigin !== "home" : t
         sync.indexOf('dispatchTokenizerBack("shell_close")') < 0) {
     throw new Error("primary host header navigation contract missing");
 }
-if (source.indexOf("MODULE_VERSION: 28") < 0) { throw new Error("TokenizerUI v28 missing"); }
+if (source.indexOf("MODULE_VERSION: 29") < 0) { throw new Error("TokenizerUI v29 missing"); }
 if (source.indexOf("tokenizer_chip_layout_cleanup_v1") < 0) { throw new Error("chip cleanup marker missing"); }
 if (source.indexOf("tokenizer_embedded_single_header_v1") < 0 ||
         header.indexOf("if (editorEmbeddedInPrimary) { return; }") < 0) {
@@ -91,6 +91,20 @@ if (source.indexOf('replace(/\\r\\n/g, "↵")') < 0 ||
         source.indexOf('replace(/\\t/g, "⇥")') < 0 ||
         source.indexOf('replace(/ /g, "␠")') < 0) {
     throw new Error("regex whitespace placeholder rendering missing");
+}
+if (build.indexOf("tokenizer_chip_adaptive_height_v1") < 0 ||
+        build.indexOf("view.setSingleLine(false)") < 0 ||
+        build.indexOf("view.setHorizontallyScrolling(false)") < 0 ||
+        build.indexOf("view.setMinHeight(dp(34))") < 0 ||
+        reflow.indexOf("view.setMaxWidth(available)") < 0 ||
+        reflow.indexOf("View.MeasureSpec.AT_MOST") < 0 ||
+        reflow.indexOf("row.setMinimumHeight(dp(36))") < 0 ||
+        (reflow.match(/LinearLayout\.LayoutParams\.WRAP_CONTENT/g) || []).length < 3) {
+    throw new Error("long tokenizer chip adaptive-height contract missing");
+}
+if (reflow.indexOf("LinearLayout.LayoutParams.MATCH_PARENT, dp(36)") >= 0 ||
+        reflow.indexOf("LinearLayout.LayoutParams.WRAP_CONTENT, dp(34)") >= 0) {
+    throw new Error("fixed tokenizer chip height regressed");
 }
 if (surface.indexOf("buildIndicator(pageColumn)") >= 0 ||
         source.indexOf("function buildIndicator(column)") >= 0) {

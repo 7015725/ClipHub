@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "moduleSetVersion": "20260819.04",
+  "moduleSetVersion": "20260819.05",
   "entryMinVersion": 8,
   "sourceRef": "refactor/navigation-contract-v2-20260818",
   "modules": [
@@ -132,7 +132,7 @@
     {
       "name": "ch_17_tokenizer_ui.js",
       "path": "src/ch_17_tokenizer_ui.js",
-      "sha": "ace08e87e8a8c6f9f787779d31c09335916b94e2",
+      "sha": "9f7431e7e0dd94f0e29d20f1ac8aa186497db616",
       "export": "TokenizerUI",
       "runtimeRole": "passive"
     },
