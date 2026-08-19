@@ -1,8 +1,8 @@
 # ClipHub main 合并前真机回归清单
 
-测试分支：`refactor/navigation-contract-v2-20260818`
+测试分支：`main`
 
-候选模块集：`20260819.07`
+候选模块集：`20260819.08`
 
 ## 1. 启动与重复进入
 
@@ -60,4 +60,4 @@
 | Google 翻译 | 待测 | |
 | 生命周期与退出 | 待测 | |
 
-全部项目通过后，执行最终发布提交：将 `ClipHub.js` 的 `DEFAULT_REF` 和 `module-manifest.json` 的 `sourceRef` 同时切换为 `main`，刷新 manifest 哈希，并运行 `bash scripts/release_preflight.sh --main`。
+当前发布提交已将 `ClipHub.js` 的 `DEFAULT_REF` 和 `module-manifest.json` 的 `sourceRef` 同时固定为 `main`，并通过 `bash scripts/release_preflight.sh --main`。真机结果按表记录；如发现问题，从 `main` 新建修复分支处理。

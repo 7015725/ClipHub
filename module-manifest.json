@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
-  "moduleSetVersion": "20260819.07",
+  "moduleSetVersion": "20260819.08",
   "entryMinVersion": 8,
-  "sourceRef": "refactor/navigation-contract-v2-20260818",
+  "sourceRef": "main",
   "modules": [
     {
       "name": "ch_01_base.js",

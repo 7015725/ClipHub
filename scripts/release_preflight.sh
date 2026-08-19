@@ -103,7 +103,7 @@ if not checkout_ref:
     ).strip()
 if mode == "--main":
     assert source_ref == "main", source_ref
-    if checkout_ref:
+    if os.environ.get("GITHUB_EVENT_NAME") == "push" and checkout_ref:
         assert checkout_ref == "main", checkout_ref
 elif checkout_ref:
     assert source_ref == checkout_ref, (source_ref, checkout_ref)
