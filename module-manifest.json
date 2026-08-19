@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "moduleSetVersion": "20260819.05",
+  "moduleSetVersion": "20260819.06",
   "entryMinVersion": 8,
   "sourceRef": "refactor/navigation-contract-v2-20260818",
   "modules": [
@@ -124,7 +124,7 @@
     {
       "name": "ch_16_ui_shell.js",
       "path": "src/ch_16_ui_shell.js",
-      "sha": "d433aaae5b159e513122ba02d1f4106fac89e48e",
+      "sha": "c5ff86f1da1ab6553d4d8ff21c64f9456e44aad3",
       "export": "UIShell",
       "runtimeRole": "managed",
       "lifecycleIndex": 13
@@ -132,7 +132,7 @@
     {
       "name": "ch_17_tokenizer_ui.js",
       "path": "src/ch_17_tokenizer_ui.js",
-      "sha": "9f7431e7e0dd94f0e29d20f1ac8aa186497db616",
+      "sha": "98455d45503dfb55bc047a962ded7ad3507e8ce0",
       "export": "TokenizerUI",
       "runtimeRole": "passive"
     },

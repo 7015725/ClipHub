@@ -51,6 +51,7 @@ var names = [
     "runTokenizerOnMainSync",
     "editorReadyForHomeTokenizer",
     "scheduleHomeTokenizerMount",
+    "recoverStaleHomeTokenizerMount",
     "openFromHomeItem"
 ];
 var functionSource = names.map(function (name) {
@@ -61,12 +62,14 @@ var harness = [
     "var state = { mounted: false, lastError: null };",
     "var editorPanelRoot = {};",
     "var homeLaunchGeneration = 0;",
+    "var staleDiscardCount = 0;",
+    "var shellState = { currentPageId: 'tokenizer', childAttached: true };",
     "var mainHandler = { post: function () { return true; }, removeCallbacks: function () {} };",
     "var mountedCount = 0;",
     "var scheduledId = null;",
     "var emitted = 0;",
     "var editorState = { ready: true, open: true, attached: true, closing: false, removalPending: false, itemId: 42 };",
-    "var ClipHub = { Editor: {",
+    "var ClipHub = { UIShell: { getState: function () { return shellState; } }, Editor: {",
     "  openItem: function (id, options) { scheduledId = Number(id); return { ok: true, attached: true }; },",
     "  getState: function () { return editorState; }",
     "} };",
@@ -84,6 +87,7 @@ var harness = [
     " } } }",
     "};",
     "function mountFromEditor() { mountedCount += 1; state.mounted = true; return true; }",
+    "function discardMountedPage() { staleDiscardCount += 1; state.mounted = false; return true; }",
     "function emitAction() { emitted += 1; }",
     "function failHomeTokenizerLaunch(generation, reason) { state.lastError = String(reason); return false; }",
     functionSource,
@@ -94,7 +98,11 @@ var harness = [
     "editorState.itemId = 42;",
     "var result = runTokenizerOnMainSync(function () { return openFromHomeItem(42, { origin: 'runtime_test' }); }, 2500);",
     "if (!result || result.ok !== true || result.value !== true) { throw new Error('main dispatch failed'); }",
-    "if (scheduledId !== 42 || mountedCount !== 1 || emitted !== 1) { throw new Error('home launch chain incomplete'); }"
+    "if (scheduledId !== 42 || mountedCount !== 1 || emitted !== 1) { throw new Error('home launch chain incomplete'); }",
+    "if (openFromHomeItem(42, { origin: 'mounted_guard_test' }) !== false || staleDiscardCount !== 0) { throw new Error('live mounted tokenizer must reject duplicate home launch'); }",
+    "shellState = { currentPageId: 'home', childAttached: false };",
+    "if (openFromHomeItem(42, { origin: 'stale_recovery_test' }) !== true) { throw new Error('stale home mount did not recover'); }",
+    "if (staleDiscardCount !== 1 || mountedCount !== 2 || emitted !== 2) { throw new Error('stale home recovery chain incomplete'); }"
 ].join("\n");
 vm.runInNewContext(harness, { Error: Error, Math: Math, Number: Number, String: String, isFinite: isFinite });
 console.log("Tokenizer home runtime bridge: passed");

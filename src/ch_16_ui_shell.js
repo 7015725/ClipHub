@@ -762,6 +762,21 @@
         return true;
     }
 
+    function pathCanReplaceCurrentLeaf(path) {
+        var ids = normalizeDeferredPath(path);
+        var current = stackIds();
+        var index;
+        var target;
+        var parentId;
+        if (ids.length < 2 || ids.length !== current.length) { return false; }
+        for (index = 0; index < ids.length - 1; index += 1) {
+            if (String(ids[index]) !== String(current[index])) { return false; }
+        }
+        target = requirePage(ids[ids.length - 1]);
+        parentId = String(ids[ids.length - 2]);
+        return pageAcceptsParent(target, parentId);
+    }
+
     function applyDeferredHookNavigation(pending, reason) {
         var target;
         var ids;
@@ -778,6 +793,11 @@
         }
         if (pending.type === "sync_path") {
             ids = normalizeDeferredPath(pending.path);
+            if (pathCanReplaceCurrentLeaf(ids)) {
+                target = ids[ids.length - 1];
+                return navigatorReplace(target, {}, reason || pending.reason ||
+                    "deferred_hook_replace") !== false;
+            }
             if (!pathIsCurrentPrefix(ids)) {
                 return false;
             }
@@ -1879,7 +1899,7 @@
 
     ClipHub.UIShell = {
         MODULE_NAME: "ch_16_ui_shell",
-        MODULE_VERSION: 20,
+        MODULE_VERSION: 21,
         init: init,
         registerPage: registerPage,
         getPage: function (pageId) { return copyDescriptor(requirePage(pageId)); },

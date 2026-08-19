@@ -241,4 +241,47 @@ if (legacyAfter.lastOutcome !== "navigator_pop_after_page_hook") {
     throw new Error("legacy hook outcome did not converge on Navigator");
 }
 
+/* tokenizer_transient_swipe_restore_v1 */
+shell.mountPage("editor", fakeView, {
+    title: "编辑选中文本",
+    showBack: true,
+    imeBackFirst: false,
+    onBack: function () {
+        shell.syncEmbeddedPage({
+            pageId: "tokenizer",
+            path: ["tokenizer"],
+            title: "分词",
+            showBack: false,
+            view: fakeView,
+            onBack: function () { return true; }
+        });
+        return true;
+    }
+});
+var transientBefore = dispatcher.getState();
+var transientBack = dispatcher.dispatch("system_swipe_back", {
+    sourceFamily: "gesture",
+    requestId: "tokenizer-transient-swipe-back"
+});
+var transientAfter = dispatcher.getState();
+var transientShellAfter = shell.getState();
+if (transientBack !== true || navigator.stackSize() !== 2 ||
+        navigator.current().id !== "tokenizer" ||
+        transientShellAfter.currentPageId !== "tokenizer" ||
+        transientShellAfter.activePageId !== "tokenizer") {
+    throw new Error("transient editor Back did not restore tokenizer leaf: " +
+        JSON.stringify({ back: transientBack, size: navigator.stackSize(),
+            current: navigator.current(), shell: transientShellAfter,
+            dispatcher: transientAfter }));
+}
+if (!hostState.childAttached || mountedPageId !== "tokenizer") {
+    throw new Error("transient editor Back detached primary child to home");
+}
+if (transientAfter.deferredHookNavigationCount !==
+        transientBefore.deferredHookNavigationCount + 1 ||
+        transientAfter.navigatorPopCount !== transientBefore.navigatorPopCount + 1 ||
+        transientAfter.lastOutcome !== "navigator_pop_after_page_hook") {
+    throw new Error("transient editor Back did not commit one deferred leaf replace");
+}
+
 console.log("Navigation Stage 9 runtime simulation: passed");
