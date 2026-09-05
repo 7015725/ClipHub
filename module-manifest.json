@@ -30,7 +30,7 @@
     {
       "name": "ch_04_clipboard.js",
       "path": "src/ch_04_clipboard.js",
-      "sha": "9913959a530f7dfe50e7bf376cda8182c734cada",
+      "sha": "5563a0656c76314858960f7127d1284557e31dec",
       "export": "Clipboard",
       "runtimeRole": "managed",
       "lifecycleIndex": 6
@@ -85,7 +85,7 @@
     {
       "name": "ch_11_filter.js",
       "path": "src/ch_11_filter.js",
-      "sha": "844393aa4cee81312742999c4e5e94ff60964293",
+      "sha": "cae9dc60b440e14c52b4640d04a72ef1bbb183d8",
       "export": "Filter",
       "runtimeRole": "managed",
       "lifecycleIndex": 10

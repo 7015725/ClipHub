@@ -498,7 +498,8 @@
                 patch = {
                     content: text,
                     content_type: "text",
-                    is_sensitive: metadata.sensitive === true ? 1 : 0,
+                    is_sensitive: metadata.sensitive === true ||
+                        (metadata.preserveExistingRecords === true && Number(row.is_sensitive || 0) === 1) ? 1 : 0,
                     copy_count: copyCount,
                     last_copied_at: eventAt,
                     deleted_at: null
@@ -509,11 +510,14 @@
                         patch[key] = sourceValues[key];
                     }
                 }
-                ClipHub.Repository.updateItem(Number(row.id), patch);
+                if (Number(ClipHub.Repository.updateItem(Number(row.id), patch)) !== 1) {
+                    throw new Error("Clipboard update did not affect one record");
+                }
                 return {
                     id: Number(row.id),
                     inserted: false,
                     merged: true,
+                    sensitive: patch.is_sensitive === 1,
                     copyCount: copyCount,
                     hash: hash
                 };
@@ -530,16 +534,20 @@
                 sourceConfidence: metadata.sourceConfidence,
                 isSensitive: metadata.sensitive === true
             };
-            id = ClipHub.Repository.insertItem(insert);
+            id = Number(ClipHub.Repository.insertItem(insert));
+            if (!isFinite(id) || id <= 0 || Math.floor(id) !== id) {
+                throw new Error("Clipboard insert returned an invalid record ID");
+            }
             return {
                 id: Number(id),
                 inserted: true,
                 merged: false,
+                sensitive: insert.isSensitive === true,
                 copyCount: 1,
                 hash: hash
             };
         });
-        if (result) { maybeCleanupHistory(); }
+        if (result && metadata.preserveExistingRecords !== true) { maybeCleanupHistory(); }
         return result;
     }
 
@@ -775,6 +783,7 @@
             state.callbackThreadName = String(thread.getName());
             result = recordText(text, hash, "text", eventAt, {
                 sensitive: metadata.sensitive === true,
+                preserveExistingRecords: metadata.preserveExistingRecords === true,
                 sourcePackage: String(metadata.sourcePackage || "tokenizer"),
                 sourceLabel: String(metadata.sourceLabel || "分词"),
                 sourceUid: metadata.sourceUid === undefined ? null : metadata.sourceUid,
@@ -797,7 +806,7 @@
                 hashPrefix: hash.substring(0, 12),
                 contentLength: text.length,
                 contentType: "text",
-                sensitive: metadata.sensitive === true,
+                sensitive: result.sensitive === true,
                 sourcePackage: String(metadata.sourcePackage || "tokenizer"),
                 sourceLabel: String(metadata.sourceLabel || "分词"),
                 sourceUid: metadata.sourceUid === undefined ? null : metadata.sourceUid,
@@ -1000,7 +1009,7 @@
 
     ClipHub.Clipboard = {
         MODULE_NAME: "ch_04_clipboard",
-        MODULE_VERSION: 10,
+        MODULE_VERSION: 11,
         SENSITIVE_KEY: SENSITIVE_KEY,
         init: function (context) {
             androidContext = context && context.androidContext
@@ -1023,6 +1032,7 @@
             return handlePrimaryClipChanged("manual");
         },
         writeText: writeText,
+        recordManualText: recordManualText,
         copyAndRecordText: copyAndRecordText,
         markOwnWrite: markOwnWrite,
         configure: configure,
