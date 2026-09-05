@@ -15,7 +15,7 @@
     var System = Packages.java.lang.System;
     var RAF = Packages.java.io.RandomAccessFile;
     var Intent = Packages.android.content.Intent;
-    var TASK_VERSION = 3;
+    var TASK_VERSION = 4;
     var REQUIRED_ENDPOINT_SCHEMA = 3;
     var MIN_ENTRY_VERSION = 5;
 
