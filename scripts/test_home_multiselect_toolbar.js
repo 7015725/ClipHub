@@ -40,6 +40,7 @@ MockView.prototype.setMinimumHeight=function(v){this.minimumHeight=v;};
 MockView.prototype.setLayoutParams=function(v){this.lp=v;};
 MockView.prototype.getLayoutParams=function(){return this.lp;};
 ['setOrientation','setGravity','setSingleLine','setEllipsize','setPadding','setSelection','setHint','setTextSize','setInputType','setImeOptions','setOnEditorActionListener','addTextChangedListener','setClickable','setFocusable','setAlpha','setClipChildren','setClipToPadding','setMaxLines','setMaxWidth','setMinimumWidth'].forEach(function(k){MockView.prototype[k]=function(){};});
+MockView.prototype.setPadding=function(left,top,right,bottom){this.padding={left:left,top:top,right:right,bottom:bottom};};
 function Linear(){MockView.call(this);this.parentType='linear';}
 function Frame(){MockView.call(this);this.parentType='frame';}
 Linear.prototype=Object.create(MockView.prototype); Frame.prototype=Object.create(MockView.prototype);
@@ -91,6 +92,58 @@ assert.strictEqual(byDesc(header,'合并记录').image.kind,'merge');
 c.toggleHomeMulti(1);assert(byText(c.homeMultiHeader,'已选择 1 项'));assert(byDesc(header,'批量复制').enabled);
 byDesc(header,'退出多选').click();assert(!c.homeMulti.active);assert.strictEqual(c.homeNormalHeader.visibility,0);assert.strictEqual(c.homeMultiHeader.visibility,8);
 console.log('PASS toolbar: search-adjacent entry, normal header preserved, replacement header, circular actions, count, empty guard, exit, parent LayoutParams');
+// Measure the fixed-size action suffix of real header rows from their common right edge.
+// Android LinearLayout puts the preceding weighted title/input in the remaining space.
+function rightActionCenters(row) {
+    var inset=row.padding ? row.padding.right : 0, centers=[];
+    for(var i=row.children.length-1;i>=0;i--) {
+        var child=row.children[i], lp=child.lp;
+        if(child.visibility===8) continue;
+        if(!lp || lp.weight || lp.width<=0) break;
+        inset+=lp.rightMargin||0;
+        centers.push(inset+lp.width/2);
+        inset+=lp.width+(lp.leftMargin||0);
+    }
+    return centers;
+}
+var normalCenters=rightActionCenters(c.homeNormalHeader);
+assert.deepStrictEqual(normalCenters,[22,62,102],'normal screenshot baseline: 4dp right gap and 40dp pitch');
+assert.deepStrictEqual(rightActionCenters(c.searchStatusRow),normalCenters,'normal status buttons align under title actions');
+c.beginHomeMulti();
+assert.deepStrictEqual(rightActionCenters(c.homeMultiHeader).slice(0,3),normalCenters,'multiselect rightmost three buttons stay on normal columns');
+c.exitHomeMulti();
+console.log('PASS alignment: multiselect actions preserve the normal right edge and columns');
+c.searchExpanded=false;c.advancedVisible=false;c.historyContainerView=null;
+c.stopFilterImeAvoidance=function(){};c.requestKeyboardOnMain=function(){};
+['updateSearchVisibility','setSearchExpanded'].forEach(function(n){load(n,c);});
+c.setSearchExpanded(true,false);
+assert.strictEqual(c.searchStatusRow.visibility,8);
+assert.strictEqual(c.searchInputRow.visibility,0);
+assert.deepStrictEqual(rightActionCenters(c.searchInputRow),normalCenters.slice(0,2),'search clear/filter stay on normal rightmost columns');
+c.beginHomeMulti();
+assert.deepStrictEqual(rightActionCenters(c.searchInputRow),normalCenters.slice(0,2),'search plus multiselect preserves search button columns');
+c.setSearchExpanded(false,false);c.exitHomeMulti();
+console.log('PASS alignment: expanded search preserves the normal right edge with multiselect on/off');
+var defaultMetrics=c.headerMetrics, defaultDp=c.dp;
+[[32,36,3,1],[40,44,6,1.5],[48,56,8,2.75]].forEach(function(config){
+    c.headerMetrics=function(){var m=defaultMetrics();m.actionSizeDp=config[0];m.controlHeightDp=config[1];m.gapDp=config[2];return m;};
+    c.dp=function(n){return Math.round(n*config[3]);};
+    header=c.buildSearchHeader(colors);c.syncHomeMultiUi();
+    var baseline=rightActionCenters(c.homeNormalHeader);
+    var rowY=c.homeNormalHeader.lp.height+c.homeNormalHeader.lp.bottomMargin+c.searchStatusRow.lp.height/2;
+    [[false,false],[true,false],[true,true],[false,true],[false,false],[false,true],[true,true],[true,false],[false,false]].forEach(function(mode){
+        if(mode[0]) c.beginHomeMulti();else c.exitHomeMulti();
+        c.setSearchExpanded(mode[1],false);
+        var top=mode[0]?c.homeMultiHeader:c.homeNormalHeader;
+        var bottom=mode[1]?c.searchInputRow:c.searchStatusRow;
+        assert.strictEqual(top.visibility,0);assert.strictEqual(bottom.visibility,0);
+        assert.deepStrictEqual(rightActionCenters(top).slice(0,3),baseline,'top columns survive both toggle orders at scaled density');
+        assert.deepStrictEqual(rightActionCenters(bottom),baseline.slice(0,mode[1]?2:3),'search/status columns stay anchored across states');
+        assert.strictEqual(top.lp.height+top.lp.bottomMargin+bottom.lp.height/2,rowY,'second row vertical center stays unchanged');
+    });
+});
+c.headerMetrics=defaultMetrics;c.dp=defaultDp;header=c.buildSearchHeader(colors);c.syncHomeMultiUi();
+console.log('PASS alignment: both toggle orders, scaled metrics/densities and stable row heights');
 c.makeSwipeAction=text;c.makeSourceIcon=function(){return new MockView();};
 c.makeCardActionButton=function(kind,desc,col,danger,metrics,callback){var v=text(kind);v.description=desc;v.listener=callback;return v;};
 c.resultPreviewText=function(row){return String(row.id);};c.tagsForResult=function(){return [];};c.tagSummary=function(){return '';};

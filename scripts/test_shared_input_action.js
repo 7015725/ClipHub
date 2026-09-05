@@ -42,7 +42,7 @@ var tokenizer = expanded("src/ch_17_tokenizer_ui.js");
 var inputRow = body(filter, "inputResultRow");
 var sharedInput = body(filter, "inputTextToFocusedTargetOnMain");
 var toolbar = body(tokenizer, "performToolbarClick");
-if (filter.indexOf("MODULE_VERSION: 98") < 0 ||
+if (filter.indexOf("MODULE_VERSION: 99") < 0 ||
         filter.indexOf("inputTextToFocusedTarget: inputTextToFocusedTarget") < 0) {
     throw new Error("shared input public adapter missing");
 }

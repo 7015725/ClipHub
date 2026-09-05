@@ -24,7 +24,7 @@ requireText(filter, "tokenizer_home_long_press_v1");
 requireText(filter, "function openTokenizerForResultRow(row, origin)");
 requireText(filter, "View.OnLongClickListener");
 requireText(filter, "TokenizerUI.openFromHomeItem");
-requireText(filter, "MODULE_VERSION: 98");
+requireText(filter, "MODULE_VERSION: 99");
 requireText(filter, "tokenizer_home_long_press_guard_v1");
 requireText(filter, "primary_host_panel_attached_fix_v1");
 requireText(tokenizer, "tokenizer_home_direct_open_v3");
