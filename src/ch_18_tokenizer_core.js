@@ -217,10 +217,13 @@
         return accepted;
     }
 
-    function fallback(text, start, end, out) {
+    function fallback(text, start, end, out, tokenBudget) {
         var index = start;
         var begin;
         var size;
+        if (tokenBudget !== undefined && out.length >= Number(tokenBudget)) {
+            return;
+        }
         while (index < end) {
             if (isSpace(text.charAt(index))) { index += 1; continue; }
             begin = index;
@@ -228,34 +231,38 @@
                 index += 1;
                 while (index < end && isAsciiWord(text.charAt(index))) { index += 1; }
                 out.push(makeToken(text.substring(begin, index), begin, index, "word", "fallback-ascii", null));
+                if (tokenBudget !== undefined && out.length >= Number(tokenBudget)) { return; }
                 continue;
             }
             if (isCjk(text.charAt(index))) {
                 index += 1;
                 while (index < end && isCjk(text.charAt(index))) { index += 1; }
                 out.push(makeToken(text.substring(begin, index), begin, index, "word", "fallback-cjk", null));
+                if (tokenBudget !== undefined && out.length >= Number(tokenBudget)) { return; }
                 continue;
             }
             size = unitLength(text, index);
             index += size;
             out.push(makeToken(text.substring(begin, index), begin, index, "symbol", "fallback-symbol", null));
+            if (tokenBudget !== undefined && out.length >= Number(tokenBudget)) { return; }
         }
     }
 
-    function emitGap(text, start, end, out, gapMode) {
+    function emitGap(text, start, end, out, gapMode, tokenBudget) {
         var raw;
         if (start >= end) { return; }
         if (String(gapMode || "fallback") === "raw") {
             raw = text.substring(start, end);
-            if (!/^\s*$/.test(raw)) {
+            if (!/^\s*$/.test(raw) && (tokenBudget === undefined ||
+                    out.length < Number(tokenBudget))) {
                 out.push(makeToken(raw, start, end, "word", "raw-gap", null));
             }
             return;
         }
-        fallback(text, start, end, out);
+        fallback(text, start, end, out, tokenBudget);
     }
 
-    function splitGap(text, start, end, splitMatches, out, gapMode) {
+    function splitGap(text, start, end, splitMatches, out, gapMode, tokenBudget) {
         var local = [];
         var accepted;
         var index;
@@ -268,8 +275,11 @@
         accepted = resolveOverlap(local);
         for (index = 0; index < accepted.length; index += 1) {
             item = accepted[index];
+            if (tokenBudget !== undefined && out.length >= Number(tokenBudget)) {
+                return;
+            }
             if (item.start > cursor) {
-                emitGap(text, cursor, item.start, out, gapMode);
+                emitGap(text, cursor, item.start, out, gapMode, tokenBudget);
             }
             if (item.rule.keepDelimiter) {
                 out.push(makeToken(item.text, item.start, item.end,
@@ -518,14 +528,16 @@
         accepted = resolveRegexExactOverlap(collected.matches);
         for (index = 0; index < accepted.length; index += 1) {
             item = accepted[index];
+            if (out.length >= matchBudget) { break; }
             if (item.start > cursor) {
                 emitExactRawGap(value, cursor, item.start, out);
             }
+            if (out.length >= matchBudget) { break; }
             out.push(makeToken(value.substring(item.start, item.end),
                 item.start, item.end, item.rule.type, "regex-match", item.rule));
             cursor = item.end;
         }
-        if (cursor < value.length) {
+        if (cursor < value.length && out.length < matchBudget) {
             emitExactRawGap(value, cursor, value.length, out);
         }
         validation = validateExactCover(value, out);
@@ -555,6 +567,9 @@
         var settings = options || {};
         var charBudget = Number(settings.charBudget || CHAR_BUDGET);
         var matchBudget = Number(settings.matchBudget || MATCH_BUDGET);
+        var tokenBudget = Number(settings.tokenBudget ||
+            (settings.tokenLimit === undefined ? MATCH_BUDGET :
+                settings.tokenLimit));
         var gapMode = String(settings.gapMode || "fallback") === "raw" ?
             "raw" : "fallback";
         var rules;
@@ -581,17 +596,22 @@
         accepted = resolveOverlap(matchResult.matches);
         for (index = 0; index < accepted.length; index += 1) {
             item = accepted[index];
+            if (tokenBudget > 0 && out.length >= tokenBudget) { break; }
             if (item.start > cursor) {
-                splitGap(value, cursor, item.start, splitResult.matches, out, gapMode);
+                splitGap(value, cursor, item.start, splitResult.matches, out,
+                    gapMode, tokenBudget);
             }
-            if (item.start >= cursor) {
+            if (item.start >= cursor && (tokenBudget <= 0 ||
+                    out.length < tokenBudget)) {
                 out.push(makeToken(item.text, item.start, item.end,
                     item.rule.type, item.rule.source, item.rule));
                 cursor = item.end;
             }
         }
-        if (cursor < value.length) {
-            splitGap(value, cursor, value.length, splitResult.matches, out, gapMode);
+        if (cursor < value.length && (tokenBudget <= 0 ||
+                out.length < tokenBudget)) {
+            splitGap(value, cursor, value.length, splitResult.matches, out,
+                gapMode, tokenBudget);
         }
         return {
             ok: true,

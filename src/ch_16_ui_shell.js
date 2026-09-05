@@ -854,6 +854,7 @@
     function imeVisibleForBack() {
         var root = null;
         var insets = null;
+        var editorState;
         if (activeImeBackFirst !== true || activeView === null) { return false; }
         try { root = activeView.getRootView(); } catch (ignoredRoot) { root = null; }
         if (root === null) { return false; }
@@ -864,6 +865,19 @@
                     Packages.android.view.WindowInsets.Type.ime()) === true;
             }
         } catch (ignoredInsets) {}
+        try {
+            editorState = ClipHub.Editor && typeof ClipHub.Editor.getState === "function" ?
+                ClipHub.Editor.getState() : null;
+            if (editorState && editorState.keyboardVisible === true) {
+                return true;
+            }
+        } catch (ignoredEditor) {}
+        try {
+            if (ClipHub.Editor && typeof ClipHub.Editor.isKeyboardVisible === "function" &&
+                    ClipHub.Editor.isKeyboardVisible() === true) {
+                return true;
+            }
+        } catch (ignoredEditorFn) {}
         return false;
     }
 

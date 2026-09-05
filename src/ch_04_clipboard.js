@@ -23,10 +23,14 @@
         maxItems: 10,
         sourceEnabled: true,
         sensitivePolicy: "skip",
-        ignorePackages: []
+        ignorePackages: [],
+        unknownSourcePolicy: "block",
+        applied: false,
+        cleanupThrottleMs: 60000
     };
     var state = {
         eventSeq: 0,
+        lastCleanupAt: 0,
         handledCount: 0,
         insertedCount: 0,
         mergedCount: 0,
@@ -162,9 +166,15 @@
     function isIgnoredPackage(packageName) {
         var index;
         var value = String(packageName || "");
-        if (value.length === 0) { return false; }
-        for (index = 0; index < config.ignorePackages.length; index += 1) {
-            if (String(config.ignorePackages[index]) === value) { return true; }
+        if (value.length > 0) {
+            for (index = 0; index < config.ignorePackages.length; index += 1) {
+                if (String(config.ignorePackages[index]) === value) { return true; }
+            }
+            return false;
+        }
+        if (config.ignorePackages.length > 0 &&
+                config.unknownSourcePolicy === "block") {
+            return true;
         }
         return false;
     }
@@ -318,7 +328,9 @@
                 sourcePackage: source.sourcePackage,
                 sourceLabel: source.sourceLabel,
                 sourceUid: source.sourceUid,
-                sourceConfidence: source.sourceConfidence
+                sourceConfidence: source.sourceConfidence,
+                sourceAvailable: source.sourceAvailable,
+                sourceError: source.sourceError
             };
         }
         if (isIgnoredPackage(source.sourcePackage)) {
@@ -330,7 +342,9 @@
                 sourcePackage: source.sourcePackage,
                 sourceLabel: source.sourceLabel,
                 sourceUid: source.sourceUid,
-                sourceConfidence: source.sourceConfidence
+                sourceConfidence: source.sourceConfidence,
+                sourceAvailable: source.sourceAvailable,
+                sourceError: source.sourceError
             };
         }
         itemCount = Number(clip.getItemCount());
@@ -382,6 +396,19 @@
                 sourcePackage: source.sourcePackage
             };
         }
+        try {
+            if (manager.getPrimaryClip() !== clip) {
+                return {
+                    ok: false,
+                    reason: "clip_snapshot_changed",
+                    text: "",
+                    itemCount: itemCount,
+                    sensitive: sensitive,
+                    sourcePackage: source.sourcePackage,
+                    unstable: true
+                };
+            }
+        } catch (ignoredSnapshot) {}
         return {
             ok: true,
             reason: null,
@@ -421,8 +448,44 @@
         return patch;
     }
 
+    function maybeCleanupHistory() {
+        var nowAt = now();
+        var settings;
+        var historyLimit;
+        var autoCleanupDays;
+        if (nowAt - Number(state.lastCleanupAt || 0) <
+                Number(config.cleanupThrottleMs || 60000)) {
+            return null;
+        }
+        if (!ClipHub.Repository ||
+                typeof ClipHub.Repository.cleanupHistory !== "function") {
+            return null;
+        }
+        try {
+            settings = ClipHub.Settings && typeof ClipHub.Settings.get === "function" ?
+                { historyLimit: ClipHub.Settings.get("historyLimit", 0),
+                    autoCleanupDays: ClipHub.Settings.get("autoCleanupDays", 0) } :
+                { historyLimit: 0, autoCleanupDays: 0 };
+        } catch (ignoredSettings) {
+            settings = { historyLimit: 0, autoCleanupDays: 0 };
+        }
+        historyLimit = Number(settings.historyLimit || 0);
+        autoCleanupDays = Number(settings.autoCleanupDays || 0);
+        if (historyLimit <= 0 && autoCleanupDays <= 0) { return null; }
+        try {
+            state.lastCleanupAt = nowAt;
+            return ClipHub.Repository.cleanupHistory({
+                historyLimit: historyLimit,
+                autoCleanupDays: autoCleanupDays
+            });
+        } catch (ignoredCleanup) {
+            return null;
+        }
+    }
+
     function recordText(text, hash, contentType, eventAt, metadata) {
-        return ClipHub.Database.transaction(function () {
+        var result;
+        result = ClipHub.Database.transaction(function () {
             var row = ClipHub.Repository.getLatestActiveItemByHash(hash);
             var copyCount;
             var id;
@@ -476,6 +539,8 @@
                 hash: hash
             };
         });
+        if (result) { maybeCleanupHistory(); }
+        return result;
     }
 
     function ignoredEvent(read, origin, eventAt) {
@@ -516,6 +581,9 @@
         state.callbackThreadName = String(thread.getName());
         try {
             read = readPrimaryText();
+            if (!read.ok && read.unstable === true) {
+                read = readPrimaryText();
+            }
             if (!read.ok) {
                 return ignoredEvent(read, origin, eventAt);
             }
@@ -814,6 +882,10 @@
     function start() {
         if (running) { return { ok: true, running: true, reused: true }; }
         if (manager === null) { throw new Error("ClipboardManager unavailable"); }
+        if (!config.applied) {
+            return { ok: false, running: false, waiting: true,
+                reason: "settings_not_applied" };
+        }
         listener = new JavaAdapter(
             ClipboardManager.OnPrimaryClipChangedListener,
             { onPrimaryClipChanged: function () {
@@ -823,6 +895,11 @@
         manager.addPrimaryClipChangedListener(listener);
         running = true;
         return { ok: true, running: true, reused: false };
+    }
+
+    function activateAfterConfigure(name) {
+        if (!running) { return start(); }
+        return { ok: true, running: true, reused: true };
     }
 
     function stop() {
@@ -845,20 +922,35 @@
             maxItems: true
         };
         patch = patch || {};
+        var privacyConfigured = false;
         for (key in patch) {
             if (!patch.hasOwnProperty(key)) { continue; }
             if (numberKeys[key]) {
                 config[key] = Math.max(0, Math.floor(Number(patch[key])));
             } else if (key === "sourceEnabled") {
                 config.sourceEnabled = patch[key] !== false;
+                privacyConfigured = true;
             } else if (key === "sensitivePolicy") {
                 if (String(patch[key]) !== "skip" && String(patch[key]) !== "save") {
                     throw new Error("Invalid sensitive policy");
                 }
                 config.sensitivePolicy = String(patch[key]);
+                privacyConfigured = true;
             } else if (key === "ignorePackages") {
                 config.ignorePackages = normalizePackageList(patch[key]);
+                privacyConfigured = true;
+            } else if (key === "unknownSourcePolicy") {
+                if (String(patch[key]) !== "allow" &&
+                        String(patch[key]) !== "block") {
+                    throw new Error("Invalid unknown source policy");
+                }
+                config.unknownSourcePolicy = String(patch[key]);
+                privacyConfigured = true;
             }
+        }
+        if (privacyConfigured) {
+            config.applied = true;
+            activateAfterConfigure();
         }
         return getState().config;
     }
@@ -868,6 +960,7 @@
             running: running,
             eventSeq: state.eventSeq,
             handledCount: state.handledCount,
+            lastCleanupAt: Number(state.lastCleanupAt || 0),
             insertedCount: state.insertedCount,
             mergedCount: state.mergedCount,
             ignoredCount: state.ignoredCount,
@@ -899,7 +992,8 @@
                 maxItems: config.maxItems,
                 sourceEnabled: config.sourceEnabled,
                 sensitivePolicy: config.sensitivePolicy,
-                ignorePackages: copyArray(config.ignorePackages)
+                ignorePackages: copyArray(config.ignorePackages),
+                unknownSourcePolicy: config.unknownSourcePolicy
             }
         };
     }
@@ -921,6 +1015,7 @@
             return start();
         },
         start: start,
+        activateAfterConfigure: activateAfterConfigure,
         stop: stop,
         readPrimaryText: readPrimaryText,
         readSource: readSource,

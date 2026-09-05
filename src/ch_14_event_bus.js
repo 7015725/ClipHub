@@ -579,9 +579,10 @@
         };
 
         if (typeof originalDetachWindow === "function") {
-            ClipHub.Window.detachWindow = function (rootView) {
+            ClipHub.Window.detachWindow = function (rootView, options) {
                 removeWindowEntry(rootView);
-                return originalDetachWindow.call(ClipHub.Window, rootView);
+                return originalDetachWindow.call(ClipHub.Window, rootView,
+                    options);
             };
         }
         windowPatchInstalled = true;

@@ -16,6 +16,7 @@
     var URL = Packages.java.net.URL;
     var URLEncoder = Packages.java.net.URLEncoder;
     var MessageDigest = Packages.java.security.MessageDigest;
+    var Thread = Packages.java.lang.Thread;
     var System = Packages.java.lang.System;
     var ENTRY_VERSION = 8;
     var OWNER = "7015725";
@@ -120,15 +121,53 @@
     function writeAtomic(file, text) {
         var parent = ensureDir(file.getParentFile());
         var temp = new File(parent, file.getName() + ".tmp");
+        var backup = new File(parent, file.getName() + ".bak");
         writeUtf8(temp, text);
-        if (file.exists() && !file.delete()) {
+        backup.delete();
+        if (file.exists() && !file.renameTo(backup)) {
             temp.delete();
-            throw new Error("Cannot replace: " + file.getAbsolutePath());
+            throw new Error("Cannot back up: " + file.getAbsolutePath());
         }
         if (!temp.renameTo(file)) {
             temp.delete();
+            if (backup.exists()) { backup.renameTo(file); }
             throw new Error("Cannot commit: " + file.getAbsolutePath());
         }
+        backup.delete();
+    }
+
+    function acquireSyncLock(lockFile, timeoutMs) {
+        var startAt = Number(System.currentTimeMillis());
+        var deadline = Number(timeoutMs || 8000);
+        var acquired = false;
+        while (Number(System.currentTimeMillis()) - startAt < deadline) {
+            try {
+                if (lockFile.createNewFile()) {
+                    acquired = true;
+                    break;
+                }
+            } catch (ignored) {}
+            Thread.sleep(80);
+        }
+        if (!acquired) { return null; }
+        return {
+            release: function () {
+                try { lockFile.delete(); } catch (ignored) {}
+            }
+        };
+    }
+
+    function clearStaleSyncLock(lockFile) {
+        var ageMs = 120000;
+        var modified;
+        var stale;
+        try {
+            if (!lockFile.exists()) { return; }
+            modified = Number(lockFile.lastModified());
+            stale = modified > 0 &&
+                Number(System.currentTimeMillis()) - modified > ageMs;
+            if (stale) { lockFile.delete(); }
+        } catch (ignored) {}
     }
 
     function removeTree(file) {
@@ -680,13 +719,27 @@
         }
     }
 
-    function syncPackage(ref, moduleDir, resourceDir, localManifestFile) {
+    function syncPackage(ref, moduleDir, resourceDir, localManifestFile, lock) {
         var previousText = localManifestFile.isFile()
             ? readUtf8(localManifestFile) : null;
         var localManifest = readLocalManifest(localManifestFile, ref);
         var remoteManifest;
         var remoteFile;
         var installed;
+        if (!lock) {
+            return {
+                updated: false,
+                downloadedCount: 0,
+                downloadedResourceCount: 0,
+                remoteAvailable: false,
+                fallback: true,
+                moduleSetVersion: String(
+                    localManifest ? localManifest.moduleSetVersion : ""),
+                manifest: localManifest || null,
+                transport: "lock-unavailable",
+                warning: "ClipHub update lock is unavailable; using local packages"
+            };
+        }
         try {
             remoteFile = fetchRemoteFile(MANIFEST_PATH, ref);
             remoteManifest = parseRemoteManifest(remoteFile.text, ref);
@@ -817,6 +870,8 @@
         var interruptedModuleBackup;
         var interruptedResourceBackup;
         var resourceMap;
+        var syncLockFile;
+        var syncLock;
 
         if (global.ClipHub && global.ClipHub.App &&
                 typeof global.ClipHub.App.isStarted === "function" &&
@@ -871,7 +926,28 @@
             }
         }
         try {
-            sync = syncPackage(ref, moduleDir, resourceDir, localManifestFile);
+            var localManifestCheck = readLocalManifest(localManifestFile, ref);
+            if (localManifestCheck !== null &&
+                    (!verifyModules(moduleDir, localManifestCheck) ||
+                    !verifyResources(resourceDir, localManifestCheck))) {
+                var backupModules = new File(
+                    moduleDir.getParentFile(), "modules.backup");
+                var backupResources = new File(
+                    resourceDir.getParentFile(), "resources.backup");
+                if (backupModules.isDirectory() && backupResources.isDirectory()) {
+                    removeTree(moduleDir);
+                    removeTree(resourceDir);
+                    backupModules.renameTo(moduleDir);
+                    backupResources.renameTo(resourceDir);
+                }
+            }
+        } catch (ignoredIntegrity) {}
+        try {
+            syncLockFile = new File(cacheDir, ".sync.lock");
+            clearStaleSyncLock(syncLockFile);
+            syncLock = acquireSyncLock(syncLockFile, 8000);
+            sync = syncPackage(ref, moduleDir, resourceDir, localManifestFile,
+                syncLock);
             loadModules(moduleDir, sync.manifest);
             resourceMap = buildResourceRuntimeMap(resourceDir, sync.manifest);
             app = global.ClipHub.App.start({
@@ -910,6 +986,8 @@
             try { rollbackSync(moduleDir, resourceDir, localManifestFile, sync); }
             catch (ignored) {}
             throw error;
+        } finally {
+            if (syncLock) { try { syncLock.release(); } catch (ignored) {} }
         }
     }
 

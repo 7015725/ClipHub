@@ -1978,7 +1978,7 @@
                 !options.windowManager) {
             throw new Error("Managed window binding is incomplete");
         }
-        detachWindow(options.rootView);
+        detachWindow(options.rootView, { preservePreparedFrame: true });
         geometry = options.geometry || computeGeometry("shared", {
             useSaved: true
         });

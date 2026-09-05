@@ -1675,6 +1675,9 @@ function dispatchBack(owner, reason) {
     var translationState = {
         attached: false,
         itemId: null,
+        sourceVersion: 0,
+        requestGeneration: 0,
+        sourceSensitive: false,
         provider: "none",
         sourceText: "",
         translatedText: "",
@@ -2094,6 +2097,9 @@ return view;
         text = String(row.content || "");
         translationState.itemId = Number(row.id);
         translationState.sourceText = text;
+        translationState.sourceVersion += 1;
+        translationState.requestGeneration = 0;
+        translationState.sourceSensitive = row && row.is_sensitive === true;
         translationState.translatedText = "";
         translationState.provider = "google";
         translationState.targetLanguage = "Google 翻译";
@@ -2215,15 +2221,27 @@ return view;
             translateYoudao(text, config) : translateBaidu(text, config);
     }
 
-    function postTranslationCallback(callback, result) {
+    function postTranslationCallback(callback, result, generation,
+            boundItemId, boundSourceVersion, boundSourceText) {
         if (typeof callback !== "function") { return; }
-        runOnMain(function () { callback(result); }, 0);
+        runOnMain(function () {
+            callback(result, {
+                generation: generation,
+                itemId: boundItemId,
+                sourceVersion: boundSourceVersion,
+                sourceText: boundSourceText
+            });
+        }, 0);
     }
 
     function translateConfiguredAsync(text, callback, providerOverride) {
         var generation = translationGeneration + 1;
         var worker;
+        var boundItemId = translationState.itemId;
+        var boundSourceVersion = translationState.sourceVersion;
+        var boundSourceText = String(translationState.sourceText || "");
         translationGeneration = generation;
+        translationState.requestGeneration = generation;
         translationState.requestCount += 1;
         worker = new JavaThread(new Packages.java.lang.Runnable({
             run: function () {
@@ -2236,7 +2254,8 @@ return view;
                     result = { ok: false, error: String(error),
                         sourceText: String(text || "") };
                 }
-                postTranslationCallback(callback, result);
+                postTranslationCallback(callback, result, generation,
+                    boundItemId, boundSourceVersion, boundSourceText);
             }
         }), "ClipHub-Translation-" + String(generation));
         worker.setDaemon(true);
@@ -2270,8 +2289,28 @@ return view;
         }
     }
 
-    function applyTranslationResult(result) {
-        if (!translationState.attached) { return false; }
+    function applyTranslationResult(result, identity) {
+        var generation;
+        var boundItemId;
+        var boundVersion;
+        var boundText;
+        if (result && result.ok === true && identity) {
+            generation = Number(identity.generation);
+            boundItemId = identity.itemId;
+            boundVersion = Number(identity.sourceVersion);
+            boundText = String(identity.sourceText || "");
+            if (generation !== translationGeneration ||
+                    translationState.itemId === null ||
+                    Number(translationState.itemId) !== Number(boundItemId) ||
+                    Number(translationState.sourceVersion) !==
+                        Number(boundVersion) ||
+                    String(translationState.sourceText || "") !== boundText ||
+                    !translationState.attached) {
+                return false;
+            }
+        } else if (!translationState.attached) {
+            return false;
+        }
         if (result && result.ok === true) {
             translationState.provider = String(result.provider || "none");
             translationState.translatedText = String(result.translatedText || "");
@@ -2311,7 +2350,9 @@ return view;
         translationSetRunning(true, "正在翻译…");
         refreshTranslationButtons();
         translateConfiguredAsync(translationState.sourceText,
-            function (result) { applyTranslationResult(result); });
+            function (result, identity) {
+                applyTranslationResult(result, identity);
+            });
         return true;
     }
 
@@ -2330,7 +2371,8 @@ return view;
         var result;
         if (!translationState.translatedText) { return false; }
         result = ClipHub.Clipboard.writeText(translationState.translatedText, {
-            label: "ClipHub 翻译", sensitive: false
+            label: "ClipHub 翻译",
+            sensitive: translationState.sourceSensitive === true
         });
         if (result && result.ok === true) {
             translationState.copyCount += 1;
@@ -2373,7 +2415,7 @@ return view;
             sourceLabel: "ClipHub 翻译",
             sourceUid: Number(Packages.android.os.Process.myUid()),
             sourceConfidence: 100,
-            isSensitive: false,
+            isSensitive: translationState.sourceSensitive === true,
             isPinned: false
         }));
         if (id > 0) {
@@ -2589,6 +2631,9 @@ return view;
         if (row === null) { throw new Error("翻译目标不存在"); }
         translationState.itemId = Number(row.id);
         translationState.sourceText = String(row.content || "");
+        translationState.sourceVersion += 1;
+        translationState.requestGeneration = 0;
+        translationState.sourceSensitive = row && row.is_sensitive === true;
         translationState.translatedText = "";
         translationState.provider = "none";
         translationState.targetLanguage = "";
@@ -2847,6 +2892,9 @@ return view;
             navigationInit(context || {});
             translationState.attached = false;
             translationState.itemId = null;
+            translationState.sourceVersion = 0;
+            translationState.requestGeneration = 0;
+            translationState.sourceSensitive = false;
             translationState.provider = "none";
             translationState.sourceText = "";
             translationState.translatedText = "";

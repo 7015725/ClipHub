@@ -81,6 +81,7 @@
         completedCount: 0,
         cancelledCount: 0,
         lateCallbackCount: 0,
+        skippedStaleTaskCount: 0,
         ruleConfigSaveCount: 0,
         ruleConfigDeleteCount: 0,
         ruleSelectionChangeCount: 0,
@@ -414,6 +415,7 @@
     function persistRuleState() {
         var parent;
         var temporary;
+        var backup;
         var payload;
         if (ruleStateFile === null) { return false; }
         parent = ruleStateFile.getParentFile();
@@ -430,15 +432,21 @@
             selectedRuleIds: selectedRuleIds
         }, null, 2) + "\n";
         temporary = new File(parent, RULE_FILE_NAME + ".tmp");
+        backup = new File(parent, RULE_FILE_NAME + ".bak");
         writeUtf8File(temporary, payload);
-        if (ruleStateFile.exists() && !ruleStateFile.delete()) {
+        backup.delete();
+        if (ruleStateFile.exists() && !ruleStateFile.renameTo(backup)) {
             try { temporary.delete(); } catch (ignoredTempDelete) {}
-            throw new Error("Cannot replace tokenizer rule state file");
+            throw new Error("Cannot back up tokenizer rule state file");
         }
         if (!temporary.renameTo(ruleStateFile)) {
             try { temporary.delete(); } catch (ignoredRenameDelete) {}
+            if (backup.exists()) {
+                try { backup.renameTo(ruleStateFile); } catch (ignoredRestore) {}
+            }
             throw new Error("Cannot commit tokenizer rule state file");
         }
+        backup.delete();
         return true;
     }
 
@@ -833,13 +841,23 @@
             run: function () {
                 var entered = false;
                 var result;
+                var stillCurrent;
                 try {
+                    if (requestGeneration !== generation) {
+                        state.skippedStaleTaskCount += 1;
+                        return;
+                    }
                     if (RhinoContext !== null &&
                             typeof RhinoContext.enter === "function") {
                         RhinoContext.enter();
                         entered = true;
                     }
                     result = tokenizeSync(requestText, requestOptions);
+                    stillCurrent = requestGeneration === generation;
+                    if (!stillCurrent) {
+                        state.lateCallbackCount += 1;
+                        return;
+                    }
                 } catch (error) {
                     result = plainError(error);
                 } finally {
@@ -848,7 +866,11 @@
                         try { RhinoContext.exit(); } catch (ignoredExit) {}
                     }
                 }
-                postCallback(callback, result, requestGeneration);
+                if (requestGeneration === generation) {
+                    postCallback(callback, result, requestGeneration);
+                } else {
+                    state.lateCallbackCount += 1;
+                }
             }
         });
         executor.submit(task);
@@ -921,6 +943,7 @@
             completedCount: Number(state.completedCount),
             cancelledCount: Number(state.cancelledCount),
             lateCallbackCount: Number(state.lateCallbackCount),
+            skippedStaleTaskCount: Number(state.skippedStaleTaskCount),
             generation: Number(generation),
             engine: String(state.engine),
             ruleSchemaVersion: RULE_SCHEMA_VERSION,

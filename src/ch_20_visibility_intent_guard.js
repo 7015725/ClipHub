@@ -228,6 +228,8 @@
                     state.showDepth -= 1;
                 }
             };
+            state.wrappedShowRoot.__visibilityIntentGuardNext =
+                state.originalShowRoot;
             filter.showRoot = state.wrappedShowRoot;
         }
 
@@ -245,6 +247,8 @@
                     state.showDepth -= 1;
                 }
             };
+            state.wrappedShowPanel.__visibilityIntentGuardNext =
+                state.originalShowPanel;
             filter.showPanel = state.wrappedShowPanel;
         }
 
@@ -262,6 +266,8 @@
                     state.closeDepth -= 1;
                 }
             };
+            state.wrappedClosePanel.__visibilityIntentGuardNext =
+                state.originalClosePanel;
             filter.closePanel = state.wrappedClosePanel;
         }
 
@@ -289,9 +295,29 @@
             state.attachAllowedCount += 1;
             return state.originalAttachWindow.apply(windowModule, arguments);
         };
+        state.wrappedAttachWindow.__visibilityIntentGuardNext =
+            state.originalAttachWindow;
         windowModule.attachWindow = state.wrappedAttachWindow;
         windowModule.__visibilityIntentGuardController = state;
         return true;
+    }
+
+    function spliceOutWrapper(current, target, replacement) {
+        var cursor = current;
+        var guard = 0;
+        while (cursor && typeof cursor === "function" &&
+                cursor !== target && cursor !== replacement && guard < 64) {
+            cursor = cursor.__visibilityIntentGuardNext;
+            guard += 1;
+        }
+        if (cursor === target && target !== replacement) {
+            if (replacement && typeof replacement === "function") {
+                replacement.__visibilityIntentGuardNext =
+                    target.__visibilityIntentGuardNext || null;
+            }
+            return replacement;
+        }
+        return current;
     }
 
     function clearControllerMarker(target) {
@@ -311,18 +337,39 @@
         if (filter) {
             if (filter.showRoot === state.wrappedShowRoot) {
                 filter.showRoot = state.originalShowRoot;
+            } else if (typeof filter.showRoot === "function" &&
+                    typeof state.wrappedShowRoot === "function" &&
+                    state.originalShowRoot) {
+                filter.showRoot = spliceOutWrapper(filter.showRoot,
+                    state.wrappedShowRoot, state.originalShowRoot);
             }
             if (filter.showPanel === state.wrappedShowPanel) {
                 filter.showPanel = state.originalShowPanel;
+            } else if (typeof filter.showPanel === "function" &&
+                    typeof state.wrappedShowPanel === "function" &&
+                    state.originalShowPanel) {
+                filter.showPanel = spliceOutWrapper(filter.showPanel,
+                    state.wrappedShowPanel, state.originalShowPanel);
             }
             if (filter.closePanel === state.wrappedClosePanel) {
                 filter.closePanel = state.originalClosePanel;
+            } else if (typeof filter.closePanel === "function" &&
+                    typeof state.wrappedClosePanel === "function" &&
+                    state.originalClosePanel) {
+                filter.closePanel = spliceOutWrapper(filter.closePanel,
+                    state.wrappedClosePanel, state.originalClosePanel);
             }
             clearControllerMarker(filter);
         }
         if (windowModule) {
             if (windowModule.attachWindow === state.wrappedAttachWindow) {
                 windowModule.attachWindow = state.originalAttachWindow;
+            } else if (typeof windowModule.attachWindow === "function" &&
+                    typeof state.wrappedAttachWindow === "function" &&
+                    state.originalAttachWindow) {
+                windowModule.attachWindow = spliceOutWrapper(
+                    windowModule.attachWindow, state.wrappedAttachWindow,
+                    state.originalAttachWindow);
             }
             clearControllerMarker(windowModule);
         }

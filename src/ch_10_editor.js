@@ -140,6 +140,7 @@
         saveButtonPresent: false,
         requestKeyboardOnOpen: true,
         keyboardRequestedOnOpen: false,
+        restoringPendingDraft: false,
         softInputMode: 0,
         softInputAdjustResize: false,
         keyboardVisible: false,
@@ -1829,30 +1830,14 @@ function bindTokenizerToEditor() {
             return { ok: false, restored: false, reason: "no_pending_draft" };
         }
         opened = openPanel(draft.mode, draft.itemId, {
-            requestKeyboard: options.requestKeyboard === true
+            requestKeyboard: options.requestKeyboard === true,
+            restoreDraft: true,
+            pendingDraft: draft
         });
-        requireMain(runOnMainSync(function () {
-            editorDraftTagIds = copyTagIds(draft.draftTagIds);
-            state.tagDraftCount = editorDraftTagIds.length;
-            if (contentInput !== null) {
-                contentInput.setText(draft.content);
-                contentInput.setSelection(contentInput.getText().length());
-                updateCharacterCount();
-            }
-            if (metadataTypeView !== null) {
-                metadataTypeView.setText(editorDraftTagIds.length > 0 ?
-                    "标签  " + String(editorDraftTagIds.length) + " 个" :
-                    "标签  未设置");
-            }
-            if (draft.viewMode === "tags") {
-                openTagSelectorOnMain();
-                if (tagNameInput !== null && draft.pendingTagName.length > 0) {
-                    tagNameInput.setText(draft.pendingTagName);
-                    tagNameInput.setSelection(tagNameInput.getText().length());
-                }
-            }
-            return true;
-        }, 2500));
+        if (!opened || opened.ok !== true) {
+            return { ok: false, restored: false, reason: "open_pending",
+                opened: opened, draft: draft };
+        }
         pendingDraft = null;
         state.draftRestoreCount += 1;
         state.lastDraftReason = String(draft.reason || "restore");
@@ -2282,6 +2267,36 @@ function bindTokenizerToEditor() {
 
 
 
+    function applyRestoredDraftOnMain(draft) {
+        var content;
+        var tagIds;
+        if (draft === null || draft === undefined) { return false; }
+        content = String(draft.content || "");
+        tagIds = copyTagIds(draft.draftTagIds);
+        editorDraftTagIds = tagIds;
+        editorOriginalContent = String(draft.originalContent || "");
+        editorOriginalTagIds = copyTagIds(draft.originalTagIds);
+        state.tagDraftCount = tagIds.length;
+        if (contentInput !== null) {
+            contentInput.setText(content);
+            contentInput.setSelection(contentInput.getText().length());
+            updateCharacterCount();
+        }
+        if (metadataTypeView !== null) {
+            metadataTypeView.setText(tagIds.length > 0 ?
+                "标签  " + String(tagIds.length) + " 个" :
+                "标签  未设置");
+        }
+        if (tagNameInput !== null && String(draft.pendingTagName || "").length > 0) {
+            tagNameInput.setText(String(draft.pendingTagName));
+            tagNameInput.setSelection(tagNameInput.getText().length());
+        }
+        if (draft.viewMode === "tags") {
+            openTagSelectorOnMain();
+        }
+        return true;
+    }
+
     function buildTextContent(initialText, row, options) {
         var colors = editorPalette();
         var isNew = state.mode === "new";
@@ -2671,14 +2686,25 @@ function bindTokenizerToEditor() {
         var row = null;
         var initialText = "";
         var requestKeyboard;
+        var loopGuard = 0;
         options = options || {};
         if (!ready) { throw new Error("ClipHub editor is not ready"); }
         mode = String(mode || "new");
-        if (editorRemovalPending) {
+        while (editorRemovalPending && loopGuard < 3) {
             pendingOpenRequest = { mode: mode, itemId: itemId,
                 options: options };
-            return { ok: true, attached: false, pending: true,
-                state: getState() };
+            loopGuard += 1;
+            return requireMain(runOnMainSync(function () {
+                if (!state.attached && panelRoot === null &&
+                        !editorRemovalPending) {
+                    pendingOpenRequest = null;
+                    return { ok: true, attached: false, pending: false,
+                        state: getState() };
+                }
+                closePanel("replace");
+                return { ok: true, attached: false, pending: true,
+                    state: getState() };
+            }, 3000));
         }
         if (mode === "edit" || mode === "tags") {
             row = ClipHub.Repository.getItem(Number(itemId), false);
@@ -2720,6 +2746,9 @@ function bindTokenizerToEditor() {
         state.focusReleasedAfterImeHide = false;
         state.rootFocusRequestedAfterImeHide = false;
         state.rootFocusedAfterImeHide = false;
+        state.restoringPendingDraft = options.restoreDraft === true &&
+            options.pendingDraft !== undefined &&
+            options.pendingDraft !== null;
         clearEditorImeRestoreGeometry();
         return requireMain(runOnMainSync(function () {
             var size = panelDimensions(state.mode);
@@ -2795,16 +2824,26 @@ function bindTokenizerToEditor() {
                     throw new Error("ClipHub primary editor mount failed");
                 }
                 if (state.mode === "tags") {
-                    state.editorStyle = "legacy_tags_v1";
-                    buildTagContent(requestKeyboard);
-                    syncPrimaryEditorPage("tags", "选择标签", function () {
-                        return requestExit("shell_tag_back");
-                    });
-                } else {
-                    buildTextContent(initialText, row, {
-                        requestKeyboard: requestKeyboard
-                    });
-                }
+                        state.editorStyle = "legacy_tags_v1";
+                        buildTagContent(requestKeyboard);
+                        syncPrimaryEditorPage("tags", "选择标签", function () {
+                            return requestExit("shell_tag_back");
+                        });
+                        if (options.restoreDraft === true &&
+                                options.pendingDraft !== undefined &&
+                                options.pendingDraft !== null) {
+                            applyRestoredDraftOnMain(options.pendingDraft);
+                        }
+                    } else {
+                        buildTextContent(initialText, row, {
+                            requestKeyboard: requestKeyboard
+                        });
+                        if (options.restoreDraft === true &&
+                                options.pendingDraft !== undefined &&
+                                options.pendingDraft !== null) {
+                            applyRestoredDraftOnMain(options.pendingDraft);
+                        }
+                    }
                 bindTokenizerToEditor();
                 return { ok: true, attached: true, embedded: true,
                     mode: state.mode, itemId: state.itemId, state: getState() };
@@ -2889,10 +2928,20 @@ function bindTokenizerToEditor() {
             if (state.mode === "tags") {
                 state.editorStyle = "legacy_tags_v1";
                 buildTagContent(requestKeyboard);
+                if (options.restoreDraft === true &&
+                        options.pendingDraft !== undefined &&
+                        options.pendingDraft !== null) {
+                    applyRestoredDraftOnMain(options.pendingDraft);
+                }
             } else {
                 buildTextContent(initialText, row, {
                     requestKeyboard: requestKeyboard
                 });
+                if (options.restoreDraft === true &&
+                        options.pendingDraft !== undefined &&
+                        options.pendingDraft !== null) {
+                    applyRestoredDraftOnMain(options.pendingDraft);
+                }
             }
             return { ok: true, attached: true, mode: state.mode,
                 itemId: state.itemId, state: getState() };
@@ -3111,6 +3160,7 @@ function bindTokenizerToEditor() {
             editorFooterHeightDp: 0, cancelButtonPresent: false,
             saveButtonPresent: false, requestKeyboardOnOpen: true,
             keyboardRequestedOnOpen: false, softInputMode: 0,
+            restoringPendingDraft: false,
             softInputAdjustResize: false, keyboardVisible: false,
             keyboardInsetDp: 0, visibleFrameHeightDp: 0,
             visibleFrameBottomDp: 0, rootMeasuredHeightDp: 0,

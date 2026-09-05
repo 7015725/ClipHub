@@ -88,6 +88,37 @@
         return predicate();
     }
 
+    function readAckIfComplete(file) {
+        var value;
+        var parsed;
+        try {
+            if (!file.isFile()) { return null; }
+            value = read(file);
+            if (String(value || "").indexOf("requestId") < 0) { return null; }
+            parsed = JSON.parse(value);
+            if (!parsed || parsed.requestId === undefined ||
+                    parsed.requestId === null) { return null; }
+            return parsed;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function waitForCompleteAck(ackFile, timeoutMs, onPartial) {
+        var started = now();
+        var parsed;
+        while (now() - started < timeoutMs) {
+            parsed = readAckIfComplete(ackFile);
+            if (parsed !== null) { return parsed; }
+            Thread.sleep(25);
+        }
+        parsed = readAckIfComplete(ackFile);
+        if (parsed === null && onPartial) {
+            try { onPartial(); } catch (ignored) {}
+        }
+        return parsed;
+    }
+
     function containsCommand(commands, command) {
         var index;
         if (!commands || typeof commands.length !== "number") { return false; }
@@ -175,10 +206,15 @@
         intent.putExtra("requestId", requestId);
         intent.putExtra("controlToken", String(endpoint.token));
         global.context.sendBroadcast(intent);
-        waitFor(function () { return ackFile.isFile(); }, timeoutMs);
+        waitForCompleteAck(ackFile, timeoutMs, function () {
+            ackFile.delete();
+        });
         if (ackFile.isFile()) {
             try { ack = JSON.parse(read(ackFile)); }
             finally { ackFile.delete(); }
+        }
+        if (ack && String(ack.requestId || "") !== String(requestId)) {
+            ack = null;
         }
         if (ack === null) {
             return {

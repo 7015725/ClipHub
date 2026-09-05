@@ -38,6 +38,7 @@
         filterPreparedForShutdown: false,
         filterStopping: false,
         filterGuardInstalled: false,
+        filterGuardOriginals: null,
         runtimePlan: []
     };
 
@@ -154,12 +155,25 @@
         var safeId = String(requestId || "").replace(/[^A-Za-z0-9._-]/g, "_");
         var cacheDir;
         var file;
+        var temp;
+        var ok;
         if (!safeId) { return false; }
         cacheDir = ClipHub.Base.ensureDir(
             ClipHub.Base.joinPath(runtimeDir, "cache")
         );
         file = new File(cacheDir, "control_ack_" + safeId + ".json");
-        return writeUtf8(file, JSON.stringify(payload, null, 2) + "\n");
+        temp = new File(cacheDir, "control_ack_" + safeId + ".json.tmp");
+        ok = writeUtf8(temp, JSON.stringify(payload, null, 2) + "\n");
+        if (!ok) { return false; }
+        if (file.exists() && !file.delete()) {
+            temp.delete();
+            return false;
+        }
+        if (!temp.renameTo(file)) {
+            temp.delete();
+            return false;
+        }
+        return true;
     }
 
     function writeControlEndpoint(context, action, token) {
@@ -285,6 +299,43 @@
         }
         filter.__paginationStage0GuardInstalled = true;
         state.filterGuardInstalled = true;
+        state.filterGuardOriginals = {
+            showRoot: originalShowRoot,
+            showPanel: originalShowPanel,
+            closePanel: originalClosePanel,
+            getPanelState: originalGetPanelState,
+            shutdown: originalShutdown
+        };
+        return true;
+    }
+
+    function uninstallFilterLifecycleGuard() {
+        var filter = ClipHub.Filter;
+        var originals = state.filterGuardOriginals || {};
+        if (!filter || filter.__paginationStage0GuardInstalled !== true) {
+            state.filterGuardInstalled = false;
+            return false;
+        }
+        if (originals.showRoot && filter.showRoot !== originals.showRoot) {
+            filter.showRoot = originals.showRoot;
+        }
+        if (originals.showPanel && filter.showPanel !== originals.showPanel) {
+            filter.showPanel = originals.showPanel;
+        }
+        if (originals.closePanel && filter.closePanel !== originals.closePanel) {
+            filter.closePanel = originals.closePanel;
+        }
+        if (originals.getPanelState &&
+                filter.getPanelState !== originals.getPanelState) {
+            filter.getPanelState = originals.getPanelState;
+        }
+        if (originals.shutdown && filter.shutdown !== originals.shutdown) {
+            filter.shutdown = originals.shutdown;
+        }
+        delete filter.__paginationStage0GuardInstalled;
+        filter.__paginationStage0GuardInstalled = null;
+        state.filterGuardOriginals = null;
+        state.filterGuardInstalled = false;
         return true;
     }
 
@@ -491,6 +542,15 @@
     function closeUi(reason) {
         var hideReason = String(reason || "app_hide");
         try {
+            if (ClipHub.VisibilityIntentGuard &&
+                    typeof ClipHub.VisibilityIntentGuard.markVisibleIntent === "function") {
+                try {
+                    ClipHub.VisibilityIntentGuard.markVisibleIntent(false,
+                        "app_close_ui");
+                } catch (ignoredIntent) {}
+            }
+        } catch (ignoredGuard) {}
+        try {
             if (ClipHub.Translation &&
                     typeof ClipHub.Translation.close === "function") {
                 ClipHub.Translation.close(hideReason);
@@ -541,6 +601,12 @@
         if (before.uiVisible) {
             return { result: null, reused: true, status: before };
         }
+        if (ClipHub.VisibilityIntentGuard &&
+                typeof ClipHub.VisibilityIntentGuard.markVisibleIntent === "function") {
+            try {
+                ClipHub.VisibilityIntentGuard.markVisibleIntent(true, "app_show_ui");
+            } catch (ignoredIntent) {}
+        }
         if (ClipHub.Editor &&
                 typeof ClipHub.Editor.hasPendingDraft === "function" &&
                 ClipHub.Editor.hasPendingDraft() === true &&
@@ -549,6 +615,10 @@
             if (result && result.ok === true) {
                 return { result: result, restoredDraft: true,
                     status: uiStatus() };
+            }
+            if (result && result.pending === true) {
+                return { result: result, restoredDraft: true,
+                    pendingRestore: true, status: uiStatus() };
             }
         }
         if (!ClipHub.Filter) {
@@ -767,6 +837,11 @@
                     if (typeof item.init === "function") { item.init(context); }
                     state.initialized.push(item);
                 }
+                if (ClipHub.Settings && typeof ClipHub.Settings.isReady === "function" &&
+                        ClipHub.Settings.isReady() && ClipHub.Clipboard &&
+                        typeof ClipHub.Clipboard.activateAfterConfigure === "function") {
+                    ClipHub.Clipboard.activateAfterConfigure("post_settings_init");
+                }
                 installFilterLifecycleGuard();
                 state.started = true;
                 registerControlReceiver(context);
@@ -834,6 +909,7 @@
             state.filterPreparedForShutdown = false;
             prepareFilterForShutdown(stopReason);
             unregisterControlReceiver();
+            uninstallFilterLifecycleGuard();
             shutdownModules(stopReason);
             releaseLock();
             state.context = null;
