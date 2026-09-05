@@ -144,6 +144,8 @@ PY
 bash scripts/run_navigation_regression_suite.sh
 bash scripts/run_tokenizer_regression_suite.sh
 python3 scripts/test_translation_provider_contract.py
+node scripts/test_home_batch_delete.js
+node scripts/test_home_multiselect.js
 
 git diff --check
 

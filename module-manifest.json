@@ -69,7 +69,7 @@
     {
       "name": "ch_09_list.js",
       "path": "src/ch_09_list.js",
-      "sha": "af54b7b927d03b2630ea49e82098441b0fb27531",
+      "sha": "af817f2660c303b6b83b16e2bf8cc07ee1f2f340",
       "export": "List",
       "runtimeRole": "managed",
       "lifecycleIndex": 8
@@ -85,7 +85,7 @@
     {
       "name": "ch_11_filter.js",
       "path": "src/ch_11_filter.js",
-      "sha": "fc101e60947206625d3f3c95d14f1d6c2b424693",
+      "sha": "844393aa4cee81312742999c4e5e94ff60964293",
       "export": "Filter",
       "runtimeRole": "managed",
       "lifecycleIndex": 10

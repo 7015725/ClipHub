@@ -311,12 +311,102 @@ state.lastError = String(error);
 return false;
 }
 }
+function deleteItems(ids) {
+var thread = Thread.currentThread();
+var uniqueIds = [];
+var seen = {};
+var index;
+var id;
+var deletedAt = ClipHub.Base.now();
+var deletedIds;
+if (!ready) { throw new Error("ClipHub list is not ready"); }
+if (!(ids instanceof Array)) { throw new Error("Selected IDs must be an array"); }
+for (index = 0; index < ids.length; index += 1) {
+id = Number(ids[index]);
+if (typeof ids[index] !== "number" || !isFinite(id) || id <= 0 ||
+id > 9007199254740991 || Math.floor(id) !== id) {
+throw new Error("Invalid selected item ID");
+}
+if (!seen[String(id)]) {
+seen[String(id)] = true;
+uniqueIds.push(id);
+}
+}
+if (uniqueIds.length === 0) {
+return { count: 0, itemIds: [], deletedAt: deletedAt };
+}
+try {
+deletedIds = ClipHub.Database.transaction(function () {
+var output = [];
+var row;
+var position;
+for (position = 0; position < uniqueIds.length; position += 1) {
+row = ClipHub.Repository.getItem(uniqueIds[position], false);
+if (row !== null && row !== undefined &&
+Number(ClipHub.Repository.softDeleteItem(uniqueIds[position], deletedAt)) > 0) {
+output.push(uniqueIds[position]);
+}
+}
+return output;
+});
+if (deletedIds.length > 0) {
+lastDeleted = { id: deletedIds[0], ids: deletedIds.slice(0), deletedAt: deletedAt };
+state.deleteCount += deletedIds.length;
+state.lastDeletedId = deletedIds[0];
+state.deleteThreadName = String(thread.getName());
+emit("clipboard_deleted", {
+id: deletedIds[0], itemIds: deletedIds.slice(0), count: deletedIds.length,
+deletedAt: deletedAt, threadId: Number(thread.getId()),
+threadName: state.deleteThreadName
+});
+refreshQuietly();
+}
+state.lastError = null;
+return { count: deletedIds.length, itemIds: deletedIds, deletedAt: deletedAt };
+} catch (error) {
+state.lastError = String(error);
+throw error;
+}
+}
+function undoDeletedBatch(target, thread) {
+var restoredIds;
+try {
+restoredIds = ClipHub.Database.transaction(function () {
+var output = [];
+var index;
+for (index = 0; index < target.ids.length; index += 1) {
+if (Number(ClipHub.Repository.restoreItemIfDeletedAt(
+Number(target.ids[index]), Number(target.deletedAt))) > 0) {
+output.push(Number(target.ids[index]));
+}
+}
+return output;
+});
+if (lastDeleted === target) { lastDeleted = null; }
+if (restoredIds.length > 0) {
+state.restoreCount += restoredIds.length;
+state.lastRestoredId = restoredIds[0];
+state.restoreThreadName = String(thread.getName());
+emit("clipboard_restored", {
+id: restoredIds[0], itemIds: restoredIds.slice(0), count: restoredIds.length,
+threadId: Number(thread.getId()), threadName: state.restoreThreadName
+});
+}
+refreshQuietly();
+state.lastError = null;
+return restoredIds.length > 0;
+} catch (error) {
+state.lastError = String(error);
+return false;
+}
+}
 function undoLastDelete() {
 var thread = Thread.currentThread();
 var target = lastDeleted;
 var row;
 var changed;
 if (target === null) { return false; }
+if (target.ids instanceof Array) { return undoDeletedBatch(target, thread); }
 try {
 row = ClipHub.Repository.getItem(Number(target.id), true);
 if (row === null || row === undefined ||
@@ -1053,7 +1143,7 @@ state.lastError = null;
 }
 ClipHub.List = {
 MODULE_NAME: "ch_09_list",
-MODULE_VERSION: 25,
+MODULE_VERSION: 26,
 LONG_TEXT_THRESHOLD: LONG_TEXT_THRESHOLD,
 init: function (context) {
 androidContext = context && context.androidContext ?
@@ -1156,6 +1246,7 @@ var row = ClipHub.Repository.getItem(Number(id), false);
 return row === null || row === undefined ?
 false : deleteRow(row);
 },
+deleteItems: deleteItems,
 undoLastDelete: undoLastDelete,
 togglePinned: function (id) {
 var row = ClipHub.Repository.getItem(Number(id), false);
