@@ -1982,7 +1982,8 @@
         geometry = options.geometry || computeGeometry("shared", {
             useSaved: true
         });
-        prepared = findPreparedFrame(options.rootView);
+        prepared = options.bypassPreparedFrame === true ?
+            null : findPreparedFrame(options.rootView);
         binding = {
             id: nextManagedId,
             role: String(options.role || "shared"),
