@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
-  "moduleSetVersion": "20260819.08",
+  "moduleSetVersion": "20260906.01",
   "entryMinVersion": 8,
-  "sourceRef": "fix/review-f01-f25-20260905",
+  "sourceRef": "main",
   "modules": [
     {
       "name": "ch_01_base.js",
