@@ -65,7 +65,7 @@ assert(c.virtualCardHost.reads <= 8, 'fast path must be O(log n) child reads, go
 c.scrollY = 50 * CARD + 37;
 assert.strictEqual(c.virtualScrollFastPath(), true);
 assert.strictEqual(c.virtualState.firstVisibleIndex, 50, 'partially scrolled row stays first visible');
-/* scroll down until less than 3 screens remain below the viewport */
+/* scroll down until the after-buffer drops below the threshold */
 var fastFrames = 0, y;
 for (y = 50 * CARD; y < 80 * CARD; y += 16) {
     c.scrollY = y;
@@ -73,13 +73,16 @@ for (y = 50 * CARD; y < 80 * CARD; y += 16) {
     fastFrames += 1;
 }
 var remainingAfter = 80 * CARD - (y + VIEWPORT);
-assert(remainingAfter < VIEWPORT * 3 && remainingAfter >= VIEWPORT * 3 - 16,
-    'rebuild requested only when after-buffer drops below 3 screens, remaining=' + remainingAfter);
-assert(fastFrames > 50, 'most scroll frames must take the fast path, got ' + fastFrames);
-/* scroll up: rebuild once fewer than 1.5 screens remain above */
-c.scrollY = 35 * CARD + VIEWPORT * 1.5;
+assert(remainingAfter < VIEWPORT * c.VIRTUAL_REBUILD_MIN_AFTER_SCREENS &&
+    remainingAfter >= VIEWPORT * c.VIRTUAL_REBUILD_MIN_AFTER_SCREENS - 16,
+    'rebuild requested only when after-buffer drops below threshold, remaining=' + remainingAfter);
+assert(c.VIRTUAL_REBUILD_MIN_AFTER_SCREENS < 5 && c.VIRTUAL_REBUILD_MIN_BEFORE_SCREENS < 3,
+    'thresholds must stay below the 3/5 screen render targets to avoid rebuild ping-pong');
+assert(fastFrames > 25, 'most scroll frames must take the fast path, got ' + fastFrames);
+/* scroll up: rebuild once the before-buffer drops below the threshold */
+c.scrollY = 35 * CARD + VIEWPORT * c.VIRTUAL_REBUILD_MIN_BEFORE_SCREENS;
 assert.strictEqual(c.virtualScrollFastPath(), true);
-c.scrollY = 35 * CARD + VIEWPORT * 1.5 - 1;
+c.scrollY = 35 * CARD + VIEWPORT * c.VIRTUAL_REBUILD_MIN_BEFORE_SCREENS - 1;
 assert.strictEqual(c.virtualScrollFastPath(), false, 'before-buffer exhausted triggers rebuild');
 /* window touching data start/end never asks for a rebuild on that side */
 renderWindow(0, 39);
@@ -100,7 +103,7 @@ c.activeSwipeCard = {}; assert.strictEqual(c.virtualScrollFastPath(), false); c.
 c.mutationAnchorLocked = true; assert.strictEqual(c.virtualScrollFastPath(), false); c.mutationAnchorLocked = false;
 c.virtualState.updateDeferred = true; assert.strictEqual(c.virtualScrollFastPath(), false); c.virtualState.updateDeferred = false;
 c.virtualRenderedItemIds.pop(); assert.strictEqual(c.virtualScrollFastPath(), false, 'bookkeeping mismatch falls back');
-console.log('PASS scroll hysteresis: O(log n) visible lookup, rebuild only at 1.5/3 screen buffers, edge and staged-state fallbacks');
+console.log('PASS scroll hysteresis: O(log n) visible lookup, rebuild only at low before/after buffers, edge and staged-state fallbacks');
 
 /* ---------- 2. universal holder rebind ---------- */
 function V() { this.children = []; this.text = ''; this.removed = []; }
@@ -232,3 +235,14 @@ f.Packages.android.graphics.Bitmap.createBitmap = function () { throw new Error(
 var fallback = f.makeCachedVectorIconDrawable('edit', '#FF000000', 24, 2);
 assert.strictEqual(typeof fallback.draw, 'function', 'bitmap failure falls back to the vector drawable');
 console.log('PASS icon bitmap cache: one Rhino draw per icon variant, shared bitmaps, safe fallback');
+
+/* ---------- 5. staged fill also covers recycled cards ---------- */
+var stageCall = source.indexOf('(range.end - oldEnd) >= OVERLAP_STAGED_FILL_MIN_CARDS');
+assert(stageCall > 0, 'overlap staging must trigger on attached card count, not only on new builds');
+var startFn = source.slice(source.indexOf('    function startOverlapStagedFill('),
+    source.indexOf('\n    function ', source.indexOf('    function startOverlapStagedFill(') + 5));
+assert(startFn.indexOf('rebindResultCardHolder(') < 0, 'start must not rebind every recycled card in one frame');
+var batchFn = source.slice(source.indexOf('    function runOverlapStagedFillBatch('),
+    source.indexOf('\n    function ', source.indexOf('    function runOverlapStagedFillBatch(') + 5));
+assert(batchFn.indexOf('rebindResultCardHolder(') > 0, 'recycled cards are rebound inside the per-frame batch');
+console.log('PASS staged recycle fill: recycled rebinds are spread across frame batches');

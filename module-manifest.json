@@ -85,7 +85,7 @@
     {
       "name": "ch_11_filter.js",
       "path": "src/ch_11_filter.js",
-      "sha": "279bd895bb16a7153ec0efadcdab690e25d7319f",
+      "sha": "4df231b80c7e02d1955c7cff2aed8f971e7c0b34",
       "export": "Filter",
       "runtimeRole": "managed",
       "lifecycleIndex": 10
