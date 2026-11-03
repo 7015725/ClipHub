@@ -21,7 +21,7 @@
     var ENTRY_VERSION = 8;
     var OWNER = "7015725";
     var REPO = "ClipHub";
-    var DEFAULT_REF = "beta-home-scroll-perf-20261103";
+    var DEFAULT_REF = "main";
     var MANIFEST_PATH = "module-manifest.json";
     var LEGACY_MODULE_EXPORTS = {
         "ch_01_base.js": "Base",
