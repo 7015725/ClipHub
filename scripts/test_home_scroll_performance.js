@@ -246,3 +246,105 @@ var batchFn = source.slice(source.indexOf('    function runOverlapStagedFillBatc
     source.indexOf('\n    function ', source.indexOf('    function runOverlapStagedFillBatch(') + 5));
 assert(batchFn.indexOf('rebindResultCardHolder(') > 0, 'recycled cards are rebound inside the per-frame batch');
 console.log('PASS staged recycle fill: recycled rebinds are spread across frame batches');
+
+/* ---------- 6. staged prepend keeps order, bookkeeping and spacer ---------- */
+(function () {
+    function Card(id) { this.id = id; }
+    function HostView() { this.children = []; }
+    HostView.prototype.addView = function (v, i) {
+        if (typeof i === 'number') { this.children.splice(i, 0, v); } else { this.children.push(v); }
+    };
+    HostView.prototype.getChildCount = function () { return this.children.length; };
+    var posted = [];
+    var rows = [];
+    for (var r = 0; r < 60; r += 1) { rows.push({ id: 1000 + r }); }
+    var g = vm.createContext({
+        Number: Number, String: String, Math: Math,
+        OVERLAP_STAGED_FILL_MAX_CARDS_PER_BATCH: 3, OVERLAP_STAGED_FILL_BUDGET_MS: 14,
+        System: { currentTimeMillis: function () { return 0; } },
+        Packages: { java: { lang: { Runnable: function (o) { this.run = o.run; } } } },
+        mainHandler: { post: function (r) { posted.push(r); return true; } },
+        state: { panelAttached: true, resultCardCount: 0 }, activeSwipeCard: null,
+        previewRows: rows, virtualCardHost: new HostView(),
+        resultCardViews: [], resultCardHolders: [], resultActionViews: [],
+        virtualRenderedItemIds: [], virtualRenderedSignatures: [],
+        virtualState: { firstRenderedIndex: 0, lastRenderedIndex: -1 },
+        overlapStagedFillGeneration: 0,
+        overlapStagedFillState: { active: false, plan: [], nextPlanIndex: 0 },
+        scrollPerformanceState: { holderRecyclePoolPeakCount: 0, holderRecycleKeyHitCount: 0,
+            holderRecycleKeyMissCount: 0, holderRecycleDiscardCount: 0, holderRecycleReuseCount: 0,
+            holderRecycleMissCount: 0, overlapStagedNewBuildCount: 0, overlapStagedRecycleAttachCount: 0,
+            createdViewCount: 0, structuralInsertCount: 0, overlapStagedCardCount: 0,
+            overlapStagedBatchCount: 0, overlapStagedMaxBatchMs: 0, overlapStagedMaxCardsPerBatch: 0,
+            viewRebuildMaxMs: 0, overlapUpdateMaxMs: 0, overlapStagedStartCount: 0,
+            overlapStagedSyncBuildAvoidedCount: 0, overlapStagedHydrationStartCount: 0,
+            overlapStagedScrollStartCount: 0, overlapStagedScrollSyncBuildAvoidedCount: 0 },
+        LinearLayout: { LayoutParams: function () { this.bottomMargin = 0; } },
+        dp: function (n) { return n; },
+        virtualHeightRange: function (a, b) { return Math.max(0, b - a) * 100; },
+        setVirtualSpacerHeight: function (view, h) { return h; },
+        virtualTopSpacer: {}, virtualBottomSpacer: {},
+        virtualRenderSignature: function (row) { return 's' + row.id; },
+        takeCompatibleRecycleHolder: function (pool) { return pool.length ? pool.pop() : null; },
+        rebindResultCardHolder: function (h, row) { h.row = row; return true; },
+        cardHolderActionRefs: function () { return {}; },
+        makeResultCard: function (row) {
+            var w = new Card(row.id);
+            g.resultCardViews.push(w); g.resultCardHolders.push({ wrapper: w, row: row }); g.resultActionViews.push({});
+            return w;
+        },
+        finished: 0
+    });
+    g.finishOverlapStagedFill = function () { g.finished += 1; g.overlapStagedFillState.active = false; return true; };
+    g.LinearLayout.LayoutParams.MATCH_PARENT = -1; g.LinearLayout.LayoutParams.WRAP_CONTENT = -2;
+    g.cancelOverlapStagedFill = function () { throw new Error('unexpected cancel'); };
+    g.scheduleVirtualUpdate = function () {};
+    load('postOverlapStagedFillBatch', g);
+    load('runOverlapStagedFillBatch', g);
+    load('startOverlapStagedFill', g);
+    /* rendered rows 30..44, user scrolled up: new range 23..44 */
+    for (var i = 30; i <= 44; i += 1) {
+        var w = new Card(rows[i].id);
+        g.virtualCardHost.children.push(w);
+        g.resultCardViews.push(w); g.resultCardHolders.push({ wrapper: w }); g.resultActionViews.push({});
+        g.virtualRenderedItemIds.push(rows[i].id); g.virtualRenderedSignatures.push('s' + rows[i].id);
+    }
+    var pool = [{ wrapper: new Card('r1') }, { wrapper: new Card('r2') }];
+    assert.strictEqual(g.startOverlapStagedFill({ start: 23, end: 44 }, {}, 44, 15, 0, pool, 'result_scroll', 30), true);
+    assert.strictEqual(g.overlapStagedFillState.direction, 'up');
+    assert.strictEqual(g.virtualState.firstRenderedIndex, 30, 'nothing prepended synchronously');
+    var batches = 0;
+    while (posted.length) { posted.shift().run(); batches += 1; }
+    assert.strictEqual(batches, 3, '7 cards in batches of 3');
+    assert.strictEqual(g.finished, 1);
+    var ids = g.virtualRenderedItemIds.slice(0);
+    for (i = 0; i < ids.length; i += 1) { assert.strictEqual(ids[i], rows[23 + i].id, 'rendered ids stay in row order'); }
+    assert.strictEqual(g.virtualCardHost.children.length, ids.length);
+    assert.strictEqual(g.resultCardHolders.length, ids.length);
+    assert.strictEqual(g.virtualRenderedSignatures[0], 's' + rows[23].id);
+    assert.strictEqual(g.virtualState.firstRenderedIndex, 23);
+    assert.strictEqual(g.virtualState.lastRenderedIndex, 44);
+    assert.strictEqual(g.virtualState.topSpacerPx, 2300, 'top spacer shrinks with each prepended row');
+    assert.strictEqual(g.scrollPerformanceState.overlapStagedRecycleAttachCount, 2);
+    console.log('PASS staged prepend: upward shift spread over frames with ordered bookkeeping and shrinking top spacer');
+}());
+
+/* ---------- 7. hydration apply uses the request index window ---------- */
+(function () {
+    var scans = 0;
+    var rows = [];
+    for (var r = 0; r < 500; r += 1) { rows.push({ id: r + 1 }); }
+    var h = vm.createContext({ Number: Number, String: String, Math: Math, previewRows: rows });
+    load('buildHydrationIndexHint', h);
+    load('hintedPreviewRowIndex', h);
+    load('findPreviewRowIndexByIdForHydration', h);
+    var original = h.findPreviewRowIndexByIdForHydration;
+    h.findPreviewRowIndexByIdForHydration = function (id) { scans += 1; return original(id); };
+    var hint = h.buildHydrationIndexHint({ startIndex: 300, endIndex: 360 });
+    for (var k = 300; k <= 360; k += 1) { assert.strictEqual(h.hintedPreviewRowIndex(hint, k + 1), k); }
+    assert.strictEqual(scans, 0, 'ids inside the request window never need a full scan');
+    rows.splice(0, 0, { id: 9999 });
+    assert.strictEqual(h.hintedPreviewRowIndex(hint, 301), 301, 'shifted rows fall back to a full scan');
+    assert.strictEqual(scans, 1);
+    console.log('PASS hydration index hint: O(1) lookup inside request window, safe fallback after shifts');
+}());
