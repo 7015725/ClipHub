@@ -49,6 +49,7 @@ Linear.VERTICAL=1; Linear.HORIZONTAL=0;
 function text(v){var r=new MockView();r.setText(v);return r;}
 var colors={textPrimary:'#222222',textSecondary:'#666666',textTertiary:'#888888',icon:'#666666',accentStrong:'#7652C8',accentSoft:'#F9F6FF',accentBorder:'#D8CBF2',surfaceMuted:'#EEEEEE',card:'#FFFFFF',stroke:'#DDDDDD',danger:'#B64F63',dangerSoft:'#FCECF0'};
 var c=vm.createContext({
+    cardMenu:null,cardLongPressAction:function(){return 'menu';},
     homeMulti:{active:false,ids:[],confirmation:null,generation:0,busy:false,message:'',more:false},
     HOME_MULTI_LIMIT:100,homeMultiBar:null,homeMultiHeader:null,homeNormalHeader:null,homeMultiEntry:null,
     rootMode:true,state:{panelAttached:true},primaryShellPageId:'',previewRows:[{id:2},{id:1}],resultCardHolders:[],

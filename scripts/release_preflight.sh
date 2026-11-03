@@ -150,6 +150,7 @@ node scripts/test_home_multiselect_toolbar.js
 node scripts/test_home_multiselect_clipboard.js
 node scripts/test_home_scroll_performance.js
 node scripts/test_review_batch12.js
+node scripts/test_ui_catalog_batch3.js
 
 git diff --check
 

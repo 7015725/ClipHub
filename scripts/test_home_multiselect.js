@@ -12,6 +12,7 @@ function load(name, context) {
     vm.runInContext(source.slice(start, end), context);
 }
 var calls = [], notices = [], c = vm.createContext({
+    cardMenu: null, cardLongPressAction: function () { return 'tokenize'; },
     homeMulti: {active:false, ids:[], confirmation:null, generation:0, busy:false, message:''},
     HOME_MULTI_LIMIT:100, homeMultiBar:null, resultCardHolders:[],
     rootMode:true, state:{panelAttached:true}, primaryShellPageId:'', previewRows:[{id:1},{id:2}],

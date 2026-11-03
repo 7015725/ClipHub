@@ -168,7 +168,7 @@ function fixture() {
         },
         EventBus: {emit: function (name, payload) { events.push({name: name, payload: plain(payload)}); }}
     };
-    ctx = vm.createContext({Packages: packages, ClipHub: hub,
+    ctx = vm.createContext({Packages: packages, ClipHub: hub, cardMenu: null,
         JavaAdapter: function (type, implementation) { return implementation; }});
     vm.runInContext(replaceOnce(source('ch_06_repository.js'),
         'var ready = false;', 'var ready = true;'), ctx, {filename: 'ch_06_repository.expanded.js'});

@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
-  "moduleSetVersion": "20261103.02",
+  "moduleSetVersion": "20261103.21-beta",
   "entryMinVersion": 8,
-  "sourceRef": "main",
+  "sourceRef": "beta-review-batch12-20261103",
   "modules": [
     {
       "name": "ch_01_base.js",
@@ -53,7 +53,7 @@
     {
       "name": "ch_07_theme.js",
       "path": "src/ch_07_theme.js",
-      "sha": "61495b5983b20fbed85a17dda2664cc83960ae22",
+      "sha": "1e1092f2f8e476b91567be7ff3d3f5310f7ceb7d",
       "export": "Theme",
       "runtimeRole": "managed",
       "lifecycleIndex": 5
@@ -85,7 +85,7 @@
     {
       "name": "ch_11_filter.js",
       "path": "src/ch_11_filter.js",
-      "sha": "cccf8d362cca038b67d2b802dd1d1c25b23b386b",
+      "sha": "224c040f644cfd1a4d026dd18aa5735b16caca35",
       "export": "Filter",
       "runtimeRole": "managed",
       "lifecycleIndex": 10
@@ -101,7 +101,7 @@
     {
       "name": "ch_13_settings.js",
       "path": "src/ch_13_settings.js",
-      "sha": "1dd8e825ca50982ee128059bb39f07a04b1a8630",
+      "sha": "3f0302053a6cfe9ba282cad1883b1e271eb09d18",
       "export": "Settings",
       "runtimeRole": "managed",
       "lifecycleIndex": 11

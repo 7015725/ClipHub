@@ -122,6 +122,50 @@
         tabBottomGapDp: 8
     };
 
+    /* ui_catalog_tokens_v1: shape and motion tokens ported from
+       ui-catalog src/styles/tokens.css (--ui-radius-*, --ui-ctl-h,
+       --ui-gap, --ui-motion, --ui-ease, --ui-spring). Colours stay with
+       the ClipHub palette above. */
+    var UI_TOKENS = {
+        source: "ui-catalog tokens.css",
+        radiusSmDp: 8,
+        radiusDp: 10,
+        radiusLgDp: 14,
+        controlHeightDp: 40,
+        gapDp: 10,
+        motionMs: 180,
+        layerInMs: 160,
+        layerOffsetDp: 4,
+        menuMinWidthDp: 168,
+        menuItemHeightDp: 40,
+        menuPaddingDp: 6,
+        segmentedPaddingDp: 3,
+        switchTrackWidthDp: 42,
+        switchTrackHeightDp: 24,
+        switchThumbDp: 18,
+        easeCurve: [0.2, 0.7, 0.2, 1],
+        springCurve: [0.34, 1.56, 0.64, 1]
+    };
+    var interpolatorCache = {};
+
+    function getUiTokens() {
+        return copy(UI_TOKENS);
+    }
+
+    function makeInterpolator(name) {
+        var key = String(name || "ease") === "spring" ? "spring" : "ease";
+        var curve = key === "spring" ? UI_TOKENS.springCurve : UI_TOKENS.easeCurve;
+        if (interpolatorCache[key]) { return interpolatorCache[key]; }
+        try {
+            interpolatorCache[key] =
+                new Packages.android.view.animation.PathInterpolator(
+                    curve[0], curve[1], curve[2], curve[3]);
+        } catch (ignoredInterpolator) {
+            interpolatorCache[key] = null;
+        }
+        return interpolatorCache[key];
+    }
+
 
     function colorInt(value, fallback) {
         var source = value;
@@ -598,7 +642,7 @@ function decoratePanelIcon(viewObj, value, colorValue, sizeDp, explicitIcon) {
 
     ClipHub.Theme = {
         MODULE_NAME: "ch_07_theme",
-        MODULE_VERSION: 11,
+        MODULE_VERSION: 12,
         makeShortXSemanticIconDrawable: makeShortXSemanticIconDrawable,
         decorateSemanticPanelIcon: decorateSemanticPanelIcon,
         init: function () { mode = "system"; return true; },
@@ -625,6 +669,8 @@ function decoratePanelIcon(viewObj, value, colorValue, sizeDp, explicitIcon) {
         isDark: isDark,
         getPalette: palette,
         getMetrics: function () { return copy(METRICS); },
+        getUiTokens: getUiTokens,
+        makeInterpolator: makeInterpolator,
         getLayoutMetrics: getLayoutMetrics,
         getPanelChromeMetrics: getPanelChromeMetrics,
         isPanelIconToken: isPanelIconToken,

@@ -65,7 +65,7 @@ function fixture() {
         Filter: {isActive: function () { return true; }, query: function () { return []; }},
         EventBus: {emit: function (name, payload) { events.push({name: name, payload: payload}); }}
     };
-    var ctx = vm.createContext({Packages: packages, ClipHub: hub});
+    var ctx = vm.createContext({Packages: packages, ClipHub: hub, cardMenu: null});
     // Expose only the Repository readiness state; methods execute unchanged.
     vm.runInContext(source('ch_06_repository.js').replace('var ready = false;', 'var ready = true;'), ctx);
     vm.runInContext(source('ch_09_list.js'), ctx);
