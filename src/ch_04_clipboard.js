@@ -471,7 +471,8 @@
         }
         historyLimit = Number(settings.historyLimit || 0);
         autoCleanupDays = Number(settings.autoCleanupDays || 0);
-        if (historyLimit <= 0 && autoCleanupDays <= 0) { return null; }
+        /* review_batch2_recycle_v1: always run so the recycle bin ages out
+           even when no history limit or retention is configured. */
         try {
             state.lastCleanupAt = nowAt;
             return ClipHub.Repository.cleanupHistory({

@@ -79,7 +79,7 @@ var header=c.buildSearchHeader(colors);c.homeMultiBar=new Linear();c.syncHomeMul
 var search=byDesc(header,'展开搜索'), entry=byDesc(header,'进入多选模式');
 assert(entry,'search row must contain multi-select entry');
 assert.strictEqual(search.parent.children.indexOf(entry),search.parent.children.indexOf(search)+1);
-assert(byDesc(header,'新增剪切板内容')); assert(byDesc(header,'打开 ClipHub 设置')); assert(byDesc(header,'关闭全局剪切板'));
+assert(byDesc(header,'新增剪贴板内容')); assert(byDesc(header,'打开 ClipHub 设置')); assert(byDesc(header,'关闭全局剪贴板'));
 assert.strictEqual(c.homeMultiBar.visibility,8,'normal mode has no extra multiselect row');
 entry.click();assert(c.homeMulti.active);assert.strictEqual(c.homeNormalHeader.visibility,8);assert.strictEqual(c.homeMultiHeader.visibility,0);
 assert(byText(c.homeMultiHeader,'已选择 0 项'));

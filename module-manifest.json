@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
-  "moduleSetVersion": "20261103.01",
+  "moduleSetVersion": "20261103.11-beta",
   "entryMinVersion": 8,
-  "sourceRef": "main",
+  "sourceRef": "beta-review-batch12-20261103",
   "modules": [
     {
       "name": "ch_01_base.js",
@@ -30,7 +30,7 @@
     {
       "name": "ch_04_clipboard.js",
       "path": "src/ch_04_clipboard.js",
-      "sha": "5563a0656c76314858960f7127d1284557e31dec",
+      "sha": "fb73d2e957873daa9305ab7d9f26dd57a30f7038",
       "export": "Clipboard",
       "runtimeRole": "managed",
       "lifecycleIndex": 6
@@ -45,7 +45,7 @@
     {
       "name": "ch_06_repository.js",
       "path": "src/ch_06_repository.js",
-      "sha": "daa584a7fcb4e7cc520e1095cce92d7a33f66e82",
+      "sha": "f377d42a3695bd1ac2d8092cbba9e147ce6448cc",
       "export": "Repository",
       "runtimeRole": "managed",
       "lifecycleIndex": 3
@@ -69,7 +69,7 @@
     {
       "name": "ch_09_list.js",
       "path": "src/ch_09_list.js",
-      "sha": "af817f2660c303b6b83b16e2bf8cc07ee1f2f340",
+      "sha": "34231e21a78d00668794bd5a3ed785a8fe54f172",
       "export": "List",
       "runtimeRole": "managed",
       "lifecycleIndex": 8
@@ -85,7 +85,7 @@
     {
       "name": "ch_11_filter.js",
       "path": "src/ch_11_filter.js",
-      "sha": "1b3b3fb26d46095f3262c1dd952b3af503f88c55",
+      "sha": "0d686f9f5e55ebba9922e5737792c21510668669",
       "export": "Filter",
       "runtimeRole": "managed",
       "lifecycleIndex": 10
@@ -93,7 +93,7 @@
     {
       "name": "ch_12_translation.js",
       "path": "src/ch_12_translation.js",
-      "sha": "3b0ece3ecc33a1cfee5858bcc0a8878f7ad12fa3",
+      "sha": "1b64dfdbaf3b3048bd15821613b1600c12c971ce",
       "export": "Translation",
       "runtimeRole": "managed",
       "lifecycleIndex": 12
@@ -101,7 +101,7 @@
     {
       "name": "ch_13_settings.js",
       "path": "src/ch_13_settings.js",
-      "sha": "9c073e0a1a64a401f12cb42b64c1ac4456729c1a",
+      "sha": "381f175a5b4940ea1b64d39f4cb85bc406c68558",
       "export": "Settings",
       "runtimeRole": "managed",
       "lifecycleIndex": 11

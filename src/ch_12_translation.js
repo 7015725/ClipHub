@@ -2730,11 +2730,40 @@ return view;
         return getTranslationState();
     }
 
+    /* review_batch1_translation_fallback_v1: an unconfigured built-in
+       provider falls back to Google Translate when it is installed, so
+       translation works out of the box; the user's choice is untouched. */
+    function builtinProviderConfigured(config) {
+        if (config.provider === "baidu") {
+            return config.baiduAppId.length > 0 && config.baiduSecret.length > 0;
+        }
+        if (config.provider === "youdao") {
+            return config.youdaoAppKey.length > 0 && config.youdaoSecret.length > 0;
+        }
+        return true;
+    }
+
+    function showTranslationFallbackToast(config) {
+        try {
+            Packages.android.widget.Toast.makeText(appContext,
+                (config.provider === "youdao" ? "有道" : "百度") +
+                    "翻译未配置密钥，已改用 Google 翻译；可在设置页填写密钥",
+                Packages.android.widget.Toast.LENGTH_LONG).show();
+        } catch (ignoredToast) {}
+    }
+
     function openTranslationForItem(itemId) {
         var config;
         if (!initialized) { throw new Error("翻译模块尚未初始化"); }
         config = translationSettings();
         if (config.provider === "google") {
+            openGoogleTranslationForItem(itemId);
+            return getTranslationState();
+        }
+        if (!builtinProviderConfigured(config) && isGoogleTranslateInstalled()) {
+            translationState.unconfiguredFallbackCount =
+                Number(translationState.unconfiguredFallbackCount || 0) + 1;
+            showTranslationFallbackToast(config);
             openGoogleTranslationForItem(itemId);
             return getTranslationState();
         }
