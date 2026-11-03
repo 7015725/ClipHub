@@ -237,8 +237,13 @@ assert.strictEqual(typeof fallback.draw, 'function', 'bitmap failure falls back 
 console.log('PASS icon bitmap cache: one Rhino draw per icon variant, shared bitmaps, safe fallback');
 
 /* ---------- 5. staged fill also covers recycled cards ---------- */
-var stageCall = source.indexOf('(range.end - oldEnd) >= OVERLAP_STAGED_FILL_MIN_CARDS');
-assert(stageCall > 0, 'overlap staging must trigger on attached card count, not only on new builds');
+assert(source.indexOf('(range.end - oldEnd) >= overlapStagedMinCards(origin)') > 0 &&
+    source.indexOf('(oldStart - range.start) >= overlapStagedMinCards(origin)') > 0,
+    'overlap staging triggers on attached card count in both directions');
+var minCards = vm.createContext({ String: String, OVERLAP_STAGED_FILL_MIN_NEW_BUILDS: 8, OVERLAP_STAGED_FILL_MIN_CARDS: 4 });
+load('overlapStagedMinCards', minCards);
+assert.strictEqual(minCards.overlapStagedMinCards('result_scroll'), 8, 'small scroll shifts stay synchronous to avoid blank gaps');
+assert.strictEqual(minCards.overlapStagedMinCards('hydration_apply'), 4);
 var startFn = source.slice(source.indexOf('    function startOverlapStagedFill('),
     source.indexOf('\n    function ', source.indexOf('    function startOverlapStagedFill(') + 5));
 assert(startFn.indexOf('rebindResultCardHolder(') < 0, 'start must not rebind every recycled card in one frame');
@@ -299,6 +304,8 @@ console.log('PASS staged recycle fill: recycled rebinds are spread across frame 
     g.LinearLayout.LayoutParams.MATCH_PARENT = -1; g.LinearLayout.LayoutParams.WRAP_CONTENT = -2;
     g.cancelOverlapStagedFill = function () { throw new Error('unexpected cancel'); };
     g.scheduleVirtualUpdate = function () {};
+    g.overlapStagedBatchCardLimit = function () { return 3; };
+    g.runVirtualTaskSafely = function (tag, fn) { return fn(); };
     load('postOverlapStagedFillBatch', g);
     load('runOverlapStagedFillBatch', g);
     load('startOverlapStagedFill', g);
@@ -347,4 +354,75 @@ console.log('PASS staged recycle fill: recycled rebinds are spread across frame 
     assert.strictEqual(h.hintedPreviewRowIndex(hint, 301), 301, 'shifted rows fall back to a full scan');
     assert.strictEqual(scans, 1);
     console.log('PASS hydration index hint: O(1) lookup inside request window, safe fallback after shifts');
+}());
+
+/* ---------- 8. ajax append never runs concurrently with other staged fills ---------- */
+(function () {
+    var cancels = [];
+    var a = vm.createContext({
+        Number: Number, String: String, Math: Math,
+        mainHandler: {}, virtualCardHost: { getChildCount: function () { return 0; } },
+        state: { panelAttached: true }, activeSwipeCard: null,
+        keyedStagedState: { active: false }, initialStagedFillState: { active: false },
+        overlapStagedFillState: { active: false },
+        scrollPerformanceState: { stagedAttachFallbackCount: 0 },
+        virtualState: { firstVisibleIndex: 0, firstRenderedIndex: 0, lastRenderedIndex: -1 },
+        virtualTargetRange: function () { return { start: 0, end: 10, first: 0, last: 3 }; },
+        cancelOverlapStagedFill: function (reason) { cancels.push(reason); a.overlapStagedFillState.active = false; return true; },
+        virtualRenderedItemIds: [], virtualRenderedSignatures: [], resultCardViews: [], resultCardHolders: [], resultActionViews: []
+    });
+    load('startStagedAjaxAttach', a);
+    a.keyedStagedState.active = true;
+    assert.strictEqual(a.startStagedAjaxAttach(1, [], {}), false, 'keyed staged fill blocks ajax staged attach');
+    a.keyedStagedState.active = false; a.initialStagedFillState.active = true;
+    assert.strictEqual(a.startStagedAjaxAttach(1, [], {}), false, 'initial staged fill blocks ajax staged attach');
+    a.initialStagedFillState.active = false; a.overlapStagedFillState.active = true;
+    a.startStagedAjaxAttach(1, [], {});
+    assert.deepStrictEqual(cancels, ['ajax_append_preempt'], 'overlap fill is cancelled before ajax attach mutates the host');
+    console.log('PASS staged mutex: ajax append preempts overlap fill and yields to keyed/initial fills');
+}());
+
+/* ---------- 9. posted list tasks can never throw into the system main looper ---------- */
+(function () {
+    var calls = [];
+    var r = vm.createContext({
+        Number: Number, String: String,
+        System: { currentTimeMillis: function () { return 10000; } },
+        scrollPerformanceState: {}, virtualState: {},
+        virtualCardHost: { removeAllViews: function () { calls.push('clear'); } },
+        virtualRenderedItemIds: [1], virtualRenderedSignatures: ['x'], resultCardViews: [{}],
+        resultCardHolders: [{}], resultActionViews: [{}], activeSwipeCard: {},
+        cancelOverlapStagedFill: function () { calls.push('overlap'); throw new Error('nested'); },
+        cancelKeyedStagedReconcile: function () { calls.push('keyed'); },
+        cancelInitialStagedFill: function () { calls.push('initial'); },
+        cancelStagedAjaxAttach: function () { calls.push('ajax'); },
+        scheduleVirtualUpdate: function (o, f) { calls.push(o + ':' + f); }
+    });
+    var start = source.indexOf('    var virtualTaskRecoverAt = 0;');
+    var end = source.indexOf('    /* scroll_hysteresis_v1: cheap per-frame check');
+    vm.runInContext(source.slice(start, end), r);
+    var result = r.runVirtualTaskSafely('t', function () { throw new Error('IndexOutOfBounds'); });
+    assert.strictEqual(result, false);
+    assert.strictEqual(r.scrollPerformanceState.taskErrorCount, 1);
+    assert(/IndexOutOfBounds/.test(r.scrollPerformanceState.lastTaskError));
+    assert.deepStrictEqual(calls, ['overlap', 'keyed', 'initial', 'ajax', 'clear', 'virtual_error_recover:true']);
+    assert.strictEqual(r.virtualRenderedItemIds.length, 0); assert.strictEqual(r.resultCardHolders.length, 0);
+    assert.strictEqual(r.virtualState.lastRenderedIndex, -1); assert.strictEqual(r.activeSwipeCard, null);
+    r.runVirtualTaskSafely('t', function () { throw new Error('again'); });
+    assert.strictEqual(calls.filter(function (c) { return c === 'virtual_error_recover:true'; }).length, 1,
+        'recovery rebuild is rate limited');
+    assert.strictEqual(r.runVirtualTaskSafely('ok', function () { return 7; }), 7);
+    ['ensureHydrationWorker', 'postKeyedStagedBatch', 'finishKeyedStagedReconcile', 'postOverlapStagedFillBatch',
+        'finishOverlapStagedFill', 'postInitialStagedFillBatch', 'rebuildVirtualWindow', 'scheduleVirtualUpdate',
+        'postStagedAjaxAttachBatch', 'finishAjaxAppendRender', 'renderAjaxAppendBatch', 'finishResultRender',
+        'renderResultBatch'].forEach(function (fn) {
+        var s0 = source.indexOf('    function ' + fn + '(');
+        var seg = source.slice(s0, source.indexOf('\n    function ', s0 + 5));
+        var runnables = seg.split('new Packages.java.lang.Runnable(').length - 1;
+        var guarded = seg.split('run: function () { runVirtualTaskSafely(').length - 1;
+        assert(runnables > 0 && runnables === guarded, fn + ' runnables guarded ' + guarded + '/' + runnables);
+    });
+    assert(/onScrollChange: function \(view,[^{]*\{ runVirtualTaskSafely\("onScrollChange"/.test(source),
+        'scroll listener is guarded');
+    console.log('PASS task guard: list runnables and scroll listener contain exceptions, cancel staged work and rebuild once');
 }());
