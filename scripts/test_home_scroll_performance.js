@@ -426,3 +426,53 @@ console.log('PASS staged recycle fill: recycled rebinds are spread across frame 
         'scroll listener is guarded');
     console.log('PASS task guard: list runnables and scroll listener contain exceptions, cancel staged work and rebuild once');
 }());
+
+/* ---------- 10. keyed / ajax paths rebind pooled holders before building ---------- */
+(function () {
+    var built = 0, rebinds = [];
+    function Host() { this.children = []; }
+    Host.prototype.addView = function (v, i) { this.children.splice(i, 0, v); };
+    var k = vm.createContext({
+        Number: Number, String: String,
+        SELECTION_ENABLED: false, selectedItemId: null,
+        virtualCardHost: new Host(), virtualRenderedItemIds: [], virtualRenderedSignatures: [],
+        resultCardViews: [], resultCardHolders: [], resultActionViews: [],
+        scrollPerformanceState: { holderRecycleKeyHitCount: 0, holderRecycleKeyMissCount: 0,
+            holderRecycleDiscardCount: 0, holderRecycleReuseCount: 0, createdViewCount: 0, structuralInsertCount: 0,
+            holderRecyclePoolScanCount: 0 },
+        LinearLayout: { LayoutParams: function () {} }, dp: function (n) { return n; },
+        rebindResultCardHolder: function (h, row) { rebinds.push(row.id); h.row = row; return row.id !== 99; },
+        cardHolderActionRefs: function () { return {}; }
+    });
+    ['signatureBuildTail', 'takeReboundHolder', 'insertRecycledVirtualEntryAt', 'takeCompatibleRecycleHolder',
+        'resultCardRecycleKeyForRow', 'resultCardRecycleKeyForHolder'].forEach(function (n) { load(n, k); });
+    var sigA = ['{"id":1}', '[]', '0', '1', 'card', 'muted', 'stroke', 't1', 't2', 'soft', 'strong', 390, 600].join('\u001f');
+    var sigB = ['{"id":2,"content":"x"}', '[{"name":"a"}]', '0', '1', 'card', 'muted', 'stroke', 't1', 't2', 'soft', 'strong', 390, 600].join('\u001f');
+    var sigDark = ['{"id":2}', '[]', '0', '1', 'DARK', 'muted', 'stroke', 't1', 't2', 'soft', 'strong', 390, 600].join('\u001f');
+    assert.strictEqual(k.signatureBuildTail(sigA), k.signatureBuildTail(sigB), 'row/tag changes keep the build tail');
+    assert.notStrictEqual(k.signatureBuildTail(sigA), k.signatureBuildTail(sigDark), 'theme change invalidates pooled holders');
+    var pool = [{ row: { id: 5 }, wrapper: { w: 5 }, card: {}, selected: false }];
+    assert.strictEqual(k.insertRecycledVirtualEntryAt(0, { id: 7 }, {}, sigB, pool), true);
+    assert.strictEqual(k.virtualCardHost.children[0].w, 5, 'pooled wrapper re-attached');
+    assert.deepStrictEqual(Array.from(k.virtualRenderedItemIds), [7]);
+    assert.strictEqual(k.virtualRenderedSignatures[0], sigB);
+    assert.strictEqual(k.resultCardHolders.length, 1); assert.strictEqual(pool.length, 0);
+    assert.strictEqual(k.insertRecycledVirtualEntryAt(0, { id: 8 }, {}, sigB, pool), false, 'empty pool falls back to build');
+    pool.push({ row: { id: 6 }, wrapper: {}, card: {}, selected: false });
+    assert.strictEqual(k.insertRecycledVirtualEntryAt(0, { id: 99 }, {}, sigB, pool), false, 'failed rebind falls back to build');
+    assert.strictEqual(k.scrollPerformanceState.holderRecycleDiscardCount, 1);
+    /* source contracts for the two hot builders */
+    function fnSource(name) {
+        var a = source.indexOf('    function ' + name + '(');
+        return source.slice(a, source.indexOf('\n    function ', a + 5));
+    }
+    var batch = fnSource('runStagedAjaxAttachBatch');
+    assert(batch.indexOf('takeReboundHolder(ajaxStagedRecyclePool') > 0 &&
+        batch.indexOf('takeReboundHolder(') < batch.indexOf('makeResultCard('), 'ajax batches try the pool before building');
+    assert(fnSource('startStagedAjaxAttach').indexOf('ajaxStagedRecycleRelease(resultCardHolders.shift())') > 0,
+        'cards removed at ajax start feed the pool');
+    var keyed = fnSource('keyedReconcileVirtualWindow');
+    assert(keyed.indexOf('keyedPool.push(') > 0 && keyed.indexOf('insertRecycledVirtualEntryAt(') > 0,
+        'keyed reconcile recycles removed holders');
+    console.log('PASS card recycle v2: keyed reconcile and ajax batches rebind pooled holders, theme changes still rebuild');
+}());
