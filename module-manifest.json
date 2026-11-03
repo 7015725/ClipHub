@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "moduleSetVersion": "20261103.01-beta",
+  "moduleSetVersion": "20261103.02-beta",
   "entryMinVersion": 8,
   "sourceRef": "beta-home-scroll-perf-20261103",
   "modules": [
