@@ -220,8 +220,10 @@ function FakeDate(t) { this.t = t; }
         mainHandler: { postDelayed: function (r, ms) { posted.push(r.run); assert.strictEqual(ms, 4000); return true; } },
         Packages: { java: { lang: { Runnable: function (o) { this.run = o.run; } } } },
         setMany: function (d) { saved.push(JSON.parse(JSON.stringify(d))); r.lastCleanup = { totalDeleted: 7 }; },
-        showSettingsToast: function (m) { toasts.push(m); }, updateRetentionButtons: function () {} });
-    ['nextOption', 'retentionValue', 'commitRetentionDraft', 'stageRetentionChange', 'flushRetentionDraft'].forEach(function (n) { loadFrom(settingsSrc, n, r); });
+        showSettingsToast: function (m) { toasts.push(m); }, updateRetentionButtons: function () {},
+        retentionNoteView: null, retentionNoteDefault: '', retentionNoticeColors: null, inlineNoticeToken: 0,
+        View: { VISIBLE: 0 }, ClipHub: { Theme: { applyTextColor: function () {} } } });
+    ['nextOption', 'retentionValue', 'commitRetentionDraft', 'stageRetentionChange', 'flushRetentionDraft', 'showInlineNotice'].forEach(function (n) { loadFrom(settingsSrc, n, r); });
     r.stageRetentionChange('historyLimit', r.nextOption(r.HISTORY_LIMIT_OPTIONS, r.retentionValue('historyLimit')), {});
     r.stageRetentionChange('historyLimit', r.nextOption(r.HISTORY_LIMIT_OPTIONS, r.retentionValue('historyLimit')), {});
     assert.strictEqual(r.retentionValue('historyLimit'), 2000, 'label follows the draft');
@@ -242,6 +244,18 @@ function FakeDate(t) { this.t = t; }
     r.stageRetentionChange('historyLimit', 500, {});
     posted[3]();
     assert(/保留设置保存失败/.test(toasts[toasts.length - 1]), 'commit failure is reported, not swallowed');
+    /* with the page open, feedback is shown in place (toasts sit below the overlay) */
+    var note = { text: '默认说明', setText: function (t) { this.text = t; }, setVisibility: function () {} };
+    r.retentionNoteView = note; r.retentionNoteDefault = '默认说明';
+    r.setMany = function (d) { saved.push(d); r.lastCleanup = { totalDeleted: 0 }; };
+    var toastCount = toasts.length;
+    r.stageRetentionChange('historyLimit', 5000, {});
+    posted[posted.length - 1]();
+    assert.strictEqual(note.text, '已保存保留设置', 'notice shown inside the settings page');
+    assert.strictEqual(toasts.length, toastCount, 'no hidden toast when the page is open');
+    posted[posted.length - 1]();
+    assert.strictEqual(note.text, '默认说明', 'notice restores the default text');
+    assert(/showInlineNotice\(themeNoticeView,/.test(settingsSrc), 'theme change notice is in place too');
     console.log('PASS settings: click action, theme, history limit and retention options wired');
 }());
 

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "moduleSetVersion": "20261103.12-beta",
+  "moduleSetVersion": "20261103.13-beta",
   "entryMinVersion": 8,
   "sourceRef": "beta-review-batch12-20261103",
   "modules": [
@@ -101,7 +101,7 @@
     {
       "name": "ch_13_settings.js",
       "path": "src/ch_13_settings.js",
-      "sha": "26443d566f1440cd4673242b0cd7455731ed5d17",
+      "sha": "1dd8e825ca50982ee128059bb39f07a04b1a8630",
       "export": "Settings",
       "runtimeRole": "managed",
       "lifecycleIndex": 11
