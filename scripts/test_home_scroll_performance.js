@@ -1,0 +1,234 @@
+var fs = require('fs'), vm = require('vm'), assert = require('assert'), zlib = require('zlib');
+var path = process.argv[2];
+var source = fs.readFileSync(path || 'src/ch_11_filter.js', 'utf8');
+if (!path) {
+    var assignment = source.match(/var PACKED_B64\s*=([\s\S]*?);/)[1];
+    source = zlib.gunzipSync(Buffer.from(vm.runInNewContext(assignment), 'base64')).toString('utf8');
+}
+function load(name, context) {
+    var start = source.indexOf('    function ' + name + '(');
+    assert(start >= 0, 'Missing real Filter function: ' + name);
+    var end = source.indexOf('\n    function ', start + 5);
+    vm.runInContext(source.slice(start, end), context);
+}
+function constant(name) {
+    var match = source.match(new RegExp('var ' + name + ' = ([0-9.]+);'));
+    assert(match, 'Missing constant ' + name);
+    return Number(match[1]);
+}
+
+/* ---------- 1. scroll hysteresis fast path ---------- */
+function Child(top, height) { this.top = top; this.height = height; }
+Child.prototype.getBottom = function () { return this.top + this.height; };
+function Host(n, h) {
+    this.children = [];
+    for (var i = 0; i < n; i += 1) { this.children.push(new Child(i * h, h)); }
+}
+Host.prototype.getChildCount = function () { return this.children.length; };
+Host.prototype.getChildAt = function (i) { this.reads = (this.reads || 0) + 1; return this.children[i]; };
+Host.prototype.getHeight = function () { return this.children.length ? this.children[this.children.length - 1].getBottom() : 0; };
+
+var CARD = 100, VIEWPORT = 500, ROWS = 400;
+var c = vm.createContext({
+    Math: Math, Number: Number, String: String,
+    VIRTUAL_REBUILD_MIN_BEFORE_SCREENS: constant('VIRTUAL_REBUILD_MIN_BEFORE_SCREENS'),
+    VIRTUAL_REBUILD_MIN_AFTER_SCREENS: constant('VIRTUAL_REBUILD_MIN_AFTER_SCREENS'),
+    virtualCardHost: null, resultScrollView: {}, state: { panelAttached: true },
+    previewRows: [], ajaxStagedAttachState: { active: false }, overlapStagedFillState: { active: false },
+    keyedStagedState: { active: false }, initialStagedFillState: { active: false },
+    activeSwipeCard: null, mutationAnchorLocked: false, virtualRenderedItemIds: [],
+    virtualState: { firstRenderedIndex: 0, lastRenderedIndex: -1, firstVisibleIndex: 0, lastVisibleIndex: -1,
+        topSpacerPx: 0, scrollToTopPending: false, updateDeferred: false, lastOrigin: '', lastError: null },
+    scrollY: 0
+});
+for (var r = 0; r < ROWS; r += 1) { c.previewRows.push({ id: r + 1 }); }
+c.currentResultScrollY = function () { return c.scrollY; };
+c.virtualViewportHeightPx = function () { return VIEWPORT; };
+c.updateVirtualVisibleCount = function () { return Math.ceil(VIEWPORT / CARD); };
+load('virtualScrollFastPath', c);
+
+function renderWindow(first, last) {
+    c.virtualState.firstRenderedIndex = first;
+    c.virtualState.lastRenderedIndex = last;
+    c.virtualState.topSpacerPx = first * CARD;
+    c.virtualCardHost = new Host(last - first + 1, CARD);
+    c.virtualRenderedItemIds = [];
+    for (var i = first; i <= last; i += 1) { c.virtualRenderedItemIds.push(i + 1); }
+}
+/* window centred at row 50: 3 screens (15 rows) before, 5 screens (25 rows) after */
+renderWindow(35, 79);
+c.scrollY = 50 * CARD;
+assert.strictEqual(c.virtualScrollFastPath(), true, 'fresh window must not rebuild');
+assert.strictEqual(c.virtualState.firstVisibleIndex, 50, 'binary search finds first visible row');
+assert.strictEqual(c.virtualState.lastVisibleIndex, 54);
+assert(c.virtualCardHost.reads <= 8, 'fast path must be O(log n) child reads, got ' + c.virtualCardHost.reads);
+c.scrollY = 50 * CARD + 37;
+assert.strictEqual(c.virtualScrollFastPath(), true);
+assert.strictEqual(c.virtualState.firstVisibleIndex, 50, 'partially scrolled row stays first visible');
+/* scroll down until less than 3 screens remain below the viewport */
+var fastFrames = 0, y;
+for (y = 50 * CARD; y < 80 * CARD; y += 16) {
+    c.scrollY = y;
+    if (!c.virtualScrollFastPath()) { break; }
+    fastFrames += 1;
+}
+var remainingAfter = 80 * CARD - (y + VIEWPORT);
+assert(remainingAfter < VIEWPORT * 3 && remainingAfter >= VIEWPORT * 3 - 16,
+    'rebuild requested only when after-buffer drops below 3 screens, remaining=' + remainingAfter);
+assert(fastFrames > 50, 'most scroll frames must take the fast path, got ' + fastFrames);
+/* scroll up: rebuild once fewer than 1.5 screens remain above */
+c.scrollY = 35 * CARD + VIEWPORT * 1.5;
+assert.strictEqual(c.virtualScrollFastPath(), true);
+c.scrollY = 35 * CARD + VIEWPORT * 1.5 - 1;
+assert.strictEqual(c.virtualScrollFastPath(), false, 'before-buffer exhausted triggers rebuild');
+/* window touching data start/end never asks for a rebuild on that side */
+renderWindow(0, 39);
+c.scrollY = 0;
+assert.strictEqual(c.virtualScrollFastPath(), true);
+assert.strictEqual(c.virtualState.firstVisibleIndex, 0);
+renderWindow(ROWS - 30, ROWS - 1);
+c.scrollY = ROWS * CARD - VIEWPORT;
+assert.strictEqual(c.virtualScrollFastPath(), true, 'end of data has no after-buffer requirement');
+/* any in-flight staged work or mutation falls back to the full path */
+renderWindow(35, 79); c.scrollY = 50 * CARD;
+['ajaxStagedAttachState', 'overlapStagedFillState', 'keyedStagedState', 'initialStagedFillState'].forEach(function (k) {
+    c[k].active = true;
+    assert.strictEqual(c.virtualScrollFastPath(), false, k + ' must disable the fast path');
+    c[k].active = false;
+});
+c.activeSwipeCard = {}; assert.strictEqual(c.virtualScrollFastPath(), false); c.activeSwipeCard = null;
+c.mutationAnchorLocked = true; assert.strictEqual(c.virtualScrollFastPath(), false); c.mutationAnchorLocked = false;
+c.virtualState.updateDeferred = true; assert.strictEqual(c.virtualScrollFastPath(), false); c.virtualState.updateDeferred = false;
+c.virtualRenderedItemIds.pop(); assert.strictEqual(c.virtualScrollFastPath(), false, 'bookkeeping mismatch falls back');
+console.log('PASS scroll hysteresis: O(log n) visible lookup, rebuild only at 1.5/3 screen buffers, edge and staged-state fallbacks');
+
+/* ---------- 2. universal holder rebind ---------- */
+function V() { this.children = []; this.text = ''; this.removed = []; }
+V.prototype.setText = function (t) { this.text = String(t); };
+V.prototype.addView = function (v) { this.children.push(v); };
+V.prototype.removeView = function (v) { this.children = this.children.filter(function (x) { return x !== v; }); };
+V.prototype.removeAllViews = function () { this.children = []; };
+V.prototype.getChildCount = function () { return this.children.length; };
+V.prototype.setTypeface = function (f, style) { this.typeface = style; };
+V.prototype.setBackground = function (b) { this.background = b; };
+V.prototype.setImageDrawable = function (d) { this.drawable = d; };
+var tagMap = { '2': [{ name: 'work' }] };
+var iconLookups = [];
+var d = vm.createContext({
+    Number: Number, String: String, Math: Math, Error: Error,
+    SELECTION_ENABLED: false, selectedItemId: null, state: { pinnedBadgeCount: 0 },
+    scrollPerformanceState: { holderRebindAttemptCount: 0, holderRebindEligibleCount: 0, holderRebindCount: 0,
+        holderRebindIconSwapCount: 0, holderRebindPinSwapCount: 0, holderRebindTagSwapCount: 0,
+        holderRebindMaxMs: 0, holderRebindRejectReasons: {}, holderRebindFailureStages: {} },
+    virtualState: {}, System: { currentTimeMillis: function () { return 0; } },
+    Packages: { android: { graphics: { Typeface: { DEFAULT: 'D', BOLD: 1, NORMAL: 0 } } } },
+    LinearLayout: { LayoutParams: function () {} },
+    ClipHub: { Theme: { applyTextColor: function () { return true; } } },
+    tagsForResult: function (row) { return tagMap[String(row.id)] || []; },
+    tagSummary: function (tags) { return tags.map(function (t) { return t.name; }).join(','); },
+    tagColorText: function () { return '#FF000000'; },
+    resultPreviewText: function (row) { return 'row' + row.id; },
+    sourceLabel: function (row) { return row.source_package; }, formatTime: function () { return '00:00'; },
+    roundedBackground: function (fill) { return { fill: fill }; },
+    makePinnedBadge: function () { return new V(); },
+    syncHomeMultiHolder: function () {},
+    sourceIconDrawable: function (pkg) { iconLookups.push(pkg); return { pkg: pkg }; },
+    fillSourceIcon: function (container) { container.removeAllViews(); var img = new V(); container.addView(img); d.lastFilledSourceImage = img; },
+    lastFilledSourceImage: null
+});
+d.noteCardHolderRebindReason = function (map, reason) { map[reason] = (map[reason] || 0) + 1; return reason; };
+['rebindPinnedState', 'rebindSourceIcon', 'rebindResultCardHolder', 'resultCardRecycleKeyForRow', 'resultCardRecycleKeyForHolder'].forEach(function (n) { load(n, d); });
+var colors = { accentSoft: 'soft', surfaceMuted: 'muted', textTertiary: 't3', accentStrong: 'strong' };
+var holder = { row: { id: 1, source_package: 'a.app', is_pinned: 0 }, itemId: 1, contentView: new V(), tagBadge: new V(),
+    sourceView: new V(), iconView: new V(), iconImage: null, contentRow: new V(), pinBadge: null, pinAction: new V(),
+    metrics: { actionRadiusDp: 6, pinBadgeSizePx: 10, pinBadgeGapPx: 2 }, selected: false, pinned: false,
+    sourcePackage: 'a.app', hasTags: false };
+holder.contentRow.addView(holder.contentView);
+var next = { id: 2, source_package: 'b.app', is_pinned: 1 };
+assert.strictEqual(d.resultCardRecycleKeyForRow(next), d.resultCardRecycleKeyForHolder(holder),
+    'package, pin and tag presence no longer split the recycle pool');
+assert.strictEqual(d.rebindResultCardHolder(holder, next, colors), true, 'cross-package/pinned/tagged rebind succeeds');
+assert.strictEqual(holder.contentView.text, 'row2');
+assert.strictEqual(holder.iconView.children.length, 1, 'icon container rebuilt for new package');
+assert.strictEqual(holder.pinBadge !== null && holder.contentRow.children.indexOf(holder.pinBadge) >= 0, true, 'pin badge added');
+assert.strictEqual(holder.pinAction.text, '取消置顶');
+assert.strictEqual(holder.tagBadge.typeface, 1); assert.strictEqual(holder.tagBadge.background.fill, 'soft');
+assert.strictEqual(holder.hasTags, true); assert.strictEqual(holder.pinned, true); assert.strictEqual(holder.sourcePackage, 'b.app');
+/* rebind back: tag map entry of the old row was dehydrated, holder state must still drive the style */
+delete tagMap['2'];
+var image = holder.iconImage;
+assert.strictEqual(d.rebindResultCardHolder(holder, { id: 3, source_package: 'c.app', is_pinned: 0 }, colors), true);
+assert.strictEqual(holder.iconImage, image, 'second package swap reuses the ImageView');
+assert.strictEqual(image.drawable.pkg, 'c.app');
+assert.strictEqual(holder.pinBadge, null); assert.strictEqual(holder.contentRow.children.length, 1, 'pin badge removed');
+assert.strictEqual(holder.pinAction.text, '置顶');
+assert.strictEqual(holder.tagBadge.typeface, 0, 'tag style reset even though old row tags were dehydrated');
+assert.strictEqual(holder.tagBadge.background.fill, 'muted');
+/* same package: no icon work at all */
+iconLookups.length = 0;
+assert.strictEqual(d.rebindResultCardHolder(holder, { id: 4, source_package: 'c.app', is_pinned: 0 }, colors), true);
+assert.strictEqual(iconLookups.length, 0);
+/* selection change still refuses reuse */
+d.SELECTION_ENABLED = true; d.selectedItemId = 5;
+assert.strictEqual(d.rebindResultCardHolder(holder, { id: 5, source_package: 'c.app', is_pinned: 0 }, colors), false);
+console.log('PASS universal holder rebind: icon/pin/tag swaps in place, dehydrated-tag safety, selection still rebuilds');
+
+/* ---------- 3. multi-select holder sync dedupe ---------- */
+var bgBuilds = 0;
+function SV() { this.text = ''; }
+['setVisibility', 'setEnabled', 'setLongClickable', 'setContentDescription'].forEach(function (k) {
+    SV.prototype[k] = function (v) { this['_' + k] = v; };
+});
+SV.prototype.setText = function (t) { this.text = t; };
+SV.prototype.setBackground = function (b) { this.background = b; };
+SV.prototype.getChildAt = function () { return new SV(); };
+var e = vm.createContext({
+    Number: Number, String: String,
+    homeMulti: { active: false, ids: [], busy: false, confirmation: null },
+    View: { VISIBLE: 0, GONE: 8 }, scrollPerformanceState: {},
+    palette: function () { return { accentStrong: 'as', card: 'c', accentBorder: 'ab', accentSoft: 'sf', stroke: 'st' }; },
+    circleBackground: function (f) { bgBuilds += 1; return { fill: f }; },
+    roundedBackground: function (f) { bgBuilds += 1; return { fill: f }; },
+    ClipHub: { Theme: { applyTextColor: function () {} } }
+});
+load('syncHomeMultiHolder', e);
+var h = { itemId: 7, multiCheck: new SV(), actionGrid: new SV(), card: new SV(), editButton: new SV(),
+    translateButton: new SV(), copyButton: new SV(), deleteButton: new SV(), selected: false };
+e.syncHomeMultiHolder(h); assert.strictEqual(bgBuilds, 2);
+h.itemId = 8; e.syncHomeMultiHolder(h);
+assert.strictEqual(bgBuilds, 2, 'unchanged visual state must not rebuild drawables');
+assert.strictEqual(h.multiCheck._setContentDescription, '选择记录 8', 'item specific description still updated');
+e.homeMulti.active = true; e.homeMulti.ids = [8]; e.syncHomeMultiHolder(h);
+assert.strictEqual(bgBuilds, 4); assert.strictEqual(h.multiCheck.text, '✓'); assert.strictEqual(h.card.background.fill, 'sf');
+e.homeMulti.busy = true; e.syncHomeMultiHolder(h);
+assert.strictEqual(h.editButton._setEnabled, false, 'busy state change re-applies enabled flags');
+console.log('PASS multi-select holder sync: skips identical visual state, re-applies on selection/busy/theme change');
+
+/* ---------- 4. vector icons rasterised once ---------- */
+var draws = 0;
+function Bmp(w, hgt) { this.w = w; this.h = hgt; }
+Bmp.prototype.setDensity = function (dd) { this.density = dd; };
+var f = vm.createContext({
+    Math: Math, Number: Number, String: String, Object: Object,
+    vectorIconBitmapCache: {}, scrollPerformanceState: { iconBitmapCacheHitCount: 0, iconBitmapCacheMissCount: 0 },
+    appContext: { getResources: function () { return { getDisplayMetrics: function () { return { densityDpi: 480 }; } }; } },
+    makeVectorIconDrawable: function () {
+        return { setBounds: function () {}, draw: function () { draws += 1; } };
+    },
+    Packages: { android: { graphics: {
+        Bitmap: { createBitmap: function (w, hgt) { return new Bmp(w, hgt); }, Config: { ARGB_8888: 1 } },
+        Canvas: function (b) { this.bitmap = b; },
+        drawable: { BitmapDrawable: function (res, b) { this.bitmap = b; this.setFilterBitmap = function () {}; } }
+    } } }
+});
+load('makeCachedVectorIconDrawable', f);
+var i1 = f.makeCachedVectorIconDrawable('copy', '#FF000000', 24, 2);
+var i2 = f.makeCachedVectorIconDrawable('copy', '#FF000000', 24, 2);
+var i3 = f.makeCachedVectorIconDrawable('copy', '#FFFFFFFF', 24, 2);
+assert.strictEqual(draws, 2, 'Rhino draw runs once per kind/color/size');
+assert.strictEqual(i1.bitmap, i2.bitmap); assert.notStrictEqual(i1.bitmap, i3.bitmap);
+assert.strictEqual(i1.bitmap.w, 24); assert.strictEqual(i1.bitmap.density, 480);
+f.Packages.android.graphics.Bitmap.createBitmap = function () { throw new Error('oom'); };
+var fallback = f.makeCachedVectorIconDrawable('edit', '#FF000000', 24, 2);
+assert.strictEqual(typeof fallback.draw, 'function', 'bitmap failure falls back to the vector drawable');
+console.log('PASS icon bitmap cache: one Rhino draw per icon variant, shared bitmaps, safe fallback');
