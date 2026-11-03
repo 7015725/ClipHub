@@ -532,6 +532,10 @@
                 ClipHub.Filter, "getHydrationWorkerState", null),
             scrollPerformance: safeState(
                 ClipHub.Filter, "getScrollPerformanceState", null),
+            reviewDiagnostics: {
+                filter: safeState(ClipHub.Filter, "getReviewDiagnostics", null),
+                settings: safeState(ClipHub.Settings, "getReviewDiagnostics", null)
+            },
             uiShell: uiShell,
             runtimeDiagnostics: runtimeDiagnostics,
             editorState: editor,

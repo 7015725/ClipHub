@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "moduleSetVersion": "20261103.11-beta",
+  "moduleSetVersion": "20261103.12-beta",
   "entryMinVersion": 8,
   "sourceRef": "beta-review-batch12-20261103",
   "modules": [
@@ -85,7 +85,7 @@
     {
       "name": "ch_11_filter.js",
       "path": "src/ch_11_filter.js",
-      "sha": "0d686f9f5e55ebba9922e5737792c21510668669",
+      "sha": "cccf8d362cca038b67d2b802dd1d1c25b23b386b",
       "export": "Filter",
       "runtimeRole": "managed",
       "lifecycleIndex": 10
@@ -101,7 +101,7 @@
     {
       "name": "ch_13_settings.js",
       "path": "src/ch_13_settings.js",
-      "sha": "381f175a5b4940ea1b64d39f4cb85bc406c68558",
+      "sha": "26443d566f1440cd4673242b0cd7455731ed5d17",
       "export": "Settings",
       "runtimeRole": "managed",
       "lifecycleIndex": 11
@@ -117,7 +117,7 @@
     {
       "name": "ch_15_app.js",
       "path": "src/ch_15_app.js",
-      "sha": "e0e72a1ac1c980e0f2a6525933350c189b004a76",
+      "sha": "135918ae0251563428a4ca176dbf5397cabc0ece",
       "export": "App",
       "runtimeRole": "app"
     },

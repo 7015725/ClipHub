@@ -94,12 +94,30 @@ function FakeDate(t) { this.t = t; }
     assert.strictEqual(toasts[2], '未找到可输入的文本框', 'copy failure keeps the original message');
     c.finishInputDispatch(true, null, 1, 'z');
     assert.strictEqual(toasts[3], '已输入');
+    /* card click pre-copies: success says so, failure does not copy twice */
+    c.ClipHub.Clipboard.writeText = function (t, o) { writes.push([t, o.sensitive]); return { ok: true }; };
+    writes.length = 0;
+    c.inputPreCopied = true;
+    c.finishInputDispatch(true, null, 1, 'p');
+    assert.strictEqual(toasts[4], '已输入，并已复制到剪贴板');
+    assert.strictEqual(c.inputPreCopied, false, 'pre-copy flag is consumed');
+    c.inputPreCopied = true;
+    c.finishInputDispatch(false, 'No Input context', 1, 'q');
+    assert.strictEqual(toasts[5], '未找到输入框，已复制到剪贴板');
+    assert.strictEqual(writes.length, 0, 'already copied text is not written again');
+    var described = c.describeActionResult({ toString: function () { return 'Result'; },
+        contextData: { keySet: function () { return '[inputTextResult]'; } } });
+    assert.strictEqual(described.text, 'Result'); assert.strictEqual(described.contextKeys, '[inputTextResult]');
+    var ir = filterSrc.slice(filterSrc.indexOf('function inputResultRow(row, origin) {'),
+        filterSrc.indexOf('\n    function copyResultRow'));
+    assert(ir.indexOf('copyInputFallback(text)') > 0 && ir.indexOf('copyInputFallback(text)') < ir.indexOf('inputTextToFocusedTargetOnMain('),
+        'card click copies before dispatching input');
     var fn = filterSrc.slice(filterSrc.indexOf('    function scheduleInputAttempt('),
         filterSrc.indexOf('\n    function ', filterSrc.indexOf('    function scheduleInputAttempt(') + 5));
     assert.strictEqual((fn.match(/finishInputDispatch\(false,[\s\S]*?attempt, text\)/g) || []).length, 3,
         'every failure path in scheduleInputAttempt passes the text');
     assert(/sensitive: Number\(full\.is_sensitive \|\| 0\) === 1,/.test(filterSrc), 'card input passes sensitivity');
-    console.log('PASS input fallback: copies full text (with sensitivity) when no input field, keeps old message on copy failure');
+    console.log('PASS input fallback: card click copies first, honest toasts, no double copy, action result recorded');
 }());
 
 /* ---------- 3. empty state distinguishes no data vs. no match ---------- */
@@ -199,10 +217,11 @@ function FakeDate(t) { this.t = t; }
     var r = vm.createContext({ Number: Number, String: String, values: { historyLimit: 0, autoCleanupDays: 0 },
         uiState: {}, lastCleanup: null, retentionDraft: null, retentionCommitToken: 0,
         RETENTION_COMMIT_DELAY_MS: 4000, HISTORY_LIMIT_OPTIONS: [0, 500, 2000, 5000],
-        postSettingsDelayed: function (cb, ms, attached) { posted.push(cb); assert.strictEqual(ms, 4000); return true; },
+        mainHandler: { postDelayed: function (r, ms) { posted.push(r.run); assert.strictEqual(ms, 4000); return true; } },
+        Packages: { java: { lang: { Runnable: function (o) { this.run = o.run; } } } },
         setMany: function (d) { saved.push(JSON.parse(JSON.stringify(d))); r.lastCleanup = { totalDeleted: 7 }; },
         showSettingsToast: function (m) { toasts.push(m); }, updateRetentionButtons: function () {} });
-    ['nextOption', 'retentionValue', 'commitRetentionDraft', 'stageRetentionChange'].forEach(function (n) { loadFrom(settingsSrc, n, r); });
+    ['nextOption', 'retentionValue', 'commitRetentionDraft', 'stageRetentionChange', 'flushRetentionDraft'].forEach(function (n) { loadFrom(settingsSrc, n, r); });
     r.stageRetentionChange('historyLimit', r.nextOption(r.HISTORY_LIMIT_OPTIONS, r.retentionValue('historyLimit')), {});
     r.stageRetentionChange('historyLimit', r.nextOption(r.HISTORY_LIMIT_OPTIONS, r.retentionValue('historyLimit')), {});
     assert.strictEqual(r.retentionValue('historyLimit'), 2000, 'label follows the draft');
@@ -212,6 +231,17 @@ function FakeDate(t) { this.t = t; }
     posted[1]();
     assert.deepStrictEqual(saved, [{ historyLimit: 2000 }], 'only the settled value is saved');
     assert.strictEqual(toasts[0], '已保存，并按新设置清理 7 条记录');
+    /* leaving the page commits the pending draft instead of dropping it */
+    r.stageRetentionChange('autoCleanupDays', 30, {});
+    assert.strictEqual(r.flushRetentionDraft(), true);
+    assert.deepStrictEqual(saved[1], { autoCleanupDays: 30 });
+    posted[2]();
+    assert.strictEqual(saved.length, 2, 'timer after flush is a no-op');
+    assert(/function closePage\(reason\) \{\s*flushRetentionDraft\(\);/.test(settingsSrc), 'closePage flushes the draft');
+    r.setMany = function () { throw new Error('db locked'); };
+    r.stageRetentionChange('historyLimit', 500, {});
+    posted[3]();
+    assert(/保留设置保存失败/.test(toasts[toasts.length - 1]), 'commit failure is reported, not swallowed');
     console.log('PASS settings: click action, theme, history limit and retention options wired');
 }());
 
