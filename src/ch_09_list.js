@@ -165,10 +165,32 @@ selected ? palette.accentSoft : palette.surfaceMuted,
 selected ? palette.accentBorder : palette.stroke, 8));
 return view;
 }
+/* review_batch1_time_v1: same rule as the home list. */
 function formatTime(value) {
+var time = Number(value || 0);
+var calendar;
+var todayStart;
+var thisYear;
+var pattern = "HH:mm";
+var prefix = "";
 try {
-return String(new SimpleDateFormat("HH:mm", Locale.getDefault())
-.format(new Date(Number(value || 0))));
+if (!(time > 0)) { return ""; }
+calendar = Packages.java.util.Calendar.getInstance();
+thisYear = Number(calendar.get(Packages.java.util.Calendar.YEAR));
+calendar.set(Packages.java.util.Calendar.HOUR_OF_DAY, 0);
+calendar.set(Packages.java.util.Calendar.MINUTE, 0);
+calendar.set(Packages.java.util.Calendar.SECOND, 0);
+calendar.set(Packages.java.util.Calendar.MILLISECOND, 0);
+todayStart = Number(calendar.getTimeInMillis());
+if (time < todayStart && time >= todayStart - 86400000) {
+prefix = "昨天 ";
+} else if (time < todayStart) {
+calendar.setTimeInMillis(time);
+pattern = Number(calendar.get(Packages.java.util.Calendar.YEAR)) === thisYear ?
+"M月d日 HH:mm" : "yyyy/M/d HH:mm";
+}
+return prefix + String(new SimpleDateFormat(pattern, Locale.getDefault())
+.format(new Date(time)));
 } catch (ignored) {
 return "";
 }

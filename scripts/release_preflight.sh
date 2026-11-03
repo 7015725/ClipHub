@@ -148,6 +148,8 @@ node scripts/test_home_batch_delete.js
 node scripts/test_home_multiselect.js
 node scripts/test_home_multiselect_toolbar.js
 node scripts/test_home_multiselect_clipboard.js
+node scripts/test_home_scroll_performance.js
+node scripts/test_review_batch12.js
 
 git diff --check
 
