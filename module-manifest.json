@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "moduleSetVersion": "20261103.05-beta",
+  "moduleSetVersion": "20261103.06-beta",
   "entryMinVersion": 8,
   "sourceRef": "beta-home-scroll-perf-20261103",
   "modules": [
@@ -85,7 +85,7 @@
     {
       "name": "ch_11_filter.js",
       "path": "src/ch_11_filter.js",
-      "sha": "341cff237f8573acc8831f4d612c11f9f96694d9",
+      "sha": "1b3b3fb26d46095f3262c1dd952b3af503f88c55",
       "export": "Filter",
       "runtimeRole": "managed",
       "lifecycleIndex": 10

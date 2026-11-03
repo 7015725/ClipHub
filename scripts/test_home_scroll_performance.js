@@ -476,3 +476,26 @@ console.log('PASS staged recycle fill: recycled rebinds are spread across frame 
         'keyed reconcile recycles removed holders');
     console.log('PASS card recycle v2: keyed reconcile and ajax batches rebind pooled holders, theme changes still rebuild');
 }());
+
+/* ---------- 11. hydration forces a visual rebuild only for real rendered changes ---------- */
+(function () {
+    var h = vm.createContext({ Number: Number, String: String, JSON: JSON,
+        virtualRenderedItemIds: [10, 11, 12], resultTagMap: { '11': [{ name: 'work' }] } });
+    load('renderedTagSnapshot', h);
+    load('renderedTagsChanged', h);
+    var snap = h.renderedTagSnapshot({ tagIds: [11, 12, 99] });
+    assert.deepStrictEqual(Object.keys(snap.tags).sort(), ['11', '12'], 'only rendered tag ids are tracked');
+    h.resultTagMap['99'] = [{ name: 'offscreen' }];
+    assert.strictEqual(h.renderedTagsChanged(snap), false, 'off-screen tag loads never force a rebuild');
+    h.resultTagMap['11'] = [{ name: 'work' }];
+    assert.strictEqual(h.renderedTagsChanged(snap), false, 'reloading identical tags is not a visual change');
+    h.resultTagMap['12'] = [{ name: 'new' }];
+    assert.strictEqual(h.renderedTagsChanged(snap), true, 'a rendered row gaining a tag forces a rebuild');
+    var a0 = source.indexOf('    function applyHydrationResult(');
+    var applySrc = source.slice(a0, source.indexOf('\n    function ', a0 + 5));
+    assert(/var forceVisual = missing > 0 \|\| renderedRowHydrated \|\|\s*renderedTagsChanged\(renderedBefore\);/.test(applySrc),
+        'forceVisual is driven by missing rows, hydrated rendered rows or changed rendered tags');
+    assert(applySrc.indexOf('renderedTagSnapshot(result)') < applySrc.indexOf('mergeItemTagMap('),
+        'snapshot is taken before tags are merged');
+    console.log('PASS hydration visual delta: forced keyed reconcile only when rendered rows actually change');
+}());
